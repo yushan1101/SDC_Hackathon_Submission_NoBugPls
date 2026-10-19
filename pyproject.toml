@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiversepulse-enterprise"
+version = "0.2.0"
+description = "Multi-agent workforce reskilling decision support (employee + HR) with STF-KAN skill-demand backtests"
+requires-python = ">=3.11"
+dependencies = [
+  "streamlit>=1.40",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.4",
+  "pandas>=2.1",
+  "numpy>=1.26",
+  "scikit-learn>=1.4",
+  "pytest>=8.0"
+]
+
+[project.optional-dependencies]
+ai = ["langgraph>=1.2", "fastmcp>=4.1", "chromadb>=1.5", "sentence-transformers>=6.1", "torch>=2.4",
+      "google-genai>=2.8"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "agents*", "forecasting*", "mcp_server*", "validation*", "governance*", "ui*", "tools*", "config*"]

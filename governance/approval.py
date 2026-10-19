@@ -1,0 +1,137 @@
+"""Explicit human approval. Generated -> draft/flagged; edits always create a new draft version.
+
+Dual use: the subject approves their own plan (actor_role='employee'); in HR mode an HR advisor
+approves a pseudonymous employee's plan (actor_role='hr_advisor'). Plans are advisory only.
+"""
+import json
+import uuid
+
+from governance.audit import connect, now, snapshot
+
+ACTOR_ROLES = {"employee", "hr_advisor"}
+
+
+class TransitionError(ValueError):
+    pass
+
+
+def _latest(con, plan_id):
+    row = con.execute("SELECT version, status, snapshot FROM plan_versions WHERE plan_id=? "
+                      "ORDER BY version DESC LIMIT 1", (plan_id,)).fetchone()
+    if not row:
+        raise TransitionError(f"unknown plan {plan_id}")
+    return row
+
+
+def _add_version(con, plan_id, version, status, plan: dict):
+    snap, sha = snapshot(plan | {"status": status})
+    con.execute("INSERT INTO plan_versions VALUES(?,?,?,?,?,?)", (plan_id, version, status, snap, sha, now()))
+
+
+def _event(con, plan_id, version, actor, role, action, prev, new):
+    con.execute("INSERT INTO approval_events(plan_id,version,actor,actor_role,action,prev_status,new_status,at_utc) "
+                "VALUES(?,?,?,?,?,?,?,?)", (plan_id, version, actor, role, action, prev, new, now()))
+
+
+def create(con, plan: dict, subject_id: str, audience: str, issues: list | None = None) -> str:
+    status = plan.get("status", "draft")
+    if status not in ("draft", "flagged"):
+        raise TransitionError("generated plans start as draft or flagged")
+    pid = uuid.uuid4().hex[:12]
+    with con:
+        con.execute("INSERT INTO plans VALUES(?,?,?,?)", (pid, subject_id, audience, now()))
+        _add_version(con, pid, 1, status, plan)
+        con.execute("INSERT INTO validation_events(plan_id,version,issues,at_utc) VALUES(?,?,?,?)",
+                    (pid, 1, json.dumps(issues or [], default=str), now()))
+        _event(con, pid, 1, "system", "system", "generated", None, status)
+    return pid
+
+
+def edit(con, plan_id: str, new_plan: dict, actor: str, actor_role: str) -> int:
+    """Any edit (including of an approved plan) -> new draft version; old versions untouched."""
+    _check_actor(actor, actor_role)
+    v, prev, _ = _latest(con, plan_id)
+    with con:
+        _add_version(con, plan_id, v + 1, "draft", new_plan)
+        _event(con, plan_id, v + 1, actor, actor_role, "edited", prev, "draft")
+    return v + 1
+
+
+def approve(con, plan_id: str, version: int, actor: str, actor_role: str, confirmed: bool) -> int:
+    """Approve exactly the latest *draft* version. Flagged plans must be edited first."""
+    _check_actor(actor, actor_role)
+    if confirmed is not True:
+        raise TransitionError("approval requires explicit confirmation")
+    v, status, snap = _latest(con, plan_id)
+    if version != v:
+        raise TransitionError(f"stale version {version}; latest is {v}")
+    if status != "draft":
+        raise TransitionError(f"cannot approve a {status} plan")
+    with con:
+        _add_version(con, plan_id, v + 1, "approved", json.loads(snap))
+        _event(con, plan_id, v + 1, actor, actor_role, "approved", status, "approved")
+    return v + 1
+
+
+def status(con, plan_id: str) -> str:
+    return _latest(con, plan_id)[1]
+
+
+def history(con, plan_id: str) -> list[dict]:
+    cols = ["version", "actor", "actor_role", "action", "prev_status", "new_status", "at_utc"]
+    rows = con.execute(f"SELECT {','.join(cols)} FROM approval_events WHERE plan_id=? ORDER BY id", (plan_id,))
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def _check_actor(actor, role):
+    if not actor or not actor.strip() or role not in ACTOR_ROLES:
+        raise TransitionError("a named human actor with role employee|hr_advisor is required")
+
+
+# --- authorization (enforced here, not only in the UI) ---------------------------------------
+def can_act(con, plan_id: str, user: dict) -> bool:
+    """employee: only plans about their own employee_id; hr_advisor: only HR-created plans
+    (an employee's private self-service plans are never visible to HR)."""
+    row = con.execute("SELECT subject_id, audience FROM plans WHERE plan_id=?", (plan_id,)).fetchone()
+    if not row:
+        return False
+    subject, audience = row
+    if user["role"] == "employee":
+        return subject == user.get("employee_id")
+    return user["role"] == "hr_advisor" and audience == "hr"
+
+
+def require(con, plan_id: str, user: dict):
+    if not can_act(con, plan_id, user):
+        raise TransitionError("not authorised for this plan")
+
+
+def list_plans(con, user: dict) -> list[dict]:
+    if user["role"] == "employee":
+        q, arg = "p.subject_id=?", user.get("employee_id")
+    elif user["role"] == "hr_advisor":
+        q, arg = "p.audience=?", "hr"
+    else:
+        return []
+    rows = con.execute(f"""SELECT p.plan_id, p.subject_id, p.audience, p.created_utc, v.version, v.status,
+                               json_extract(v.snapshot,'$.target_role'), json_extract(v.snapshot,'$.scenario')
+                           FROM plans p JOIN plan_versions v ON v.plan_id=p.plan_id
+                           WHERE {q} AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)
+                           ORDER BY p.created_utc DESC""", (arg,))
+    cols = ["plan_id", "subject_id", "audience", "created_utc", "version", "status", "target_role", "scenario"]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def latest(con, plan_id: str) -> dict:
+    v, st, snap = _latest(con, plan_id)
+    return {"version": v, "status": st, "plan": json.loads(snap)}
+
+
+def acknowledge(con, plan_id: str, user: dict) -> None:
+    """Employee confirms they have seen an HR-approved plan (event only; status unchanged)."""
+    require(con, plan_id, user)
+    v, st, _ = _latest(con, plan_id)
+    if st != "approved":
+        raise TransitionError("only approved plans can be acknowledged")
+    with con:
+        _event(con, plan_id, v, user["username"], "employee", "acknowledged", st, st)

@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+.pytest_cache/
+.streamlit/
+data/raw/
+data/chroma/
+data/*.sqlite3
+artifacts/
+checkpoints/
+*.pt
+*.pth
+.DS_Store
+data/*.local.txt
+models/
+.claude/

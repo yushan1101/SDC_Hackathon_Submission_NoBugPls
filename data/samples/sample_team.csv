@@ -1,0 +1,12 @@
+employee_id,target_role,weekly_hours,skill,level
+E-001,Data Analyst,6,excel,3
+E-001,Data Analyst,6,sql,2
+E-001,Data Analyst,6,tableau,1
+E-002,Data Analyst,4,excel,4
+E-002,Data Analyst,4,python,1
+E-003,Data Engineer,8,python,3
+E-003,Data Engineer,8,sql,3
+E-003,Data Engineer,8,aws,1
+E-004,Data Scientist,5,python,4
+E-004,Data Scientist,5,sql,2
+E-004,Data Scientist,5,r,2
