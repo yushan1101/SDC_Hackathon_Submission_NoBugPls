@@ -45,16 +45,20 @@ docker build -t aiversepulse . && docker run -p 8501:8501 -v aiversepulse-data:/
 LLM agents are off unless `GEMINI_API_KEY` and `LLM_FAST_MODEL` are set (see `.env.example`); everything works
 deterministically without them. GPU is not needed (training is CPU-minutes); RunPod remains optional.
 
-### Forecast accuracy (held-out Nov-Dec 2023, 3 seeds, MAE in percentage points)
-| model | all 2,610 series | 300 global series |
-|---|---|---|
-| last value | 3.125 | 1.373 |
-| 4-week mean | 2.562 | 1.124 |
-| exp. smoothing (a=0.2) | 2.445 | 1.089 |
-| pooled ridge (own + global window) | 2.445 | 1.089 |
-| **STF-KAN (served, chosen on validation)** | **2.437-2.439** | 1.092-1.095 |
-| sampling-noise floor (perfect forecaster) | 1.89 | 0.84 |
+### Forecast accuracy (held-out Nov-Dec 2023, MAE in percentage points)
+Trained on an RTX 4060 Laptop GPU (CUDA 12.8): GPU sweep of 13 configs, then an 8-seed deep ensemble.
+All choices (hyperparameters, variant, global-series loss weight 32, go/no-go) were made on validation only.
 
-STF-KAN beats every baseline on all series and on global *validation*, but ties/loses by ~0.005 pp on global test.
-Most remaining error is binomial sampling noise in weekly ad counts; no public dataset was found that adds
-comparable history (docs/data_sources.md). These are 2023 historical backtests, not 2026 predictions.
+| model | test, all 2,610 series | test, 300 global series (shown in app) | validation, global |
+|---|---|---|---|
+| last value | 3.125 | 1.373 | 1.408 |
+| 4-week mean | 2.562 | 1.124 | 1.132 |
+| exp. smoothing (a=0.2) | 2.445 | 1.089 | 1.103 |
+| pooled ridge (own + global window) | 2.445 | **1.089** | 1.104 |
+| **STF-KAN 8-seed ensemble (served)** | **2.440** | 1.098 | **1.084** |
+| sampling-noise floor (perfect forecaster) | 1.89 | 0.84 | 0.83 |
+
+80% band (validation-error quantiles, separate for global/country): test coverage 80.2% global, 81.2% country.
+STF-KAN beats every baseline on validation and on the all-series test, but on the global test weeks it is
+0.009 pp behind the simple baselines (validation Sep-Oct vs test Nov-Dec behave differently). Remaining error
+is dominated by binomial sampling noise. These are 2023 historical backtests, not 2026 predictions.

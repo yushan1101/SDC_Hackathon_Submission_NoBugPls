@@ -37,9 +37,11 @@ def predict(model, dev_split, scale):
 
 def train_variant(variant, data, dev, s, scale, text_emb, a, ar_init=None):
     torch.manual_seed(a.seed); np.random.seed(a.seed)
-    model = STFKAN(len(s.roles), len(s.skills), a.window, a.horizon, text_emb=text_emb,
-                   variant=variant, ar_init=ar_init).to(a.device)
-    opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=1e-4)
+    model = STFKAN(len(s.roles), len(s.skills), a.window, a.horizon, text_emb=text_emb, variant=variant,
+                   ar_init=ar_init, hidden=a.hidden, sem_dim=a.sem_dim, grid=a.grid).to(a.device)
+    opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=a.weight_decay)
+    w_all = dev["train_w"]
+    val_g = np.array([s.keys[i][2] == "global" for i in data["val"]["series"]])
     inputs, _, target = dev["train"]
     n = len(target)
     best, best_state, bad = float("inf"), None, 0
@@ -48,9 +50,11 @@ def train_variant(variant, data, dev, s, scale, text_emb, a, ar_init=None):
         perm = torch.randperm(n, device=a.device)
         for i in range(0, n, a.batch_size):
             idx = perm[i:i + a.batch_size]
-            loss = torch.nn.functional.l1_loss(model(*(t[idx] for t in inputs)), target[idx])  # = MAE objective
+            err = (model(*(t[idx] for t in inputs)) - target[idx]).abs()  # L1 = MAE objective
+            loss = (err * w_all[idx]).sum() / w_all[idx].sum() if w_all is not None else err.mean()
             opt.zero_grad(set_to_none=True); loss.backward(); opt.step()
-        val = mae(predict(model, dev["val"], scale), data["val"]["y"])
+        pv = predict(model, dev["val"], scale)
+        val = mae(pv, data["val"]["y"]) if a.select_on == "all" else mae(pv[val_g], data["val"]["y"][val_g])
         print(f"  [{variant}] epoch {epoch + 1:2d} loss={loss.item():.4f} val_mae={val:.4f}")
         if val < best - 1e-4:
             best, bad = val, 0
@@ -80,6 +84,16 @@ def main():
     ap.add_argument("--no-text", action="store_true", help="skip MiniLM; use learned ID embeddings")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--save-dir", default="artifacts")
+    ap.add_argument("--select-on", default="all", choices=("all", "global"),
+                    help="validation subset used for early stopping and model selection")
+    ap.add_argument("--hidden", type=int, default=16)
+    ap.add_argument("--sem-dim", type=int, default=16)
+    ap.add_argument("--grid", type=int, default=8)
+    ap.add_argument("--weight-decay", type=float, default=1e-4)
+    ap.add_argument("--loss-weight", default="none", choices=("none", "sqrt_n"),
+                    help="sqrt_n: weight windows by sqrt(target-week ads), i.e. down-weight noisy targets")
+    ap.add_argument("--global-weight", type=float, default=1.0,
+                    help="loss weight of global-series windows relative to country windows (global = what the app serves)")
     a = ap.parse_args()
     t_start = time.time()
     out = Path(a.save_dir); out.mkdir(parents=True, exist_ok=True)
@@ -95,6 +109,12 @@ def main():
     semantic_source = f"{prompt_encoder.MODEL_ID}@{prompt_encoder.MODEL_REVISION[:7]}" if emb is not None else "learned role/skill ID embeddings"
 
     dev = {k: to_device(v, scale, a.device) for k, v in data.items()}
+    w = np.ones(len(data["train"]["y"]))
+    if a.loss_weight == "sqrt_n":
+        w = np.sqrt(np.nan_to_num(data["train"]["n_eligible"], nan=1.0)).mean(1)
+    w = w * np.where([s.keys[i][2] == "global" for i in data["train"]["series"]], a.global_weight, 1.0)
+    dev["train_w"] = (torch.as_tensor(w / w.mean(), dtype=torch.float32, device=a.device)[:, None]
+                      if a.loss_weight != "none" or a.global_weight != 1.0 else None)
     results = {}
     tr = data["train"]
     xx = lambda b: np.c_[b["x"], b["xg"]]
@@ -122,8 +142,9 @@ def main():
                   "global": noise_floor_mae({k: v[is_global[sp]] for k, v in data[sp].items()})} for sp in ("val", "test")}
 
     # go/no-go: choose by VALIDATION only; test is reported, never used for selection
-    selected = min(results, key=lambda k: results[k]["val"]["mae"])
-    best_learned = min(models, key=lambda v: results[f"stf_kan:{v}"]["val"]["mae"])
+    key = "mae" if a.select_on == "all" else "global_mae"
+    selected = min(results, key=lambda k: results[k]["val"][key])
+    best_learned = min(models, key=lambda v: results[f"stf_kan:{v}"]["val"][key])
     interval = interval_q(cache[selected, "val"], data["val"]["y"])  # for the predictor actually served
     t_pred = cache[selected, "test"]
     lo, hi = t_pred - interval, t_pred + interval
@@ -133,7 +154,10 @@ def main():
     torch.save({"state_dict": m.state_dict(), "variant": best_learned, "roles": s.roles, "skills": s.skills,
                 "keys": s.keys, "window": a.window, "horizon": a.horizon, "scale": scale,
                 "text_emb": text_emb, "selected": selected, "linear_w": w_lin,
-                "interval_q80_pp": interval}, out / "stf_kan_best.pt")
+                "interval_q80_pp": interval,
+                "hparams": {"hidden": a.hidden, "sem_dim": a.sem_dim, "grid": a.grid}}, out / "stf_kan_best.pt")
+    for v, mm in models.items():  # every variant kept so ensembles can be assembled later
+        torch.save(mm.cpu().state_dict(), out / f"variant_{v}.pt")
     (out / "scaler.json").write_text(json.dumps({"type": "window_mean_center / train_diff_std",
                                                  "scale": scale, "fit_on": SPLITS["train"]}))
     (out / "feature_schema.json").write_text(json.dumps({

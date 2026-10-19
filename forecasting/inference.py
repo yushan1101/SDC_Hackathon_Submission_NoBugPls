@@ -37,10 +37,19 @@ def _load_model_cached(path: str, mtime: float):
 def load_model(path=DEFAULT_CKPT):
     import torch
     from forecasting.model import STFKAN
+    from forecasting.model import Ensemble
     ck = torch.load(path, map_location="cpu", weights_only=False)
-    m = STFKAN(len(ck["roles"]), len(ck["skills"]), ck["window"], ck["horizon"],
-               text_emb=ck.get("text_emb"), variant=ck["variant"])
-    m.load_state_dict(ck["state_dict"])
+    hp = ck.get("hparams", {})
+
+    def build(sd):
+        m = STFKAN(len(ck["roles"]), len(ck["skills"]), ck["window"], ck["horizon"], text_emb=ck.get("text_emb"),
+                   variant=ck["variant"], hidden=hp.get("hidden", 16), sem_dim=hp.get("sem_dim", 16),
+                   grid=hp.get("grid", 8))
+        if ck.get("text_emb") is not None and "text_emb" not in sd:  # shared table stored once in the checkpoint
+            sd = {**sd, "text_emb": ck["text_emb"]}
+        m.load_state_dict(sd)
+        return m
+    m = Ensemble([build(sd) for sd in ck["members"]]) if "members" in ck else build(ck["state_dict"])
     return m.eval(), ck
 
 
@@ -84,11 +93,16 @@ def forecast(role: str, skill: str, as_of_index: int | None = None, series=None,
             raise ValueError("series mismatch")
         if sel.startswith("stf_kan"):
             pred, model_id = predict_batch(model, meta, b)[0], f"stf_kan:{meta['variant']}"
+            if "members" in meta:
+                model_id += f" x{len(meta['members'])} ensemble"
         elif sel == "baseline:linear":
             pred, model_id = np.r_[xf, xg, 1] @ meta["linear_w"], sel
         else:
             pred, model_id = baseline(sel.split(":")[1], xf[None])[0], sel
-        interval = np.asarray(meta.get("interval_q80_pp")) if meta.get("interval_q80_pp") else None
+        iq = meta.get("interval_q80_pp")
+        if isinstance(iq, dict):  # per-population bands
+            iq = iq["global" if geography == "global" else "country"]
+        interval = np.asarray(iq) if iq else None
         if not sel.startswith("stf_kan"):
             warnings.append(f"Validation selected {sel} over STF-KAN (go/no-go rule).")
     except Exception as e:  # missing torch/checkpoint must not break the demo

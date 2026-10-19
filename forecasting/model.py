@@ -21,11 +21,11 @@ VARIANTS = ("temporal", "temporal_sem", "stf_kan")
 
 class STFKAN(nn.Module):
     def __init__(self, n_roles, n_skills, window=12, horizon=4, hidden=16, sem_dim=16,
-                 text_emb: torch.Tensor | None = None, variant="stf_kan", ar_init=None):
+                 text_emb: torch.Tensor | None = None, variant="stf_kan", ar_init=None, grid=8):
         super().__init__()
         assert variant in VARIANTS
         self.variant, self.horizon = variant, horizon
-        self.time = KAN([4 * window + 3, hidden])  # one KAN layer over [x, mask, pooled global x, log counts, trend]
+        self.time = KAN([4 * window + 3, hidden], grid)  # one KAN layer over [x, mask, pooled global x, log counts, trend]
         # semantic: frozen MiniLM rows (384-d) projected to sem_dim, else learned role/skill IDs
         if text_emb is not None:
             self.register_buffer("text_emb", text_emb.float())
@@ -71,3 +71,14 @@ class STFKAN(nn.Module):
         alpha = logits.masked_fill(~allow[..., None], float("-inf")).softmax(1)
         y = (alpha * ys).sum(1)
         return (y, alpha) if return_gate else y
+
+
+class Ensemble(nn.Module):
+    """Mean of independently trained members (deep ensemble); reduces seed variance."""
+
+    def __init__(self, members: list[nn.Module]):
+        super().__init__()
+        self.members = nn.ModuleList(members)
+
+    def forward(self, *inputs):
+        return torch.stack([m(*inputs) for m in self.members]).mean(0)

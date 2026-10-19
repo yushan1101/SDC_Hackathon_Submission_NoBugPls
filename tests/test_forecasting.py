@@ -85,3 +85,22 @@ def test_forecast_checks_reject_bad_output():
     assert check_forecast(good) == [] and good["direction"] in ("up", "down", "flat")
     bad = good | {"predicted_percent": [120, 1, 1], "is_historical_backtest": False}
     assert {i.code for i in check_forecast(bad)} == {"forecast_horizon", "forecast_bounds", "forecast_label"}
+
+
+def test_ensemble_checkpoint_loads_and_averages(tmp_path):
+    from forecasting.inference import load_model
+    from forecasting.model import Ensemble
+    s = fake_series()
+    members = [STFKAN(2, 2, hidden=8, sem_dim=8, grid=5).state_dict() for _ in range(3)]
+    ck = {"members": members, "variant": "stf_kan", "roles": s.roles, "skills": s.skills, "keys": s.keys, "window": 12,
+          "horizon": 4, "scale": 1.0, "text_emb": None, "selected": "stf_kan:ensemble", "interval_q80_pp": [1.0] * 4,
+          "hparams": {"hidden": 8, "sem_dim": 8, "grid": 5}}
+    torch.save(ck, tmp_path / "e.pt")
+    m, _ = load_model(tmp_path / "e.pt")
+    assert isinstance(m, Ensemble) and len(m.members) == 3
+    inputs, _ = to_tensors({k: v[:5] for k, v in windows(s, "train").items()}, 1.0)
+    with torch.no_grad():
+        mean = torch.stack([mm(*inputs) for mm in m.members]).mean(0)
+        assert torch.allclose(m(*inputs), mean)
+    f = forecast("A", "y", series=s, ckpt=tmp_path / "e.pt")
+    assert f["model_id"] == "stf_kan:stf_kan x3 ensemble" and f["lower_percent"] is not None
