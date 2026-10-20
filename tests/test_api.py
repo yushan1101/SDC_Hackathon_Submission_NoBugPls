@@ -105,6 +105,18 @@ H = {"X-AP": "1"}
 RESUME = open("data/samples/sample_resume_nurse.md", "rb").read()
 
 
+def test_quiz_missing_runtime_returns_retryable_error(client, monkeypatch):
+    import server.api as api
+    login(client, "ana")
+    q = client.get("/api/quiz").json()
+    def missing(*args, **kwargs):
+        raise ModuleNotFoundError("sentence_transformers")
+    monkeypatch.setattr(api.matcher, "match_roles", missing)
+    r = client.post("/api/quiz/score", json={"answers": {x["id"]: 2 for x in q["questions"]}}, headers=H)
+    assert r.status_code == 503
+    assert "local AI runtime" in r.json()["detail"]
+
+
 def test_quiz_resume_and_match(client):
     login(client, "ana")
     q = client.get("/api/quiz").json()
