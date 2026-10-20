@@ -105,6 +105,9 @@ async function signOut() {
   location.replace("/");
 }
 
+let homeScrollTop = 0;
+// Hash routes render their own content; restore after that content exists.
+history.scrollRestoration = "manual";
 function route() {
   const hash = location.hash || "#/start";
   const [, page, id] = hash.split("/");
@@ -113,6 +116,9 @@ function route() {
     if (section.startsWith(a.dataset.route)) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
   const main = $("#main");
+  if (main.classList.contains("home-page")) homeScrollTop = window.scrollY;
+  main._homeObserver?.disconnect();
+  main.classList.toggle("home-page", !["report", "plans", "build", "quiz", "resume", "today"].includes(page));
   const go = () => {
     if (page === "report") reportView(main);
     else if (page === "plans" && id) planDetail(main, id);
@@ -125,7 +131,7 @@ function route() {
   };
   go();
   reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });
-  scrollTo({ top: 0 });
+  scrollTo({ top: main.classList.contains("home-page") ? homeScrollTop : 0, behavior: "instant" });
 }
 
 // ---------------------------------------------------------------- build

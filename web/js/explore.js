@@ -7,29 +7,73 @@ const KEYS = ["A", "B", "C", "D"];
 
 // ---------------------------------------------------------------- start: choose a path
 export function startView(main, { name } = {}) {
-  const path = (href, ic, title, time, text) => reveal(h("a", { class: "path", href },
-    h("span", { class: "path-ic" }, icon(ic)),
-    h("span", { class: "path-t" }, h("b", {}, title), h("span", { class: "note" }, time)),
-    h("span", { class: "path-d" }, text),
-    h("span", { class: "path-go", "aria-hidden": "true" }, icon("send"))), RISE, { delay: 80 });
-  const owl = new Owl({ size: 132, state: "greeting" });
-  main.replaceChildren(h("div", { class: "start" },
-    h("div", { class: "start-head" },
-      h("div", {},
-        h("h1", { class: "page-title" }, name ? `Where next, ${name}?` : "Where could your skills take you?"),
-        h("p", { class: "lede" }, "AI is changing every job, unevenly. Find the roles you could grow into, see which skills are rising today, " +
-          "and get a 90-day plan you approve. Every claim cites a dated source.")),
-      owl.el),
-    h("nav", { class: "paths", "aria-label": "Ways to start" },
-      path("#/quiz", "quiz", "Quick match game", "About 2 minutes · 13 questions",
-        "Answer everyday work scenarios. We estimate your skill levels and rank the roles you fit today."),
-      path("#/resume", "file", "Upload your resume", "PDF, Word or text · deep analysis",
-        "We convert it to Markdown, pull out skills with the exact lines that prove them, and match you across all ESCO occupations."),
-      path("#/build", "build", "Pick a job and rate yourself", "You choose the target",
-        "Already know the role you want? Rate the skills it needs and go straight to your plan.")),
-    h("p", { class: "note start-today" }, icon("pulse"), " ", h("a", { href: "#/today" }, "See today's AI-trend board"),
-      ": which AI topics are moving and which roles they pull forward or put under pressure.")));
-  setTimeout(() => owl.set("idle"), 2400);
+  const arrow = () => icon("send");
+  const pill = (text) => h("span", { class: "home-pill" }, text);
+  const smallCard = (label, title, ...children) => h("div", { class: "home-demo-card" },
+    h("span", { class: "home-eyebrow" }, label), h("h3", {}, title), ...children);
+  const quizArt = h("div", { class: "home-art home-art-quiz", "aria-hidden": "true" },
+    h("div", { class: "home-orbit" }),
+    smallCard("A LITTLE SELF-DISCOVERY", "What makes you, you?",
+      h("div", { class: "home-demo-option" }, h("span", {}, "A"), "Solving the tricky problem", h("b", {}, "✓")),
+      h("div", { class: "home-demo-option" }, h("span", {}, "B"), "Bringing people together"),
+      h("div", { class: "home-demo-progress" }, h("i"))),
+    h("span", { class: "home-float home-float-top" }, icon("quiz"), "Play to discover"),
+    h("span", { class: "home-float home-float-bottom" }, "✦", "Your strengths, uncovered"));
+  const resumeArt = h("div", { class: "home-art home-art-resume", "aria-hidden": "true" },
+    h("div", { class: "home-document" }, icon("file"), h("span", { class: "home-doc-title" }, "Your experience"),
+      [88, 65, 80, 55].map((width) => h("i", { style: { width: `${width}%` } })),
+      h("div", { class: "home-doc-highlight" }, "Skills hiding in plain sight"),
+      [70, 90, 58].map((width) => h("i", { style: { width: `${width}%` } }))),
+    h("span", { class: "home-float home-resume-tag tag-one" }, "✦", "Problem solving"),
+    h("span", { class: "home-float home-resume-tag tag-two" }, "✓", "Communication"),
+    h("span", { class: "home-float home-resume-tag tag-three" }, "↗", "New possibilities"));
+  const careerArt = h("div", { class: "home-art home-art-career", "aria-hidden": "true" },
+    h("div", { class: "home-career-line" }),
+    [["01", "Find your direction", "Choose a role that inspires you"], ["02", "Know your next step", "See the skills to build"], ["03", "Make it happen", "Your own 90-day plan"]].map(([n, title, note]) =>
+      h("div", { class: `home-road-step home-road-${n}` }, h("span", {}, n), h("div", {}, h("b", {}, title), h("small", {}, note)))),
+    h("span", { class: "home-float home-career-star" }, "✦"));
+  const feature = (id, number, label, visual, heading, subheading, description, href, button, tags) =>
+    h("section", { class: `home-feature home-feature-${id}`, id: `home-${id}`, "aria-labelledby": `home-title-${id}` },
+      visual,
+      h("div", { class: "home-feature-copy" }, h("span", { class: "home-eyebrow" }, `${number} / ${label}`),
+        h("h2", { id: `home-title-${id}` }, heading), h("p", { class: "home-subheading" }, subheading),
+        h("p", { class: "home-description" }, description), h("div", { class: "home-tags" }, tags.map(pill)),
+        h("a", { class: "home-cta", href }, button, arrow())));
+  const owl = new Owl({ size: 230, state: "greeting" });
+  const sections = [
+    feature("match", "01", "GET TO KNOW YOURSELF", quizArt, "Discover Your Career Potential",
+      "Find your strengths and explore career opportunities through a quick interactive assessment.",
+      "Answer 13 everyday work scenario questions in approximately 2 minutes. AiversePulse will estimate your skill levels and recommend suitable career paths based on your responses.",
+      "#/quiz", "Start Quick Match", ["13 questions", "About 2 minutes"]),
+    feature("resume", "02", "CONNECT THE DOTS", resumeArt, "Unlock Insights from Your Resume",
+      "Discover your existing skills and explore career opportunities based on your experience.",
+      "Upload your resume in PDF, Word, or text format. AiversePulse will extract your skills, analyze your experience, and match your profile with relevant occupations.",
+      "#/resume", "Upload Resume", ["PDF, Word or text", "Evidence-backed skills"]),
+    feature("career", "03", "TURN AMBITION INTO ACTION", careerArt, "Choose Your Future Career",
+      "Already have a dream job in mind? Discover the skills you need to achieve it.",
+      "Select your desired occupation and evaluate your current skill levels. AiversePulse will identify skill gaps and guide you toward a personalized career development plan.",
+      "#/build", "Explore Career Paths", ["Your target role", "Your 90-day plan"]),
+  ];
+  main.replaceChildren(h("div", { class: "home-landing" },
+    h("section", { class: "home-hero" },
+      h("div", { class: "home-hero-copy" }, h("span", { class: "home-eyebrow" }, "YOUR NEXT CHAPTER STARTS HERE"),
+        h("h1", {}, name ? `Where next, ${name}?` : "Where could your skills take you?"),
+        h("p", {}, "AI is changing every job, unevenly. Find the roles you could grow into, see which skills are rising today, and get a 90-day plan you approve. Every claim cites a dated source."),
+        h("button", { type: "button", class: "home-cta", onclick: () => sections[0].scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }) }, "Find your starting point", h("span", { "aria-hidden": "true" }, "↓")),
+        h("div", { class: "home-hero-note" }, h("span", {}, "✦"), "A little clarity. A lot of possibility.")),
+      h("div", { class: "home-mascot" }, h("div", { class: "home-mascot-ring" }), owl.el,
+        h("span", { class: "home-mascot-note" }, "Let’s find your next move."))),
+    h("div", { class: "home-section-intro" }, h("span", { class: "home-eyebrow" }, "THREE WAYS FORWARD"), h("p", {}, "Start where you are. Grow from there.")),
+    ...sections,
+    h("aside", { class: "home-today" }, h("div", {}, h("span", { class: "home-eyebrow" }, "KEEP YOUR FINGER ON THE PULSE"),
+      h("h2", {}, "The world of work keeps moving."), h("p", {}, "Explore today's AI topics and the roles they may affect.")),
+      h("a", { class: "home-cta home-cta-secondary", href: "#/today" }, "Explore Today", arrow()))));
+  if ("IntersectionObserver" in window && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    main._homeObserver = new IntersectionObserver((entries, observer) => entries.forEach((entry) => {
+      if (entry.isIntersecting) { entry.target.classList.add("is-visible"); observer.unobserve(entry.target); }
+    }), { threshold: 0.12 });
+    sections.forEach((section) => { section.classList.add("home-reveal"); main._homeObserver.observe(section); });
+  }
 }
 
 // ---------------------------------------------------------------- quiz game
