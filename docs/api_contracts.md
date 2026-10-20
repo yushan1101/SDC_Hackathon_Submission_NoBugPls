@@ -2,6 +2,9 @@
 
 Shared state is in `src/core/state.py`. No schema-breaking change without team notification.
 
+Career matching endpoints return HTTP 503 with a setup message if the local embedding
+runtime cannot be imported. The quiz keeps answers in the current page and offers retry.
+
 Plan detail returns the persisted `report` before and after approval, including after cache
 eviction or server restart. Older plans without a saved report return `report: null`;
 approval cannot recreate analysis that was never persisted.

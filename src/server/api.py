@@ -575,7 +575,11 @@ def _daily():  # ponytail: in-process hourly check; use cron / a job queue when 
 def _matches(levels: dict, prefixes: list[str] | None = None, text: str | None = None, k: int = 8,
              zone: int | None = None) -> list[dict]:
     board = _board()
-    rows = matcher.match_roles(levels, k, board, text, prefixes or None, zone)
+    try:
+        rows = matcher.match_roles(levels, k, board, text, prefixes or None, zone)
+    except ImportError:
+        log.exception("Career matching runtime is missing")
+        raise HTTPException(503, "Career matching is temporarily unavailable: the server's local AI runtime needs setup. Your quiz answers are kept on this page; try again after setup.") from None
     em_cut, pr_cut = _cuts(board["day"]) if board else (None, None)
     for r in rows:
         r["emerging"] = em_cut is not None and r["emergence"] >= em_cut   # top 10% of today's board

@@ -171,7 +171,9 @@ export async function quizView(main, ctx) {
         h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => { st.answers = {}; go(-1); } }, "Play again"))), RISE));
     } catch (e) {
       owl.set("confused");
-      stage.replaceChildren(h("div", { class: "issue error" }, e.message));
+      stage.replaceChildren(h("div", { class: "issue error", role: "alert" }, e.message),
+        h("p", { class: "note" }, "Your answers are still here. You don't need to play again."),
+        h("button", { class: "btn primary", type: "button", onclick: finish }, "Try again"));
     }
   }
   go(-1);
