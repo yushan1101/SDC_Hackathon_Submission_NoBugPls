@@ -1,0 +1,19 @@
+# Replit: Run starts the full web app (public site, HR console /enterprise, API) on Replit's port.
+run = "python src/main.py"
+entrypoint = "src/main.py"
+modules = ["python-3.11"]
+
+[nix]
+channel = "stable-24_05"
+
+[env]
+PORT = "8080"
+PYTHONPATH = "src"
+
+[[ports]]
+localPort = 8080
+externalPort = 80
+
+[deployment]
+run = ["sh", "-c", "pip install -r requirements.txt && python scripts/seed_demo_users.py && python src/main.py"]
+deploymentTarget = "cloudrun"

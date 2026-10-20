@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from forecasting.datasets import fit_scale, load_onet_series, load_series, windows  # noqa: E402
 from forecasting.evaluate import mae, rmse  # noqa: E402
 from forecasting.inference import load_model  # noqa: E402
@@ -34,7 +34,7 @@ runs = {}
 for seed in a.seeds:
     d = Path(a.work) / f"seed{seed}"
     if not (d / "training_manifest.json").exists():  # reuse finished seeds (re-evaluation only)
-        subprocess.run([sys.executable, "forecasting/train.py", "--seed", seed, "--save-dir", str(d), "--dataset", a.dataset]
+        subprocess.run([sys.executable, "src/forecasting/train.py", "--seed", seed, "--save-dir", str(d), "--dataset", a.dataset]
                        + (["--data", a.data] if a.data else []) + extra,
                        check=True)
     runs[seed] = (d, json.loads((d / "training_manifest.json").read_text()))

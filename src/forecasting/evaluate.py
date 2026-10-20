@@ -1,6 +1,6 @@
 """Metrics (percentage points) and non-learned baselines.
 
-    python forecasting/evaluate.py --checkpoint artifacts/stf_kan_best.pt
+    python src/forecasting/evaluate.py --checkpoint artifacts/stf_kan_best.pt
 """
 import argparse
 import json

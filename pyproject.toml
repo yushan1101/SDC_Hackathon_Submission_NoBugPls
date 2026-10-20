@@ -31,5 +31,9 @@ ai = ["langgraph>=1.2", "fastmcp>=4.1", "chromadb>=1.5", "sentence-transformers>
       "google-genai>=2.8"]
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 include = ["core*", "agents*", "forecasting*", "mcp_server*", "validation*", "governance*", "ui*", "tools*", "config*", "server*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]   # run tests from the repo root without installing
+testpaths = ["tests"]

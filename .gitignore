@@ -16,3 +16,12 @@ data/*.local.txt
 models/
 .claude/
 data/training/
+*.egg-info/
+
+# template additions
+venv/
+*.py[cod]
+.vscode/
+.idea/
+# the raw hackathon template folder (its files are merged into this repo)
+SDC_Hackathon_Submission_Template/

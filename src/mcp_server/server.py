@@ -84,7 +84,7 @@ def search_labor_trends(role_id: str, scenario: str = "assistive", as_of_date: s
     return {"evidence": ev, "retrieval_mode": mode, "stale": mode == "offline"}
 
 
-OUTLOOK = Path(__file__).resolve().parents[1] / "data" / "snapshots" / "esco_outlook.json"  # exported model output (ESCO-keyed)
+OUTLOOK = Path(__file__).resolve().parents[2] / "data" / "snapshots" / "esco_outlook.json"  # exported model output (ESCO-keyed)
 
 
 @lru_cache(maxsize=1)

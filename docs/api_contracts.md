@@ -1,6 +1,6 @@
 # API contracts
 
-Shared state is in `core/state.py`. No schema-breaking change without team notification.
+Shared state is in `src/core/state.py`. No schema-breaking change without team notification.
 
 Plan detail returns the persisted `report` before and after approval, including after cache
 eviction or server restart. Older plans without a saved report return `report: null`;
@@ -15,7 +15,7 @@ approval cannot recreate analysis that was never persisted.
   draft_pathway, validation_issues, revision_count, status, usage).
 - `core.graph.run_team(list[Request]) -> {"employees": {id: State}, "team_skill_needs": [...]}`:
   aggregated counts only, no ranking of people.
-- Approval (`governance/approval.py`): `create / edit / approve(..., actor, actor_role, confirmed)`;
+- Approval (`src/governance/approval.py`): `create / edit / approve(..., actor, actor_role, confirmed)`;
   `actor_role` is `employee` (individual mode) or `hr_advisor` (HR mode). Edits always create a new draft.
 - Forecast dict (`forecasting.inference.forecast`): SDLC `Forecast` fields + `history`, `actual`,
   `history_weeks`, `target_weeks`; `is_historical_backtest` is always true.
@@ -27,7 +27,7 @@ approval cannot recreate analysis that was never persisted.
   `narrative_mode` (template|llm). `validation_issues` and `usage` are append-reduced (parallel agents).
 - `usage[]` rows: node, ms, model, llm_calls, input_tokens, output_tokens, tokens_measured, est_usd, error.
 - `run_team()` also returns `flagged: [employee_id]`.
-- MCP tools (`mcp_server/server.py`): `search_labor_trends(role_id, scenario, as_of_date, top_k)`,
+- MCP tools (`src/mcp_server/server.py`): `search_labor_trends(role_id, scenario, as_of_date, top_k)`,
   `search_role_skills(role_id, geography)`, `retrieve_learning_resources(skill_id, top_k)`,
   `forecast_skill_demand(role_id, skill_id)`; all return JSON with Evidence-shaped items.
 - Forecast: `forecast(role, skill, geography="global")`; adds `geography`, `direction`, `lower_percent`,

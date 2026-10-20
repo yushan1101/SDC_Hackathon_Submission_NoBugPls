@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 from sklearn.metrics import average_precision_score, roc_auc_score
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from forecasting.datasets import load_onet_series, windows  # noqa: E402
 from forecasting.inference import load_model, predict_batch  # noqa: E402
 
