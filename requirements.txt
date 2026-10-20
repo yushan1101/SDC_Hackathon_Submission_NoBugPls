@@ -1,4 +1,4 @@
-# Python dependencies (single source of truth is pyproject.toml). CPU wheels for torch keep the install small;
-# the GPU training image (runpod/Dockerfile) brings its own CUDA torch.
+# Python dependencies (single source of truth is src/pyproject.toml). CPU wheels for torch keep the install
+# small; the GPU training image (runpod/Dockerfile) brings its own CUDA torch.
 --extra-index-url https://download.pytorch.org/whl/cpu
--e .[ai]
+-e ./src[ai]

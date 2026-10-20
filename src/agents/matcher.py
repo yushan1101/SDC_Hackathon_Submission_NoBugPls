@@ -18,7 +18,7 @@ from agents.knowledge import snapshot
 from agents.skillmap import MATCH, PARTIAL, vectors, vocabulary
 
 FUTURE_WEIGHT, PRESSURE_WEIGHT, TOOL_BONUS, STRETCH = 0.15, 0.10, 0.06, 0.85
-VECS = Path(__file__).resolve().parents[2] / "data" / "snapshots" / "occupation_vectors.npz"
+VECS = Path(__file__).resolve().parents[1] / "data" / "snapshots" / "occupation_vectors.npz"
 
 
 def occupation_text(o: dict) -> str:

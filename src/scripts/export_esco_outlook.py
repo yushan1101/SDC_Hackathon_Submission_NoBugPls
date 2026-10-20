@@ -14,7 +14,9 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import os
+os.chdir(Path(__file__).resolve().parents[1])  # data/ paths below are relative to src/
 
 SNAP, TRAIN = Path("data/snapshots"), Path("data/training_snapshots")
 SKILL_SIM, OCC_SIM = 0.60, 0.55

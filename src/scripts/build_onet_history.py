@@ -12,6 +12,8 @@ import sys
 import urllib.request
 import zipfile
 from pathlib import Path
+import os
+os.chdir(Path(__file__).resolve().parents[1])  # data/ paths below are relative to src/
 
 RELEASES = [f"{M}.{m}" for M in range(25, 31) for m in range(4)] + ["31.0"]
 RAW = Path("data/raw/onet_history")

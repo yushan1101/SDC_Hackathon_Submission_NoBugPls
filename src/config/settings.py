@@ -1,22 +1,26 @@
 """Validated environment settings (.env supported). No secrets in code; key is never logged."""
 import logging
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+SRC = Path(__file__).resolve().parents[1]
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=(str(SRC.parent / ".env"), ".env"), extra="ignore")  # repo-root .env
 
     gemini_api_key: SecretStr | None = None
     llm_fast_model: str = ""  # e.g. a Gemini Flash-class id; empty = LLM agents disabled (deterministic)
     llm_complex_model: str = ""
     llm_usd_per_1m_input: float = 0.0   # set from the provider's current price sheet; 0 = cost not estimated
     llm_usd_per_1m_output: float = 0.0
-    database_path: str = "data/audit.sqlite3"
-    chroma_path: str = "data/chroma"
-    forecast_model_path: str = "artifacts/stf_kan_best.pt"
+    database_path: str = str(SRC / "data" / "audit.sqlite3")   # defaults live under src/ wherever you run from
+    chroma_path: str = str(SRC / "data" / "chroma")
+    forecast_model_path: str = str(SRC / "artifacts" / "stf_kan_best.pt")
     mcp_url: str = ""  # empty = in-process FastMCP server; else e.g. http://localhost:8765/mcp
     max_upload_rows: int = Field(5000, gt=0)
     max_team_size: int = Field(500, gt=0)

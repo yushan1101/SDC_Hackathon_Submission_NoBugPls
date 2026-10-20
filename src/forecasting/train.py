@@ -1,6 +1,6 @@
 """Train STF-KAN ablations against baselines; select on validation, report untouched test.
 
-    python src/forecasting/train.py --model all --epochs 30 --device cuda --save-dir artifacts
+    python forecasting/train.py --model all --epochs 30 --device cuda --save-dir artifacts
 """
 import argparse
 import hashlib

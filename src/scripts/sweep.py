@@ -8,6 +8,8 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+import os
+os.chdir(Path(__file__).resolve().parents[1])  # data/ paths below are relative to src/
 
 BASE = {"hidden": 16, "sem-dim": 16, "grid": 8, "lr": 1e-3, "batch-size": 64, "weight-decay": 1e-4,
         "loss-weight": "none", "epochs": 30, "patience": 5}
@@ -28,7 +30,7 @@ def run(name, cfg):
     d = out / name
     if not (d / "training_manifest.json").exists():
         args = [x for k, v in cfg.items() for x in (f"--{k}", str(v))]
-        subprocess.run([sys.executable, "src/forecasting/train.py", "--device", a.device, "--seed", a.seed, "--model", "stf_kan",
+        subprocess.run([sys.executable, "forecasting/train.py", "--device", a.device, "--seed", a.seed, "--model", "stf_kan",
                         "--save-dir", str(d)] + args, check=True, stdout=subprocess.DEVNULL)
     m = json.loads((d / "training_manifest.json").read_text())
     learned = {k: v for k, v in m["metrics"].items() if k.startswith("stf_kan:")}

@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import os
+os.chdir(Path(__file__).resolve().parents[1])  # data/ paths below are relative to src/
 
 SOURCE_ID = "hf:Ashy24/data_jobs"
 SOURCE_URL = "https://huggingface.co/datasets/Ashy24/data_jobs"

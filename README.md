@@ -64,11 +64,11 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 
 | Layer         | Technology                                                                 |
 | ------------- | -------------------------------------------------------------------------- |
-| Frontend      | Plain HTML/CSS/JavaScript ES modules (`web/`, no build step), rigged SVG owl companion |
+| Frontend      | Plain HTML/CSS/JavaScript ES modules (`src/web/`, no build step), rigged SVG owl companion |
 | Backend       | Python 3.11, FastAPI (Server-Sent Events streaming), LangGraph multi-agent graph, FastMCP tool server |
 | Database      | SQLite (accounts, sessions, immutable plan versions, audit log, trend history), Chroma vector store |
 | AI / Compute  | MiniLM sentence embeddings, STF-KAN forecaster (PyTorch), requirement model (PyTorch); GPU training via RunPod (`runpod/handler.py`); optional Gemini LLM for narration |
-| Hosting / Dev | Replit (`.replit`, `python src/main.py`); Docker; static frontend deployable separately (`deploy/`) |
+| Hosting / Dev | Replit (`.replit`, `python src/main.py`); Docker; static frontend deployable separately (`src/deploy/`) |
 | Data          | ESCO v1.2 (live), UN SDG API (live), HN / arXiv / Arbeitnow / Remotive (live, daily); O*NET 31.0 (training only) |
 
 ---
@@ -77,10 +77,10 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 
 ```
 .
-├── docs/                    # Requirements trace, architecture, technical README, data sources, API contracts
+├── docs/                    # Requirements trace, architecture, technical notes, data sources, API contracts, AGENTS.md
 ├── runpod/
 │   ├── handler.py           # RunPod serverless handler (GPU: STF-KAN training, requirement model, embeddings)
-│   └── Dockerfile           # GPU worker image
+│   └── Dockerfile           # GPU worker image (build from the repo root)
 ├── src/
 │   ├── main.py              # Application entry point (starts the web app + API)
 │   ├── agents/              # Profiler, knowledge, gap analyst, pathway, coach, matcher, quiz, resume, SDG, criteria
@@ -90,15 +90,13 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 │   ├── validation/          # Reviewer repairs, document guard (prompt-injection / fraud filters)
 │   ├── governance/          # Accounts, approval workflow, recruiting store, audit log
 │   ├── forecasting/         # STF-KAN model, training and evaluation
-│   ├── config/  tools/  ui/ # Settings, helpers, Streamlit fallback UI
-│   └── app.py               # Streamlit fallback app
-├── web/                     # Static frontend: public site, HR console (enterprise.html), apply page, config.js
-├── data/
-│   ├── snapshots/           # Live public snapshots (ESCO, SDG map, model outputs, RAG passages)
-│   ├── training_snapshots/  # Training-only data (never read at runtime)
-│   └── samples/             # Fictional sample team CSV and résumés
-├── scripts/                 # Data builders, training, export (ESCO, SDG map, STF-KAN, requirement model)
-├── deploy/                  # Separate frontend (nginx) + API docker-compose example
+│   ├── config/ tools/ ui/   # Settings, helpers, Streamlit fallback UI (app.py)
+│   ├── web/                 # Static frontend: public site, HR console, apply page, config.js (deployable on its own)
+│   ├── data/                # snapshots/ (live public data + model outputs), training_snapshots/ (training only), samples/
+│   ├── scripts/             # Data builders, training and export (ESCO, SDG map, STF-KAN, requirement model)
+│   ├── deploy/              # Separate frontend (nginx) + API docker-compose example
+│   ├── Dockerfile           # CPU image for the web app + API (build context: src/)
+│   └── pyproject.toml       # Package metadata and dependencies
 ├── submission/              # Required submission documents
 │   ├── REPLIT PROOF OF USE.pdf
 │   ├── RUNPOD PROOF OF USE.pdf
@@ -108,10 +106,8 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 ├── .env.example             # Example environment variables
 ├── .gitignore
 ├── .replit                  # Replit run configuration
-├── Dockerfile               # CPU image for the web app + API
 ├── LICENSE
-├── pyproject.toml           # Package + dependencies
-├── requirements.txt         # pip entry point (installs pyproject dependencies, CPU torch)
+├── requirements.txt         # Python dependencies (installs src/ with its AI extras, CPU torch)
 └── README.md
 ```
 
@@ -121,7 +117,7 @@ Models trained offline on O*NET learn how important each skill is and forecast w
                          ┌──────────── daily refresh ────────────┐
                          │  HN · arXiv · Arbeitnow · Remotive    │
                          ▼                                        │
-User ─► web/ (public site / HR console) ─► FastAPI (src/server) ──┤
+User ─► src/web/ (public site / HR console) ─► FastAPI (src/server) ──┤
         quiz · résumé · plan · hiring          │  SSE stream      │
                                                ▼                  │
                      LangGraph agents: supervisor → profiler ‖ knowledge ‖ market → gaps → pathway → coach → reviewer
@@ -147,8 +143,8 @@ Full requirement mapping: [`docs/requirements_trace.md`](docs/requirements_trace
 2. Open the **Secrets** tab (🔒) and add the variables you need from `.env.example`:
    - `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID` (only for GPU jobs)
    - `GEMINI_API_KEY`, `LLM_FAST_MODEL` (optional; without them every agent runs deterministically)
-3. In the Shell: `pip install -r requirements.txt` and `python scripts/seed_demo_users.py` (creates demo
-   accounts; passwords are written to `data/demo_users.local.txt`, which is never committed).
+3. In the Shell: `pip install -r requirements.txt` and `python src/scripts/seed_demo_users.py` (creates demo
+   accounts; passwords are written to `src/data/demo_users.local.txt`, which is never committed).
 4. Click **Run**. Replit uses the `.replit` file to start `python src/main.py`.
    - Public site: `/`
    - HR console: `/enterprise`
@@ -171,18 +167,18 @@ pip install -r requirements.txt
 cp .env.example .env            # then fill in your values (all optional for the demo)
 
 # 5. Create demo accounts, then run the app
-python scripts/seed_demo_users.py
+python src/scripts/seed_demo_users.py
 python src/main.py              # http://localhost:8600  ·  HR: http://localhost:8600/enterprise
 ```
 
-Optional: `python -m mcp_server.ingest --index-only` builds the Chroma vector index. Without it, retrieval
+Optional (after `pip install -r requirements.txt`): `python -m mcp_server.ingest --index-only` builds the Chroma vector index. Without it, retrieval
 falls back to the committed offline snapshot. `python -m mcp_server.signals --refresh` builds today's
 AI-trend board immediately; it otherwise refreshes once a day.
 
 ### Run Tests
 
 ```bash
-python -m pytest -q
+python -m pytest -q tests
 ```
 
 ---
@@ -203,7 +199,7 @@ python -m pytest -q
   - `train_requirements`: trains the requirement model on 140k O*NET ratings and scores every ESCO skill.
   - `embed`: batch MiniLM embeddings for résumés and occupations.
   - `health`
-- **Setup:** build `runpod/Dockerfile` and deploy it as a **RunPod Serverless Endpoint**. Mount a network volume at `/runpod-volume` for `data/` and `artifacts/`.
+- **Setup:** build `runpod/Dockerfile` and deploy it as a **RunPod Serverless Endpoint**. Mount a network volume at `/runpod-volume` for `src/data/` and `src/artifacts/`.
 - **Budget:** the project rule is a $25 RunPod cap, with the per-second rate checked before each launch.
 - **Status:** so far, model training was also reproduced on a local RTX 4060 (`docs/experiment_log.md`). _TODO: add the endpoint ID and proof of the RunPod runs._
 

@@ -17,7 +17,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 PASSAGES = ROOT / "data" / "snapshots" / "knowledge_passages.json"
 SNAPSHOT = ROOT / "data" / "snapshots" / "esco_occupations.json"
 SOURCE_VERSION, SOURCE_DATE = "ESCO v1.2", "2024-05"

@@ -15,5 +15,5 @@ localPort = 8080
 externalPort = 80
 
 [deployment]
-run = ["sh", "-c", "pip install -r requirements.txt && python scripts/seed_demo_users.py && python src/main.py"]
+run = ["sh", "-c", "pip install -r requirements.txt && (cd src && python scripts/seed_demo_users.py) && python src/main.py"]
 deploymentTarget = "cloudrun"

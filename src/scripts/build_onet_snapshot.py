@@ -18,6 +18,8 @@ import re
 import zipfile
 from collections import defaultdict
 from pathlib import Path
+import os
+os.chdir(Path(__file__).resolve().parents[1])  # data/ paths below are relative to src/
 
 OUT = Path("data/training_snapshots/onet_occupations.json")
 IMPORTANT = 3.0

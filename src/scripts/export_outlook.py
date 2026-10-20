@@ -18,9 +18,11 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from forecasting.datasets import ONET_RELEASE_DATES, load_onet_series  # noqa: E402
 from forecasting.inference import load_model, predict_batch  # noqa: E402
+import os
+os.chdir(Path(__file__).resolve().parents[1])  # data/ paths below are relative to src/
 
 OUT = Path("data/training_snapshots/onet_outlook.json")
 

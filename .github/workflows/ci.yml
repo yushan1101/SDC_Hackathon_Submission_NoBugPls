@@ -9,6 +9,6 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.4"
-      - run: pip install -e ".[ai]"
+      - run: pip install -e "./src[ai]"
       # no Chroma index / checkpoint in CI: exercises the offline-snapshot and baseline fallbacks (T-05, T-13)
-      - run: pytest -q
+      - run: python -m pytest -q tests

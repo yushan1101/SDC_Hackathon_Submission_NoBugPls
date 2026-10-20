@@ -56,7 +56,7 @@ When assigned a task, follow this sequence:
 | Owner | Main directories | Interfaces that require coordination |
 |---|---|---|
 | **A — Orchestration** | `core/`, `agents/`, `tools/`, `src/validation/revision.py` | Shared state, LangGraph edges, router, usage metrics |
-| **B — Forecasting/ML** | `forecasting/`, `scripts/prepare_jobs.py`, training/evaluation | Forecast schema, inference adapter, checkpoint metadata |
+| **B — Forecasting/ML** | `forecasting/`, `src/scripts/prepare_jobs.py`, training/evaluation | Forecast schema, inference adapter, checkpoint metadata |
 | **C — Knowledge/Governance** | `mcp_server/`, `governance/`, `src/validation/evidence.py` | MCP tool signatures, evidence model, approval status |
 | **D — UI/QA/Pitch** | `app.py`, `ui/`, E2E test fixtures, screenshots | User-facing schemas, review/approval events |
 
@@ -151,7 +151,7 @@ AiversePulse_Enterprise_Project_Scaffold/
 ├── README.md                    # Human quickstart
 ├── CONTRIBUTING.md              # Collaboration practices
 ├── app.py                       # Streamlit entrypoint
-├── pyproject.toml               # Base + optional AI dependencies
+├── src/pyproject.toml               # Base + optional AI dependencies
 ├── .env.example                 # Non-secret configuration template
 ├── .gitignore
 ├── .github/workflows/ci.yml
@@ -208,11 +208,11 @@ AiversePulse_Enterprise_Project_Scaffold/
 │   ├── results.py
 │   ├── forecast.py
 │   └── review.py
-├── data/
+├── src/data/
 │   ├── samples/sample_profile.json
 │   ├── metadata/README.md
 │   └── snapshots/README.md
-├── scripts/
+├── src/scripts/
 │   ├── prepare_jobs.py
 │   ├── build_index.py
 │   └── run_training.sh
@@ -513,7 +513,7 @@ Track for each pipeline stage: route, model/provider/version, input/output token
 
 ### Offline demo fixture
 
-Use `data/samples/sample_profile.json` plus a **real-attributed** local evidence snapshot, deterministic skill-gap mapping, and a baseline forecasting fallback. If not enough evidence is available, demonstrate with an explicitly incomplete/flagged draft instead of inventing citations.
+Use `src/data/samples/sample_profile.json` plus a **real-attributed** local evidence snapshot, deterministic skill-gap mapping, and a baseline forecasting fallback. If not enough evidence is available, demonstrate with an explicitly incomplete/flagged draft instead of inventing citations.
 
 ---
 
@@ -545,7 +545,7 @@ Total: **14 hours maximum allocated training time** (not a guaranteed required r
 
 ```bash
 # local workstation / prep
-python scripts/prepare_jobs.py --input data/raw/data_jobs.csv
+python src/scripts/prepare_jobs.py --input src/data/raw/data_jobs.csv
 pytest -q
 
 # RunPod GPU Pod, once Owner B implements the training CLI

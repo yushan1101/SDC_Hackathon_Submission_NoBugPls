@@ -1,7 +1,8 @@
 """RunPod serverless handler: the project's GPU workloads behind one endpoint.
 
 Deploy with runpod/Dockerfile as a RunPod Serverless Endpoint (any CUDA GPU; a 16-24 GB card is plenty).
-Mount a network volume at /runpod-volume holding data/ (O*NET zip, ESCO snapshot) and receiving artifacts/.
+Mount a network volume at /runpod-volume holding data/ (O*NET zip, ESCO snapshot) and receiving artifacts/;
+they are linked into src/data and src/artifacts.
 
 Jobs ({"input": {...}}):
   {"task": "embed", "texts": ["..."]}                      -> MiniLM vectors (batch resume / occupation encoding)
@@ -18,8 +19,7 @@ from pathlib import Path
 
 import runpod
 
-ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
+SRC = Path(__file__).resolve().parents[1] / "src"  # code, scripts/, data/ and artifacts/ all live here
 VOLUME = Path(os.getenv("RUNPOD_VOLUME", "/runpod-volume"))
 sys.path.insert(0, str(SRC))
 MAX_TEXTS = 2048
@@ -28,7 +28,7 @@ MAX_TEXTS = 2048
 def _link_volume():
     """Use the network volume's data/ and artifacts/ when present (big training inputs never ship in the image)."""
     for name in ("data", "artifacts"):
-        src, dst = VOLUME / name, ROOT / name
+        src, dst = VOLUME / name, SRC / name
         if src.exists() and not dst.is_symlink():
             if dst.exists():
                 for p in src.iterdir():  # merge: volume files win
@@ -40,7 +40,7 @@ def _link_volume():
 
 
 def _run(args: list[str], timeout: int = 3600) -> dict:
-    p = subprocess.run([sys.executable, *args], cwd=ROOT, capture_output=True, text=True, timeout=timeout)
+    p = subprocess.run([sys.executable, *args], cwd=SRC, capture_output=True, text=True, timeout=timeout)
     return {"returncode": p.returncode, "log_tail": (p.stdout + p.stderr)[-4000:]}
 
 
@@ -69,12 +69,12 @@ def handler(job: dict) -> dict:
         seeds = [str(int(s)) for s in (inp.get("seeds") or [42, 7, 2026])][:8]
         out = _run(["scripts/train_and_select.py", "--dataset", "onet", "--seeds", *seeds, "--out", "artifacts/onet",
                     "--", "--device", "cuda", "--batch-size", "512", "--lr", "0.003"])
-        summary = ROOT / "artifacts" / "onet" / "ensemble_report.json"
+        summary = SRC / "artifacts" / "onet" / "ensemble_report.json"
         out["report"] = json.loads(summary.read_text()) if summary.exists() else None
         return out
     if task == "train_requirements":
         out = _run(["scripts/build_esco_requirements.py"])
-        card = ROOT / "data" / "snapshots" / "esco_requirements_card.json"
+        card = SRC / "data" / "snapshots" / "esco_requirements_card.json"
         out["card"] = json.loads(card.read_text()) if card.exists() else None
         return out
     return {"error": f"unknown task: {task}"}

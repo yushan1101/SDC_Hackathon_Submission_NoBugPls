@@ -14,6 +14,8 @@ from datetime import date
 from pathlib import Path
 
 import httpx
+import os
+os.chdir(Path(__file__).resolve().parents[1])  # data/ paths below are relative to src/
 
 API = "https://ec.europa.eu/esco/api"
 OUT = Path("data/snapshots/esco_raw.json")

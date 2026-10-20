@@ -1,6 +1,7 @@
 # CPU image: app + in-process FastMCP + Chroma + STF-KAN inference. No GPU needed to serve.
+# Build from src/:  docker build -t aiversepulse src
 FROM python:3.11-slim
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 HF_HOME=/app/.hf PYTHONPATH=/app/src
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 HF_HOME=/app/.hf PYTHONPATH=/app
 WORKDIR /app
 RUN pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.4"
 COPY . .
@@ -14,4 +15,4 @@ VOLUME ["/app/data"]
 EXPOSE 8600
 HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request;urllib.request.urlopen('http://localhost:8600/healthz')"
 # Web app (public: /  ·  enterprise: /enterprise). Put TLS in front (Secure cookies are set automatically on https).
-CMD ["uvicorn", "server.api:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8600", "--proxy-headers"]
+CMD ["uvicorn", "server.api:app", "--host", "0.0.0.0", "--port", "8600", "--proxy-headers"]

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from core.state import Evidence
 
-MAP = Path(__file__).resolve().parents[2] / "data" / "snapshots" / "sdg_map.json"
+MAP = Path(__file__).resolve().parents[1] / "data" / "snapshots" / "sdg_map.json"
 BASELINE = ["SDG4", "SDG8"]  # every reskilling pathway serves quality education + decent work
 
 

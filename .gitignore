@@ -1,27 +1,32 @@
+# Python
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*.egg-info/
+venv/
 .venv/
 .pytest_cache/
 .streamlit/
-data/raw/
-data/chroma/
-data/*.sqlite3
-artifacts/
-checkpoints/
+
+# Environment / secrets
+.env
+src/data/*.local.txt
+
+# Local data, indexes and model weights (rebuilt by src/scripts/, never committed)
+src/data/raw/
+src/data/chroma/
+src/data/training/
+src/data/*.sqlite3
+src/artifacts/
+src/checkpoints/
+src/models/
 *.pt
 *.pth
-.DS_Store
-data/*.local.txt
-models/
-.claude/
-data/training/
-*.egg-info/
 
-# template additions
-venv/
-*.py[cod]
+# OS / Editor / tools
+.DS_Store
 .vscode/
 .idea/
+.claude/
+
 # the raw hackathon template folder (its files are merged into this repo)
 SDC_Hackathon_Submission_Template/

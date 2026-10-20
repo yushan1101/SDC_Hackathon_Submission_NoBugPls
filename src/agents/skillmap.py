@@ -11,7 +11,7 @@ import numpy as np
 
 from agents.knowledge import snapshot
 
-VECS = Path(__file__).resolve().parents[2] / "data" / "snapshots" / "esco_skill_vectors.npz"
+VECS = Path(__file__).resolve().parents[1] / "data" / "snapshots" / "esco_skill_vectors.npz"
 MATCH = 0.62     # cosine at/above which two skill phrases count as the same capability
 PARTIAL = 0.50   # related capability: credited one level lower
 

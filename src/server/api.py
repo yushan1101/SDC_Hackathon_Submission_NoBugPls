@@ -46,7 +46,7 @@ from governance.audit import connect
 from validation.revision import validate
 
 log = logging.getLogger(__name__)
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 cfg = get_settings()
 db = recruiting.init(accounts.init(connect(cfg.database_path)))

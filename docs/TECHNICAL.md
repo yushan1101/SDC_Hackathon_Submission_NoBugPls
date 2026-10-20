@@ -7,7 +7,7 @@ Profile intake -> cost-aware router -> LangGraph profiling / MCP retrieval / gap
 
 ## First 4 workstreams
 - Owner A: `core/`, `agents/`, `tools/`.
-- Owner B: `forecasting/`, `scripts/prepare_jobs.py`, training/evaluation.
+- Owner B: `forecasting/`, `src/scripts/prepare_jobs.py`, training/evaluation.
 - Owner C: `mcp_server/`, `governance/`, retrieval + evidence validation.
 - Owner D: `ui/`, `app.py`, E2E testing and demo.
 
@@ -32,10 +32,10 @@ accounts (employee / HR advisor), SQLite audit with immutable versions. See `doc
 
 ```bash
 pip install -e ".[ai]"
-python scripts/prepare_jobs.py --input data/raw/data_jobs.csv        # needs the HF CSV in data/raw/
-python -m mcp_server.ingest --onet data/raw/onet/db_31_0_text.zip     # or --index-only (committed passages)
-python scripts/train_and_select.py --seeds 42 7 2026 --out artifacts  # ~6 min CPU for 3 seeds
-python scripts/seed_demo_users.py                                     # demo accounts -> data/demo_users.local.txt
+python src/scripts/prepare_jobs.py --input src/data/raw/data_jobs.csv        # needs the HF CSV in src/data/raw/
+python -m mcp_server.ingest --onet src/data/raw/onet/db_31_0_text.zip     # or --index-only (committed passages)
+python src/scripts/train_and_select.py --seeds 42 7 2026 --out artifacts  # ~6 min CPU for 3 seeds
+python src/scripts/seed_demo_users.py                                     # demo accounts -> src/data/demo_users.local.txt
 pytest -q
 streamlit run src/app.py
 python -m mcp_server.server --http                                    # optional standalone MCP server
@@ -46,10 +46,10 @@ docker build -t aiversepulse . && docker run -p 8501:8501 -v aiversepulse-data:/
 ```bash
 uvicorn server.api:app --app-dir src --port 8600     # public: http://localhost:8600   ·   HR: http://localhost:8600/enterprise
 ```
-FastAPI + plain HTML/CSS/JS (`web/`), no build step. The report streams like a chat: each agent's progress
+FastAPI + plain HTML/CSS/JS (`src/web/`), no build step. The report streams like a chat: each agent's progress
 arrives live over Server-Sent Events, then the Reviewer-verified summary types out with citation chips and the
 gap table, scenario comparison, skill outlook and editable 30/60/90 plan build in turn. The JobSmart owl is a
-rigged SVG (`web/js/owl-art.js` + `web/css/owl.css`): 12 states with real actions (blink, wave, headphones,
+rigged SVG (`src/web/js/owl-art.js` + `src/web/css/owl.css`): 12 states with real actions (blink, wave, headphones,
 magnifier sweep, tablet, bell, confetti, Zzz…), pointer-following eyes, and it always shows the real agent
 state. Preview all states at `/static/owl/preview.html`. HR runs a
 team and watches each employee's 8-agent trace fill live. Session cookies are HttpOnly + SameSite=Strict,
@@ -64,15 +64,15 @@ public "Today" trend board. Opening a feature as a guest goes to `#/signin/<feat
 sign-in. HR uses `/enterprise` (or `enterprise.html`).
 
 ### Deploy frontend and backend separately
-`web/` is plain static files (relative paths, no build). The API also serves it, so one host works out of the box.
+`src/web/` is plain static files (relative paths, no build). The API also serves it, so one host works out of the box.
 To split them:
-1. **Backend** (`Dockerfile`, FastAPI): set `CORS_ORIGINS=https://app.example.com` (comma-separated) and
+1. **Backend** (`src/Dockerfile`, FastAPI): set `CORS_ORIGINS=https://app.example.com` (comma-separated) and
    `COOKIE_SAMESITE` (`lax`/`strict` when frontend and API share a site, e.g. `app.` and `api.example.com`;
    `none` across different sites, which requires HTTPS). Mutating calls also need the `X-AP` header and an allowed `Origin`.
-2. **Frontend** (any static host: nginx, Netlify, S3, GitHub Pages): upload `web/` and overwrite `config.js` with
+2. **Frontend** (any static host: nginx, Netlify, S3, GitHub Pages): upload `src/web/` and overwrite `config.js` with
    `window.AP_CONFIG = { apiBase: "https://api.example.com" };`. Application links are `apply.html#<token>`,
    so no server rewrites are needed.
-3. Example of both: `docker compose -f deploy/docker-compose.yml up --build` (frontend :8080, API :8600).
+3. Example of both: `docker compose -f src/deploy/docker-compose.yml up --build` (frontend :8080, API :8600).
 
 ### Hackathon must-haves (v0.4)
 See [docs/requirements_trace.md](docs/requirements_trace.md) for the full mapping to code and tests.
@@ -83,7 +83,7 @@ See [docs/requirements_trace.md](docs/requirements_trace.md) for the full mappin
   `trend_signals` MCP tool.
 - **Future-role matching** across all 2,938 ESCO occupations, **SDG mapping** to all 17 goals, two AI scenarios.
 - **HR hiring:** openings with plain-language thresholds, a public apply link, AI screening agents, blind
-  ranked review, human shortlist / hold / decline with an audit log. Sample resumes: `data/samples/sample_resume_*.md`.
+  ranked review, human shortlist / hold / decline with an audit log. Sample resumes: `src/data/samples/sample_resume_*.md`.
 - **Document guard:** hidden-text and prompt-injection filtering for PDF/DOCX/TXT/MD (after
   zhihuiyuze/pdf-prompt-injection-toolkit), fraud signals, honeypot + rate limit; risky files are held for a human.
 
@@ -91,21 +91,21 @@ See [docs/requirements_trace.md](docs/requirements_trace.md) for the full mappin
 The live agents read public sources only: **ESCO v1.2** (European Commission) for occupations and skills, the
 daily trend board, and the UN SDG API. **O*NET 31.0, its release history and the 2023 job ads are training
 data**: they train the requirement model (importance/level for ESCO skills; held-out accuracy in
-`data/snapshots/esco_requirements_card.json`) and STF-KAN, whose outputs are exported as ESCO-keyed assets.
+`src/data/snapshots/esco_requirements_card.json`) and STF-KAN, whose outputs are exported as ESCO-keyed assets.
 `tests/test_runtime_sources.py` fails if the live process opens any training file.
 
 ```bash
-python scripts/build_esco_snapshot.py          # public ESCO API -> data/snapshots/esco_raw.json (~10 min)
-python scripts/build_esco_requirements.py      # train on O*NET (data/raw/onet/…zip), score ESCO -> esco_occupations.json
-python scripts/export_esco_outlook.py          # STF-KAN outlook -> esco_outlook.json
-python scripts/build_sdg_map.py                # UN SDG API -> sdg_map.json
+python src/scripts/build_esco_snapshot.py          # public ESCO API -> src/data/snapshots/esco_raw.json (~10 min)
+python src/scripts/build_esco_requirements.py      # train on O*NET (src/data/raw/onet/…zip), score ESCO -> esco_occupations.json
+python src/scripts/export_esco_outlook.py          # STF-KAN outlook -> esco_outlook.json
+python src/scripts/build_sdg_map.py                # UN SDG API -> sdg_map.json
 python -m mcp_server.ingest                    # ESCO passages + Chroma index (RAG)
 ```
 
 ### STF-KAN skill outlook (asset tool for the agents)
 Trained on the O*NET release history 25.0 (Aug 2020) -> 31.0 (Aug 2026): 47,780 series (every occupation x skill
 importance / tool Hot flag), 25 quarterly releases, 484k training windows, 3-seed ensemble on an RTX 4060.
-The Market Analyst agent reads only the exported asset `data/snapshots/onet_outlook.json` over MCP
+The Market Analyst agent reads only the exported asset `src/data/snapshots/onet_outlook.json` over MCP
 (`skill_outlook`), and the Gap Analyst ranks gaps by need x importance x outlook (required levels stay O*NET).
 
 | held-out test (O*NET 30.2-31.0) | value |
@@ -115,9 +115,9 @@ The Market Analyst agent reads only the exported asset `data/snapshots/onet_outl
 | lift of "rising" flags (top 5% chosen on validation) | **1.39x** the base rate (2.1%) |
 | falling-skill and tool flags | off: STF-KAN did not beat heuristics on validation |
 
-Reproduce: `python scripts/build_onet_history.py` -> `python scripts/train_and_select.py --dataset onet --seeds 42 7 2026
---out artifacts/onet -- --device cuda --batch-size 512 --lr 0.003` -> `python scripts/eval_direction.py --ckpt
-artifacts/onet/stf_kan_best.pt` -> `python scripts/export_outlook.py --ckpt artifacts/onet/stf_kan_best.pt`.
+Reproduce: `python src/scripts/build_onet_history.py` -> `python src/scripts/train_and_select.py --dataset onet --seeds 42 7 2026
+--out src/artifacts/onet -- --device cuda --batch-size 512 --lr 0.003` -> `python src/scripts/eval_direction.py --ckpt
+src/artifacts/onet/stf_kan_best.pt` -> `python src/scripts/export_outlook.py --ckpt src/artifacts/onet/stf_kan_best.pt`.
 The earlier 2023 job-ad experiment (`--dataset jobs`) remains reproducible as a training-only study.
 
 ### Earlier experiment: 2023 job-ad forecasting (training-only study, not used by the app)

@@ -1,5 +1,5 @@
 # Frontend and backend as two separately deployable services.
-#   docker compose -f deploy/docker-compose.yml up --build
+#   docker compose -f src/deploy/docker-compose.yml up --build
 #   frontend: http://localhost:8080   (static web/ via nginx; calls the API cross-origin)
 #   backend:  http://localhost:8600   (FastAPI + agents; also still serves web/ itself for single-host deploys)
 # In production put both behind HTTPS. If the two are on different sites (not just subdomains), use

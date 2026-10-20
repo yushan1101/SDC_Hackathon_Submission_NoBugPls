@@ -77,4 +77,4 @@ approval cannot recreate analysis that was never persisted.
 - `apply_path` is now relative: `apply.html#<token>`; `/apply/{token}` redirects (308) there.
 - Settings: `CORS_ORIGINS` (comma-separated allowlist for a separately hosted frontend), `COOKIE_SAMESITE`
   (`strict`|`lax`|`none`). POST/PUT/DELETE from a foreign `Origin` are rejected (403).
-- Frontend reads `window.AP_CONFIG.apiBase` from `web/config.js` ("" = same origin).
+- Frontend reads `window.AP_CONFIG.apiBase` from `src/web/config.js` ("" = same origin).

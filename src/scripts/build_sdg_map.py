@@ -14,9 +14,11 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agents.knowledge import snapshot  # noqa: E402
 from mcp_server.retrieval import _embed  # noqa: E402
+import os
+os.chdir(Path(__file__).resolve().parents[1])  # data/ paths below are relative to src/
 
 OUT = Path("data/snapshots/sdg_map.json")
 SDG_API = "https://unstats.un.org/SDGAPI/v1/sdg/Goal/List?includechildren=true"

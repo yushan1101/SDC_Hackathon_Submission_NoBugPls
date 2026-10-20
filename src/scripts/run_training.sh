@@ -13,8 +13,8 @@ mkdir -p data/raw
 pytest -q
 
 for seed in ${SEEDS:-42 7 2026}; do
-  python src/forecasting/train.py --model all --window 12 --horizon 4 --batch-size 64 --epochs 30 \
+  python forecasting/train.py --model all --window 12 --horizon 4 --batch-size 64 --epochs 30 \
     --device cuda --seed "$seed" --save-dir "/workspace/checkpoints/seed$seed"
 done
-python src/forecasting/evaluate.py --checkpoint /workspace/checkpoints/seed42/stf_kan_best.pt
+python forecasting/evaluate.py --checkpoint /workspace/checkpoints/seed42/stf_kan_best.pt
 echo "Copy /workspace/checkpoints/<best seed>/ to ./artifacts/ locally, then stop the Pod."

@@ -22,9 +22,11 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
 from torch import nn
+import os
+os.chdir(Path(__file__).resolve().parents[1])  # data/ paths below are relative to src/
 
 ZIP = Path("data/raw/onet/db_31_0_text.zip")
 RAW = Path("data/snapshots/esco_raw.json")
