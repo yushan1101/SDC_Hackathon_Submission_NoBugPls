@@ -1,7 +1,7 @@
 """Red-team fixtures (built in memory) for the document guard: the agents must only see what a human sees."""
 import io
 
-import fitz  # PyMuPDF, used here only to craft attack PDFs
+import pymupdf as fitz  # used here only to craft attack PDFs
 import pytest
 
 from validation.document_guard import fraud_signals, inspect

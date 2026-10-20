@@ -161,7 +161,7 @@ def test_recruiting_flow_blind_review_and_human_decision(client):
 
 def test_injected_pdf_applicant_is_held_not_recommended(client):
     import io
-    import fitz
+    import pymupdf as fitz
     doc = fitz.open()
     page = doc.new_page()
     page.insert_textbox(fitz.Rect(72, 72, 520, 300), RESUME.decode(), fontsize=10)
