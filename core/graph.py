@@ -217,3 +217,17 @@ def run_team(requests: list[Request], max_workers: int = 8) -> dict:
     team = sorted(agg.values(), key=lambda a: (-a["employees_with_gap"], -a["total_gap_levels"]))
     return {"employees": results, "team_skill_needs": team,
             "flagged": [k for k, v in results.items() if v.get("status") == "flagged"]}
+
+
+def stream(request: Request):
+    """Yield ("update", node, partial_state) as each agent finishes, then ("final", None, state)."""
+    global _GRAPH
+    _GRAPH = _GRAPH or build_graph()
+    final = None
+    for mode, chunk in _GRAPH.stream({"request": request}, stream_mode=["updates", "values"]):
+        if mode == "updates":
+            for node, update in chunk.items():
+                yield "update", node, update or {}
+        else:
+            final = chunk
+    yield "final", None, final

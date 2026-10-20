@@ -42,6 +42,17 @@ python -m mcp_server.server --http                                    # optional
 docker build -t aiversepulse . && docker run -p 8501:8501 -v aiversepulse-data:/app/data aiversepulse
 ```
 
+### Web app (recommended UI)
+```bash
+uvicorn server.api:app --port 8600     # public: http://localhost:8600   ·   HR: http://localhost:8600/enterprise
+```
+FastAPI + plain HTML/CSS/JS (`web/`), no build step. The report streams like a chat: each agent's progress
+arrives live over Server-Sent Events, then the Reviewer-verified summary types out with citation chips and the
+gap table, scenario comparison, forecast chart and editable 30/60/90 plan build in turn. The JobSmart owl
+(`web/owl/`, cut from your sheet by `scripts/extract_owl.py`) always shows the real agent state. HR runs a
+team and watches each employee's 8-agent trace fill live. Session cookies are HttpOnly + SameSite=Strict,
+mutating calls need the `X-AP` header, strict CSP. Streamlit (`app.py`) stays as a fallback.
+
 LLM agents are off unless `GEMINI_API_KEY` and `LLM_FAST_MODEL` are set (see `.env.example`); everything works
 deterministically without them. GPU is not needed (training is CPU-minutes); RunPod remains optional.
 

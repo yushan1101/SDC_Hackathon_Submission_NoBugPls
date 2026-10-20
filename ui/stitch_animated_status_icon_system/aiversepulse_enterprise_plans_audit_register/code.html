@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 20;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"error-container":"#ffdad6","on-secondary-container":"#5c6573","secondary-container":"#dae3f4","inverse-surface":"#2e3036","outline-variant":"#c4c5d8","on-primary-fixed":"#00105a","surface-container-low":"#f2f3fb","surface-container-lowest":"#ffffff","on-primary":"#ffffff","surface-tint":"#274aea","surface-variant":"#e1e2e9","on-secondary-fixed":"#131c28","tertiary-container":"#ac3000","secondary":"#565f6d","on-tertiary-fixed":"#3a0a00","on-error":"#ffffff","tertiary-fixed":"#ffdbd1","surface-dim":"#d8dae1","surface-container":"#ecedf5","on-surface-variant":"#444656","on-tertiary-fixed-variant":"#852300","outline":"#747687","secondary-fixed-dim":"#bec7d7","primary-fixed-dim":"#bac3ff","primary-container":"#2448e8","inverse-on-surface":"#eff0f8","on-error-container":"#93000a","on-primary-container":"#ced3ff","primary":"#002ec4","primary-fixed":"#dee0ff","on-background":"#191c21","surface-bright":"#f9f9ff","surface-container-highest":"#e1e2e9","on-primary-fixed-variant":"#0030c8","tertiary":"#832200","surface":"#f9f9ff","on-tertiary":"#ffffff","on-tertiary-container":"#ffcabb","tertiary-fixed-dim":"#ffb59f","error":"#ba1a1a","on-secondary-fixed-variant":"#3e4755","on-surface":"#191c21","background":"#f9f9ff","on-secondary":"#ffffff","surface-container-high":"#e6e8ef","inverse-primary":"#bac3ff","secondary-fixed":"#dae3f4"},"borderRadius":{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},"spacing":{"space-2xs":"0.125rem","space-xl":"1.5rem","space-lg":"1rem","space-xs":"0.25rem","space-md":"0.75rem","gutter":"0.75rem","margin":"1rem","space-sm":"0.5rem"},"fontFamily":{"body-semibold":["IBM Plex Sans"],"body-default":["IBM Plex Sans"],"label-default":["IBM Plex Sans"],"code-sm":["JetBrains Mono"],"data-tabular":["JetBrains Mono"],"caption-caps":["IBM Plex Sans"],"code-xs":["JetBrains Mono"],"title-sm":["IBM Plex Sans"],"title-md":["IBM Plex Sans"]},"fontSize":{"body-semibold":["13px",{"lineHeight":"20px","fontWeight":"600"}],"body-default":["13px",{"lineHeight":"20px","fontWeight":"400"}],"label-default":["12px",{"lineHeight":"16px","fontWeight":"500"}],"code-sm":["12px",{"lineHeight":"16px","fontWeight":"400"}],"data-tabular":["13px",{"lineHeight":"20px","fontWeight":"400"}],"caption-caps":["11px",{"lineHeight":"14px","letterSpacing":"0.04em","fontWeight":"600"}],"code-xs":["11px",{"lineHeight":"14px","fontWeight":"500"}],"title-sm":["15px",{"lineHeight":"20px","letterSpacing":"-0.005em","fontWeight":"600"}],"title-md":["18px",{"lineHeight":"24px","letterSpacing":"-0.01em","fontWeight":"600"}]}}}};</script></head><body class="bg-surface-container-low font-body-default text-body-default text-on-surface min-h-full selection:bg-primary-container selection:text-on-primary"><aside class="fixed left-0 top-0 bottom-0 w-14 bg-surface-container-lowest border-r border-outline-variant z-50 flex flex-col items-center justify-between py-space-sm"><div class="flex flex-col items-center w-full"><div class="h-10 w-full flex items-center justify-center border-b border-outline-variant mb-space-sm"><div class="w-7 h-7 bg-primary-container flex items-center justify-center text-on-primary font-body-semibold text-caption-caps rounded-sm tracking-tight">AP</div></div><nav class="w-full flex flex-col items-center gap-space-2xs" data-active-classes="bg-surface-container text-primary border-r-2 border-primary-container"><a class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors rounded-sm" data-path="overview" href="#" title="Overview"><span class="material-symbols-outlined text-[20px]">grid_view</span></a><a class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors rounded-sm" data-path="upload" href="#" title="Upload"><span class="material-symbols-outlined text-[20px]">upload_file</span></a><a class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors rounded-sm relative" data-path="review-queue" href="#" title="Review Queue"><span class="material-symbols-outlined text-[20px]">checklist</span><span class="absolute top-2 right-2 w-1.5 h-1.5 bg-tertiary-container rounded-full"></span></a><a aria-current="page" class="w-10 h-10 flex items-center justify-center transition-colors rounded-sm bg-surface-container text-primary border-r-2 border-primary-container" data-path="plans" href="#" title="Plans"><span class="material-symbols-outlined text-[20px]">schema</span></a><a class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors rounded-sm" data-path="audit" href="#" title="Audit"><span class="material-symbols-outlined text-[20px]">history_toggle_off</span></a></nav></div><div class="w-full flex flex-col items-center gap-space-xs border-t border-outline-variant pt-space-sm"><button class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors rounded-sm" title="Settings &amp; Terminal" type="button"><span class="material-symbols-outlined text-[20px]">terminal</span></button></div></aside><div class="pl-14"><header class="fixed top-0 left-14 right-0 h-12 bg-surface-container-lowest border-b border-outline-variant z-40 px-space-lg flex items-center justify-between"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs font-label-default text-label-default text-on-surface-variant"><span class="hover:text-on-surface cursor-pointer">Data Team</span><span class="text-outline">·</span><span class="font-body-semibold text-body-semibold text-on-surface">Assistive AI</span></div><span class="h-4 w-[1px] bg-outline-variant"></span><div class="flex items-center gap-space-2xs px-space-xs py-space-2xs bg-surface-container rounded-sm border border-outline-variant"><span class="inline-block w-1.5 h-1.5 rounded-full bg-primary-container animate-pulse"></span><span class="font-code-xs text-code-xs text-on-surface-variant uppercase tracking-wider">SYNC 0.24s</span></div></div><div class="flex items-center gap-space-md"><div class="relative flex items-center w-80"><span class="material-symbols-outlined absolute left-space-xs text-[16px] text-on-surface-variant pointer-events-none">search</span><input class="w-full h-7 pl-7 pr-12 bg-surface-container-low border border-outline-variant rounded-sm font-label-default text-label-default text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary-container focus:bg-surface-container-lowest" placeholder="Search employees or skills" type="text"/><div class="absolute right-space-xs flex items-center gap-space-2xs pointer-events-none"><kbd class="font-code-xs text-code-xs px-1 py-0.5 bg-surface-container-highest text-on-surface-variant border border-outline-variant rounded-sm">⌘K</kbd></div></div><div class="h-5 w-[1px] bg-outline-variant"></div><div class="flex items-center gap-space-sm"><div class="flex flex-col text-right"><span class="font-caption-caps text-caption-caps text-on-surface leading-none">M. VANCE</span><span class="font-code-xs text-code-xs text-on-surface-variant leading-none mt-0.5">HR ADVISOR</span></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="relative pt-12 min-h-screen bg-surface-container-low"><div class="flex flex-col w-full">
+<!-- Immutability Advisory Ribbon -->
+<div class="w-full bg-surface-container-high px-space-lg py-space-xs flex items-center justify-between text-on-surface-variant font-label-default text-label-default">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-primary-container text-[16px]">verified_user</span>
+<span class="font-body-semibold text-body-semibold text-on-surface">Policy Enforcement:</span>
+<span class="text-on-surface-variant">Versions are immutable. Editing an approved plan creates a new draft version automatically.</span>
+</div>
+<div class="flex items-center gap-space-md font-code-xs text-code-xs">
+<span class="text-on-surface-variant uppercase tracking-wider">HASH ENGINE: SHA-256 ED25519</span>
+<span class="text-outline">/</span>
+<span class="text-primary font-body-semibold cursor-pointer hover:underline">REGULATORY COMPLIANCE DOCS</span>
+</div>
+</div>
+<!-- Operational Header & Controls Bar -->
+<div class="w-full bg-surface-container-lowest px-space-lg py-space-sm flex flex-wrap items-center justify-between gap-space-md">
+<!-- Left: Title, Stats pill & View switcher -->
+<div class="flex items-center gap-space-lg">
+<div class="flex items-baseline gap-space-xs">
+<h1 class="font-title-md text-title-md text-on-surface tracking-tight">Workforce Transformation Plans</h1>
+<span class="font-code-xs text-code-xs text-on-surface-variant px-space-xs py-0.5 bg-surface-container rounded-sm">REGISTER B4</span>
+</div>
+<!-- Quick Metrics Ribbon -->
+<div class="hidden xl:flex items-center gap-space-md pl-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="font-caption-caps text-caption-caps text-on-surface-variant">TOTAL ACTIVE:</span>
+<span class="font-data-tabular text-data-tabular font-body-semibold text-on-surface">1,482</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
+<span class="font-caption-caps text-caption-caps text-on-surface-variant">PENDING REVIEW:</span>
+<span class="font-data-tabular text-data-tabular font-body-semibold text-primary">34</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary-container"></span>
+<span class="font-caption-caps text-caption-caps text-on-surface-variant">FLAGGED:</span>
+<span class="font-data-tabular text-data-tabular font-body-semibold text-tertiary">3</span>
+</div>
+</div>
+</div>
+<!-- Right: Context Actions -->
+<div class="flex items-center gap-space-sm">
+<button class="h-7 px-space-sm bg-surface-container-low hover:bg-surface-container text-on-surface font-label-default text-label-default rounded-sm flex items-center gap-space-xs transition-colors" type="button">
+<span class="material-symbols-outlined text-[15px]">file_download</span>
+<span>Export CSV</span>
+<span class="font-code-xs text-code-xs text-on-surface-variant ml-1">⌥E</span>
+</button>
+<button class="h-7 px-space-sm bg-surface-container-low hover:bg-surface-container text-on-surface font-label-default text-label-default rounded-sm flex items-center gap-space-xs transition-colors" type="button">
+<span class="material-symbols-outlined text-[15px]">compare_arrows</span>
+<span>Batch Diff</span>
+</button>
+<button class="h-7 px-space-md bg-primary-container hover:bg-primary text-on-primary font-body-semibold text-label-default rounded-sm flex items-center gap-space-xs transition-colors" type="button">
+<span class="material-symbols-outlined text-[15px]">add</span>
+<span>Synthesize Plan</span>
+<kbd class="font-code-xs text-code-xs px-1 py-0.5 bg-on-primary/20 rounded-sm text-on-primary ml-1">⌘N</kbd>
+</button>
+</div>
+</div>
+<!-- Filter Matrix Toolbar -->
+<div class="w-full bg-surface-container px-space-lg py-space-xs flex flex-wrap items-center justify-between gap-space-md">
+<div class="flex flex-wrap items-center gap-space-md">
+<!-- Status Segmented Control -->
+<div class="flex items-center gap-space-xs">
+<span class="font-caption-caps text-caption-caps text-on-surface-variant mr-1">STATUS:</span>
+<div class="inline-flex h-7 p-0.5 bg-surface-container-high rounded-sm">
+<button class="px-2.5 py-0.5 text-on-surface-variant font-label-default text-label-default rounded-sm hover:text-on-surface" type="button">All <span class="font-code-xs text-code-xs text-on-surface-variant">42</span></button>
+<button class="px-2.5 py-0.5 text-on-surface-variant font-label-default text-label-default rounded-sm hover:text-on-surface" type="button">Approved</button>
+<button class="px-2.5 py-0.5 bg-surface-container-lowest text-on-surface font-body-semibold text-label-default rounded-sm shadow-sm" type="button">Draft <span class="font-code-xs text-code-xs text-primary font-body-semibold">2</span></button>
+<button class="px-2.5 py-0.5 text-on-surface-variant font-label-default text-label-default rounded-sm hover:text-on-surface" type="button">Flagged</button>
+</div>
+</div>
+<!-- Role Dropdown Selector -->
+<div class="flex items-center gap-space-xs">
+<span class="font-caption-caps text-caption-caps text-on-surface-variant">ROLE:</span>
+<div class="relative inline-flex items-center">
+<select class="h-7 pl-2.5 pr-7 bg-surface-container-lowest text-on-surface font-label-default text-label-default rounded-sm focus:outline-none cursor-pointer appearance-none">
+<option selected="">All Target Roles (Data Team)</option>
+<option>Data Analyst</option>
+<option>Data Engineer</option>
+<option>Data Scientist</option>
+<option>ML Operations Lead</option>
+</select>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant absolute right-1.5 pointer-events-none">expand_more</span>
+</div>
+</div>
+<!-- Scenario Dropdown Selector -->
+<div class="flex items-center gap-space-xs">
+<span class="font-caption-caps text-caption-caps text-on-surface-variant">SCENARIO:</span>
+<div class="relative inline-flex items-center">
+<select class="h-7 pl-2.5 pr-7 bg-surface-container-lowest text-on-surface font-label-default text-label-default rounded-sm focus:outline-none cursor-pointer appearance-none">
+<option selected="">All Scenarios</option>
+<option>Assistive AI (Co-pilot)</option>
+<option>Agentic AI (Autonomous)</option>
+<option>Hybrid Dual-Loop</option>
+</select>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant absolute right-1.5 pointer-events-none">expand_more</span>
+</div>
+</div>
+<!-- Date Range Picker -->
+<div class="flex items-center gap-space-xs">
+<span class="font-caption-caps text-caption-caps text-on-surface-variant">WINDOW:</span>
+<div class="h-7 px-2.5 bg-surface-container-lowest rounded-sm flex items-center gap-space-xs text-on-surface font-data-tabular text-label-default">
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">date_range</span>
+<span>2024-10-01</span>
+<span class="text-outline">→</span>
+<span>2024-10-31 UTC</span>
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant hover:text-on-surface cursor-pointer ml-1">close</span>
+</div>
+</div>
+</div>
+<!-- Active Filters Count & Reset -->
+<div class="flex items-center gap-space-sm font-label-default text-label-default">
+<span class="text-on-surface-variant">Showing <span class="font-data-tabular font-body-semibold text-on-surface">4</span> of 48 records</span>
+<button class="text-primary hover:underline font-body-semibold text-label-default" type="button">Reset</button>
+</div>
+</div>
+<!-- Main Canvas: Two-Pane Dense Layout (Table + Right Audit Drawer) -->
+<div class="w-full flex items-start overflow-hidden">
+<!-- Left Pane: Dense Operational Data Table -->
+<div class="flex-1 min-w-0 bg-surface-container-lowest flex flex-col">
+<div class="w-full overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="h-7 bg-surface-container text-on-surface-variant font-caption-caps text-caption-caps uppercase tracking-wider select-none">
+<th class="w-8 px-space-sm text-center">
+<input class="rounded-sm accent-primary-container cursor-pointer" type="checkbox"/>
+</th>
+<th class="px-space-md font-caption-caps text-caption-caps">PLAN ID</th>
+<th class="px-space-md font-caption-caps text-caption-caps">EMPLOYEE</th>
+<th class="px-space-md font-caption-caps text-caption-caps">ROLE</th>
+<th class="px-space-md font-caption-caps text-caption-caps">SCENARIO</th>
+<th class="px-space-md font-caption-caps text-caption-caps text-center">VER</th>
+<th class="px-space-md font-caption-caps text-caption-caps">STATUS</th>
+<th class="px-space-md font-caption-caps text-caption-caps">APPROVED BY</th>
+<th class="px-space-md font-caption-caps text-caption-caps text-right">UPDATED (UTC)</th>
+<th class="w-12 px-space-sm text-center"></th>
+</tr>
+</thead>
+<tbody class="divide-y-0 text-on-surface font-body-default text-body-default">
+<!-- ROW 1: Selected Row PLN-2024-001 -->
+<tr class="h-9 bg-secondary-container/40 hover:bg-secondary-container/60 cursor-pointer transition-colors relative" id="row-001">
+<td class="px-space-sm text-center">
+<input checked="" class="rounded-sm accent-primary-container cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-space-md font-code-sm text-code-sm text-primary font-body-semibold">
+<div class="flex items-center gap-space-xs">
+<span class="w-1 h-3.5 bg-primary-container rounded-full"></span>
+<span>PLN-2024-001</span>
+</div>
+</td>
+<td class="px-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant">E-001</span>
+<span class="text-outline">·</span>
+<span class="font-body-semibold text-on-surface">Sarah Lin</span>
+</div>
+</td>
+<td class="px-space-md text-on-surface">Data Analyst</td>
+<td class="px-space-md">
+<span class="inline-flex items-center gap-1 text-on-surface font-label-default text-label-default">
+<span class="material-symbols-outlined text-[14px] text-primary">psychology</span>
+                  Assistive AI
+                </span>
+</td>
+<td class="px-space-md text-center">
+<span class="font-code-xs text-code-xs px-1.5 py-0.5 bg-surface-container rounded-sm font-body-semibold text-on-surface">v1.0</span>
+</td>
+<td class="px-space-md">
+<span class="inline-flex items-center px-1.5 py-0.5 bg-surface-container-lowest text-secondary text-caption-caps font-caption-caps uppercase tracking-wide rounded-sm">
+                  DRAFT
+                </span>
+</td>
+<td class="px-space-md font-code-xs text-code-xs text-on-surface-variant">—</td>
+<td class="px-space-md text-right font-data-tabular text-data-tabular text-on-surface">
+                2024-10-15 14:04:19
+              </td>
+<td class="px-space-sm text-center">
+<button class="w-6 h-6 flex items-center justify-center text-primary hover:bg-surface-container-high rounded-sm" title="Inspecting Drawer" type="button">
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+</button>
+</td>
+</tr>
+<!-- ROW 2: PLN-2024-002 Approved -->
+<tr class="h-9 hover:bg-surface-container cursor-pointer transition-colors" id="row-002">
+<td class="px-space-sm text-center">
+<input class="rounded-sm accent-primary-container cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-space-md font-code-sm text-code-sm text-on-surface">
+                PLN-2024-002
+              </td>
+<td class="px-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant">E-002</span>
+<span class="text-outline">·</span>
+<span class="font-body-default text-on-surface">David Chen</span>
+</div>
+</td>
+<td class="px-space-md text-on-surface">Data Analyst</td>
+<td class="px-space-md">
+<span class="inline-flex items-center gap-1 text-on-surface font-label-default text-label-default">
+<span class="material-symbols-outlined text-[14px] text-primary">psychology</span>
+                  Assistive AI
+                </span>
+</td>
+<td class="px-space-md text-center">
+<span class="font-code-xs text-code-xs px-1.5 py-0.5 bg-surface-container rounded-sm text-on-surface">v1.2</span>
+</td>
+<td class="px-space-md">
+<span class="inline-flex items-center px-1.5 py-0.5 bg-surface-container-lowest text-primary-container text-caption-caps font-caption-caps uppercase tracking-wide rounded-sm">
+                  APPROVED
+                </span>
+</td>
+<td class="px-space-md font-code-xs text-code-xs text-on-surface">hr_lead_marcus</td>
+<td class="px-space-md text-right font-data-tabular text-data-tabular text-on-surface-variant">
+                2024-10-14 11:20:00
+              </td>
+<td class="px-space-sm text-center">
+<button class="w-6 h-6 flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high rounded-sm" title="Inspect" type="button">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+</button>
+</td>
+</tr>
+<!-- ROW 3: PLN-2024-003 Agentic Draft -->
+<tr class="h-9 hover:bg-surface-container cursor-pointer transition-colors" id="row-003">
+<td class="px-space-sm text-center">
+<input class="rounded-sm accent-primary-container cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-space-md font-code-sm text-code-sm text-on-surface">
+                PLN-2024-003
+              </td>
+<td class="px-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant">E-003</span>
+<span class="text-outline">·</span>
+<span class="font-body-default text-on-surface">Elena Rostova</span>
+</div>
+</td>
+<td class="px-space-md text-on-surface">Data Engineer</td>
+<td class="px-space-md">
+<span class="inline-flex items-center gap-1 text-on-surface font-label-default text-label-default">
+<span class="material-symbols-outlined text-[14px] text-tertiary-container">smart_toy</span>
+                  Agentic AI
+                </span>
+</td>
+<td class="px-space-md text-center">
+<span class="font-code-xs text-code-xs px-1.5 py-0.5 bg-surface-container rounded-sm text-on-surface">v1.0</span>
+</td>
+<td class="px-space-md">
+<span class="inline-flex items-center px-1.5 py-0.5 bg-surface-container-lowest text-secondary text-caption-caps font-caption-caps uppercase tracking-wide rounded-sm">
+                  DRAFT
+                </span>
+</td>
+<td class="px-space-md font-code-xs text-code-xs text-on-surface-variant">—</td>
+<td class="px-space-md text-right font-data-tabular text-data-tabular text-on-surface-variant">
+                2024-10-15 15:22:45
+              </td>
+<td class="px-space-sm text-center">
+<button class="w-6 h-6 flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high rounded-sm" title="Inspect" type="button">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+</button>
+</td>
+</tr>
+<!-- ROW 4: PLN-2024-004 Flagged -->
+<tr class="h-9 hover:bg-surface-container cursor-pointer transition-colors" id="row-004">
+<td class="px-space-sm text-center">
+<input class="rounded-sm accent-primary-container cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-space-md font-code-sm text-code-sm text-on-surface">
+                PLN-2024-004
+              </td>
+<td class="px-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="font-code-sm text-code-sm text-on-surface-variant">E-004</span>
+<span class="text-outline">·</span>
+<span class="font-body-default text-on-surface">Tariq Mansoor</span>
+</div>
+</td>
+<td class="px-space-md text-on-surface">Data Scientist</td>
+<td class="px-space-md">
+<span class="inline-flex items-center gap-1 text-on-surface font-label-default text-label-default">
+<span class="material-symbols-outlined text-[14px] text-primary">psychology</span>
+                  Assistive AI
+                </span>
+</td>
+<td class="px-space-md text-center">
+<span class="font-code-xs text-code-xs px-1.5 py-0.5 bg-surface-container rounded-sm text-on-surface">v0.9</span>
+</td>
+<td class="px-space-md">
+<span class="inline-flex items-center px-1.5 py-0.5 bg-surface-container-lowest text-tertiary-container text-caption-caps font-caption-caps uppercase tracking-wide rounded-sm">
+                  FLAGGED
+                </span>
+</td>
+<td class="px-space-md font-code-xs text-code-xs text-on-surface-variant">—</td>
+<td class="px-space-md text-right font-data-tabular text-data-tabular text-on-surface-variant">
+                2024-10-13 09:12:11
+              </td>
+<td class="px-space-sm text-center">
+<button class="w-6 h-6 flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high rounded-sm" title="Inspect" type="button">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Quantitative Headcount & Execution Summary Panel -->
+<div class="p-space-lg bg-surface-container-low flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<span class="font-caption-caps text-caption-caps text-on-surface-variant uppercase tracking-wider">Plan Transition Velocity &amp; Alignment Analytics</span>
+<span class="font-code-xs text-code-xs text-on-surface-variant">DATA PIPELINE v2.4 · REFRESHED T-00:01:14</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-4 gap-space-md">
+<div class="bg-surface-container-lowest p-space-md rounded-sm">
+<span class="font-caption-caps text-caption-caps text-on-surface-variant uppercase">Assistive AI Adoption</span>
+<div class="flex items-baseline justify-between mt-space-xs">
+<span class="font-title-md text-title-md font-body-semibold text-on-surface">68.4%</span>
+<span class="font-code-xs text-code-xs text-primary font-body-semibold">+4.2% MoM</span>
+</div>
+<div class="w-full bg-surface-container h-1.5 rounded-full mt-2 overflow-hidden">
+<div class="bg-primary-container h-full rounded-full" style="width: 68.4%"></div>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-space-md rounded-sm">
+<span class="font-caption-caps text-caption-caps text-on-surface-variant uppercase">Agentic AI Workstreams</span>
+<div class="flex items-baseline justify-between mt-space-xs">
+<span class="font-title-md text-title-md font-body-semibold text-on-surface">31.6%</span>
+<span class="font-code-xs text-code-xs text-tertiary font-body-semibold">+11.0% MoM</span>
+</div>
+<div class="w-full bg-surface-container h-1.5 rounded-full mt-2 overflow-hidden">
+<div class="bg-tertiary-container h-full rounded-full" style="width: 31.6%"></div>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-space-md rounded-sm">
+<span class="font-caption-caps text-caption-caps text-on-surface-variant uppercase">Median Approval Latency</span>
+<div class="flex items-baseline justify-between mt-space-xs">
+<span class="font-title-md text-title-md font-body-semibold text-on-surface">18.2 hrs</span>
+<span class="font-code-xs text-code-xs text-on-surface-variant">SLA: &lt;24 hrs</span>
+</div>
+<div class="w-full bg-surface-container h-1.5 rounded-full mt-2 overflow-hidden">
+<div class="bg-primary-container h-full rounded-full" style="width: 75%"></div>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-space-md rounded-sm">
+<span class="font-caption-caps text-caption-caps text-on-surface-variant uppercase">Immutable Plan Integrity</span>
+<div class="flex items-baseline justify-between mt-space-xs">
+<span class="font-title-md text-title-md font-body-semibold text-on-surface">100% Valid</span>
+<span class="font-code-xs text-code-xs text-primary font-body-semibold">ZERO FORKS</span>
+</div>
+<div class="w-full bg-surface-container h-1.5 rounded-full mt-2 overflow-hidden">
+<div class="bg-primary-container h-full rounded-full" style="width: 100%"></div>
+</div>
+</div>
+</div>
+<!-- Inline Visual Workstream Composition -->
+<div class="bg-surface-container-lowest p-space-md rounded-sm flex flex-col md:flex-row items-center justify-between gap-space-lg">
+<div class="flex items-center gap-space-md">
+<!-- Inline Mini Vector Sparkline SVG -->
+<svg class="w-48 h-10 text-primary-container overflow-visible" fill="none" viewbox="0 0 180 32">
+<path d="M0 24 L24 20 L48 22 L72 14 L96 17 L120 8 L144 11 L168 2 L180 4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+<path d="M0 24 L24 20 L48 22 L72 14 L96 17 L120 8 L144 11 L168 2 L180 4 V 32 H 0 Z" fill="currentColor" fill-opacity="0.08"></path>
+<circle cx="168" cy="2" fill="currentColor" r="3"></circle>
+</svg>
+<div>
+<span class="font-body-semibold text-body-semibold text-on-surface block">Automated Skill Re-allocation Index</span>
+<span class="font-code-xs text-code-xs text-on-surface-variant">Continuous ledger tracking of re-skilling pathways</span>
+</div>
+</div>
+<div class="flex items-center gap-space-md">
+<div class="text-right">
+<span class="font-caption-caps text-caption-caps text-on-surface-variant block">SYNCHRONIZATION STATE</span>
+<span class="font-code-xs text-code-xs text-primary font-body-semibold">ORACLE BLOCKS SYNCED: 849,201</span>
+</div>
+<button class="h-7 px-space-sm bg-surface-container hover:bg-surface-container-high text-on-surface font-label-default text-label-default rounded-sm flex items-center gap-space-2xs" type="button">
+<span class="material-symbols-outlined text-[14px]">refresh</span>
+<span>Re-index Ledger</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Pagination & Table Status Footer -->
+<div class="h-9 px-space-lg bg-surface-container flex items-center justify-between text-on-surface-variant font-label-default text-label-default">
+<div class="flex items-center gap-space-md">
+<span class="font-code-xs text-code-xs">CURSOR: 0x8F91A..49B</span>
+<span class="text-outline">·</span>
+<span>1–4 of 4 items selected: <strong class="text-on-surface font-body-semibold">1</strong></span>
+</div>
+<div class="flex items-center gap-space-sm">
+<button class="px-2 py-0.5 bg-surface-container-high text-on-surface-variant rounded-sm cursor-not-allowed opacity-50 font-label-default text-label-default" type="button">Previous</button>
+<span class="font-code-xs text-code-xs text-on-surface px-1">PAGE 1 / 1</span>
+<button class="px-2 py-0.5 bg-surface-container-high text-on-surface-variant rounded-sm cursor-not-allowed opacity-50 font-label-default text-label-default" type="button">Next</button>
+</div>
+</div>
+</div>
+<!-- Right Slide-Over Pane: Version History & Audit Log (PLN-2024-001) -->
+<aside class="w-[480px] bg-surface-container-lowest flex flex-col shrink-0">
+<!-- Drawer Header -->
+<div class="p-space-lg bg-surface-container-low flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary-container text-[18px]">history</span>
+<span class="font-caption-caps text-caption-caps text-on-surface-variant uppercase tracking-wider">IMMUTABLE LEDGER INSPECTOR</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<button class="h-6 px-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-sm font-code-xs text-code-xs" title="Raw JSON payload" type="button">
+              { JSON }
+            </button>
+<button class="w-6 h-6 flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-sm" title="Close Panel" type="button">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+</div>
+</div>
+<h2 class="font-title-sm text-title-sm text-on-surface">Version History &amp; Audit Log — PLN-2024-001 (E-001)</h2>
+<div class="flex items-center gap-space-md text-on-surface-variant font-code-xs text-code-xs mt-1">
+<span>TARGET: Sarah Lin (Data Analyst)</span>
+<span class="text-outline">/</span>
+<span class="text-primary font-body-semibold">HASH: 9a4f..77b2</span>
+</div>
+</div>
+<!-- Action Panel: Quick Ratification Command Bar -->
+<div class="px-space-lg py-space-sm bg-surface-container flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="w-2 h-2 rounded-full bg-primary-container animate-pulse"></span>
+<span class="font-label-default text-label-default text-on-surface font-body-semibold">Live Branch: v3 (Draft Proposal)</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<button class="h-6 px-space-xs bg-surface-container-lowest hover:bg-surface-container-high text-on-surface font-label-default text-label-default rounded-sm flex items-center gap-1 transition-colors" type="button">
+<span class="material-symbols-outlined text-[14px]">tune</span>
+<span>Diff vs v1</span>
+</button>
+<button class="h-6 px-space-sm bg-primary-container hover:bg-primary text-on-primary font-body-semibold text-label-default rounded-sm transition-colors" type="button">
+            Ratify v3
+          </button>
+</div>
+</div>
+<!-- Audit Timeline Feed -->
+<div class="p-space-lg flex flex-col gap-space-lg flex-1 overflow-y-auto">
+<!-- Entry 3: Latest Event (v3 Pending) -->
+<div class="flex items-start gap-space-md relative">
+<div class="flex flex-col items-center">
+<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center text-primary z-10">
+<span class="material-symbols-outlined text-[14px]">pending_actions</span>
+</div>
+<div class="w-0.5 h-full bg-surface-container absolute top-6 bottom-0 left-[11px]"></div>
+</div>
+<div class="flex-1 pb-space-sm">
+<div class="flex items-center justify-between">
+<span class="font-body-semibold text-body-semibold text-on-surface">v3 awaiting approval</span>
+<span class="font-caption-caps text-caption-caps px-1.5 py-0.5 bg-surface-container text-primary font-body-semibold rounded-sm">CURRENT DRAFT</span>
+</div>
+<p class="font-label-default text-label-default text-on-surface-variant mt-space-2xs">
+              Pending ratification terminal · Governance Council dispatch initiated
+            </p>
+<div class="mt-space-xs p-space-sm bg-surface-container-low rounded-sm flex items-center justify-between font-code-xs text-code-xs">
+<span class="text-on-surface-variant">Reviewer Pool: HR_OPS_LEAD, DIRECTOR_DATA</span>
+<span class="text-tertiary-container font-body-semibold">ETA 4h</span>
+</div>
+</div>
+</div>
+<!-- Entry 2: v2 Edited -->
+<div class="flex items-start gap-space-md relative">
+<div class="flex flex-col items-center">
+<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant z-10">
+<span class="material-symbols-outlined text-[14px]">edit_note</span>
+</div>
+<div class="w-0.5 h-full bg-surface-container absolute top-6 bottom-0 left-[11px]"></div>
+</div>
+<div class="flex-1 pb-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="font-body-semibold text-body-semibold text-on-surface">v2 edited</span>
+<span class="text-outline">·</span>
+<span class="font-label-default text-label-default text-on-surface-variant">by user (author)</span>
+</div>
+<button class="font-code-xs text-code-xs text-primary font-body-semibold hover:underline" type="button">
+                [view snapshot]
+              </button>
+</div>
+<div class="font-data-tabular text-code-xs text-on-surface-variant mt-space-2xs">
+              2024-10-15 14:04:19 UTC
+            </div>
+<div class="mt-space-xs bg-surface-container-low p-space-sm rounded-sm text-label-default font-label-default text-on-surface-variant flex flex-col gap-1">
+<div class="flex items-center gap-space-xs text-on-surface">
+<span class="material-symbols-outlined text-[13px] text-tertiary">remove</span>
+<span class="line-through">Weekly Task: Manual SQL Reporting (8 hrs)</span>
+</div>
+<div class="flex items-center gap-space-xs text-primary">
+<span class="material-symbols-outlined text-[13px]">add</span>
+<span>Assigned Task: Prompt Tuning &amp; Agent Oversight (10 hrs)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Entry 1: v1 Generated -->
+<div class="flex items-start gap-space-md relative">
+<div class="flex flex-col items-center">
+<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant z-10">
+<span class="material-symbols-outlined text-[14px]">auto_awesome</span>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="font-body-semibold text-body-semibold text-on-surface">v1 generated</span>
+<span class="text-outline">·</span>
+<span class="font-label-default text-label-default text-on-surface-variant">by system</span>
+</div>
+<button class="font-code-xs text-code-xs text-primary font-body-semibold hover:underline" type="button">
+                [view snapshot]
+              </button>
+</div>
+<div class="font-data-tabular text-code-xs text-on-surface-variant mt-space-2xs">
+              2024-10-14 09:12:44 UTC
+            </div>
+<p class="font-label-default text-label-default text-on-surface-variant mt-space-xs">
+              Synthesized by Autonomous Workforce Orchestration Engine following Baseline Competency Assessment (Q3 benchmark).
+            </p>
+</div>
+</div>
+</div>
+<!-- Ledger Cryptographic Footprint -->
+<div class="p-space-lg bg-surface-container-high flex flex-col gap-space-xs">
+<div class="flex items-center justify-between font-caption-caps text-caption-caps text-on-surface-variant">
+<span>MERKLE ROOT PROOF</span>
+<span class="text-primary font-body-semibold">BLOCK #408191</span>
+</div>
+<div class="font-code-xs text-code-xs text-on-surface-variant break-all bg-surface-container p-space-xs rounded-sm select-all">
+          0x498be9031c238b7d995aa283bc901ef37402a11bdf507e1586a19f939e6a2b84
+        </div>
+<div class="flex items-center justify-between text-on-surface-variant font-label-default text-label-default mt-1">
+<span>Signer: System Node 04 (us-east-cluster)</span>
+<span class="text-on-surface font-body-semibold">Verified ✓</span>
+</div>
+</div>
+</aside>
+</div>
+</div></main></div></body></html>

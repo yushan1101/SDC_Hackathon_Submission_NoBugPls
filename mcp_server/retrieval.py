@@ -13,6 +13,7 @@ from mcp_server.ingest import PASSAGES
 log = logging.getLogger(__name__)
 COLLECTION = "aiversepulse_passages"
 _LOCK = threading.RLock()  # model + Chroma client are shared across agent threads; not safe to init/encode concurrently
+READY = threading.Event()  # set once MiniLM is loaded; until then queries use the offline snapshot instead of blocking
 META_KEYS = ("source_id", "title", "publisher", "publication_date", "access_date", "url", "category",
              "jurisdiction", "license", "role_id", "skill_id")
 
@@ -29,7 +30,31 @@ def _encoder():
 
 def _embed(texts):
     with _LOCK:
-        return _encoder().encode(list(texts), normalize_embeddings=True).tolist()
+        out = _encoder().encode(list(texts), normalize_embeddings=True).tolist()
+    READY.set()
+    return out
+
+
+_STARTED = threading.Event()
+
+
+def warm():
+    """Load the encoder (slow first import) off the request path."""
+    _STARTED.set()
+    _embed(["warm up"])
+
+
+def warm_in_background():
+    if not _STARTED.is_set():
+        _STARTED.set()
+        threading.Thread(target=lambda: _safe(warm), daemon=True).start()
+
+
+def _safe(fn):
+    try:
+        fn()
+    except Exception as e:  # no model / no network: stay on the offline snapshot
+        log.warning("encoder warm-up failed (%s); offline retrieval only", type(e).__name__)
 
 
 @lru_cache
@@ -78,6 +103,9 @@ def search(query: str, where: dict | None = None, top_k: int = 5) -> tuple[list[
     """-> (passages with 'score', retrieval_mode 'vector'|'offline')."""
     top_k = max(1, min(int(top_k), 20))
     try:
+        if not READY.is_set():
+            warm_in_background()
+            raise RuntimeError("encoder still loading")
         col = _collection()
         flt = None
         if where:

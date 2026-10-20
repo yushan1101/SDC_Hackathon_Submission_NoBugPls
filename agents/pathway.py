@@ -27,7 +27,7 @@ def build(gaps: list[Gap], weekly_hours: float, role: str, scenario: str, learni
                    "Applied project on a real work task" if p == "31-60" else "Portfolio piece + peer/manager review"
             res = (learning or {}).get(g.skill_id, [])[:1]
             acts.append(PathwayActivity(day_range=p, skill_id=g.skill_id, estimated_hours=h,
-                                        activity=f"{step}: {g.skill_id} (level {g.current_level} -> {g.required_level})"
+                                        activity=f"{step}: {g.skill_id} (level {g.current_level} → {g.required_level})"
                                                  + (f" using {res[0].title}" if res else ""),
                                         evidence_ids=list(g.rationale_source_ids) + [e.id for e in res],
                                         sdg_links=["SDG4", "SDG8"]))

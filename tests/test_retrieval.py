@@ -9,3 +9,16 @@ def test_evidence_has_provenance():
 
 def test_unknown_role_empty_not_invented():  # T-05 style: no evidence -> empty, never invented
     assert search_role_skills("Astronaut")[1] == []
+
+
+def test_vector_search_after_warmup():
+    import pytest
+    pytest.importorskip("sentence_transformers")
+    from mcp_server import retrieval
+    try:
+        retrieval._collection()
+    except Exception:
+        pytest.skip("no Chroma index built (CI): offline path covered elsewhere")
+    retrieval.warm()
+    hits, mode = retrieval.search("cloud skills for data engineers", {"role_id": "Data Engineer"}, 3)
+    assert mode == "vector" and len(hits) == 3 and all(h["role_id"] == "Data Engineer" for h in hits)

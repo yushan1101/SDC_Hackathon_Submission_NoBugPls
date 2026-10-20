@@ -21,7 +21,7 @@ def template(audience, subject, role, scenario, gaps, pathway, flags) -> str:
         return f"{who} already meet the modelled {role} requirements under the {scenario} scenario."
     parts = []
     for g in top:
-        s = f"{g.skill_id} (level {g.current_level} -> {g.required_level}; in {g.mention_percent}% of 2023 {role} ads [{g.rationale_source_ids[0]}])"
+        s = f"{g.skill_id} (level {g.current_level} → {g.required_level}; in {g.mention_percent}% of 2023 {role} ads [{g.rationale_source_ids[0]}])"
         f = flags.get(g.skill_id, {})
         if f.get("onet_hot") and len(f.get("evidence_ids", [])) > 1:
             s += f", an O*NET Hot Technology [{f['evidence_ids'][1]}]"

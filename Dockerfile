@@ -11,6 +11,7 @@ RUN pip install -e ".[ai]" \
 USER app
 # data/ holds the SQLite audit DB: mount a volume so approvals survive restarts
 VOLUME ["/app/data"]
-EXPOSE 8501
-HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request;urllib.request.urlopen('http://localhost:8501/_stcore/health')"
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.maxUploadSize=5", "--server.enableXsrfProtection=true", "--browser.gatherUsageStats=false"]
+EXPOSE 8600
+HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request;urllib.request.urlopen('http://localhost:8600/healthz')"
+# Web app (public: /  ·  enterprise: /enterprise). Put TLS in front (Secure cookies are set automatically on https).
+CMD ["uvicorn", "server.api:app", "--host", "0.0.0.0", "--port", "8600", "--proxy-headers"]

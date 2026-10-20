@@ -11,6 +11,8 @@ dependencies = [
   "streamlit>=1.40",
   "pydantic>=2.7",
   "pydantic-settings>=2.4",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
   "pandas>=2.1",
   "numpy>=1.26",
   "scikit-learn>=1.4",
@@ -23,4 +25,4 @@ ai = ["langgraph>=1.2", "fastmcp>=4.1", "chromadb>=1.5", "sentence-transformers>
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["core*", "agents*", "forecasting*", "mcp_server*", "validation*", "governance*", "ui*", "tools*", "config*"]
+include = ["core*", "agents*", "forecasting*", "mcp_server*", "validation*", "governance*", "ui*", "tools*", "config*", "server*"]

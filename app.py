@@ -28,8 +28,8 @@ def _db():
 def _warm():  # load MiniLM + Chroma once per server process, off the request path
     def go():
         try:
-            from mcp_server.retrieval import _embed
-            _embed(["warm up"])
+            from mcp_server.retrieval import warm
+            warm()
         except Exception:
             pass
     threading.Thread(target=go, daemon=True).start()
