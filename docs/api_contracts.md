@@ -2,6 +2,10 @@
 
 Shared state is in `core/state.py`. No schema-breaking change without team notification.
 
+Plan detail returns the persisted `report` before and after approval, including after cache
+eviction or server restart. Older plans without a saved report return `report: null`;
+approval cannot recreate analysis that was never persisted.
+
 ## 2026-10-20 additions (backward compatible)
 - `Request.audience: "individual" | "hr"` (default `individual`) and `Request.employee_id: str | None`
   (pseudonymous ID, HR mode only).
