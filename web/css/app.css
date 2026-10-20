@@ -674,6 +674,18 @@ table.data tbody tr.rec td:first-child b { color: var(--accent); }
 .apply-done { display: grid; gap: 10px; padding: 28px 0; border-top: 1px solid var(--ink); }
 .apply-done h2 { font-size: 24px; }
 @media (max-width: 899px) { .apply-grid { grid-template-columns: 1fr; gap: 32px; } }
+.plan-focus { scroll-margin-top: 24px; }
+.plan-focus:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; }
+.plan-report { margin: 28px 0; border: 1px solid var(--rule); border-radius: 12px; }
+.plan-report-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; }
+.plan-report-heading h2 { margin: 0; font-size: 18px; }
+.report-toggle { flex-shrink: 0; }
+.plan-report-panel { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden;
+  transition: grid-template-rows 280ms ease, opacity 220ms ease, visibility 280ms; }
+.plan-report[data-expanded="true"] .plan-report-panel { grid-template-rows: 1fr; opacity: 1; visibility: visible; }
+.plan-report-content { min-height: 0; overflow: hidden; }
+.plan-report-content > * { margin-left: 16px; margin-right: 16px; }
+.plan-report-content > :last-child { margin-bottom: 20px; }
 
 /* ---------- reduced motion: keep state changes, drop travel ---------- */
 @media (prefers-reduced-motion: reduce) {

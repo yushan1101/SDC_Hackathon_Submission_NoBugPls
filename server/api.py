@@ -215,6 +215,9 @@ def sse(obj: dict) -> str:
 
 
 def remember(pid: str, state: dict):
+    with DB_LOCK, db:
+        db.execute("INSERT OR REPLACE INTO plan_reports(plan_id, report) VALUES(?,?)",
+                   (pid, json.dumps(serialise(state), default=str)))
     RESULTS[pid] = state
     RESULTS.move_to_end(pid)
     while len(RESULTS) > 1000:
@@ -317,7 +320,9 @@ def plan(pid: str, user: dict = Depends(current_user)):
     with DB_LOCK:
         cur, hist = approval.latest(db, pid), approval.history(db, pid)
         audience = db.execute("SELECT audience, subject_id FROM plans WHERE plan_id=?", (pid,)).fetchone()
-    report = serialise(RESULTS[pid]) if pid in RESULTS else None
+    with DB_LOCK:
+        saved = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
+    report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else None
     return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], **cur, "history": hist, "report": report}
 
 

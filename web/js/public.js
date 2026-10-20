@@ -401,7 +401,10 @@ function planHolder(planId, plan, hours, status) {
       const fresh = await api(`/api/plans/${planId}`);
       plan = fresh.plan;
       render(fresh.status, fresh.version);
-      if (next === "approved") S.status.set("celebrating", "Plan approved — it's yours");
+      if (next === "approved") {
+        S.status.set("celebrating", "Plan approved — it's yours");
+        location.hash = `#/plans/${planId}`;
+      }
     } }));
   };
   render(status, 1);
@@ -423,25 +426,50 @@ async function plansView(main) {
     h("span", { class: `tag ${pl.status}` }, pl.status)))));
 }
 
-async function planDetail(main, id) {
+async function planDetail(main, id, focusPlan = false) {
   main.replaceChildren(h("p", { class: "muted" }, "Loading…"));
   let d;
   try { d = await api(`/api/plans/${id}`); } catch (e) { main.replaceChildren(h("div", { class: "issue error" }, e.message)); return; }
   const r = d.report;
-  if (r) setSources(r.evidence || []);
-  const blocks = h("div", { class: "body", style: { "max-width": "760px" } },
+  const approved = d.status === "approved";
+  setSources(r?.evidence || []);
+  const reportContent = h("div", { class: "plan-report-content" },
+    !r ? h("p", { class: "note" }, "This older plan has no saved report. Approval cannot restore it. Build a new plan to generate the full analysis; your saved 90-day plan is below.") : null,
     r?.narrative ? staticText(r.narrative, highlight) : null,
     r?.gaps?.length ? gapsBlock(r.gaps) : null,
+    r?.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null,
     r?.outlook ? outlookBlock(r.outlook) : null,
     r?.signals ? signalsBlock(r.signals) : null,
     r?.sdgs?.length ? sdgBlock(r.sdgs) : null,
+    r?.issues?.length ? issuesBlock(r.issues) : null);
+  const planFocus = h("section", { class: "plan-focus", tabindex: "-1", "aria-label": approved ? "Approved plan and implementation" : "Proposed plan" },
+    approved ? h("p", { class: "lede" }, "Your plan is approved. Follow the activities in each phase to put it into action.") : null,
     planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null,
-      onChange: () => planDetail(main, id) }),
+      title: approved ? "Your approved 90-day plan" : "Your proposed 90-day plan",
+      onChange: () => planDetail(main, id, true) }));
+  let expanded = !approved;
+  const panel = h("div", { class: "plan-report-panel", id: "saved-plan-report", inert: approved ? true : null,
+    "aria-hidden": String(approved) }, reportContent);
+  const toggle = h("button", { class: "btn report-toggle", type: "button", "aria-controls": "saved-plan-report",
+    "aria-expanded": String(expanded), onclick: () => {
+      expanded = !expanded;
+      disclosure.dataset.expanded = String(expanded);
+      panel.inert = !expanded;
+      panel.setAttribute("aria-hidden", String(!expanded));
+      toggle.setAttribute("aria-expanded", String(expanded));
+      toggle.textContent = expanded ? "Hide Report" : "View Report";
+      if (!expanded) planFocus.focus({ preventScroll: true });
+    } }, expanded ? "Hide Report" : "View Report");
+  const disclosure = h("section", { class: "plan-report", "data-expanded": String(expanded), "aria-label": "Analysis report" },
+    h("div", { class: "plan-report-heading" }, h("h2", {}, "Analysis report"), toggle), panel);
+  const blocks = h("div", { class: "body", style: { "max-width": "760px" } },
+    ...(approved ? [planFocus, disclosure] : [disclosure, planFocus]),
     d.audience === "hr" && d.status === "approved" ? h("div", { class: "approve-bar" }, h("span", {}, "HR approved this plan for you."),
       h("button", { class: "btn primary", onclick: async () => { await api(`/api/plans/${id}/acknowledge`, { method: "POST" }); toast("Acknowledged"); planDetail(main, id); } }, "Acknowledge")) : null,
     h("section", { class: "block" }, h("h3", {}, "History"), historyBlock(d.history)));
   main.replaceChildren(h("a", { href: "#/plans", class: "btn ghost sm" }, icon("back"), "All plans"),
     h("h1", { class: "page-title", style: { "margin-top": "12px" } }, r?.occupation?.title || d.plan.target_role), blocks);
+  if (focusPlan) planFocus.focus({ preventScroll: true });
 }
 
 boot().catch((e) => { app.replaceChildren(h("main", { class: "pub-main" }, h("div", { class: "issue error" }, `Could not start: ${e.message}`))); });

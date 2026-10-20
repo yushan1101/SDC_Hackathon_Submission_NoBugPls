@@ -64,6 +64,14 @@ def test_public_stream_and_approval(client):
     pid = ev[-1]["plan_id"]
     assert client.post(f"/api/plans/{pid}/approve", json={"version": 1, "confirmed": False}, headers={"X-AP": "1"}).status_code == 409
     assert client.post(f"/api/plans/{pid}/approve", json={"version": 1, "confirmed": True}, headers={"X-AP": "1"}).json()["status"] == "approved"
+    import server.api as api
+    before = client.get(f"/api/plans/{pid}").json()
+    api.RESULTS.clear()  # simulate restart/cache eviction after approval
+    reopened = client.get(f"/api/plans/{pid}").json()
+    assert reopened["status"] == "approved"
+    assert reopened["report"] == before["report"]
+    assert reopened["report"]["narrative"] == text
+    assert reopened["report"]["gaps"]
     # HR can never open an employee's private plan
     login(client, "hr1")
     assert client.get(f"/api/plans/{pid}").status_code == 404
