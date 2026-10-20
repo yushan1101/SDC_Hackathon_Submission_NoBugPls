@@ -1,0 +1,211 @@
+{
+ "source_id": "hf:Ashy24/data_jobs",
+ "source_url": "https://huggingface.co/datasets/Ashy24/data_jobs",
+ "window": [
+  "2023-01-01",
+  "2023-12-31"
+ ],
+ "roles": {
+  "Business Analyst": {
+   "eligible_posts": 36724,
+   "skills": {
+    "sql": 47.2,
+    "excel": 46.5,
+    "tableau": 25.3,
+    "power bi": 25.1,
+    "python": 22.0,
+    "powerpoint": 12.5,
+    "r": 11.0,
+    "word": 10.0,
+    "sap": 9.9,
+    "azure": 6.9,
+    "flow": 6.5,
+    "oracle": 6.3,
+    "go": 5.2,
+    "sql server": 5.0,
+    "aws": 5.0
+   }
+  },
+  "Cloud Engineer": {
+   "eligible_posts": 8961,
+   "skills": {
+    "python": 34.7,
+    "aws": 34.3,
+    "azure": 32.8,
+    "sql": 24.8,
+    "linux": 18.3,
+    "terraform": 17.9,
+    "kubernetes": 17.3,
+    "java": 13.5,
+    "gcp": 13.4,
+    "docker": 12.8,
+    "windows": 12.3,
+    "go": 9.7,
+    "ansible": 9.1,
+    "excel": 8.5,
+    "git": 8.4
+   }
+  },
+  "Data Analyst": {
+   "eligible_posts": 159228,
+   "skills": {
+    "sql": 58.0,
+    "excel": 41.9,
+    "python": 35.9,
+    "tableau": 29.1,
+    "power bi": 24.7,
+    "r": 18.8,
+    "sas": 8.8,
+    "powerpoint": 8.7,
+    "word": 8.5,
+    "sap": 7.1,
+    "azure": 6.8,
+    "oracle": 6.5,
+    "aws": 5.7,
+    "sql server": 5.2,
+    "go": 5.0
+   }
+  },
+  "Data Engineer": {
+   "eligible_posts": 169150,
+   "skills": {
+    "sql": 66.8,
+    "python": 63.8,
+    "aws": 36.6,
+    "azure": 35.8,
+    "spark": 31.7,
+    "java": 21.0,
+    "kafka": 17.2,
+    "hadoop": 17.0,
+    "scala": 17.0,
+    "databricks": 16.2,
+    "snowflake": 15.7,
+    "airflow": 15.1,
+    "gcp": 13.1,
+    "nosql": 13.0,
+    "git": 11.4
+   }
+  },
+  "Data Scientist": {
+   "eligible_posts": 145669,
+   "skills": {
+    "python": 78.0,
+    "sql": 54.2,
+    "r": 40.8,
+    "tableau": 20.2,
+    "aws": 18.0,
+    "spark": 16.7,
+    "azure": 14.9,
+    "tensorflow": 13.1,
+    "excel": 12.0,
+    "java": 11.1,
+    "power bi": 10.8,
+    "hadoop": 10.7,
+    "pytorch": 10.3,
+    "pandas": 10.2,
+    "sas": 10.1
+   }
+  },
+  "Machine Learning Engineer": {
+   "eligible_posts": 12164,
+   "skills": {
+    "python": 79.5,
+    "pytorch": 36.0,
+    "tensorflow": 35.3,
+    "aws": 31.1,
+    "sql": 28.7,
+    "azure": 22.4,
+    "spark": 22.3,
+    "docker": 21.9,
+    "java": 19.3,
+    "kubernetes": 19.0,
+    "scikit-learn": 16.4,
+    "gcp": 13.9,
+    "git": 13.3,
+    "r": 12.9,
+    "pandas": 12.9
+   }
+  },
+  "Senior Data Analyst": {
+   "eligible_posts": 24852,
+   "skills": {
+    "sql": 71.2,
+    "python": 44.4,
+    "tableau": 40.2,
+    "excel": 33.3,
+    "r": 25.1,
+    "power bi": 24.1,
+    "sas": 11.1,
+    "azure": 9.1,
+    "powerpoint": 8.6,
+    "aws": 8.6,
+    "snowflake": 8.0,
+    "looker": 8.0,
+    "oracle": 7.6,
+    "word": 7.0,
+    "sql server": 6.8
+   }
+  },
+  "Senior Data Engineer": {
+   "eligible_posts": 41594,
+   "skills": {
+    "python": 69.4,
+    "sql": 68.7,
+    "aws": 46.4,
+    "azure": 38.9,
+    "spark": 38.5,
+    "java": 24.3,
+    "kafka": 23.3,
+    "snowflake": 21.9,
+    "airflow": 20.9,
+    "scala": 20.7,
+    "hadoop": 18.8,
+    "databricks": 18.8,
+    "nosql": 16.7,
+    "redshift": 16.1,
+    "gcp": 15.1
+   }
+  },
+  "Senior Data Scientist": {
+   "eligible_posts": 32060,
+   "skills": {
+    "python": 80.8,
+    "sql": 58.0,
+    "r": 39.7,
+    "aws": 23.2,
+    "spark": 20.6,
+    "tableau": 18.5,
+    "azure": 17.2,
+    "tensorflow": 15.7,
+    "pytorch": 13.6,
+    "pandas": 11.2,
+    "hadoop": 11.0,
+    "excel": 10.2,
+    "scikit-learn": 10.1,
+    "sas": 9.8,
+    "java": 9.8
+   }
+  },
+  "Software Engineer": {
+   "eligible_posts": 37587,
+   "skills": {
+    "python": 40.5,
+    "sql": 32.8,
+    "aws": 27.7,
+    "java": 26.2,
+    "azure": 18.9,
+    "kubernetes": 17.6,
+    "docker": 16.7,
+    "linux": 14.7,
+    "javascript": 13.3,
+    "git": 12.3,
+    "go": 10.4,
+    "kafka": 9.7,
+    "react": 9.4,
+    "spark": 9.3,
+    "gcp": 8.7
+   }
+  }
+ },
+ "input_sha256": "635241ed09ccee18bdae1f83b45f26d6759e0aa2513c529f6190e9054062436c"
+}

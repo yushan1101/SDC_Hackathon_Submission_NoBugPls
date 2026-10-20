@@ -1,0 +1,19 @@
+{
+  "request_id": "demo-001",
+  "profile": {
+    "skills": [
+      {
+        "name": "Python",
+        "level": 3
+      },
+      {
+        "name": "SQL",
+        "level": 2
+      }
+    ],
+    "weekly_learning_hours": 6
+  },
+  "target_role": "Data Analyst",
+  "scenario": "assistive",
+  "query": "Build a 30-60-90 day reskilling plan"
+}

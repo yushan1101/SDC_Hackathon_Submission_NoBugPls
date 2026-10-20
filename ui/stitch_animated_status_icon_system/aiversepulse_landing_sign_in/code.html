@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_standard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Domine:wght@700&amp;family=IBM+Plex+Sans:wght@500;600&amp;family=Public+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "outline": "#8e7068",
+          "surface-container-highest": "#e6e2d8",
+          "on-tertiary": "#ffffff",
+          "on-secondary-fixed": "#1d1c17",
+          "tertiary": "#2347e7",
+          "on-tertiary-container": "#fffbff",
+          "secondary": "#605e59",
+          "inverse-primary": "#ffb5a0",
+          "error-container": "#ffdad6",
+          "secondary-fixed": "#e7e2db",
+          "surface-container-lowest": "#ffffff",
+          "tertiary-fixed": "#dee0ff",
+          "surface-bright": "#fef9ee",
+          "primary-fixed-dim": "#ffb5a0",
+          "on-tertiary-fixed-variant": "#0030c8",
+          "on-secondary-fixed-variant": "#494741",
+          "secondary-container": "#e4dfd8",
+          "primary": "#ad2c00",
+          "surface-container-high": "#ece8dd",
+          "on-surface": "#1d1c15",
+          "surface-dim": "#dedacf",
+          "primary-container": "#d14316",
+          "tertiary-container": "#4564ff",
+          "inverse-on-surface": "#f5f0e6",
+          "on-surface-variant": "#5a413a",
+          "on-primary-container": "#fffbff",
+          "on-background": "#1d1c15",
+          "error": "#ba1a1a",
+          "primary-fixed": "#ffdbd1",
+          "surface-variant": "#e6e2d8",
+          "on-primary-fixed": "#3b0900",
+          "surface-container-low": "#f8f3e9",
+          "on-secondary-container": "#65625d",
+          "background": "#fef9ee",
+          "tertiary-fixed-dim": "#bac3ff",
+          "surface-tint": "#b12e00",
+          "on-primary-fixed-variant": "#872100",
+          "on-error": "#ffffff",
+          "surface": "#fef9ee",
+          "surface-container": "#f2ede3",
+          "inverse-surface": "#32302a",
+          "secondary-fixed-dim": "#cac6bf",
+          "on-primary": "#ffffff",
+          "on-secondary": "#ffffff",
+          "on-tertiary-fixed": "#00105a",
+          "on-error-container": "#93000a",
+          "outline-variant": "#e2bfb5"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.25rem",
+          "lg": "0.5rem",
+          "xl": "0.75rem",
+          "full": "9999px"
+        },
+        "spacing": {
+          "space-xl": "2.5rem",
+          "gutter": "1.5rem",
+          "margin": "2.5rem",
+          "space-md": "1rem",
+          "gutter-sm": "1rem",
+          "space-sm": "0.5rem",
+          "space-xs": "0.25rem",
+          "space-lg": "1.5rem",
+          "margin-mobile": "1.25rem"
+        },
+        "fontFamily": {
+          "body-sm": [
+            "Public Sans"
+          ],
+          "headline-xl": [
+            "Domine"
+          ],
+          "data-tabular": [
+            "IBM Plex Sans"
+          ],
+          "headline-sm": [
+            "Domine"
+          ],
+          "headline-lg": [
+            "Domine"
+          ],
+          "headline-lg-mobile": [
+            "Domine"
+          ],
+          "headline-md": [
+            "Domine"
+          ],
+          "label-md": [
+            "IBM Plex Sans"
+          ],
+          "headline-xl-mobile": [
+            "Domine"
+          ],
+          "body-md": [
+            "Public Sans"
+          ],
+          "body-lg": [
+            "Public Sans"
+          ],
+          "label-sm": [
+            "IBM Plex Sans"
+          ]
+        },
+        "fontSize": {
+          "body-sm": [
+            "13px",
+            {
+              "lineHeight": "19px",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-xl": [
+            "44px",
+            {
+              "lineHeight": "52px",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "data-tabular": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "letterSpacing": "0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "headline-sm": [
+            "19px",
+            {
+              "lineHeight": "26px",
+              "letterSpacing": "-0.005em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-lg": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.015em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-lg-mobile": [
+            "26px",
+            {
+              "lineHeight": "34px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "700"
+            }
+          ],
+          "headline-md": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "700"
+            }
+          ],
+          "label-md": [
+            "13px",
+            {
+              "lineHeight": "18px",
+              "letterSpacing": "0.04em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-xl-mobile": [
+            "32px",
+            {
+              "lineHeight": "40px",
+              "letterSpacing": "-0.015em",
+              "fontWeight": "700"
+            }
+          ],
+          "body-md": [
+            "15px",
+            {
+              "lineHeight": "23px",
+              "fontWeight": "400"
+            }
+          ],
+          "body-lg": [
+            "17px",
+            {
+              "lineHeight": "26px",
+              "letterSpacing": "-0.005em",
+              "fontWeight": "400"
+            }
+          ],
+          "label-sm": [
+            "11px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0.06em",
+              "fontWeight": "600"
+            }
+          ]
+        }
+      },
+    },
+  };</script></head><body class="bg-surface text-on-surface font-body-md text-body-md min-h-screen flex flex-col antialiased selection:bg-primary-fixed selection:text-on-primary-fixed"><header class="fixed top-0 left-0 right-0 z-50 bg-surface border-b border-surface-variant"><div class="h-16 max-w-[1360px] mx-auto px-margin flex items-center justify-between"><div class="flex items-center gap-space-lg"><a class="font-headline-md text-headline-md text-on-surface tracking-tight hover:text-primary transition-colors" data-path="overview" href="#">AiversePulse</a><div class="h-4 w-px bg-surface-variant hidden lg:block"></div><span class="hidden lg:inline-flex font-label-sm text-label-sm uppercase tracking-widest text-secondary">Field Register • Vol. IV</span></div><nav class="hidden md:flex items-center gap-space-xs h-full" data-active-classes="bg-secondary-container text-on-surface border-b-2 border-primary font-semibold"><a aria-current="page" class="px-space-md h-full inline-flex items-center transition-colors bg-secondary-container text-on-surface border-b-2 border-primary font-semibold" data-path="overview" href="#">Overview</a><a class="px-space-md h-full inline-flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-path="build-plan" href="#">Build Plan</a><a class="px-space-md h-full inline-flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-path="my-results" href="#">My Results</a><a class="px-space-md h-full inline-flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-path="90-day-plan" href="#">90-Day Plan</a><a class="px-space-md h-full inline-flex items-center font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-path="documentation" href="#">Documentation</a></nav><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-sm px-space-sm py-1 border border-surface-variant bg-surface-container-low rounded-DEFAULT"><svg class="w-4 h-4 text-on-surface flex-shrink-0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" viewbox="0 0 24 24"><path d="M12 3c-4.97 0-9 3.58-9 8 0 2.22 1.02 4.23 2.67 5.67L5 21l4.5-1.5c.8.21 1.64.33 2.5.33 4.97 0 9-3.58 9-8s-4.03-8-9-8z"></path><circle cx="9" cy="11" fill="currentColor" r="1.5"></circle><circle cx="15" cy="11" fill="currentColor" r="1.5"></circle></svg><span class="font-label-sm text-label-sm text-on-surface tracking-wider uppercase font-semibold">JobSmart</span><span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-tertiary opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-tertiary"></span></span><span class="font-data-tabular text-data-tabular text-secondary text-[11px] hidden sm:inline">STANDBY</span></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex-1 w-full pt-16 bg-surface max-w-[1360px] mx-auto px-margin"><div class="flex flex-col w-full">
+<div class="grid grid-cols-12 gap-gutter py-space-xl items-start">
+<!-- Left 7 Columns: Archival Data & Value Proposition -->
+<div class="col-span-12 lg:col-span-7 flex flex-col pr-0 lg:pr-space-lg">
+<!-- Archival Metadata Ledger Header -->
+<div class="flex flex-wrap items-center gap-space-sm mb-space-lg pb-space-sm border-b border-surface-variant">
+<span class="font-label-sm text-label-sm tracking-wider uppercase text-secondary">REGISTER REF: AP-2023-V4</span>
+<span class="text-secondary font-label-sm text-label-sm">•</span>
+<span class="font-label-sm text-label-sm tracking-wider uppercase text-secondary">OCCUPATIONAL CENSUS</span>
+<div class="ml-auto flex items-center gap-space-xs bg-surface-container px-space-sm py-0.5 rounded-[2px] border border-surface-variant">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+<span class="font-data-tabular text-data-tabular text-[11px] uppercase tracking-wider text-on-surface">LIVE SYNCHRONIZATION</span>
+</div>
+</div>
+<!-- Core Editorial Headline -->
+<h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight mb-space-md max-w-2xl text-balance">
+        Know which skills the job market actually asks for.
+      </h1>
+<!-- Subtitle Description -->
+<p class="font-body-lg text-body-lg text-on-surface-variant mb-space-xl max-w-xl">
+        Free, evidence-based 90-day learning plans. Every claim links to its source: 785,741 job ads from 2023 and the O*NET 31.0 occupational database.
+      </p>
+<!-- Ambient Companion Status Indicator -->
+<div class="flex items-center gap-space-md p-space-md mb-space-xl bg-surface-container-low border border-surface-variant rounded-[2px]">
+<div class="flex items-center justify-center w-7 h-7 bg-surface-container rounded-[2px] border border-surface-variant text-on-surface">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" viewbox="0 0 24 24">
+<path d="M12 3c-4.97 0-9 3.58-9 8 0 2.22 1.02 4.23 2.67 5.67L5 21l4.5-1.5c.8.21 1.64.33 2.5.33 4.97 0 9-3.58 9-8s-4.03-8-9-8z"></path>
+<circle cx="9" cy="11" fill="currentColor" r="1.5"></circle>
+<circle cx="15" cy="11" fill="currentColor" r="1.5"></circle>
+</svg>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-label-md text-label-md text-on-surface font-semibold tracking-normal">JobSmart Companion</span>
+<span class="text-secondary font-label-sm text-label-sm">•</span>
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-primary font-semibold">Engine Active</span>
+</div>
+<span class="font-data-tabular text-data-tabular text-secondary text-[12px]">Ad Scanning Engine • 785,741 listings indexed</span>
+</div>
+<div class="ml-auto font-data-tabular text-data-tabular text-secondary text-[11px] hidden sm:block">
+          REV 31.0.4
+        </div>
+</div>
+<!-- Specimen Data Table Card -->
+<div class="bg-surface-container-low border border-surface-variant rounded-[2px]">
+<div class="p-space-md border-b border-surface-variant bg-surface-container flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<span class="font-label-md text-label-md uppercase tracking-wider text-on-surface font-semibold">Field Observation Record</span>
+<span class="font-data-tabular text-data-tabular text-[11px] text-secondary bg-surface px-1.5 py-0.5 border border-surface-variant">SOC 15-2051.01</span>
+</div>
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary">Target: Data Analyst</span>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full border-collapse text-left">
+<thead>
+<tr class="border-b border-surface-variant bg-surface-container-low/50">
+<th class="py-space-sm px-space-md font-label-sm text-label-sm text-secondary uppercase tracking-wider">Required Competency</th>
+<th class="py-space-sm px-space-md font-label-sm text-label-sm text-secondary uppercase tracking-wider text-right">Occurrence Rate</th>
+<th class="py-space-sm px-space-md font-label-sm text-label-sm text-secondary uppercase tracking-wider w-40">Frequency Index</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-variant">
+<!-- Item 1: SQL -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="py-space-sm px-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="font-data-tabular text-data-tabular text-secondary text-[11px]">01</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">SQL (Structured Query Language)</span>
+</div>
+</td>
+<td class="py-space-sm px-space-md text-right font-data-tabular text-data-tabular text-on-surface font-semibold">
+                  58.0%
+                </td>
+<td class="py-space-sm px-space-md align-middle">
+<div class="w-full bg-surface-variant h-1 rounded-none flex items-center">
+<div class="bg-primary h-[2px] transition-all duration-500 ease-out" style="width: 58.0%;"></div>
+</div>
+</td>
+</tr>
+<!-- Item 2: Excel -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="py-space-sm px-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="font-data-tabular text-data-tabular text-secondary text-[11px]">02</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Microsoft Excel (Advanced &amp; Modeling)</span>
+</div>
+</td>
+<td class="py-space-sm px-space-md text-right font-data-tabular text-data-tabular text-on-surface font-semibold">
+                  41.9%
+                </td>
+<td class="py-space-sm px-space-md align-middle">
+<div class="w-full bg-surface-variant h-1 rounded-none flex items-center">
+<div class="bg-primary h-[2px] transition-all duration-500 ease-out" style="width: 41.9%;"></div>
+</div>
+</td>
+</tr>
+<!-- Item 3: Python -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="py-space-sm px-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="font-data-tabular text-data-tabular text-secondary text-[11px]">03</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Python Programming</span>
+</div>
+</td>
+<td class="py-space-sm px-space-md text-right font-data-tabular text-data-tabular text-on-surface font-semibold">
+                  35.9%
+                </td>
+<td class="py-space-sm px-space-md align-middle">
+<div class="w-full bg-surface-variant h-1 rounded-none flex items-center">
+<div class="bg-primary h-[2px] transition-all duration-500 ease-out" style="width: 35.9%;"></div>
+</div>
+</td>
+</tr>
+<!-- Item 4: Tableau -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="py-space-sm px-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="font-data-tabular text-data-tabular text-secondary text-[11px]">04</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Tableau Visual Analytics</span>
+</div>
+</td>
+<td class="py-space-sm px-space-md text-right font-data-tabular text-data-tabular text-on-surface font-semibold">
+                  29.1%
+                </td>
+<td class="py-space-sm px-space-md align-middle">
+<div class="w-full bg-surface-variant h-1 rounded-none flex items-center">
+<div class="bg-primary h-[2px] transition-all duration-500 ease-out" style="width: 29.1%;"></div>
+</div>
+</td>
+</tr>
+<!-- Item 5: Power BI -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="py-space-sm px-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="font-data-tabular text-data-tabular text-secondary text-[11px]">05</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Microsoft Power BI</span>
+</div>
+</td>
+<td class="py-space-sm px-space-md text-right font-data-tabular text-data-tabular text-on-surface font-semibold">
+                  24.7%
+                </td>
+<td class="py-space-sm px-space-md align-middle">
+<div class="w-full bg-surface-variant h-1 rounded-none flex items-center">
+<div class="bg-primary h-[2px] transition-all duration-500 ease-out" style="width: 24.7%;"></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="px-space-md py-space-sm border-t border-surface-variant bg-surface-container flex items-center justify-between text-secondary">
+<span class="font-data-tabular text-data-tabular text-[11px]">Sample aggregate: N = 124,310 verified postings</span>
+<span class="font-data-tabular text-data-tabular text-[11px]">Confidence Level 99% (±0.4%)</span>
+</div>
+</div>
+</div>
+<!-- Right 5 Columns: Authentication Terminal -->
+<div class="col-span-12 lg:col-span-5 flex flex-col pt-space-xl lg:pt-0 lg:pl-space-xl border-t lg:border-t-0 lg:border-l border-surface-variant">
+<!-- Panel Header -->
+<div class="border-b border-surface-variant pb-space-md mb-space-xl">
+<div class="flex items-center justify-between mb-space-xs">
+<span class="font-label-sm text-label-sm tracking-wider uppercase text-secondary">ACCESS GATEWAY</span>
+<span class="font-data-tabular text-data-tabular text-[11px] text-secondary">SECURE TERMINAL</span>
+</div>
+<h2 class="font-headline-md text-headline-md text-on-surface">Institutional Log In</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Authenticate to access verified learning curricula and tracked dossiers.</p>
+</div>
+<!-- Sign-In Form -->
+<form class="flex flex-col gap-space-lg" onsubmit="event.preventDefault();">
+<div class="flex flex-col gap-1.5">
+<div class="flex justify-between items-baseline">
+<label class="font-label-md text-label-md uppercase text-on-surface font-semibold" for="username">Operator Identifier</label>
+<span class="font-label-sm text-label-sm text-secondary">ID or Work Email</span>
+</div>
+<input class="h-11 px-space-md bg-surface border border-surface-variant rounded-[2px] font-body-md text-body-md text-on-surface placeholder:text-secondary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" id="username" name="username" placeholder="e.g. analyst@institution.edu" required="" type="text"/>
+</div>
+<div class="flex flex-col gap-1.5">
+<div class="flex justify-between items-baseline">
+<label class="font-label-md text-label-md uppercase text-on-surface font-semibold" for="password">Security Credential</label>
+<a class="font-label-sm text-label-sm text-primary hover:underline" href="#">Reset key</a>
+</div>
+<input class="h-11 px-space-md bg-surface border border-surface-variant rounded-[2px] font-body-md text-body-md text-on-surface placeholder:text-secondary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" id="password" name="password" placeholder="••••••••••••" required="" type="password"/>
+</div>
+<div class="flex items-start gap-space-sm pt-space-xs">
+<input class="w-4 h-4 mt-0.5 rounded-[2px] border-surface-variant text-primary focus:ring-primary" id="remember" type="checkbox"/>
+<label class="font-body-sm text-body-sm text-on-surface-variant select-none" for="remember">
+            Retain active session for 30 days on this terminal
+          </label>
+</div>
+<!-- Primary Action Button: Solid Vermilion -->
+<button class="h-11 px-space-lg bg-primary hover:bg-primary-container text-on-primary font-label-md text-label-md tracking-wider uppercase font-semibold rounded-[2px] transition-colors flex items-center justify-center gap-space-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" type="submit">
+<span>Sign In</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</button>
+</form>
+<!-- Administrative Note Box -->
+<div class="mt-space-xl p-space-md bg-surface-container rounded-[2px] border border-surface-variant">
+<div class="flex gap-space-sm">
+<span class="material-symbols-outlined text-secondary text-[20px] shrink-0 mt-0.5">info</span>
+<div class="flex flex-col gap-1">
+<p class="font-label-md text-label-md text-on-surface font-semibold">Notice of Provisioning</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+              Accounts are issued by your administrator. If you require access credentials or have been assigned a reskilling grant, consult your institutional registrar.
+            </p>
+</div>
+</div>
+</div>
+<!-- Trust Badges & System Audit -->
+<div class="mt-space-lg pt-space-md border-t border-surface-variant grid grid-cols-2 gap-space-md">
+<div>
+<span class="block font-label-sm text-label-sm text-secondary uppercase tracking-wider">DATABASE ENCRYPT</span>
+<span class="font-data-tabular text-data-tabular text-on-surface text-[12px]">AES-256-GCM NIST</span>
+</div>
+<div>
+<span class="block font-label-sm text-label-sm text-secondary uppercase tracking-wider">INDEX PROTOCOL</span>
+<span class="font-data-tabular text-data-tabular text-on-surface text-[12px]">ONET-31-REL</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Mandatory Footer Strip -->
+<div class="w-full py-space-sm px-space-md mt-space-xl bg-surface-container-high border-t border-b border-surface-variant flex flex-col sm:flex-row items-center justify-between gap-space-xs text-center sm:text-left">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-primary text-[18px]">gavel</span>
+<p class="font-data-tabular text-data-tabular text-on-surface font-medium">
+        Decision support only. Plans stay drafts until you approve them.
+      </p>
+</div>
+<div class="font-label-sm text-label-sm uppercase tracking-widest text-secondary">
+      SECTION 4.2 COMPLIANCE REGISTER
+    </div>
+</div>
+</div></main><footer class="w-full bg-surface-container-low border-t border-surface-variant mt-auto"><div class="max-w-[1360px] mx-auto px-margin py-space-lg flex flex-col md:flex-row items-center justify-between gap-space-md"><div class="flex items-center gap-space-sm"><span class="font-headline-sm text-headline-sm text-on-surface tracking-tight">AiversePulse</span><span class="text-secondary text-body-sm font-body-sm">•</span><span class="font-body-sm text-body-sm text-secondary">© 2024 Archival Intelligence Framework</span></div><div class="px-space-md py-1 border border-surface-variant bg-surface-container rounded-DEFAULT"><p class="font-data-tabular text-data-tabular text-on-surface-variant text-center">Decision support only. Plans stay drafts until you approve them.</p></div><div class="flex items-center gap-space-md"><a class="font-label-sm text-label-sm uppercase tracking-wider text-secondary hover:text-primary transition-colors" href="#">Methodology</a><a class="font-label-sm text-label-sm uppercase tracking-wider text-secondary hover:text-primary transition-colors" href="#">Privacy Register</a><a class="font-label-sm text-label-sm uppercase tracking-wider text-secondary hover:text-primary transition-colors" href="#">System Status</a></div></div></footer></body></html>

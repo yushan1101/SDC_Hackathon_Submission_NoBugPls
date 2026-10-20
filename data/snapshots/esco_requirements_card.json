@@ -1,0 +1,31 @@
+{
+ "created": "2026-10-20",
+ "trained_on": "O*NET 31.0 Skills, Knowledge, Work Activities, Abilities (importance + level ratings); training data only",
+ "pairs": 140381,
+ "splits": {
+  "held_out_occupations": {
+   "n": 28233,
+   "mae_importance_1to5": 0.373,
+   "mae_level_0to7": 0.549,
+   "baseline": "capability mean",
+   "baseline_mae_importance": 0.504,
+   "baseline_mae_level": 0.78,
+   "spearman_importance": 0.869,
+   "baseline_spearman_importance": 0.727
+  },
+  "held_out_capabilities": {
+   "n": 27633,
+   "mae_importance_1to5": 0.689,
+   "mae_level_0to7": 1.03,
+   "baseline": "occupation mean",
+   "baseline_mae_importance": 0.765,
+   "baseline_mae_level": 1.137,
+   "spearman_importance": 0.493,
+   "baseline_spearman_importance": 0.195
+  }
+ },
+ "esco": {
+  "occupations": 2938,
+  "skills_scored": 113739
+ }
+}

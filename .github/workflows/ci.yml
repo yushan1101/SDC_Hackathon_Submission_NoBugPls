@@ -1,0 +1,14 @@
+name: tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.4"
+      - run: pip install -e ".[ai]"
+      # no Chroma index / checkpoint in CI: exercises the offline-snapshot and baseline fallbacks (T-05, T-13)
+      - run: pytest -q

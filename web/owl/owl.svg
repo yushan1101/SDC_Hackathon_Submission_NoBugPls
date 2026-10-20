@@ -1,0 +1,97 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <radialGradient id="fav-fur" cx="48%" cy="36%" r="68%"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".55" stop-color="#FBF9FF"/><stop offset=".82" stop-color="#E9E1FF"/><stop offset="1" stop-color="#C8B6FF"/></radialGradient>
+  <radialGradient id="fav-headfur" cx="50%" cy="62%" r="62%"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".62" stop-color="#F6F2FF"/><stop offset=".86" stop-color="#DCD0FF"/><stop offset="1" stop-color="#B9A4FF"/></radialGradient>
+  <radialGradient id="fav-face" cx="50%" cy="45%" r="55%"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".85" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F1ECFF"/></radialGradient>
+  <linearGradient id="fav-hat" x1=".2" y1="0" x2=".7" y2="1"><stop offset="0" stop-color="#A589FF"/><stop offset=".55" stop-color="#7C5CF6"/><stop offset="1" stop-color="#5A3BDB"/></linearGradient>
+  <linearGradient id="fav-brim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9073FF"/><stop offset=".55" stop-color="#6A4BEB"/><stop offset="1" stop-color="#4527C2"/></linearGradient>
+  <radialGradient id="fav-shade" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#8C74E8" stop-opacity=".55"/><stop offset="1" stop-color="#8C74E8" stop-opacity="0"/></radialGradient>
+  <linearGradient id="fav-tuft" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#A57CFF"/><stop offset=".5" stop-color="#7D73FF"/><stop offset="1" stop-color="#4C86FF"/></linearGradient>
+  <radialGradient id="fav-iris" cx="42%" cy="36%" r="66%"><stop offset="0" stop-color="#9B78FF"/><stop offset=".45" stop-color="#5A35D6"/><stop offset=".8" stop-color="#2D1680"/><stop offset="1" stop-color="#180A46"/></radialGradient>
+  <radialGradient id="fav-blush" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#FF8DB4" stop-opacity=".75"/><stop offset=".6" stop-color="#FFA7C4" stop-opacity=".45"/><stop offset="1" stop-color="#FFC0D3" stop-opacity="0"/></radialGradient>
+  <linearGradient id="fav-beak" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFD25A"/><stop offset=".6" stop-color="#FFA52E"/><stop offset="1" stop-color="#F07E12"/></linearGradient>
+  <linearGradient id="fav-crest" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6A3DFF"/><stop offset=".5" stop-color="#A64BF2"/><stop offset="1" stop-color="#E35BCB"/></linearGradient>
+  <linearGradient id="fav-tip" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#B49BFF"/><stop offset=".6" stop-color="#7A6BFF"/><stop offset="1" stop-color="#4F7CFF"/></linearGradient>
+  <linearGradient id="fav-foot" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFC24A"/><stop offset="1" stop-color="#F28A18"/></linearGradient>
+</defs>
+
+<ellipse class="o-shadow" cx="100" cy="194" rx="56" ry="5.5" fill="#5B3FD6" opacity=".16"/>
+
+<g class="o-all">
+  <g class="o-feet" fill="url(#fav-foot)" stroke="#E07A12" stroke-width="1">
+    <g class="o-foot-l"><ellipse cx="70" cy="188" rx="6.5" ry="4.8"/><ellipse cx="80" cy="190.5" rx="6.5" ry="4.8"/><ellipse cx="90" cy="188" rx="6.5" ry="4.8"/></g>
+    <g class="o-foot-r"><ellipse cx="110" cy="188" rx="6.5" ry="4.8"/><ellipse cx="120" cy="190.5" rx="6.5" ry="4.8"/><ellipse cx="130" cy="188" rx="6.5" ry="4.8"/></g>
+  </g>
+
+  <g class="o-body">
+    <g class="o-wing o-wing-l">
+      <path d="M46 122 C24 128 10 150 14 170 C18 182 34 182 42 172 C52 160 56 140 46 122 Z" fill="url(#fav-fur)" stroke="#D3C4FF" stroke-width="1.2"/>
+      <path d="M14 170 C12 160 18 152 24 152 C24 160 22 166 26 172 C28 166 30 160 34 158 C34 166 34 172 38 176 C30 182 18 180 14 170 Z" fill="url(#fav-tip)"/>
+      <g class="o-prop o-p-check"><circle cx="24" cy="178" r="16" fill="#22C064" stroke="#fff" stroke-width="3.5"/><path d="M16 178 l6 6 l11 -12" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/></g>
+    </g>
+    <g class="o-wing o-wing-r">
+      <path d="M154 122 C176 128 190 150 186 170 C182 182 166 182 158 172 C148 160 144 140 154 122 Z" fill="url(#fav-fur)" stroke="#D3C4FF" stroke-width="1.2"/>
+      <path d="M186 170 C188 160 182 152 176 152 C176 160 178 166 174 172 C172 166 170 160 166 158 C166 166 166 172 162 176 C170 182 182 180 186 170 Z" fill="url(#fav-tip)"/>
+      <g class="o-prop o-p-bell"><g class="o-bell"><path d="M164 176 C164 160 170 155 176 155 C182 155 188 160 188 176 L193 183 L159 183 Z" fill="#FFC93D" stroke="#E39A10" stroke-width="1.6"/><path d="M168 168 C168 162 171 159 174 158" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity=".7"/><circle cx="176" cy="187" r="4" fill="#E39A10"/></g><g class="o-rays" stroke="#FFC93D" stroke-width="3.2" stroke-linecap="round"><line x1="194" y1="160" x2="200" y2="154"/><line x1="196" y1="172" x2="204" y2="172"/><line x1="156" y1="158" x2="150" y2="152"/></g></g>
+    </g>
+
+    <path class="o-torso" d="M176.0 146.0 Q178.8 152.3 173.8 158.0 Q174.3 164.5 167.3 169.2 Q165.4 175.7 156.9 179.2 Q152.7 185.1 143.2 187.1 Q136.9 192.3 126.9 192.8 Q119.0 196.7 109.2 195.6 Q100.0 198.3 90.8 195.6 Q81.0 196.7 73.1 192.8 Q63.1 192.3 56.8 187.1 Q47.3 185.1 43.1 179.2 Q34.6 175.7 32.7 169.2 Q25.7 164.5 26.2 158.0 Q21.2 152.3 24.0 146.0 Q21.2 139.7 26.2 134.0 Q25.7 127.5 32.7 122.8 Q34.6 116.3 43.1 112.8 Q47.3 106.9 56.8 104.9 Q63.1 99.7 73.1 99.2 Q81.0 95.3 90.8 96.4 Q100.0 93.8 109.2 96.4 Q119.0 95.3 126.9 99.2 Q136.9 99.7 143.2 104.9 Q152.7 106.9 156.9 112.8 Q165.4 116.3 167.3 122.8 Q174.3 127.5 173.8 134.0 Q178.8 139.7 176.0 146.0 Z" fill="url(#fav-fur)"/>
+
+    <g class="o-head">
+      <g class="o-tuft o-tuft-l"><path d="M44 74 C30 66 16 52 10 34 C22 40 30 46 36 54 C30 42 28 30 32 18 C40 32 46 46 50 58 C50 48 54 38 60 32 C60 46 60 60 56 72 Z" fill="url(#fav-tuft)"/></g>
+      <g class="o-tuft o-tuft-r"><path d="M156 74 C170 66 184 52 190 34 C178 40 170 46 164 54 C170 42 172 30 168 18 C160 32 154 46 150 58 C150 48 146 38 140 32 C140 46 140 60 144 72 Z" fill="url(#fav-tuft)"/></g>
+      <path d="M175.6 103.7 Q177.0 110.0 172.4 115.4 Q172.0 121.7 166.0 126.3 Q163.9 132.5 156.7 135.9 Q152.9 141.7 145.0 144.0 Q139.7 149.0 131.2 150.0 Q124.7 154.0 116.2 153.7 Q108.6 156.6 100.4 155.0 Q92.1 156.7 84.5 153.8 Q76.0 154.2 69.4 150.2 Q61.0 149.2 55.6 144.3 Q47.6 142.0 43.8 136.3 Q36.6 132.9 34.4 126.7 Q28.3 122.2 27.8 115.9 Q23.1 110.5 24.5 104.2 Q21.3 98.3 24.4 92.3 Q23.0 86.0 27.6 80.6 Q28.0 74.3 34.0 69.7 Q36.1 63.5 43.3 60.1 Q47.1 54.3 55.0 52.0 Q60.3 47.0 68.8 46.0 Q75.3 42.0 83.8 42.3 Q91.4 39.4 99.6 41.0 Q107.9 39.3 115.5 42.2 Q124.0 41.8 130.6 45.8 Q139.0 46.8 144.4 51.7 Q152.4 54.0 156.2 59.7 Q163.4 63.1 165.6 69.3 Q171.7 73.8 172.2 80.1 Q176.9 85.5 175.5 91.8 Q178.7 97.7 175.6 103.7 Z" fill="url(#fav-headfur)"/>
+      <ellipse cx="100" cy="108" rx="60" ry="40" fill="url(#fav-face)"/>
+      <ellipse cx="100" cy="80" rx="62" ry="12" fill="url(#fav-shade)"/>
+      <ellipse cx="54" cy="124" rx="13" ry="8.5" fill="url(#fav-blush)"/><ellipse cx="146" cy="124" rx="13" ry="8.5" fill="url(#fav-blush)"/>
+
+      <g class="o-eyes">
+        <g class="o-eye o-eye-l"><circle cx="74" cy="104" r="24" fill="#FFFFFF" stroke="#DCD0FF" stroke-width="1.6"/>
+          <g class="o-gaze"><g class="o-iris"><circle cx="74" cy="105" r="20" fill="#170A40"/><circle cx="74" cy="105" r="18" fill="url(#fav-iris)"/><circle class="o-pupil" cx="74" cy="106" r="9.5" fill="#0E0628"/>
+            <ellipse cx="66" cy="96" rx="7.5" ry="6.5" fill="#fff"/><circle cx="82.5" cy="113" r="3.4" fill="#fff"/><path d="M62 112 Q74 122 86 112" fill="none" stroke="#B49BFF" stroke-width="2" stroke-linecap="round" opacity=".7"/></g></g>
+          <ellipse class="o-lid o-lid-l" cx="74" cy="104" rx="25.5" ry="25.5" fill="#FBF9FF"/></g>
+        <g class="o-eye o-eye-r"><circle cx="126" cy="104" r="24" fill="#FFFFFF" stroke="#DCD0FF" stroke-width="1.6"/>
+          <g class="o-gaze"><g class="o-iris"><circle cx="126" cy="105" r="20" fill="#170A40"/><circle cx="126" cy="105" r="18" fill="url(#fav-iris)"/><circle class="o-pupil" cx="126" cy="106" r="9.5" fill="#0E0628"/>
+            <ellipse cx="118" cy="96" rx="7.5" ry="6.5" fill="#fff"/><circle cx="134.5" cy="113" r="3.4" fill="#fff"/><path d="M114 112 Q126 122 138 112" fill="none" stroke="#B49BFF" stroke-width="2" stroke-linecap="round" opacity=".7"/></g></g>
+          <ellipse class="o-lid o-lid-r" cx="126" cy="104" rx="25.5" ry="25.5" fill="#FBF9FF"/></g>
+      </g>
+      <path class="o-wink" d="M58 108 Q74 90 90 108" fill="none" stroke="#24104F" stroke-width="5" stroke-linecap="round"/>
+      <g class="o-happy" fill="none" stroke="#24104F" stroke-width="5" stroke-linecap="round"><path d="M58 110 Q74 90 90 110"/><path d="M110 110 Q126 90 142 110"/></g>
+      <g class="o-sleepy" fill="none" stroke="#24104F" stroke-width="4.5" stroke-linecap="round"><path d="M59 106 Q74 116 89 106"/><path d="M111 106 Q126 116 141 106"/></g>
+      <g class="o-brows" fill="none" stroke="#24104F" stroke-width="4" stroke-linecap="round"><path d="M56 76 L84 84"/><path d="M144 76 L116 84"/></g>
+
+      <path class="o-beak" d="M89 118 Q100 108 111 118 Q106 128 100 134 Q94 128 89 118 Z" fill="url(#fav-beak)" stroke="#E06F0B" stroke-width="1.2"/>
+      <g class="o-mouth"><path d="M87 116 Q100 106 113 116 L107 123 Q100 121 93 123 Z" fill="url(#fav-beak)" stroke="#E06F0B" stroke-width="1.2"/>
+        <path d="M93 123 Q100 140 107 123 Q100 121 93 123 Z" fill="#7C1E42"/><path d="M95.5 128 Q100 142 104.5 128 Q100 125 95.5 128 Z" fill="#FF7FA6"/></g>
+
+      <g class="o-hat">
+        <path d="M14 76 C14 62 50 54 100 54 C150 54 186 62 186 76 C186 86 166 88 156 84 C140 78 60 78 44 84 C34 88 14 86 14 76 Z" fill="url(#fav-brim)"/>
+        <path d="M40 70 C38 38 64 16 100 16 C136 16 162 38 160 70 C140 78 60 78 40 70 Z" fill="url(#fav-hat)"/>
+        <path d="M44 62 C70 70 130 70 156 62" fill="none" stroke="#4527C2" stroke-width="3" opacity=".45"/>
+        <path d="M58 38 C64 28 76 22 90 20" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" opacity=".35"/>
+        <path d="M22 74 C30 68 44 66 56 66" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".3"/>
+        <g class="o-emblem"><path d="M88 32 l3.5 -7 l4 5 h9 l4 -5 l3.5 7 Z" fill="#FFFFFF"/><ellipse cx="100" cy="39" rx="13" ry="10" fill="#FFFFFF"/>
+          <circle cx="94.5" cy="39" r="3.6" fill="#6A4BEB"/><circle cx="105.5" cy="39" r="3.6" fill="#6A4BEB"/><circle cx="93.5" cy="38" r="1.2" fill="#fff"/><circle cx="104.5" cy="38" r="1.2" fill="#fff"/><path d="M98.5 43.5 h3 l-1.5 2.6 Z" fill="#FFA52E"/></g>
+      </g>
+      <g class="o-prop o-p-magnifier"><g class="o-mag"><line x1="142" y1="118" x2="162" y2="141" stroke="#5A3BDB" stroke-width="8" stroke-linecap="round"/><circle cx="127" cy="104" r="21" fill="#DDE8FF" fill-opacity=".45" stroke="#6A4BEB" stroke-width="5.5"/><path d="M115 95 a14 14 0 0 1 12 -6" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/></g></g>
+      <g class="o-prop o-p-headphones"><path d="M26 108 C20 34 180 34 174 108" fill="none" stroke="#5A3BDB" stroke-width="8" stroke-linecap="round"/><rect x="14" y="92" width="18" height="32" rx="8" fill="#7C5CF6"/><rect x="168" y="92" width="18" height="32" rx="8" fill="#7C5CF6"/><rect x="18" y="98" width="5" height="18" rx="2.5" fill="#fff" opacity=".35"/></g>
+    </g>
+    <g class="o-crest" fill="url(#fav-crest)" transform="translate(100 168) scale(.8) translate(-100 -152)">
+      <path d="M97 150 C88 140 76 134 64 134 C70 138 74 142 76 146 C70 144 64 145 58 148 C66 150 72 153 76 157 C70 158 66 160 62 164 C74 164 86 162 96 158 Z"/>
+      <path d="M103 150 C112 140 124 134 136 134 C130 138 126 142 124 146 C130 144 136 145 142 148 C134 150 128 153 124 157 C130 158 134 160 138 164 C126 164 114 162 104 158 Z"/>
+      <path d="M100 131 l4 7 l-4 7 l-4 -7 Z"/>
+      <path d="M86 150 C90 146 96 146 100 152 C104 146 110 146 114 150 C112 160 106 166 100 168 C94 166 88 160 86 150 Z"/>
+      <circle cx="93.5" cy="154" r="3" fill="#fff"/><circle cx="106.5" cy="154" r="3" fill="#fff"/><circle cx="93.5" cy="154" r="1.6" fill="#3A1A8F"/><circle cx="106.5" cy="154" r="1.6" fill="#3A1A8F"/>
+      <path d="M98.5 158 h3 l-1.5 3 Z" fill="#FFB12E"/>
+    </g>
+    <g class="o-prop o-p-tablet"><rect x="60" y="134" width="80" height="50" rx="7" fill="#E4EBFF" stroke="#7F95FF" stroke-width="2.2"/><rect x="65" y="139" width="70" height="40" rx="3.5" fill="#F7F9FF"/><g class="o-bars" fill="#6F7CFF"><rect class="o-bar" x="72" y="159" width="10" height="16" rx="1.5"/><rect class="o-bar" x="87" y="152" width="10" height="23" rx="1.5"/><rect class="o-bar" x="102" y="146" width="10" height="29" rx="1.5" fill="#9A6BFF"/><rect class="o-bar" x="117" y="142" width="10" height="33" rx="1.5" fill="#C45BE8"/></g></g>
+    <g class="o-prop o-p-envelope"><rect x="64" y="136" width="72" height="46" rx="5" fill="#F4F0FF" stroke="#9C86FF" stroke-width="2.2"/><path d="M64 139 L100 163 L136 139" fill="none" stroke="#9C86FF" stroke-width="2.2"/><g class="o-badge"><circle cx="134" cy="137" r="10" fill="#F04444" stroke="#fff" stroke-width="2.5"/><path d="M132.5 132.5 l2.5 -2 v13" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+  </g>
+
+  <g class="o-prop o-p-question"><g class="o-q o-q1"><text x="164" y="44" font-size="42" font-weight="800" font-family="system-ui, sans-serif" fill="#7C5CF6">?</text></g><g class="o-q o-q2"><text x="14" y="50" font-size="32" font-weight="800" font-family="system-ui, sans-serif" fill="#A589FF">?</text></g></g>
+  <g class="o-prop o-p-notes" fill="#7C5CF6"><g class="o-note o-n1"><circle cx="176" cy="56" r="5.5"/><rect x="179.5" y="32" width="2.8" height="24"/><path d="M179.5 32 q11 2 11 11" fill="none" stroke="#7C5CF6" stroke-width="2.8"/></g><g class="o-note o-n2"><circle cx="22" cy="66" r="4.8"/><rect x="25" y="46" width="2.6" height="20"/></g></g>
+  <g class="o-prop o-p-sparkles" fill="#A589FF"><path class="o-spark o-s1" d="M14 30 l3.4 10 l10 3.4 l-10 3.4 l-3.4 10 l-3.4 -10 l-10 -3.4 l10 -3.4 Z"/><path class="o-spark o-s2" d="M184 54 l2.6 7.6 l7.6 2.6 l-7.6 2.6 l-2.6 7.6 l-2.6 -7.6 l-7.6 -2.6 l7.6 -2.6 Z"/></g>
+  <g class="o-prop o-p-zzz" font-family="system-ui, sans-serif" font-weight="800" fill="#7C5CF6"><text class="o-z o-z1" x="152" y="48" font-size="15">z</text><text class="o-z o-z2" x="166" y="33" font-size="20">z</text><text class="o-z o-z3" x="180" y="16" font-size="26">Z</text></g>
+  <g class="o-prop o-p-confetti"><rect class="o-c o-c1" x="26" y="8" width="7" height="11" rx="1.5" fill="#F59E0B"/><rect class="o-c o-c2" x="56" y="0" width="6" height="10" rx="1.5" fill="#22C55E"/><circle class="o-c o-c3" cx="148" cy="6" r="4" fill="#EF4444"/><rect class="o-c o-c4" x="170" y="14" width="7" height="11" rx="1.5" fill="#3B82F6"/><circle class="o-c o-c5" cx="112" cy="0" r="3.4" fill="#A855F7"/><rect class="o-c o-c6" x="188" y="40" width="6" height="10" rx="1.5" fill="#EC4899"/><rect class="o-c o-c7" x="4" y="44" width="6" height="10" rx="1.5" fill="#14B8A6"/></g>
+</g>
+</svg>

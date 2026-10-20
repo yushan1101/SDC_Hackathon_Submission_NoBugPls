@@ -1,0 +1,1 @@
+Training-only snapshots (O*NET 31.0 derived files, STF-KAN outlook on O*NET keys, 2023 job-ad aggregates). Used by scripts/ and forecasting/ only; the live app never reads this folder (tests/test_runtime_sources.py).

@@ -1,0 +1,15 @@
+employee_id,target_role,weekly_hours,skill,level
+E-001,nurse responsible for general care,4,communication,3
+E-001,nurse responsible for general care,4,critical thinking,2
+E-001,nurse responsible for general care,4,excel,1
+E-002,electrician,5,troubleshooting,3
+E-002,electrician,5,repair,3
+E-002,electrician,5,mathematics,2
+E-003,accountant,6,excel,4
+E-003,accountant,6,mathematics,3
+E-003,accountant,6,writing,2
+E-004,customer service representative,3,customer service,4
+E-004,customer service representative,3,listening,3
+E-005,data scientist,8,python,4
+E-005,data scientist,8,mathematics,3
+E-005,data scientist,8,sql,2
