@@ -58,6 +58,18 @@ mutating calls need the `X-AP` header, strict CSP. Streamlit (`app.py`) stays as
 LLM agents are off unless `GEMINI_API_KEY` and `LLM_FAST_MODEL` are set (see `.env.example`); everything works
 deterministically without them. GPU is not needed (training is CPU-minutes); RunPod remains optional.
 
+### Hackathon must-haves (v0.3)
+See [docs/requirements_trace.md](docs/requirements_trace.md) for the full mapping to code and tests.
+- **Intake:** quick-match MCQ game (13 scenarios + field + training), resume upload auto-converted to Markdown
+  with evidence-quoted skills, or manual rating.
+- **AI-trend signals, daily:** `python -m mcp_server.signals --refresh` (also runs once a day inside the web
+  server; `SIGNALS_DAILY=0` turns it off). Public "Today" page and HR "Signals" view; agents read it via the
+  `trend_signals` MCP tool.
+- **Future-role matching** across all 899 occupations, **SDG mapping** to all 17 goals
+  (`python scripts/build_sdg_map.py` rebuilds it from the UN SDG API), two AI scenarios.
+- **HR hiring:** openings with plain-language thresholds, a public apply link, AI screening agents, blind
+  ranked review, human shortlist / hold / decline with an audit log. Sample resumes: `data/samples/sample_resume_*.md`.
+
 ### Works for any job (O*NET 31.0)
 The live agents cover all 899 rated O*NET occupations (search ~45k job titles: "nurse", "electrician", …).
 Required levels = O*NET importance >= 3/5 skills, level rescaled 0-7 -> 0-5; Hot/In-Demand tools at an assumed

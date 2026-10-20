@@ -15,6 +15,14 @@ export async function api(path, { method = "GET", body, signal } = {}) {
   return data;
 }
 
+/** POST multipart form data (file uploads). */
+export async function upload(path, form, signal) {
+  const res = await fetch(path, { method: "POST", body: form, signal, credentials: "same-origin", headers: { "X-AP": "1" } });
+  const data = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
+  if (!res.ok) throw new ApiError(res.status, data?.detail || res.statusText, data);
+  return data;
+}
+
 /** POST a JSON body and call onEvent(obj) for every `data:` line the server streams. */
 export async function stream(path, body, onEvent, signal) {
   const res = await fetch(path, {
@@ -78,6 +86,10 @@ const ICONS = {
   back: '<path d="M15 5l-7 7 7 7"/>',
   stop: '<path d="M7 7h10v10H7z"/>',
   send: '<path d="M4 12h14 M13 6l6 6-6 6"/>',
+  quiz: '<path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14 M12 17.5v.5 M4 4h16v16H4z"/>',
+  pulse: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
+  file: '<path d="M6 3h8l4 4v14H6z M14 3v4h4 M9 12h6 M9 16h6"/>',
+  people: '<path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6 M16 5a3 3 0 0 1 0 6 M18 14c2 .6 3 3 3 6"/>',
   sources: '<path d="M5 4h14v16H5z M9 4v16"/>',
 };
 export function icon(name) {

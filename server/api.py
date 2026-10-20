@@ -15,26 +15,31 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
+from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from io import StringIO
 from pathlib import Path
 
 import pandas as pd
-from fastapi import Depends, FastAPI, HTTPException, Request as HttpRequest, Response
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request as HttpRequest, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 from agents.gap_analyst import SCENARIO_NOTES
 from agents.pathway import HOURS_PER_LEVEL
+from agents.sdg import goal_meta, role_sdgs
+from agents import criteria, matcher, quiz, resume
 from agents.knowledge import occupation, resolve_occupation, role_requirements, search_occupations
 from config.settings import get_settings
-from core import graph
+from core import graph, screening
 from core.state import Pathway, Profile, Request, Skill
 from core.team_import import parse_team
 from core.usage import summarize
-from governance import accounts, approval
+from governance import accounts, approval, recruiting
+from mcp_server import signals
 from governance.audit import connect
 from validation.revision import validate
 
@@ -42,7 +47,7 @@ log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 cfg = get_settings()
-db = accounts.init(connect(cfg.database_path))
+db = recruiting.init(accounts.init(connect(cfg.database_path)))
 DB_LOCK = threading.Lock()  # one sqlite connection shared across request threads
 SESSION_IDLE = timedelta(minutes=30)
 COOKIE = "ap_session"
@@ -68,7 +73,8 @@ async def headers(request: HttpRequest, call_next):
                                    "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
         "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin",
         "Permissions-Policy": "camera=(), microphone=(), geolocation=()"})
-    if request.url.path.startswith("/static/") or request.url.path in ("/", "/enterprise"):
+    if request.url.path.startswith("/static/") or request.url.path in ("/", "/enterprise") \
+            or request.url.path.startswith("/apply/"):
         resp.headers["Cache-Control"] = "no-cache"  # revalidate (cheap 304 via ETag) so UI updates ship immediately
     return resp
 
@@ -165,11 +171,12 @@ def describe(node: str, u: dict) -> str:
     if node == "gap_analysis":
         return f"Scored {sum(g.gap > 0 for g in u.get('skill_gaps', []))} gaps under both AI scenarios"
     if node == "market_analyst":
-        o = u.get("outlook") or {}
-        if not o:
-            return "Skill outlook unavailable (no trained STF-KAN asset installed)"
+        o, sig = u.get("outlook") or {}, u.get("signals")
         moving = [d["direction"] for d in o.values() if d["direction"] != "stable"]
-        return f"STF-KAN outlook: {moving.count('rising')} rising, {moving.count('falling')} falling of {len(o)} requirements"
+        parts = [f"STF-KAN: {moving.count('rising')} rising, {moving.count('falling')} falling" if o else "STF-KAN asset unavailable",
+                 f"trend board {sig['day']}: emergence {sig.get('emergence', 0):+.2f}, pressure {sig.get('pressure', 0):.2f}" if sig else "no trend board yet",
+                 f"SDG {', '.join(str(x['goal']) for x in u.get('sdgs', []))}" if u.get("sdgs") else ""]
+        return " · ".join(p for p in parts if p)
     if node == "pathway":
         p = u.get("draft_pathway")
         return f"Drafted {len(p.activities)} activities across 90 days" if p else "Drafted plan"
@@ -194,6 +201,8 @@ def serialise(s: dict) -> dict:
             "outlook": {"items": [{"skill_id": k, **v} for k, v in outlook.items() if v["direction"] != "stable"],
                         "model": _outlook_meta()} if outlook else None,
             "comparison": s.get("scenario_comparison", []),
+            "signals": s.get("signals"),
+            "sdgs": [x | goal_meta(x["goal"]) for x in s.get("sdgs", [])],
             "evidence": [e.model_dump() for e in s.get("evidence", [])],
             "plan": p.model_dump() if p else None,
             "issues": [i.model_dump() for i in s.get("validation_issues", [])],
@@ -276,7 +285,7 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
         for piece in chunks(out["narrative"] or out["answer"] or ""):
             yield sse({"t": "text", "delta": piece})
             time.sleep(0.03)  # presentation pacing of already-verified text
-        for kind in ("gaps", "comparison", "outlook", "issues", "plan"):
+        for kind in ("gaps", "comparison", "outlook", "signals", "sdgs", "issues", "plan"):
             if out[kind]:
                 yield sse({"t": "section", "kind": kind, "data": out[kind]})
                 time.sleep(0.12)
@@ -484,6 +493,301 @@ def sample_team(user: dict = Depends(need("hr_advisor"))):
     return {"csv": (ROOT / "data" / "samples" / "sample_team.csv").read_text(encoding="utf-8")}
 
 
+# --- AI-trend signals (daily board) ----------------------------------------------------------------------
+def _board_summary(b: dict | None) -> dict:
+    if not b:
+        return {"available": False, "message": "No trend board yet. HR can refresh it; it also refreshes daily."}
+    return {"available": True, **{k: b[k] for k in ("day", "created_utc", "sources", "method", "topics",
+                                                    "emerging_roles", "declining_roles", "evidence")}}
+
+
+def _board(day: str | None = None):
+    return signals.latest_board(signals.db(cfg.database_path), day)
+
+
+@app.get("/api/signals/today")
+def signals_today(day: str | None = None, user: dict = Depends(current_user)):
+    return _board_summary(_board(day[:10] if day else None))
+
+
+@app.get("/api/signals/history")
+def signals_history(user: dict = Depends(current_user)):
+    con = signals.db(cfg.database_path)
+    out = []
+    for d in reversed(signals.history_days(con, 30)):
+        b = signals.latest_board(con, d)
+        out.append({"day": d, "z": {t["id"]: t["z"] for t in b["topics"]}})
+    return {"days": out, "topics": [{"id": t["id"], "label": t["label"], "kind": t["kind"]} for t in signals.TOPICS]}
+
+
+REFRESHING = threading.Lock()
+
+
+def _refresh_signals() -> bool:
+    if not REFRESHING.acquire(blocking=False):
+        return False
+
+    def run():
+        try:
+            signals.refresh(con=signals.db(cfg.database_path))
+        except Exception:
+            log.exception("signal refresh failed")
+        finally:
+            REFRESHING.release()
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
+
+@app.post("/api/signals/refresh")
+def signals_refresh(user: dict = Depends(need("hr_advisor"))):
+    return {"started": _refresh_signals(), "running": REFRESHING.locked()}
+
+
+def _daily():  # ponytail: in-process hourly check; use cron / a job queue when running more than one worker
+    while True:
+        b = _board()
+        if not b or b["day"] < datetime.now(timezone.utc).date().isoformat():
+            _refresh_signals()
+        time.sleep(3600)
+
+
+# --- matching: quiz game + resume deep analysis --------------------------------------------------------------
+def _matches(levels: dict, prefixes: list[str] | None = None, text: str | None = None, k: int = 8,
+             zone: int | None = None) -> list[dict]:
+    board = _board()
+    rows = matcher.match_roles(levels, k, board, text, prefixes or None, zone)
+    em_cut, pr_cut = _cuts(board["day"]) if board else (None, None)
+    for r in rows:
+        r["emerging"] = em_cut is not None and r["emergence"] >= em_cut   # top 10% of today's board
+        r["under_pressure"] = pr_cut is not None and r["pressure"] >= pr_cut
+        items, _ = role_sdgs(r["soc"])
+        r["sdgs"] = [{"goal": x["goal"], "short": goal_meta(x["goal"])["short"], "color": goal_meta(x["goal"])["color"]}
+                     for x in items]
+        r["drivers"] = (board or {}).get("occupations", {}).get(r["soc"], {}).get("topics", [])
+    return rows
+
+
+@lru_cache(maxsize=4)
+def _cuts(day: str) -> tuple[float, float]:
+    occ = _board(day)["occupations"].values()
+    q = lambda key: float(sorted(v[key] for v in occ)[int(0.9 * len(occ))])
+    return max(q("emergence"), 0.01), max(q("pressure"), 0.01)
+
+
+@app.get("/api/quiz")
+def quiz_questions(user: dict = Depends(current_user)):
+    return quiz.questions()
+
+
+class QuizIn(BaseModel):
+    answers: dict[str, int] = Field(max_length=40)
+    fields: list[str] = Field(default=[], max_length=13)
+    zone: int | None = Field(default=None, ge=1, le=5)  # O*NET Job Zone from the training question
+
+
+@app.post("/api/quiz/score")
+def quiz_score(body: QuizIn, user: dict = Depends(current_user)):
+    levels, prefixes = quiz.score(body.answers, body.fields)
+    if len(levels) < 3:
+        raise HTTPException(422, "Answer at least three questions.")
+    return {"skills": [{"name": k, "level": v} for k, v in levels.items()], "matches": _matches(levels, prefixes, zone=body.zone)}
+
+
+class MatchIn(BaseModel):
+    skills: list[SkillIn] = Field(max_length=60)
+    text: str | None = Field(default=None, max_length=20000)
+    fields: list[str] = Field(default=[], max_length=13)
+
+
+@app.post("/api/match")
+def match(body: MatchIn, user: dict = Depends(current_user)):
+    _, prefixes = quiz.score({}, body.fields)
+    return {"matches": _matches({s.name: s.level for s in body.skills}, prefixes, body.text)}
+
+
+async def _read(file: UploadFile) -> bytes:
+    data = await file.read(resume.MAX_BYTES + 1)
+    if len(data) > resume.MAX_BYTES:
+        raise HTTPException(413, "File too large (2 MB max).")
+    return data
+
+
+@app.post("/api/resume/analyze")
+async def resume_analyze(file: UploadFile = File(...), user: dict = Depends(current_user)):
+    """Resume -> Markdown -> evidence-backed skills -> future-role matches. Nothing is stored."""
+    data = await _read(file)
+    return await run_in_threadpool(_analyze_resume, file.filename or "resume.txt", data)
+
+
+def _analyze_resume(filename: str, data: bytes) -> dict:
+    try:
+        md = resume.to_markdown(filename, data)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    x = resume.extract(md)
+    x["skills"] = resume.verify(md, x["skills"])
+    levels = {s["name"]: s["level"] for s in x["skills"]}
+    return {"markdown": md, "skills": x["skills"], "years_experience": x["years_experience"],
+            "matches": _matches(levels, text=resume.redact(md)) if levels else []}
+
+
+# --- HR recruiting: openings with NL thresholds, AI screening agents, human decisions ------------------------
+class CriteriaIn(BaseModel):
+    text: str = Field(max_length=1000)
+    soc: str | None = Field(default=None, max_length=12)
+
+
+@app.post("/api/criteria/parse")
+def criteria_parse(body: CriteriaIn, user: dict = Depends(need("hr_advisor"))):
+    c = criteria.parse(body.text, body.soc)
+    return {"criteria": c, "summary": criteria.describe(c)}
+
+
+class OpeningIn(BaseModel):
+    soc: str = Field(max_length=12)
+    title: str = Field(default="", max_length=80)
+    criteria_text: str = Field(default="", max_length=1000)
+
+
+def _opening_or_404(oid: str) -> dict:
+    with DB_LOCK:
+        o = recruiting.get_opening(db, oid)
+    if not o:
+        raise HTTPException(404, "opening not found")
+    return o
+
+
+@app.post("/api/openings")
+def opening_create(body: OpeningIn, user: dict = Depends(need("hr_advisor"))):
+    o = occupation(body.soc)
+    if not o:
+        raise HTTPException(422, "Unknown occupation: pick one from the O*NET search.")
+    c = criteria.parse(body.criteria_text, body.soc)
+    try:
+        with DB_LOCK:
+            return recruiting.create_opening(db, user["username"], body.soc, body.title or o["title"], body.criteria_text, c)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/api/openings")
+def opening_list(user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        rows = recruiting.list_openings(db)
+    return [{k: o[k] for k in ("id", "soc", "title", "status", "token", "created_utc", "criteria_text")}
+            | {"applications": o["applications"][0], "recommended": o["applications"][1] or 0} for o in rows]
+
+
+def _ranked(o: dict) -> list[dict]:
+    """Ranking agent over every application; persists who is recommended (logged when it changes)."""
+    with DB_LOCK:
+        apps = recruiting.list_applications(db, o["id"])
+    ids, why = screening.rank_candidates(apps, o["criteria"])
+    with DB_LOCK:
+        recruiting.set_recommendations(db, o["id"], ids)
+    for a in apps:
+        a["recommended"], a["reason"] = a["id"] in ids, why[a["id"]]
+        a["rank"] = ids.index(a["id"]) + 1 if a["id"] in ids else None
+    return sorted(apps, key=lambda a: (a["rank"] is None, a["rank"] or 0, -a["fit"]))
+
+
+@app.get("/api/openings/{oid}")
+def opening_detail(oid: str, user: dict = Depends(need("hr_advisor"))):
+    o = _opening_or_404(oid)
+    apps = _ranked(o)
+    with DB_LOCK:
+        trail = recruiting.events(db, oid)
+    return {**o, "summary": criteria.describe(o["criteria"]), "candidates": apps, "events": trail[-50:],
+            "apply_path": f"/apply/{o['token']}"}
+
+
+@app.post("/api/openings/{oid}/criteria")
+def opening_criteria(oid: str, body: CriteriaIn, user: dict = Depends(need("hr_advisor"))):
+    o = _opening_or_404(oid)
+    c = criteria.parse(body.text, o["soc"])
+    try:
+        with DB_LOCK:
+            recruiting.update_criteria(db, oid, user["username"], body.text, c)
+            rows = recruiting.resumes(db, oid)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    board = _board()
+    for aid, md in rows:  # the screening agents re-judge every application against the new thresholds
+        r = screening.screen("resume.md", md.encode("utf-8"), o["soc"], c, board)
+        with DB_LOCK:
+            recruiting.update_analysis(db, aid, r["analysis"])
+    return {"criteria": c, "summary": criteria.describe(c), "rescreened": len(rows)}
+
+
+class StatusIn(BaseModel):
+    status: str = Field(pattern="^(open|closed)$")
+
+
+@app.post("/api/openings/{oid}/status")
+def opening_status(oid: str, body: StatusIn, user: dict = Depends(need("hr_advisor"))):
+    _opening_or_404(oid)
+    with DB_LOCK:
+        recruiting.set_status(db, oid, user["username"], body.status)
+    return {"status": body.status}
+
+
+class DecisionIn(BaseModel):
+    decision: str = Field(pattern="^(shortlisted|declined|on_hold)$")
+    note: str = Field(default="", max_length=500)
+
+
+@app.post("/api/applications/{aid}/decision")
+def application_decision(aid: str, body: DecisionIn, user: dict = Depends(need("hr_advisor"))):
+    try:
+        with DB_LOCK:
+            return recruiting.decide(db, aid, user["username"], body.decision, body.note)
+    except ValueError as e:
+        raise HTTPException(404 if "not found" in str(e) else 422, str(e))
+
+
+# --- public application link (no account; consent required) --------------------------------------------------
+def _open_by_token(token: str) -> dict:
+    with DB_LOCK:
+        o = recruiting.get_opening(db, token=token[:40])
+    if not o or o["status"] != "open":
+        raise HTTPException(404, "This application link is closed or does not exist.")
+    return o
+
+
+@app.get("/api/apply/{token}")
+def apply_info(token: str):
+    o = _open_by_token(token)
+    occ = occupation(o["soc"]) or {}
+    return {"title": o["title"], "occupation": occ.get("title"), "description": occ.get("description", "")[:400],
+            "privacy": "Your resume is converted to text and screened by AI agents with your name and contact details "
+                       "hidden. A human HR advisor makes every decision and sees your contact details only if you are "
+                       "shortlisted. The original file is not stored."}
+
+
+@app.post("/api/apply/{token}")
+async def apply_submit(token: str, name: str = Form(..., max_length=80), email: str = Form(..., max_length=120),
+                       consent: bool = Form(...), file: UploadFile = File(...)):
+    o = _open_by_token(token)
+    if not consent:
+        raise HTTPException(422, "Consent is required to process your resume.")
+    if "@" not in email:
+        raise HTTPException(422, "Enter a valid email address.")
+    data = await _read(file)
+
+    def work():  # screening agents run off the event loop
+        try:
+            r = screening.screen(file.filename or "resume.txt", data, o["soc"], o["criteria"], _board())
+            with DB_LOCK:
+                aid = recruiting.add_application(db, o["id"], {"name": name.strip(), "email": email.strip()},
+                                                 r["md"], r["redacted"], r["analysis"])
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        _ranked(o)
+        return aid
+    aid = await run_in_threadpool(work)
+    return {"ok": True, "reference": aid[:6].upper(), "message": "Thanks, your application was received."}
+
+
 # --- static UI --------------------------------------------------------------------------------------------
 app.mount("/static", StaticFiles(directory=WEB), name="static")
 
@@ -491,6 +795,11 @@ app.mount("/static", StaticFiles(directory=WEB), name="static")
 @app.get("/")
 def public_ui():
     return FileResponse(WEB / "index.html")
+
+
+@app.get("/apply/{token}")
+def apply_ui(token: str):
+    return FileResponse(WEB / "apply.html")
 
 
 @app.get("/enterprise")
@@ -515,3 +824,5 @@ def _warm():
 
 
 threading.Thread(target=_warm, daemon=True).start()
+if cfg.signals_daily:
+    threading.Thread(target=_daily, daemon=True).start()

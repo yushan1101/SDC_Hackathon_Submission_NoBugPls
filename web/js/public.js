@@ -2,7 +2,8 @@
 import { api, stream, h, $, icon, toast, ApiError, reveal, RISE, DROP, GROW } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
 import { StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
-  sourceItem, staticText } from "./blocks.js";
+  sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
+import { startView, quizView, resumeView, todayView } from "./explore.js";
 
 const app = $("#app");
 const store = {
@@ -54,7 +55,7 @@ async function signIn() {
       btn.disabled = true; err.textContent = "";
       try {
         const me = await api("/api/login", { method: "POST", body: { username: user.value, password: pass.value } });
-        location.replace(me.role === "employee" ? "/#/build" : "/enterprise");
+        location.replace(me.role === "employee" ? "/#/start" : "/enterprise");
         if (me.role === "employee") location.reload();
       } catch (ex) { err.textContent = ex.message; owl.set("confused"); btn.disabled = false; pass.select(); }
     } },
@@ -90,12 +91,12 @@ function shell() {
   app.replaceChildren(
     h("a", { class: "sr-only", href: "#main" }, "Skip to content"),
     h("header", { class: "pub-top" },
-      h("a", { class: "wordmark", href: "#/build" }, "AiversePulse"),
-      h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/build", "Build plan"), nav("#/report", "Report"), nav("#/plans", "My plans")),
+      h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
+      h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Start"), nav("#/report", "Report"), nav("#/today", "Today"), nav("#/plans", "My plans")),
       S.status.el,
       h("button", { class: "btn sm signout", onclick: signOut }, "Sign out")),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
-    h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/build", "Build", "build"), tab("#/report", "Report", "report"), tab("#/plans", "Plans", "plans")),
+    h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Start", "build"), tab("#/report", "Report", "report"), tab("#/today", "Today", "pulse"), tab("#/plans", "Plans", "plans")),
     S.sheet);
 }
 
@@ -105,17 +106,22 @@ async function signOut() {
 }
 
 function route() {
-  const hash = location.hash || "#/build";
+  const hash = location.hash || "#/start";
   const [, page, id] = hash.split("/");
+  const section = ["quiz", "resume", "build"].includes(page) ? "#/start" : hash;
   document.querySelectorAll("[data-route]").forEach((a) => {
-    if (hash.startsWith(a.dataset.route)) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    if (section.startsWith(a.dataset.route)) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
   const main = $("#main");
   const go = () => {
     if (page === "report") reportView(main);
     else if (page === "plans" && id) planDetail(main, id);
     else if (page === "plans") plansView(main);
-    else buildView(main);
+    else if (page === "build") buildView(main);
+    else if (page === "quiz") quizView(main, { status: S.status, planFor });
+    else if (page === "resume") resumeView(main, { status: S.status, planFor });
+    else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
+    else startView(main, { name: S.me.display_name?.split(" ")[0] });
   };
   go();
   reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });
@@ -236,6 +242,14 @@ function buildView(main) {
   S.status.set("idle", "Ready when you are");
 }
 
+/** From a role match (quiz or resume): target that occupation with the skills we found, then run the agents. */
+function planFor(m, skills) {
+  Object.assign(S.profile, { target_role: m.soc, target_title: m.title,
+    skills: skills.slice(0, 40).map(({ name, level }) => ({ name, level })) });
+  saveProfile();
+  start();
+}
+
 function start(query) {
   if (!S.profile.skills.length) { toast("Add at least one skill first.", "err"); location.hash = "#/build"; return; }
   S.pending = { ...S.profile, skills: S.profile.skills.map((s) => ({ ...s })), query };
@@ -255,7 +269,7 @@ function reportView(main) {
         quick("Compare with agentic AI", () => rerun({ scenario: S.profile.scenario === "agentic" ? "assistive" : "agentic" })),
         quick("I have more time: 10 h/week", () => rerun({ weekly_learning_hours: 10 })),
         quick("Edit my skills", () => { location.hash = "#/build"; }),
-        quick("Try a different job", () => { location.hash = "#/build"; })),
+        quick("Try a different job", () => { location.hash = "#/start"; })),
       h("div", { class: "row" }, S.input, S.sendBtn));
     S.reportEl = h("div", { class: "report" },
       h("div", { class: "thread-col", style: { display: "grid", gap: "24px", "min-width": 0 } },
@@ -270,8 +284,8 @@ function reportView(main) {
   else if (!S.thread.length) {
     S.threadEl.replaceChildren(h("div", { class: "empty" }, new Owl({ size: 96, state: "idle" }).el,
       h("h2", {}, "No briefing yet"),
-      h("p", { class: "muted" }, "Build a plan first: tell us your target role, skills and time, and the agents will write your briefing here."),
-      h("a", { class: "btn primary", href: "#/build" }, "Build my plan")));
+      h("p", { class: "muted" }, "Play the quick match game, upload your resume or pick a job, and the AI agents will write your briefing here."),
+      h("a", { class: "btn primary", href: "#/start" }, "Get started")));
   }
 }
 
@@ -361,7 +375,8 @@ async function runTurn(params) {
       else if (ev.t === "section") {
         const d = ev.data;
         const el = ev.kind === "gaps" ? gapsBlock(d) : ev.kind === "comparison" ? comparisonBlock(d, p.scenario)
-          : ev.kind === "outlook" ? outlookBlock(d) : ev.kind === "issues" ? issuesBlock(d.filter((i) => i.severity === "error"))
+          : ev.kind === "outlook" ? outlookBlock(d) : ev.kind === "signals" ? signalsBlock(d) : ev.kind === "sdgs" ? sdgBlock(d)
+          : ev.kind === "issues" ? issuesBlock(d.filter((i) => i.severity === "error"))
           : ev.kind === "plan" ? planHolder(planId, d, p.weekly_learning_hours, meta?.status || "draft") : null;
         if (el) body.append(el);
       } else if (ev.t === "done") {
@@ -399,7 +414,7 @@ async function plansView(main) {
   const list = await api("/api/plans");
   if (!list.length) {
     main.append(h("div", { class: "empty" }, new Owl({ size: 96, state: "sleeping" }).el,
-      h("p", {}, "No plans yet. Build your first one in about two minutes."), h("a", { class: "btn primary", href: "#/build" }, "Build my plan")));
+      h("p", {}, "No plans yet. Build your first one in about two minutes."), h("a", { class: "btn primary", href: "#/start" }, "Get started")));
     return;
   }
   main.append(h("div", { class: "plan-list", style: { "margin-top": "28px" } }, list.map((pl) => h("a", { class: "plan-item", href: `#/plans/${pl.plan_id}`, style: { color: "inherit", "text-decoration": "none" } },
@@ -418,6 +433,8 @@ async function planDetail(main, id) {
     r?.narrative ? staticText(r.narrative, highlight) : null,
     r?.gaps?.length ? gapsBlock(r.gaps) : null,
     r?.outlook ? outlookBlock(r.outlook) : null,
+    r?.signals ? signalsBlock(r.signals) : null,
+    r?.sdgs?.length ? sdgBlock(r.sdgs) : null,
     planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null,
       onChange: () => planDetail(main, id) }),
     d.audience === "hr" && d.status === "approved" ? h("div", { class: "approve-bar" }, h("span", {}, "HR approved this plan for you."),

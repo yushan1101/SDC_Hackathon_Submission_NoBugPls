@@ -10,6 +10,8 @@ export function citeLabel(id) {
   if (p[0] === "onet") return p[2] === "skill" || p[2] === "tech" ? `O*NET · ${p.slice(3).join(":")}` : `O*NET · ${p[2] || p[1]}`;
   if (p[0] === "stfkan") return `STF-KAN · ${p.slice(2).join(":")}`;
   if (p[0] === "learn") return `learn · ${p.slice(1).join(":")}`;
+  if (p[0] === "signal") return `Signal · ${p[2]} (${p[3]}, ${p[1]})`;
+  if (p[0] === "sdg") return `UN SDG · goal ${p[2]}`;
   return `${p[0]} · ${p[p.length - 1]}`;
 }
 
@@ -189,4 +191,114 @@ export function sourceItem(e) {
     h("span", { class: "id" }, citeLabel(e.id)),
     h("span", { class: "t" }, e.title),
     h("span", { class: "m" }, [e.publisher, e.publication_date && `published ${e.publication_date}`, e.access_date && `accessed ${e.access_date}`].filter(Boolean).join(" · ")));
+}
+
+// ---------------------------------------------------------------- future roles, SDGs, daily AI-trend signals
+const pct = (x) => `${Math.round(x * 100)}%`;
+
+export function sdgChip(g) {
+  return h("a", { class: "sdg", href: `https://sdgs.un.org/goals/goal${g.goal}`, target: "_blank", rel: "noopener noreferrer",
+    style: { "--sdg": g.color }, title: `UN Sustainable Development Goal ${g.goal}: ${g.short}` },
+    h("b", {}, g.goal), g.short);
+}
+
+function momentum(m) {
+  const out = [];
+  if (m.emerging ?? m.emergence >= 1) out.push(h("span", { class: "trend rising", title: "Top 10% of roles for AI-driven growth on today's trend board" }, "↑ emerging"));
+  if (m.stretch) out.push(h("span", { class: "tag", title: "Needs one more O*NET preparation level than you have" }, "stretch"));
+  if (m.under_pressure ?? m.pressure >= 2) out.push(h("span", { class: "trend falling", title: "Top 10% of roles for automation pressure on today's trend board" }, "↓ automation pressure"));
+  return out;
+}
+
+/** Ranked future roles. onPlan(match) builds a full plan for one of them. */
+export function matchesBlock(matches, { onPlan, title = "Roles you could grow into", note } = {}) {
+  if (!matches?.length) return block("Role matches", h("h3", {}, title), h("p", { class: "note" }, "No matches yet. Add a few more skills."));
+  return block("Role matches",
+    h("h3", {}, title),
+    h("ol", { class: "matches" }, matches.map((m, i) => reveal(h("li", {},
+      h("span", { class: "rank num" }, i + 1),
+      h("div", { class: "who" },
+        h("div", {}, h("b", {}, m.title), h("span", { class: "mono muted" }, ` ${m.soc}`), momentum(m)),
+        h("span", { class: "note" }, m.top_gaps?.length ? `Closest gaps: ${m.top_gaps.join(", ")}` : "No skill gaps against O*NET requirements"),
+        m.sdgs?.length ? h("span", { class: "sdgs" }, m.sdgs.map(sdgChip)) : null),
+      h("div", { class: "fit" },
+        h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
+        h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 }))),
+      onPlan ? h("button", { class: "btn sm", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null),
+      DROP, { delay: Math.min(i, 8) * 45 }))),
+    h("p", { class: "note" }, note || "Match = how much of each role's O*NET 31.0 skill requirements you meet, weighted by importance. " +
+      "↑/↓ come from today's AI-trend board (news, research and job-posting signals); they reorder roles, never change the match."));
+}
+
+export function sdgBlock(sdgs) {
+  if (!sdgs?.length) return null;
+  return block("UN Sustainable Development Goals",
+    h("h3", {}, "How this role serves the UN SDGs"),
+    h("ul", { class: "sdg-list" }, sdgs.map((g) => h("li", {}, sdgChip(g),
+      h("span", {}, h("b", {}, `Target ${g.target}`), " ", g.target_text)))),
+    h("p", { class: "note" }, "Matched by meaning between the O*NET occupation description and the 169 official UN SDG targets " +
+      "(MiniLM similarity). An evidence-linked suggestion, not an official UN classification. Every plan activity also serves SDG 4 (education) and SDG 8 (decent work)."));
+}
+
+/** Report section: what today's AI-trend board says about this occupation. */
+export function signalsBlock(sig) {
+  if (!sig) return block("AI-trend signals", h("h3", {}, "AI-trend signals"), h("p", { class: "note" }, "No daily trend board has been built yet."));
+  const em = sig.emergence ?? 0, pr = sig.pressure ?? 0;
+  const arrow = (d) => (d === "rising" ? "↑" : d === "falling" ? "↓" : "→");
+  return block("AI-trend signals",
+    h("h3", {}, `AI-trend signals · ${sig.day}`),
+    h("p", {}, em >= 0.5 ? "Today's signals point toward growth for this role" : em <= -0.5 ? "Today's signals lean against this role" : "Today's signals are neutral for this role",
+      pr >= 1 ? ", with automation pressure on its routine tasks." : "."),
+    sig.topics?.length ? h("ul", { class: "topic-list" }, sig.topics.map((t) => h("li", {},
+      h("b", {}, t.label), h("span", { class: `trend ${t.direction}` }, arrow(t.direction)),
+      h("span", { class: "note" }, ` z ${t.z > 0 ? "+" : ""}${t.z} · ${t.confidence} confidence · skills ${t.skills.join(", ")}`)))) : null,
+    h("p", { class: "note" }, `Emergence ${em.toFixed(2)}, pressure ${pr.toFixed(2)} (exposure-weighted topic momentum). Sources: ` +
+      [sig.sources?.hn && "Hacker News", sig.sources?.arxiv && "arXiv", ...(sig.sources?.jobs || [])].filter(Boolean).join(", ") + ". Signals, not certainties."));
+}
+
+function spark(values) {
+  const w = 72, ht = 20, max = Math.max(1, ...values);
+  const pts = values.map((v, i) => `${(i / Math.max(1, values.length - 1)) * w},${ht - (v / max) * ht}`).join(" ");
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("viewBox", `0 -1 ${w} ${ht + 2}`); s.setAttribute("width", w); s.setAttribute("height", ht); s.setAttribute("aria-hidden", "true");
+  s.classList.add("spark");
+  const pl = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  pl.setAttribute("points", pts); s.append(pl);
+  return s;
+}
+
+/** The daily AI-trend board (public "Today" and Enterprise "Signals"). */
+export function boardView(b, { onRefresh } = {}) {
+  if (!b?.available) return h("div", { class: "empty" }, h("h2", {}, "No trend board yet"),
+    h("p", { class: "muted" }, b?.message || "The board is built once a day from public news, research and job-posting signals."),
+    onRefresh ? h("button", { class: "btn primary", onclick: onRefresh }, "Build today's board") : null);
+  const src = [b.sources.hn && "Hacker News (8 weekly counts)", b.sources.arxiv && "arXiv (14 vs 42 days)",
+    b.sources.jobs?.length && `${b.sources.postings} live postings (${b.sources.jobs.join(", ")})`].filter(Boolean);
+  const evid = new Map(b.evidence.map((e) => [e.id, e]));
+  const label = (id) => b.topics.find((t) => t.id === id)?.label;
+  const roleList = (rows, key, cls) => h("ol", { class: "role-list" }, rows.slice(0, 8).map((r) => h("li", {},
+    h("b", {}, r.title), h("span", { class: `num trend ${cls}` }, (r[key] > 0 ? "+" : "") + r[key].toFixed(2)),
+    h("span", { class: "note" }, r.drivers.map(label).filter(Boolean).join(" · ")))));
+  const dir = (t) => (t.direction === "rising" ? "↑ rising" : t.direction === "falling" ? "↓ falling" : "→ stable");
+  return h("div", { class: "board" },
+    h("p", { class: "board-meta" }, h("b", {}, `Board for ${b.day}`), ` · built ${fmtTime(b.created_utc)} · `, src.join(" · "),
+      onRefresh ? h("button", { class: "btn sm", onclick: onRefresh }, "Refresh now") : null),
+    block("AI topics today", h("h3", {}, "AI topics today"),
+      h("div", { class: "table-wrap" }, h("table", { class: "data topics" },
+        h("thead", {}, h("tr", {}, h("th", {}, "Topic"), h("th", {}, "Signal"), h("th", { class: "n" }, "z"),
+          h("th", { class: "hide-sm" }, "8 weeks"), h("th", { class: "n hide-sm" }, "Postings"), h("th", { class: "hide-sm" }, "Sources"))),
+        h("tbody", {}, b.topics.map((t, i) => reveal(h("tr", {},
+          h("td", {}, h("b", {}, t.label), t.kind === "automation" ? h("span", { class: "note" }, " · automation") : null),
+          h("td", {}, h("span", { class: `trend ${t.direction}` }, dir(t)), h("span", { class: "note" }, ` ${t.confidence}`)),
+          h("td", { class: "n num" }, (t.z > 0 ? "+" : "") + t.z.toFixed(1)),
+          h("td", { class: "hide-sm" }, t.sources.hn ? spark(t.sources.hn.weekly) : "—"),
+          h("td", { class: "n hide-sm num" }, t.sources.jobs ? `${t.sources.jobs.mentions}` : "—"),
+          h("td", { class: "hide-sm" }, t.evidence_ids.filter((id) => evid.has(id)).map((id) => h("a", { class: "cite", href: evid.get(id).url,
+            target: "_blank", rel: "noopener noreferrer", title: evid.get(id).excerpt }, h("b", {}, id.split(":").pop()))))),
+        DROP, { delay: Math.min(i, 10) * 30 }))))),
+      h("p", { class: "note" }, "z: trend strength (log-linear weekly growth over its standard error, averaged across sources). Rising at z ≥ 2, falling at z ≤ −2. Hover a source for its counts.")),
+    h("div", { class: "board-roles" },
+      block("Emerging roles", h("h3", {}, "Roles AI is pulling forward"), roleList(b.emerging_roles, "score", "rising")),
+      block("Roles under pressure", h("h3", {}, "Roles with automation pressure"), roleList(b.declining_roles, "pressure", "falling"))),
+    h("p", { class: "note" }, b.method, " The AI agents read this board through the trend_signals MCP tool; it reorders role matches and adds dated evidence to every report."));
 }

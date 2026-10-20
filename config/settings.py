@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     login_max_failures: int = 5
     login_lock_minutes: int = 5
     log_level: str = "INFO"
+    signals_daily: bool = True  # refresh the AI-trend board (HN, arXiv, job boards) once per UTC day
 
     @property
     def llm_enabled(self) -> bool:

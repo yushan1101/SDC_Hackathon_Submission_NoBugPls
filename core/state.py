@@ -1,6 +1,6 @@
 """Shared Pydantic contracts - extend with team approval."""
-from typing import Literal
-from pydantic import BaseModel, Field
+from typing import Annotated, Literal
+from pydantic import BaseModel, Field, StringConstraints
 
 Audience = Literal["individual", "hr"]
 
@@ -61,7 +61,7 @@ class PathwayActivity(BaseModel):
     activity: str
     estimated_hours: float
     evidence_ids: list[str] = []
-    sdg_links: list[Literal["SDG4", "SDG8"]] = []
+    sdg_links: list[Annotated[str, StringConstraints(pattern=r"^SDG([1-9]|1[0-7])$")]] = []
 
 
 class Pathway(BaseModel):

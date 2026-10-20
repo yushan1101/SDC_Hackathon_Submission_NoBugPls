@@ -29,3 +29,26 @@ Shared state is in `core/state.py`. No schema-breaking change without team notif
 - Forecast: `forecast(role, skill, geography="global")`; adds `geography`, `direction`, `lower_percent`,
   `upper_percent`, `interval`. Checkpoint keys are `(role, skill, geography)`.
 - Governance: `approval.can_act/require/list_plans/latest/acknowledge(user)`; `accounts.create_user/authenticate`.
+
+## 2026-10-20 v0.3 additions (backward compatible)
+- `PathwayActivity.sdg_links`: any of `SDG1`..`SDG17` (was only SDG4/SDG8). Activities get SDG4 + SDG8 + the
+  skill's strongest mapped goal.
+- Graph state adds `signals` (today's board for the occupation: day, sources, emergence, pressure, topics) and
+  `sdgs` [{goal, score, z, target, target_text, baseline?}]. Report SSE gains `section` kinds `signals`, `sdgs`.
+- Evidence id prefixes: `signal:{day}:{topic}:{hn|arxiv|jobs}`, `sdg:{soc}:{goal}`.
+- MCP tools: `trend_signals(day?, role_id?)`, `sdg_for(role_id)`, `match_roles(skills, top_k)`.
+- REST (session cookie; POST needs `X-AP: 1`):
+  - `GET /api/signals/today?day=`, `GET /api/signals/history`, `POST /api/signals/refresh` (HR).
+  - `GET /api/quiz`, `POST /api/quiz/score {answers{id: 0-3}, fields[], zone?}` -> {skills, matches}.
+  - `POST /api/match {skills[], text?, fields[]}` -> {matches}.
+  - `POST /api/resume/analyze` (multipart `file`, 2 MB) -> {markdown, skills[{name, kind, level, evidence[]}],
+    years_experience, matches}. Nothing stored.
+  - Match row: soc, title, fit, score, coverage, tools_matched, emergence, pressure, emerging, under_pressure,
+    stretch, job_zone, top_gaps, gap_levels, sdgs[{goal, short, color}], drivers.
+  - HR: `POST /api/criteria/parse {text, soc?}` -> {criteria, summary}; `POST/GET /api/openings`;
+    `GET /api/openings/{id}` -> opening + summary + ranked candidates (redacted; contact only when shortlisted)
+    + events; `POST /api/openings/{id}/criteria {text}` (re-screens all); `POST /api/openings/{id}/status
+    {open|closed}`; `POST /api/applications/{id}/decision {shortlisted|declined|on_hold, note}`.
+  - Public (no account): `GET /api/apply/{token}`; `POST /api/apply/{token}` multipart name, email,
+    consent=true, file.
+- Criteria dict: {top_k, min_fit, min_years, min_levels{skill: 1-5}, required_tools[], notes[], blocked[]}.

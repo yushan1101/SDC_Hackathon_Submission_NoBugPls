@@ -129,6 +129,39 @@ def retrieve_learning_resources(skill_id: str, top_k: int = 5) -> dict:
     return {"evidence": [_evidence(p) for p in retrieval.by_filter({"skill_id": skill_id, "category": "learning"})[:top_k]]}
 
 
+@mcp.tool
+def trend_signals(day: str | None = None, role_id: str | None = None) -> dict:
+    """Daily AI-trend board (HN + arXiv + live job postings), dated and evidence-backed. With role_id, also that
+    occupation's emergence/pressure and the topics driving it. Built by `python -m mcp_server.signals --refresh`."""
+    from mcp_server.signals import latest_board
+    b = latest_board(day=day)
+    if not b:
+        return {"available": False}
+    out = {"available": True, "day": b["day"], "sources": b["sources"], "method": b["method"],
+           "topics": b["topics"], "emerging_roles": b["emerging_roles"], "declining_roles": b["declining_roles"]}
+    if role_id:
+        occ = b["occupations"].get(role_id, {})
+        ids = {i for t in b["topics"] if t["id"] in occ.get("topics", []) for i in t["evidence_ids"]}
+        out |= {"role": occ, "evidence": [e for e in b["evidence"] if e["id"] in ids]}
+    return out
+
+
+@mcp.tool
+def sdg_for(role_id: str) -> dict:
+    """UN SDG goals/targets an occupation contributes to (MiniLM match to the 169 official targets; not official)."""
+    from agents.sdg import role_sdgs
+    items, ev = role_sdgs(role_id)
+    return {"sdgs": items, "evidence": [e.model_dump() for e in ev]}
+
+
+@mcp.tool
+def match_roles(skills: dict, top_k: int = 8) -> dict:
+    """Rank all O*NET occupations for a {skill: level 0-5} profile, adjusted by today's trend board."""
+    from agents.matcher import match_roles as m
+    from mcp_server.signals import latest_board
+    return {"matches": m({k: int(v) for k, v in skills.items()}, max(1, min(top_k, 30)), latest_board())}
+
+
 if __name__ == "__main__":
     if "--http" in sys.argv:
         mcp.run(transport="http", host="127.0.0.1", port=8765)

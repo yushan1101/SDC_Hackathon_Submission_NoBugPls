@@ -1,4 +1,5 @@
-"""Structured 30/60/90 draft with SDG 4 (quality education) / SDG 8 (decent work) mapping."""
+"""Structured 30/60/90 draft; each activity tagged SDG 4 + SDG 8 plus the skill's strongest mapped SDG."""
+from agents.sdg import links_for
 from core.state import Gap, Pathway, PathwayActivity
 
 HOURS_PER_LEVEL = 15.0  # ponytail: flat effort assumption per proficiency step; replace with course catalog hours
@@ -30,7 +31,7 @@ def build(gaps: list[Gap], weekly_hours: float, role: str, scenario: str, learni
                                         activity=f"{step}: {g.skill_id} (level {g.current_level} → {g.required_level})"
                                                  + (f" using {res[0].title}" if res else ""),
                                         evidence_ids=list(g.rationale_source_ids) + [e.id for e in res],
-                                        sdg_links=["SDG4", "SDG8"]))
+                                        sdg_links=links_for(g.skill_id)))
             left[p] -= h
             need -= h
         if need > 0:

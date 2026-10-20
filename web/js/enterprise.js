@@ -1,7 +1,8 @@
 // AiversePulse Enterprise (HR advisors): overview, upload + live team run, review queue, plans register.
 import { api, stream, h, $, icon, toast, fmtTime, ApiError } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
-import { gapsBlock, comparisonBlock, outlookBlock, planBlock, historyBlock, sourceItem, staticText } from "./blocks.js";
+import { gapsBlock, comparisonBlock, outlookBlock, planBlock, historyBlock, sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
+import { openingsView, openingDetail, signalsView } from "./recruit.js";
 
 const app = $("#app");
 const AGENTS = ["supervisor", "profiler", "knowledge_search", "gap_analysis", "market_analyst", "pathway", "coach", "reviewer"];
@@ -64,19 +65,20 @@ function shell() {
     h("nav", { class: "rail", "aria-label": "Primary" },
       h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }, "AP"),
       link("#/overview", "Overview", "grid"), link("#/run", "Upload & run", "upload"), review, link("#/plans", "Plans register", "history"),
+      link("#/openings", "Openings & screening", "people"), link("#/signals", "AI-trend signals", "pulse"),
       h("div", { style: { flex: 1 } }),
       h("a", { href: "#", "aria-label": "Sign out", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "tip" }, "Sign out"))),
     h("header", { class: "hr-top" }, S.crumb, S.seg, S.status.el,
       h("div", { class: "who" }, h("div", {}, S.me.display_name), h("div", { class: "muted" }, "HR advisor"))),
     h("main", { id: "main", class: "hr-main", tabindex: "-1" }),
     h("nav", { class: "hr-tabbar", "aria-label": "Primary" }, tab("#/overview", "Overview", "grid"), tab("#/run", "Run", "upload"),
-      tab("#/review", "Review", "review"), tab("#/plans", "Plans", "history"))));
+      tab("#/review", "Review", "review"), tab("#/openings", "Hiring", "people"), tab("#/signals", "Signals", "pulse"))));
   crumb();
   refreshPlans();
 }
 
 function crumb(page = (location.hash.split("/")[1] || "overview")) {
-  const names = { overview: "Overview", run: "Upload & run", review: "Review queue", plans: "Plans register" };
+  const names = { overview: "Overview", run: "Upload & run", review: "Review queue", plans: "Plans register", openings: "Openings & screening", signals: "AI-trend signals" };
   S.crumb.replaceChildren(names[page] || "Overview", h("span", { class: "muted" }, ` · ${S.scenario === "agentic" ? "Agentic AI" : "Assistive AI"}`));
 }
 
@@ -97,7 +99,9 @@ function route() {
   });
   crumb(page);
   const main = $("#main");
-  ({ run: runView, review: () => reviewView(main, id), plans: plansView }[page] || overview)(main);
+  const views = { run: runView, review: () => reviewView(main, id), plans: plansView,
+    openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status) };
+  Promise.resolve((views[page] || overview)(main)).catch((e) => main.replaceChildren(h("div", { class: "view" }, h("div", { class: "issue error" }, e.message))));
 }
 
 function keys(e) {
@@ -271,6 +275,8 @@ async function loadDetail(id, detail, aside, wrap) {
     r?.gaps?.length ? gapsBlock(r.gaps) : null,
     r?.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null,
     r?.outlook ? outlookBlock(r.outlook) : null,
+    r?.signals ? signalsBlock(r.signals) : null,
+    r?.sdgs?.length ? sdgBlock(r.sdgs) : null,
     planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null,
       approverLabel: "I have reviewed this plan", title: "90-day plan", onChange: async (next) => {
         if (next === "approved") S.status.set("celebrating", `${d.subject_id} approved`);

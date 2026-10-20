@@ -40,6 +40,8 @@ class State(TypedDict, total=False):
     learning_evidence: list
     outlook: dict
     outlook_evidence: list
+    signals: Any
+    sdgs: list
     retrieval: dict
     skill_gaps: list
     scenario_comparison: list
@@ -106,12 +108,17 @@ def n_knowledge(s):
 
 
 def n_market(s):
-    """STF-KAN outlook for this occupation, read from the exported model asset via MCP (no raw data)."""
+    """STF-KAN outlook (exported asset), today's AI-trend board and SDG mapping for this occupation, all via MCP."""
     soc = _soc(s)
     if not soc:
         return {"outlook": {}, "outlook_evidence": []}
     r = knowledge.call_tool("skill_outlook", {"role_id": soc})
-    return {"outlook": r.get("outlook", {}), "outlook_evidence": knowledge.to_evidence(r.get("evidence", []))}
+    t = knowledge.call_tool("trend_signals", {"role_id": soc})
+    g = knowledge.call_tool("sdg_for", {"role_id": soc})
+    signals = {"day": t["day"], "sources": t["sources"], **t.get("role", {}),
+               "topics": [x for x in t["topics"] if x["id"] in t.get("role", {}).get("topics", [])]} if t.get("available") else None
+    return {"outlook": r.get("outlook", {}), "signals": signals, "sdgs": g.get("sdgs", []),
+            "outlook_evidence": knowledge.to_evidence(r.get("evidence", []) + t.get("evidence", []) + g.get("evidence", []))}
 
 
 def n_gaps(s):

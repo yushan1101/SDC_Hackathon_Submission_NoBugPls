@@ -9,6 +9,7 @@ PW = "Correct-Horse9"
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
     os.environ["DATABASE_PATH"] = str(tmp_path_factory.mktemp("db") / "audit.sqlite3")
+    os.environ["SIGNALS_DAILY"] = "0"  # no network fetches in tests
     from config.settings import get_settings
     get_settings.cache_clear()
     from fastapi.testclient import TestClient
@@ -59,7 +60,7 @@ def test_public_stream_and_approval(client):
     import re
     assert all(c in known for c in re.findall(r"\[([^\[\]]{3,120})\]", text))
     meta_ev = next(e for e in ev if e["t"] == "meta")["evidence"]
-    assert all(e["id"].split(":")[0] in ("onet", "learn", "stfkan") for e in meta_ev)  # no 2023 job-ad evidence
+    assert all(e["id"].split(":")[0] in ("onet", "learn", "stfkan", "signal", "sdg") for e in meta_ev)  # no 2023 job-ad evidence
     pid = ev[-1]["plan_id"]
     assert client.post(f"/api/plans/{pid}/approve", json={"version": 1, "confirmed": False}, headers={"X-AP": "1"}).status_code == 409
     assert client.post(f"/api/plans/{pid}/approve", json={"version": 1, "confirmed": True}, headers={"X-AP": "1"}).json()["status"] == "approved"
@@ -89,3 +90,58 @@ def test_team_stream_ticks_and_validation(client):
     login(client, "ana")  # E-001 sees the HR plan made for them, not the others
     mine = {p["subject_id"] for p in client.get("/api/plans").json()}
     assert mine == {"E-001"}
+
+
+H = {"X-AP": "1"}
+RESUME = open("data/samples/sample_resume_nurse.md", "rb").read()
+
+
+def test_quiz_resume_and_match(client):
+    login(client, "ana")
+    q = client.get("/api/quiz").json()
+    assert len(q["questions"]) >= 10 and any(f["id"] == "health" for f in q["fields"])
+    answers = {x["id"]: 2 for x in q["questions"]}
+    r = client.post("/api/quiz/score", json={"answers": answers, "fields": ["health"]}, headers=H).json()
+    assert r["matches"] and all(m["soc"][:2] in ("29", "31", "21") for m in r["matches"])
+    assert all(1 <= m["sdgs"][0]["goal"] <= 17 for m in r["matches"] if m["sdgs"])
+    r = client.post("/api/resume/analyze", files={"file": ("cv.md", RESUME, "text/markdown")}, headers=H).json()
+    assert "## Summary" in r["markdown"] and all(s["evidence"] for s in r["skills"])
+    assert any("Nurse" in m["title"] for m in r["matches"][:4])
+    big = client.post("/api/resume/analyze", files={"file": ("cv.txt", b"x" * 2_100_000)}, headers=H)
+    assert big.status_code == 413
+    assert client.get("/api/signals/today").status_code == 200  # empty board is a valid, labelled state
+
+
+def test_recruiting_flow_blind_review_and_human_decision(client):
+    login(client, "ana")
+    assert client.post("/api/openings", json={"soc": "29-1141.00"}, headers=H).status_code == 403  # HR only
+    login(client, "hr1")
+    bad = client.post("/api/openings", json={"soc": "29-1141.00", "criteria_text": "young women only"}, headers=H)
+    assert bad.status_code == 422  # protected characteristics refused
+    p = client.post("/api/criteria/parse", json={"text": "top 1, must know Epic, 3+ years"}, headers=H).json()
+    assert p["criteria"]["top_k"] == 1 and p["criteria"]["min_years"] == 3
+    o = client.post("/api/openings", json={"soc": "29-1141.00", "criteria_text": "top 1, must know Epic, 3+ years"},
+                    headers=H).json()
+    client.cookies.clear()
+    info = client.get(f"/api/apply/{o['token']}").json()
+    assert info["occupation"] == "Registered Nurses"
+    form = {"name": "Test Person", "email": "t@example.com", "consent": "true"}
+    nope = client.post(f"/api/apply/{o['token']}", data=form | {"consent": "false"},
+                       files={"file": ("cv.md", RESUME)}, headers=H)
+    assert nope.status_code == 422
+    ok = client.post(f"/api/apply/{o['token']}", data=form, files={"file": ("cv.md", RESUME)}, headers=H)
+    assert ok.status_code == 200
+    weak = b"# Sam\n\nRetail assistant. Customer service, cash handling."
+    client.post(f"/api/apply/{o['token']}", data=form, files={"file": ("cv.md", weak)}, headers=H)
+    login(client, "hr1")
+    d = client.get(f"/api/openings/{o['id']}").json()
+    top, other = d["candidates"]
+    assert top["recommended"] and top["rank"] == 1 and not other["recommended"] and "misses" in other["reason"]
+    assert "contact" not in top and "Test Person" not in top["redacted_md"]  # blind until a human shortlists
+    assert client.post(f"/api/applications/{top['id']}/decision", json={"decision": "shortlisted"}, headers=H).status_code == 200
+    d = client.get(f"/api/openings/{o['id']}").json()
+    assert d["candidates"][0]["contact"]["email"] == "t@example.com"
+    assert any(e["action"] == "human_shortlisted" and e["actor"] == "hr1" for e in d["events"])
+    r = client.post(f"/api/openings/{o['id']}/criteria", json={"text": "top 2, match above 99%"}, headers=H).json()
+    assert r["rescreened"] == 2
+    assert not any(c["recommended"] for c in client.get(f"/api/openings/{o['id']}").json()["candidates"])
