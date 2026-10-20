@@ -809,3 +809,26 @@ body:has(.home-page) { background: #f8f8ff; }
   .home-mascot:hover .owl, .home-art:hover, .home-cta:hover { transform: none; }
   .home-page *, .home-reveal { transition-duration: 0ms !important; }
 }
+
+/* ---------- public landing: obvious entry points, guest header, sign-in ---------- */
+.home-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+.home-actions .home-cta { gap: 10px; }
+.home-actions .home-cta:first-child { padding-inline: 26px; font-size: 15px; }
+.home-hero-copy > p.home-guest-note { margin: 4px 0 10px; font-size: 14px; line-height: 1.6; color: var(--home-muted, #626078); }
+.home-scroll { display: inline-flex; gap: 8px; align-items: center; padding: 8px 2px; border: 0; background: none; color: #6550c8; font: 600 13px var(--font-ui); cursor: pointer; text-decoration: underline; text-underline-offset: 4px; }
+.home-scroll:hover { color: #4a389f; }
+.top-actions { display: flex; gap: 8px; align-items: center; }
+.top-actions a { text-decoration: none; }
+.pub-top .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.pub-top .btn.primary:hover { background: color-mix(in oklch, var(--accent), black 12%); }
+.pub-top .top-start svg { width: 16px; height: 16px; }
+.signin-back { display: inline-flex; align-items: center; gap: 6px; justify-self: start; color: var(--shell-ink-2); font-size: 13px; text-decoration: none; }
+.signin-back:hover { color: var(--shell-ink); }
+.signin-back svg { width: 16px; height: 16px; }
+.signin-next { color: var(--shell-ink); font-weight: 600; }
+@media (max-width: 699px) {
+  .home-actions { flex-direction: column; align-items: stretch; }
+  .home-actions .home-cta { justify-content: center; }
+  .pub-top .top-actions { margin-left: auto; }
+  .pub-top .top-signin { display: none; }
+}

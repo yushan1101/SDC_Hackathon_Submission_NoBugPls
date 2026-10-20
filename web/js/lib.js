@@ -1,12 +1,17 @@
 // Shared helpers: API, Server-Sent-Event streaming over fetch, safe DOM building, toasts.
 
+// API origin: "" = same origin as the page; set in config.js when the frontend is deployed separately.
+export const API_BASE = (globalThis.AP_CONFIG?.apiBase || "").replace(/\/+$/, "");
+const CREDS = API_BASE ? "include" : "same-origin";  // cross-origin API needs credentials: include (+ CORS allowlist)
+export const apiUrl = (path) => API_BASE + path;
+
 export class ApiError extends Error {
   constructor(status, detail, body) { super(detail); this.status = status; this.body = body; }
 }
 
 export async function api(path, { method = "GET", body, signal } = {}) {
-  const res = await fetch(path, {
-    method, signal, credentials: "same-origin",
+  const res = await fetch(apiUrl(path), {
+    method, signal, credentials: CREDS,
     headers: { "X-AP": "1", ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
@@ -17,7 +22,7 @@ export async function api(path, { method = "GET", body, signal } = {}) {
 
 /** POST multipart form data (file uploads). */
 export async function upload(path, form, signal) {
-  const res = await fetch(path, { method: "POST", body: form, signal, credentials: "same-origin", headers: { "X-AP": "1" } });
+  const res = await fetch(apiUrl(path), { method: "POST", body: form, signal, credentials: CREDS, headers: { "X-AP": "1" } });
   const data = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
   if (!res.ok) throw new ApiError(res.status, data?.detail || res.statusText, data);
   return data;
@@ -25,8 +30,8 @@ export async function upload(path, form, signal) {
 
 /** POST a JSON body and call onEvent(obj) for every `data:` line the server streams. */
 export async function stream(path, body, onEvent, signal) {
-  const res = await fetch(path, {
-    method: "POST", signal, credentials: "same-origin",
+  const res = await fetch(apiUrl(path), {
+    method: "POST", signal, credentials: CREDS,
     headers: { "X-AP": "1", "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify(body),
   });

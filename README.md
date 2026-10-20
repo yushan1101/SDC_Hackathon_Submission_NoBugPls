@@ -58,6 +58,22 @@ mutating calls need the `X-AP` header, strict CSP. Streamlit (`app.py`) stays as
 LLM agents are off unless `GEMINI_API_KEY` and `LLM_FAST_MODEL` are set (see `.env.example`); everything works
 deterministically without them. GPU is not needed (training is CPU-minutes); RunPod remains optional.
 
+### Public landing, sign-in only for features
+`/` is a public landing page (feature overview, "Start Quick Match", "Upload resume", "Pick a job") plus the
+public "Today" trend board. Opening a feature as a guest goes to `#/signin/<feature>` and returns there after
+sign-in. HR uses `/enterprise` (or `enterprise.html`).
+
+### Deploy frontend and backend separately
+`web/` is plain static files (relative paths, no build). The API also serves it, so one host works out of the box.
+To split them:
+1. **Backend** (`Dockerfile`, FastAPI): set `CORS_ORIGINS=https://app.example.com` (comma-separated) and
+   `COOKIE_SAMESITE` (`lax`/`strict` when frontend and API share a site, e.g. `app.` and `api.example.com`;
+   `none` across different sites, which requires HTTPS). Mutating calls also need the `X-AP` header and an allowed `Origin`.
+2. **Frontend** (any static host: nginx, Netlify, S3, GitHub Pages): upload `web/` and overwrite `config.js` with
+   `window.AP_CONFIG = { apiBase: "https://api.example.com" };`. Application links are `apply.html#<token>`,
+   so no server rewrites are needed.
+3. Example of both: `docker compose -f deploy/docker-compose.yml up --build` (frontend :8080, API :8600).
+
 ### Hackathon must-haves (v0.4)
 See [docs/requirements_trace.md](docs/requirements_trace.md) for the full mapping to code and tests.
 - **Intake:** quick-match MCQ game (13 scenarios + field + training), resume upload auto-converted to Markdown

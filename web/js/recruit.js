@@ -83,7 +83,7 @@ export async function openingsView(main, status) {
 export async function openingDetail(main, id, status) {
   main.replaceChildren(h("div", { class: "view" }, h("p", { class: "muted" }, "Loading…")));
   const d = await api(`/api/openings/${id}`);
-  const link = new URL(d.apply_path, location.origin).href;
+  const link = new URL(d.apply_path, location.href).href;
   const crit = criteriaEditor({ soc: d.soc, text: d.criteria_text, onState: (st) => { save.disabled = !!st.criteria?.blocked?.length || crit.text === d.criteria_text; } });
   const save = h("button", { class: "btn", type: "button", disabled: true, onclick: async () => {
     save.disabled = true; status.set("analyzing", "Re-screening every applicant");

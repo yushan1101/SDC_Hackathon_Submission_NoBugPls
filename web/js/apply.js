@@ -3,7 +3,7 @@ import { api, upload, h, $, icon, reveal, RISE } from "./lib.js";
 import { Owl } from "./owl.js";
 
 const app = $("#app");
-const token = location.pathname.split("/").pop();
+const token = decodeURIComponent(location.hash.slice(1)) || location.pathname.split("/").pop();  // apply.html#<token>
 
 async function boot() {
   let info;

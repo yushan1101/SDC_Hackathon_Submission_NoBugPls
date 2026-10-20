@@ -68,3 +68,10 @@ approval cannot recreate analysis that was never persisted.
   screening adds `held`. `POST /api/apply/{token}` accepts the honeypot field `website` (must be empty) and
   is rate-limited (429).
 - `POST /api/quiz/score` blends a text profile of the chosen answers; `zone` is the ISCO skill level.
+
+## 2026-10-20 v0.4.1 (frontend/backend split)
+- `GET /api/signals/today` is public (read-only). Everything else is unchanged.
+- `apply_path` is now relative: `apply.html#<token>`; `/apply/{token}` redirects (308) there.
+- Settings: `CORS_ORIGINS` (comma-separated allowlist for a separately hosted frontend), `COOKIE_SAMESITE`
+  (`strict`|`lax`|`none`). POST/PUT/DELETE from a foreign `Origin` are rejected (403).
+- Frontend reads `window.AP_CONFIG.apiBase` from `web/config.js` ("" = same origin).

@@ -24,7 +24,7 @@ from pathlib import Path
 import pandas as pd
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request as HttpRequest, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
@@ -60,14 +60,22 @@ with DB_LOCK:
                         employee_id TEXT, display_name TEXT, expires_utc TEXT);""")
 
 app = FastAPI(title="AiversePulse", docs_url=None, redoc_url=None, openapi_url=None)
+if cfg.allowed_origins:  # separate frontend deploy: only these origins may call the API with the session cookie
+    from fastapi.middleware.cors import CORSMiddleware
+    app.add_middleware(CORSMiddleware, allow_origins=cfg.allowed_origins, allow_credentials=True,
+                       allow_methods=["GET", "POST"], allow_headers=["Content-Type", "X-AP", "Accept"], max_age=600)
 
 
 # --- security -------------------------------------------------------------------------------------
 @app.middleware("http")
 async def headers(request: HttpRequest, call_next):
-    if request.method in ("POST", "PUT", "DELETE") and request.url.path.startswith("/api/") \
-            and request.headers.get("x-ap") != "1":  # custom header => cross-site forms can't post (CSRF)
-        return JSONResponse({"detail": "missing X-AP header"}, status_code=403)
+    if request.method in ("POST", "PUT", "DELETE") and request.url.path.startswith("/api/"):
+        if request.headers.get("x-ap") != "1":  # custom header => cross-site forms can't post (CSRF)
+            return JSONResponse({"detail": "missing X-AP header"}, status_code=403)
+        origin = (request.headers.get("origin") or "").rstrip("/")
+        own = f"{request.url.scheme}://{request.url.netloc}"
+        if origin and origin != own and origin not in cfg.allowed_origins:  # defence in depth behind CORS
+            return JSONResponse({"detail": "origin not allowed"}, status_code=403)
     resp = await call_next(request)
     resp.headers.update({
         "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' "
@@ -75,8 +83,7 @@ async def headers(request: HttpRequest, call_next):
                                    "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
         "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin",
         "Permissions-Policy": "camera=(), microphone=(), geolocation=()"})
-    if request.url.path.startswith("/static/") or request.url.path in ("/", "/enterprise") \
-            or request.url.path.startswith("/apply/"):
+    if not request.url.path.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-cache"  # revalidate (cheap 304 via ETag) so UI updates ship immediately
     return resp
 
@@ -128,7 +135,8 @@ def login(body: Login, request: HttpRequest, response: Response):
                    user["employee_id"], user["display_name"],
                    (datetime.now(timezone.utc) + SESSION_IDLE).isoformat()))
         db.commit()
-    response.set_cookie(COOKIE, token, httponly=True, samesite="strict", secure=request.url.scheme == "https",
+    response.set_cookie(COOKIE, token, httponly=True, samesite=cfg.cookie_samesite,
+                        secure=request.url.scheme == "https" or cfg.cookie_samesite == "none",
                         max_age=int(SESSION_IDLE.total_seconds()) * 16)
     return user
 
@@ -518,7 +526,7 @@ def _board(day: str | None = None):
 
 
 @app.get("/api/signals/today")
-def signals_today(day: str | None = None, user: dict = Depends(current_user)):
+def signals_today(day: str | None = None):  # public, read-only: shown on the landing page without login
     return _board_summary(_board(day[:10] if day else None))
 
 
@@ -712,7 +720,7 @@ def opening_detail(oid: str, user: dict = Depends(need("hr_advisor"))):
     with DB_LOCK:
         trail = recruiting.events(db, oid)
     return {**o, "summary": criteria.describe(o["criteria"]), "candidates": apps, "events": trail[-50:],
-            "apply_path": f"/apply/{o['token']}"}
+            "apply_path": f"apply.html#{o['token']}"}  # relative: works on any static frontend host
 
 
 @app.post("/api/openings/{oid}/criteria")
@@ -833,8 +841,8 @@ def public_ui():
 
 
 @app.get("/apply/{token}")
-def apply_ui(token: str):
-    return FileResponse(WEB / "apply.html")
+def apply_ui(token: str):  # old-style links -> the static page (token stays in the fragment, never in logs)
+    return RedirectResponse(f"/apply.html#{token[:40]}", status_code=308)
 
 
 @app.get("/enterprise")
@@ -847,11 +855,18 @@ def health():
     return {"ok": True}
 
 
+# web/ at the root too, so the HTML's relative asset paths (css/, js/, owl/, config.js) resolve exactly as they do on
+# a separate static host. Mounted last: every /api route above wins.
+app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
+
+
 def _warm():
     """Fast path first (MCP knowledge tools + role list), then the slow MiniLM load."""
     try:
-        for soc in ("29-1141.00", "47-2111.00", "13-2011.00", "15-2051.00"):
+        for soc in ("2221.2", "7411.1", "2411.1", "2512.3"):
             role_requirements(soc)
+        from agents.matcher import _occ_index, occupation_vectors
+        occupation_vectors(), _occ_index()
         from mcp_server.retrieval import warm
         warm()
     except Exception:

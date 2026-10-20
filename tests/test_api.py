@@ -10,6 +10,7 @@ PW = "Correct-Horse9"
 def client(tmp_path_factory):
     os.environ["DATABASE_PATH"] = str(tmp_path_factory.mktemp("db") / "audit.sqlite3")
     os.environ["SIGNALS_DAILY"] = "0"  # no network fetches in tests
+    os.environ["CORS_ORIGINS"] = "https://app.example.com"  # a separately deployed frontend
     from config.settings import get_settings
     get_settings.cache_clear()
     from fastapi.testclient import TestClient
@@ -182,3 +183,24 @@ def test_injected_pdf_applicant_is_held_not_recommended(client):
     assert c["analysis"]["held"] and not c["recommended"] and c["reason"].startswith("Held for human review")
     assert "Ignore all previous" not in c["redacted_md"]
     assert any(f["technique"] == "White text" for f in c["analysis"]["integrity"]["findings"])
+
+
+
+def test_public_landing_static_assets_and_separate_frontend(client):
+    client.cookies.clear()
+    home = client.get("/")
+    assert home.status_code == 200 and 'src="config.js"' in home.text and "/static/" not in home.text
+    for asset in ("/config.js", "/css/app.css", "/js/public.js", "/js/lib.js", "/enterprise.html", "/apply.html"):
+        assert client.get(asset).status_code == 200, asset
+    assert client.get("/api/signals/today").status_code == 200  # landing page "Today" needs no account
+    assert client.get("/api/quiz").status_code == 401           # features still do
+    r = client.get("/apply/abc123", follow_redirects=False)
+    assert r.status_code == 308 and r.headers["location"] == "/apply.html#abc123"
+    pre = client.options("/api/login", headers={"Origin": "https://app.example.com", "Access-Control-Request-Method": "POST",
+                                                "Access-Control-Request-Headers": "content-type,x-ap"})
+    assert pre.status_code == 200 and pre.headers["access-control-allow-origin"] == "https://app.example.com"
+    assert pre.headers["access-control-allow-credentials"] == "true"
+    ok = client.post("/api/login", json={"username": "ana", "password": PW}, headers={**H, "Origin": "https://app.example.com"})
+    assert ok.status_code == 200
+    evil = client.post("/api/login", json={"username": "ana", "password": PW}, headers={**H, "Origin": "https://evil.example"})
+    assert evil.status_code == 403 and "access-control-allow-origin" not in evil.headers

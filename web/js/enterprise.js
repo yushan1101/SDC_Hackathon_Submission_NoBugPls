@@ -14,7 +14,7 @@ async function boot() {
     if (e instanceof ApiError && e.status === 401) return signIn();
     throw e;
   }
-  if (S.me.role === "employee") { location.replace("/"); return; }
+  if (S.me.role === "employee") { location.replace("./"); return; }
   if (S.me.role !== "hr_advisor") { app.replaceChildren(h("main", { class: "view" }, h("p", {}, "Admin accounts are managed from the command line."))); return; }
   app.replaceChildren(h("main", { style: { display: "grid", "place-items": "center", "min-height": "100dvh", gap: "12px", "align-content": "center" }, "aria-busy": "true" },
     new Owl({ size: 72, state: "searching" }).el, h("p", { class: "muted" }, "Loading the console…")));
@@ -36,7 +36,7 @@ function signIn() {
       e.preventDefault(); btn.disabled = true; err.textContent = "";
       try {
         const me = await api("/api/login", { method: "POST", body: { username: user.value, password: pass.value } });
-        if (me.role === "employee") location.replace("/"); else location.reload();
+        if (me.role === "employee") location.replace("./"); else location.reload();
       } catch (ex) { err.textContent = ex.message; owl.set("confused"); btn.disabled = false; }
     } },
       h("div", { style: { display: "flex", "align-items": "center", gap: "12px" } }, owl.el,
@@ -45,7 +45,7 @@ function signIn() {
       h("label", { class: "field" }, h("span", {}, "Password"), pass),
       err, btn,
       h("p", { class: "muted", style: { "font-size": "12px" } }, "Decision support only. Use pseudonymous employee IDs; never names or emails."),
-      h("a", { href: "/", style: { "font-size": "13px" } }, "Employee? Open AiversePulse"))));
+      h("a", { href: "./", style: { "font-size": "13px" } }, "Employee? Open AiversePulse"))));
   user.focus();
 }
 
@@ -87,7 +87,7 @@ function crumb(page = (location.hash.split("/")[1] || "overview")) {
   S.crumb.replaceChildren(names[page] || "Overview", h("span", { class: "muted" }, ` · ${S.scenario === "agentic" ? "Agentic AI" : "Assistive AI"}`));
 }
 
-async function signOut() { await api("/api/logout", { method: "POST" }).catch(() => {}); location.replace("/enterprise"); }
+async function signOut() { await api("/api/logout", { method: "POST" }).catch(() => {}); location.reload(); }
 
 async function refreshPlans() {
   S.plans = await api("/api/plans").catch(() => []);

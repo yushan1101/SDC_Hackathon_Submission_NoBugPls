@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     login_lock_minutes: int = 5
     log_level: str = "INFO"
     signals_daily: bool = True  # refresh the AI-trend board (HN, arXiv, job boards) once per UTC day
+    # separate frontend deploy: comma-separated origins allowed to call the API with credentials, e.g.
+    # "https://app.example.com,http://localhost:5173". Empty = same-origin only (frontend served by this API).
+    cors_origins: str = ""
+    # session cookie SameSite: "strict" (same site), "lax", or "none" (frontend on another site; forces Secure/https)
+    cookie_samesite: str = Field("strict", pattern="^(strict|lax|none)$")
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
 
     @property
     def llm_enabled(self) -> bool:

@@ -6,7 +6,7 @@ import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
 const KEYS = ["A", "B", "C", "D"];
 
 // ---------------------------------------------------------------- start: choose a path
-export function startView(main, { name } = {}) {
+export function startView(main, { name, guest = false } = {}) {
   const arrow = () => icon("send");
   const pill = (text) => h("span", { class: "home-pill" }, text);
   const smallCard = (label, title, ...children) => h("div", { class: "home-demo-card" },
@@ -59,7 +59,12 @@ export function startView(main, { name } = {}) {
       h("div", { class: "home-hero-copy" }, h("span", { class: "home-eyebrow" }, "YOUR NEXT CHAPTER STARTS HERE"),
         h("h1", {}, name ? `Where next, ${name}?` : "Where could your skills take you?"),
         h("p", {}, "AI is changing every job, unevenly. Find the roles you could grow into, see which skills are rising today, and get a 90-day plan you approve. Every claim cites a dated source."),
-        h("button", { type: "button", class: "home-cta", onclick: () => sections[0].scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }) }, "Find your starting point", h("span", { "aria-hidden": "true" }, "↓")),
+        h("div", { class: "home-actions", role: "group", "aria-label": "Start here" },
+          h("a", { class: "home-cta", href: "#/quiz" }, icon("quiz"), "Start Quick Match", arrow()),
+          h("a", { class: "home-cta home-cta-secondary", href: "#/resume" }, icon("file"), "Upload resume"),
+          h("a", { class: "home-cta home-cta-secondary", href: "#/build" }, icon("build"), "Pick a job")),
+        guest ? h("p", { class: "home-guest-note" }, "Free to explore. Sign in with the account your organisation gave you to start.") : null,
+        h("button", { type: "button", class: "home-scroll", onclick: () => sections[0].scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }) }, "See how each one works", h("span", { "aria-hidden": "true" }, "↓")),
         h("div", { class: "home-hero-note" }, h("span", {}, "✦"), "A little clarity. A lot of possibility.")),
       h("div", { class: "home-mascot" }, h("div", { class: "home-mascot-ring" }), owl.el,
         h("span", { class: "home-mascot-note" }, "Let’s find your next move."))),
@@ -201,7 +206,7 @@ export function resumeView(main, ctx) {
       render(r);
     } catch (e) {
       owl.set("confused");
-      if (e instanceof ApiError && e.status === 401) location.replace("/");
+      if (e instanceof ApiError && e.status === 401) { location.replace("#/signin/resume"); location.reload(); }
       out.replaceChildren(h("div", { class: "issue error" }, e.message));
     }
   }

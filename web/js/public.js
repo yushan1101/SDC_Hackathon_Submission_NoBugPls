@@ -19,25 +19,31 @@ const S = {
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
 // ---------------------------------------------------------------- boot
+const PUBLIC_PAGES = new Set(["", "start", "today", "signin"]);  // everything else needs an account
+
 async function boot() {
   try {
     S.me = await api("/api/me");
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) return signIn();
-    throw e;
+    if (!(e instanceof ApiError && e.status === 401)) throw e;
+    S.me = null;  // guest: public landing + Today; features ask to sign in
   }
-  if (S.me.role !== "employee") { location.replace("/enterprise"); return; }
-  const wait = new Owl({ size: 96, state: "searching" });
-  app.replaceChildren(h("main", { class: "empty", style: { margin: "18vh auto 0", "justify-items": "center", "text-align": "center" }, "aria-busy": "true" },
-    wait.el, h("p", { class: "muted" }, "Waking up the agents…")));
-  S.meta = await api("/api/meta");
+  if (S.me && S.me.role !== "employee") { location.replace("enterprise.html"); return; }
+  if (S.me) {
+    const wait = new Owl({ size: 96, state: "searching" });
+    app.replaceChildren(h("main", { class: "empty", style: { margin: "18vh auto 0", "justify-items": "center", "text-align": "center" }, "aria-busy": "true" },
+      wait.el, h("p", { class: "muted" }, "Waking up the agents…")));
+    S.meta = await api("/api/meta");
+  }
   shell();
   addEventListener("hashchange", route);
   route();
 }
 
 // ---------------------------------------------------------------- sign in
-async function signIn() {
+const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build: "the plan builder", report: "your briefing", plans: "your plans" };
+
+async function signIn(next = "start") {
   const owl = new Owl({ size: 200, state: "greeting" });
   const err = h("p", { class: "error", role: "alert" });
   const user = h("input", { class: "input", name: "username", autocomplete: "username", required: true, maxlength: 40 });
@@ -55,19 +61,22 @@ async function signIn() {
       btn.disabled = true; err.textContent = "";
       try {
         const me = await api("/api/login", { method: "POST", body: { username: user.value, password: pass.value } });
-        location.replace(me.role === "employee" ? "/#/start" : "/enterprise");
-        if (me.role === "employee") location.reload();
+        if (me.role !== "employee") { location.replace("enterprise.html"); return; }
+        location.hash = `#/${next}`;
+        location.reload();
       } catch (ex) { err.textContent = ex.message; owl.set("confused"); btn.disabled = false; pass.select(); }
     } },
+      h("a", { class: "signin-back", href: "#/start" }, icon("back"), "Back to home"),
       h("span", { class: "wordmark" }, "AiversePulse"),
+      FEATURE[next] ? h("p", { class: "signin-next" }, `Sign in to open ${FEATURE[next]}.`) : null,
       h("label", { class: "field" }, h("span", {}, "Username"), user),
       h("label", { class: "field" }, h("span", {}, "Password"), pass),
       err, btn,
       h("p", { class: "fine" }, "Accounts are issued by your administrator. Decision support only: plans stay drafts until you approve them."),
-      h("p", { class: "fine" }, "HR advisor? ", h("a", { href: "/enterprise", style: { color: "inherit" } }, "Open AiversePulse Enterprise")))));
+      h("p", { class: "fine" }, "HR advisor? ", h("a", { href: "enterprise.html", style: { color: "inherit" } }, "Open AiversePulse Enterprise")))));
   user.focus();
   try {
-    const sp = await fetch("/api/public/specimen").then((r) => r.json());
+    const sp = await api("/api/public/specimen");
     const max = 5;
     specimen.append(h("caption", { class: "sr-only" }, sp.source),
       h("tbody", {}, sp.skills.map(([k, v], i) => h("tr", {},
@@ -88,21 +97,29 @@ function shell() {
     S.sheetBody);
   const nav = (href, label) => h("a", { href, "data-route": href }, label);
   const tab = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), label);
+  const guest = !S.me;
   app.replaceChildren(
     h("a", { class: "sr-only", href: "#main" }, "Skip to content"),
     h("header", { class: "pub-top" },
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
-      h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Start"), nav("#/report", "Report"), nav("#/today", "Today"), nav("#/plans", "My plans")),
+      h("nav", { class: "pub-nav", "aria-label": "Primary" }, guest
+        ? [nav("#/start", "Home"), nav("#/today", "Today")]
+        : [nav("#/start", "Start"), nav("#/report", "Report"), nav("#/today", "Today"), nav("#/plans", "My plans")]),
       S.status.el,
-      h("button", { class: "btn sm signout", onclick: signOut }, "Sign out")),
+      guest
+        ? h("div", { class: "top-actions" }, h("a", { class: "btn sm top-signin", href: "#/signin" }, "Sign in"),
+            h("a", { class: "btn sm primary top-start", href: "#/quiz" }, "Get started", icon("send")))
+        : h("button", { class: "btn sm signout", onclick: signOut }, "Sign out")),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
-    h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Start", "build"), tab("#/report", "Report", "report"), tab("#/today", "Today", "pulse"), tab("#/plans", "Plans", "plans")),
+    h("nav", { class: "tabbar", "aria-label": "Primary" }, guest
+      ? [tab("#/start", "Home", "build"), tab("#/today", "Today", "pulse"), tab("#/signin", "Sign in", "out")]
+      : [tab("#/start", "Start", "build"), tab("#/report", "Report", "report"), tab("#/today", "Today", "pulse"), tab("#/plans", "Plans", "plans")]),
     S.sheet);
 }
 
 async function signOut() {
   await api("/api/logout", { method: "POST" }).catch(() => {});
-  location.replace("/");
+  location.replace("./");
 }
 
 let homeScrollTop = 0;
@@ -110,7 +127,14 @@ let homeScrollTop = 0;
 history.scrollRestoration = "manual";
 function route() {
   const hash = location.hash || "#/start";
-  const [, page, id] = hash.split("/");
+  const [, page = "start", id] = hash.split("/");
+  if (!S.me && !PUBLIC_PAGES.has(page)) { location.replace(`#/signin/${page}`); return; }  // features need an account
+  if (page === "signin") {
+    if (S.me) { location.replace(`#/${id || "start"}`); return; }
+    signIn(id);
+    return;
+  }
+  if (!$("#main")) shell();  // coming back from the full-page sign-in
   const section = ["quiz", "resume", "build"].includes(page) ? "#/start" : hash;
   document.querySelectorAll("[data-route]").forEach((a) => {
     if (section.startsWith(a.dataset.route)) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
@@ -127,7 +151,7 @@ function route() {
     else if (page === "quiz") quizView(main, { status: S.status, planFor });
     else if (page === "resume") resumeView(main, { status: S.status, planFor });
     else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
-    else startView(main, { name: S.me.display_name?.split(" ")[0] });
+    else startView(main, { name: S.me?.display_name?.split(" ")[0], guest: !S.me });
   };
   go();
   reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });
@@ -393,7 +417,7 @@ async function runTurn(params) {
   } catch (e) {
     st.end();
     if (e.name === "AbortError") { mood("idle", "Stopped"); body.append(h("p", { class: "note" }, "Stopped. Nothing was saved from this turn.")); }
-    else if (e instanceof ApiError && e.status === 401) { location.replace("/"); }
+    else if (e instanceof ApiError && e.status === 401) { location.replace("#/signin/report"); location.reload(); }
     else { mood("confused", "Something went wrong"); body.append(h("div", { class: "issue error" }, e.message)); }
   } finally {
     setBusy(null);

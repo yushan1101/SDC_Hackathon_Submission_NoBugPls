@@ -1,0 +1,28 @@
+# Frontend and backend as two separately deployable services.
+#   docker compose -f deploy/docker-compose.yml up --build
+#   frontend: http://localhost:8080   (static web/ via nginx; calls the API cross-origin)
+#   backend:  http://localhost:8600   (FastAPI + agents; also still serves web/ itself for single-host deploys)
+# In production put both behind HTTPS. If the two are on different sites (not just subdomains), use
+# COOKIE_SAMESITE=none (requires HTTPS); for app.example.com + api.example.com keep "lax" or "strict".
+services:
+  api:
+    build: { context: .., dockerfile: Dockerfile }
+    environment:
+      CORS_ORIGINS: "http://localhost:8080"
+      COOKIE_SAMESITE: "lax"
+    volumes: ["api-data:/app/data"]
+    ports: ["8600:8600"]
+
+  web:
+    image: nginx:1.27-alpine
+    environment:
+      API_BASE: "http://localhost:8600"
+    volumes:
+      - ../web:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/templates/default.conf.template:ro
+      - ./write-config.sh:/docker-entrypoint.d/40-write-config.sh:ro
+    ports: ["8080:80"]
+    depends_on: [api]
+
+volumes:
+  api-data:
