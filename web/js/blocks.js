@@ -4,11 +4,12 @@ import { api, h, toast, fmtTime, ApiError, reveal, RISE, DROP, GROW } from "./li
 const PHASES = ["1-30", "31-60", "61-90"];
 const CITE = /\[([^\[\]]{3,120})\]/g;
 
-/** Short readable label for an evidence id, e.g. "data_jobs:Data Analyst:sql" -> "data_jobs · sql". */
+/** Short readable label for an evidence id, e.g. "onet:29-1141.00:skill:Speaking" -> "O*NET · Speaking". */
 export function citeLabel(id) {
   const p = id.split(":");
-  if (p[0] === "onet") return `O*NET · ${p[3] && p[2] === "sw" ? p[3] : p[1]}`;
-  if (p[0] === "learn") return `learn · ${p[1]}`;
+  if (p[0] === "onet") return p[2] === "skill" || p[2] === "tech" ? `O*NET · ${p.slice(3).join(":")}` : `O*NET · ${p[2] || p[1]}`;
+  if (p[0] === "stfkan") return `STF-KAN · ${p.slice(2).join(":")}`;
+  if (p[0] === "learn") return `learn · ${p.slice(1).join(":")}`;
   return `${p[0]} · ${p[p.length - 1]}`;
 }
 
@@ -49,21 +50,26 @@ export function staticText(text, onCite) {
 
 const block = (label, ...kids) => reveal(h("section", { class: "block", "aria-label": label }, ...kids), RISE, { duration: 420 });
 
+const ARROW = { rising: ["↑", "forecast rising"], falling: ["↓", "forecast falling"] };
+
 export function gapsBlock(gaps) {
-  const rows = gaps.filter((g) => g.required_level > 0).slice(0, 12);
+  const rows = gaps.filter((g) => g.required_level > 0).slice(0, 14);
   const meter = (g) => h("span", { class: "meter", "aria-hidden": "true" },
     Array.from({ length: 5 }, (_, i) => h("i", { class: i < g.current_level ? "have" : i < g.required_level ? "on" : "" })));
   return block("Skill gaps",
     h("h3", {}, "Skill gaps"),
     h("div", { class: "table-wrap" }, h("table", { class: "data" },
-      h("thead", {}, h("tr", {}, h("th", {}, "Skill"), h("th", { class: "n hide-sm" }, "You"), h("th", { class: "n hide-sm" }, "Needed"),
-        h("th", {}, "Level"), h("th", { class: "n" }, "In ads"))),
+      h("thead", {}, h("tr", {}, h("th", {}, "Skill or tool"), h("th", { class: "n hide-sm" }, "You"), h("th", { class: "n hide-sm" }, "Needed"),
+        h("th", {}, "Level"), h("th", { class: "n" }, "Importance"))),
       h("tbody", {}, rows.map((g, i) => reveal(h("tr", {},
-        h("td", {}, g.skill_id, " ", g.onet_hot ? h("span", { class: "tag hot", title: "O*NET 31.0 Hot Technology" }, "hot") : null),
+        h("td", {}, g.skill_id, " ",
+          g.kind === "tool" ? h("span", { class: `tag ${g.hot ? "hot" : ""}`, title: "O*NET Hot/In-Demand technology" }, g.hot ? "hot tool" : "tool") : null,
+          ARROW[g.outlook] ? h("span", { class: `trend ${g.outlook}`, title: ARROW[g.outlook][1] }, ARROW[g.outlook][0],
+            h("span", { class: "sr-only" }, ARROW[g.outlook][1])) : null),
         h("td", { class: "n hide-sm" }, g.current_level), h("td", { class: "n hide-sm" }, g.required_level),
         h("td", {}, meter(g), h("span", { class: "sr-only" }, `level ${g.current_level} of ${g.required_level} needed`)),
-        h("td", { class: "n" }, `${g.mention_percent.toFixed(1)}%`)), DROP, { delay: Math.min(i, 8) * 45 }))))),
-    h("p", { class: "note" }, "Filled squares: your level. Vermilion: the gap to close. Needed levels come from how often each skill appears in 2023 job ads."));
+        h("td", { class: "n" }, g.importance != null ? `${g.importance.toFixed(1)} / 5` : "—")), DROP, { delay: Math.min(i, 8) * 45 }))))),
+    h("p", { class: "note" }, "Filled squares: your level. Vermilion: the gap to close. Needed levels and importance come from O*NET 31.0 ratings for this occupation; tools at level 2 are an assumption. ↑/↓: STF-KAN outlook."));
 }
 
 export function comparisonBlock(cmp, scenario) {
@@ -76,58 +82,26 @@ export function comparisonBlock(cmp, scenario) {
   return block("Assistive versus agentic AI",
     h("h3", {}, "Assistive vs agentic AI"),
     h("div", { class: "cmp" },
-      col("Assistive AI", "assistive_required", "AI helps you do today's work: levels as seen in 2023 ads."),
+      col("Assistive AI", "assistive_required", "AI helps you do today's work: levels as rated by O*NET."),
       col("Agentic AI", "agentic_required", "AI agents take over routine tool work.")),
     h("p", { class: "note" }, `${changed.length} skills change between scenarios. The agentic levels are a stated team assumption, not evidence.`));
 }
 
-export function forecastBlock(f) {
-  if (!f || !f.predicted_percent) {
-    return f ? h("section", { class: "block" }, h("h3", {}, "Demand forecast"), (f.warnings || []).map((w) => h("p", { class: "note" }, w))) : null;
-  }
-  const hist = f.history.map((v) => (v == null ? null : v));
-  const all = [...hist, ...f.actual, ...f.predicted_percent, ...(f.lower_percent || []), ...(f.upper_percent || [])].filter((v) => v != null);
-  const lo = Math.floor(Math.min(...all) - 1), hi = Math.ceil(Math.max(...all) + 1);
-  const W = 640, H = 220, L = 40, R = 12, T = 12, B = 28, n = hist.length + 4;
-  const x = (i) => L + (i * (W - L - R)) / (n - 1), y = (v) => T + ((hi - v) * (H - T - B)) / (hi - lo);
-  const line = (pts) => pts.map(([i, v], k) => `${k ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  const obs = hist.map((v, i) => [i, v]).filter(([, v]) => v != null);
-  const last = obs[obs.length - 1];
-  const fc = [last, ...f.predicted_percent.map((v, k) => [hist.length + k, v])];
-  const act = [last, ...f.actual.map((v, k) => [hist.length + k, v]).filter(([, v]) => v != null)];
-  const ns = "http://www.w3.org/2000/svg";
-  const s = (tag, attrs) => { const e = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
-  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", role: "img",
-    "aria-label": `${f.skill_id}: last observed ${last[1].toFixed(1)}%, forecast ${f.predicted_percent.join(", ")}% over 4 weeks` });
-  const grid = s("g", { class: "grid" });
-  for (let k = 0; k <= 3; k++) {
-    const v = lo + ((hi - lo) * k) / 3;
-    grid.append(s("line", { x1: L, x2: W - R, y1: y(v), y2: y(v) }));
-    const t = s("text", { x: 0, y: y(v) + 4 }); t.textContent = `${v.toFixed(0)}%`; grid.append(t);
-  }
-  svg.append(grid);
-  if (f.lower_percent) {
-    const up = f.upper_percent.map((v, k) => [hist.length + k, v]), dn = f.lower_percent.map((v, k) => [hist.length + k, v]).reverse();
-    svg.append(s("path", { class: "band", d: `${line([last, ...up])} ${dn.map(([i, v]) => `L${x(i)},${y(v)}`).join(" ")} Z` }));
-  }
-  svg.append(s("line", { class: "cut", x1: x(last[0]), x2: x(last[0]), y1: T, y2: H - B }));
-  const o = s("path", { class: "obs", d: line(obs) });
-  svg.append(o, s("path", { class: "act", d: line(act) }), s("path", { class: "fc", d: line(fc) }));
-  [[0, f.history_weeks[0]], [last[0], f.as_of_date], [n - 1, f.target_weeks[3]]].forEach(([i, wk]) => {
-    const t = s("text", { x: x(i), y: H - 8, "text-anchor": i === 0 ? "start" : i === n - 1 ? "end" : "middle" }); t.textContent = wk; svg.append(t);
-  });
-  requestAnimationFrame(() => {
-    const len = o.getTotalLength?.() || 1000;
-    reveal(o, [{ strokeDasharray: len, strokeDashoffset: len }, { strokeDasharray: len, strokeDashoffset: 0 }], { duration: 900 });
-    svg.querySelectorAll(".band").forEach((e) => reveal(e, [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0 0 0)" }], { duration: 600, delay: 700 }));
-    svg.querySelectorAll(".fc, .act").forEach((e, k) => reveal(e, [{ opacity: 0 }, { opacity: 1 }], { duration: 400, delay: 850 + k * 200 }));
-  });
-  return block("Demand forecast",
-    h("h3", {}, `${f.skill_id} in ${f.role_id} ads: historical 2023 backtest`),
-    h("div", { class: "legend" }, h("span", {}, h("i"), "12 weeks observed"), h("span", {}, h("i", { class: "fc" }), "4-week forecast"),
-      f.lower_percent ? h("span", {}, h("i", { class: "band" }), "80% band (validation error)") : null, h("span", {}, "dotted: what actually happened")),
-    svg,
-    h("p", { class: "note" }, `${f.model_id} · direction ${f.direction} · as of ${f.as_of_date}. Not a 2026 prediction.`));
+export function outlookBlock(o) {
+  if (!o) return null;
+  const m = o.model;
+  if (!m) return block("Skill outlook", h("h3", {}, "Skill outlook"), h("p", { class: "note" }, "No trained STF-KAN outlook asset is installed."));
+  const rf = m.rising_flag || {};
+  const rising = o.items.filter((x) => x.direction === "rising");
+  return block("Skill outlook",
+    h("h3", {}, "Skill outlook"),
+    rising.length
+      ? [h("p", {}, "Likely to grow in importance for this job: ",
+          rising.map((x, i) => [i ? ", " : "", h("b", {}, x.skill_id), h("span", { class: "trend rising", "aria-hidden": "true" }, "↑")]), "."),
+         h("p", { class: "note" }, `Flagged when STF-KAN ranks a skill in the top ${rf.top_percent}% of forecast increases. On held-out O*NET releases these flags were `,
+           h("b", {}, `${Number(rf.test_lift).toFixed(2)}×`), ` more likely than average to rise (base rate ${(rf.test_base_rate * 100).toFixed(1)}%). It raises their priority in your plan; it never changes the required level.`)]
+      : h("p", {}, "No skill for this job is flagged as rising: its O*NET requirements look stable."),
+    h("p", { class: "note" }, `${m.name}, trained on the ${m.trained_on}. Falling-skill and tool flags are off: the model did not beat simple heuristics on validation.`));
 }
 
 export function issuesBlock(issues) {
@@ -197,7 +171,9 @@ export function planBlock({ planId, plan, version, status, weeklyHours, onChange
   }
   return block("30, 60, 90 day plan",
     h("h3", {}, title),
-    plan.deferred_skills?.length ? h("p", { class: "note" }, `Not fully covered by your weekly hours: ${plan.deferred_skills.join(", ")}.`) : null,
+    plan.deferred_skills?.length ? h("details", { class: "note deferred" },
+      h("summary", {}, `${plan.deferred_skills.length} more skills don't fit in ${weeklyHours ? weeklyHours + " h/week" : "the weekly hours"}; the plan covers the highest-priority gaps first.`),
+      h("p", {}, plan.deferred_skills.join(", "))) : null,
     tabs, planEl, errBox, bar);
 }
 

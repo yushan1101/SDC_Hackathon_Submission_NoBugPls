@@ -23,10 +23,10 @@ def show_result(s: dict):
     c1, c2 = st.columns([3, 2])
     with c1:
         st.subheader("Skill gaps")
-        flags = s.get("skill_flags", {})
+        reqs = s.get("requirements", {})
         st.dataframe(pd.DataFrame([{**g.model_dump(include={"skill_id", "current_level", "required_level", "gap",
-                                                            "mention_percent"}),
-                                    "onet_hot": flags.get(g.skill_id, {}).get("onet_hot", False)}
+                                                            "importance", "kind"}),
+                                    "hot": bool(reqs.get(g.skill_id, {}).get("hot"))}
                                    for g in s.get("skill_gaps", [])]), hide_index=True)
         st.subheader("Assistive vs Agentic AI")
         st.dataframe(pd.DataFrame(s.get("scenario_comparison", [])), hide_index=True)

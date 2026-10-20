@@ -47,10 +47,11 @@ class ValidationIssue(BaseModel):
 
 class Gap(BaseModel):
     skill_id: str
+    kind: Literal["skill", "tool"] = "skill"
     current_level: int = Field(ge=0, le=5)
     required_level: int = Field(ge=0, le=5)
     gap: int = Field(ge=0)
-    mention_percent: float
+    importance: float | None = None  # O*NET importance 1-5 (None for tools)
     rationale_source_ids: list[str] = []
 
 

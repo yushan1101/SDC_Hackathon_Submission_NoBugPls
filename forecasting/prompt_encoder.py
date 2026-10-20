@@ -15,7 +15,13 @@ def prompt(role: str, skill: str, geography: str = "global") -> str:
     return f"Job role: {role}. Skill required in job postings: {skill}. Job market: {geography}."
 
 
-def encode(texts: list[str], cache: Path = Path("artifacts/embeddings.npz")):
+def onet_prompt(soc: str, item: str, kind: str) -> str:
+    from agents.knowledge import occupation
+    title = (occupation(soc) or {}).get("title", soc)
+    return f"Occupation: {title}. {'Skill' if kind == 'skill' else 'Technology'} used at work: {item}."
+
+
+def encode(texts: list[str], cache: Path = Path("artifacts/embeddings.npz"), device: str = "cpu"):
     if cache.exists():
         z = np.load(cache, allow_pickle=False)
         if list(z["texts"]) == texts:
@@ -24,8 +30,13 @@ def encode(texts: list[str], cache: Path = Path("artifacts/embeddings.npz")):
         import sentence_transformers  # noqa: F401
     except ImportError:
         return None
-    from mcp_server.retrieval import _encoder
-    emb = _encoder().encode(texts, normalize_embeddings=True)
+    if device == "cpu":
+        from mcp_server.retrieval import _encoder
+        model = _encoder()
+    else:  # training on GPU: encode tens of thousands of prompts quickly
+        from sentence_transformers import SentenceTransformer
+        model = SentenceTransformer(MODEL_ID, revision=MODEL_REVISION, device=device)
+    emb = model.encode(texts, normalize_embeddings=True, batch_size=256)
     cache.parent.mkdir(parents=True, exist_ok=True)
     np.savez(cache, texts=np.array(texts), emb=emb)
     return emb

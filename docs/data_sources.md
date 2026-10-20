@@ -1,9 +1,14 @@
 # Data sources
 
+**Runtime (live agents):** O*NET 31.0 only (+ official learning links) and the exported STF-KAN outlook asset.
+**Training only (never read at runtime):** O*NET release history 25.0-31.0 (`data/training/`, gitignored, rebuilt by
+`scripts/build_onet_history.py`) and the 2023 data_jobs job ads (earlier forecasting experiment).
+
 | Source | Use | License / terms | Snapshot |
 |---|---|---|---|
-| data_jobs (Luke Barousse), HF mirror `Ashy24/data_jobs` | forecasting series + role skill rates | Apache-2.0 (card) | rev `ae47402`, lastModified 2026-09-17; ads 2023-01-01..2023-12-31 |
-| O*NET 31.0 Database (USDOL/ETA) | occupation descriptions, core tasks, software skills (Hot Technology / In Demand), essential-skill importance | CC BY 4.0 | August 2026 release, `db_31_0_text.zip` |
+| data_jobs (Luke Barousse), HF mirror `Ashy24/data_jobs` | TRAINING ONLY: 2023 job-ad forecasting experiment | Apache-2.0 (card) | rev `ae47402`, lastModified 2026-09-17; ads 2023-01-01..2023-12-31 |
+| O*NET 31.0 Database (USDOL/ETA) | RUNTIME: requirements for all 899 rated occupations (skills IM/LV, Hot/In-Demand tools), descriptions, tasks, 44,945 job titles |
+| O*NET releases 25.0 .. 30.3 (USDOL/ETA) | TRAINING ONLY: STF-KAN outlook (quarterly series Aug 2020 - Aug 2026) | CC BY 4.0 | August 2026 release, `db_31_0_text.zip` |
 | Official vendor/project docs (python.org, Microsoft Learn, AWS, Apache, ...) | learning resources | link only | URLs checked live at ingest |
 | sentence-transformers/all-MiniLM-L6-v2 | embeddings | Apache-2.0 | rev `1110a24` |
 

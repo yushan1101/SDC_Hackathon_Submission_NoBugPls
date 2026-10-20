@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from agents.gap_analyst import SCENARIO_NOTES
 from agents.pathway import HOURS_PER_LEVEL
-from agents.knowledge import known_skills, search_role_skills
+from agents.knowledge import occupation, resolve_occupation, role_requirements, search_occupations
 from config.settings import get_settings
 from core import graph
 from core.state import Pathway, Profile, Request, Skill
@@ -36,7 +36,6 @@ from core.team_import import parse_team
 from core.usage import summarize
 from governance import accounts, approval
 from governance.audit import connect
-from mcp_server.ingest import ROLE_SOC
 from validation.revision import validate
 
 log = logging.getLogger(__name__)
@@ -143,8 +142,9 @@ def me(user: dict = Depends(current_user)):
 
 @app.get("/api/meta")
 def meta(user: dict = Depends(current_user)):
-    roles = sorted(r for r in ROLE_SOC if search_role_skills(r)[0])
-    return {"roles": roles, "skills": sorted(known_skills()), "scenarios": SCENARIO_NOTES,
+    from agents.knowledge import snapshot
+    return {"occupations": len(snapshot()["occupations"]), "scenarios": SCENARIO_NOTES,
+            "outlook": _outlook_meta(),
             "llm": cfg.llm_fast_model if cfg.llm_enabled else None}
 
 
@@ -160,12 +160,16 @@ def describe(node: str, u: dict) -> str:
         return f"Profiled {len(u.get('levels', {}))} skills"
     if node == "knowledge_search":
         n = len(u.get("evidence", [])) + len(u.get("trend_evidence", []))
-        return f"Retrieved {n} dated sources ({u.get('retrieval', {}).get('retrieval_mode', 'n/a')})"
+        title = u.get("retrieval", {}).get("title", "")
+        return f"Loaded O*NET 31.0 requirements for {title}: {len(u.get('requirements', {}))} items, {n} sources"
     if node == "gap_analysis":
         return f"Scored {sum(g.gap > 0 for g in u.get('skill_gaps', []))} gaps under both AI scenarios"
     if node == "market_analyst":
-        f = u.get("forecast")
-        return f"Forecast {f.get('skill_id')} with {f.get('model_id')}" if f and f.get("model_id") else "Forecast skipped"
+        o = u.get("outlook") or {}
+        if not o:
+            return "Skill outlook unavailable (no trained STF-KAN asset installed)"
+        moving = [d["direction"] for d in o.values() if d["direction"] != "stable"]
+        return f"STF-KAN outlook: {moving.count('rising')} rising, {moving.count('falling')} falling of {len(o)} requirements"
     if node == "pathway":
         p = u.get("draft_pathway")
         return f"Drafted {len(p.activities)} activities across 90 days" if p else "Drafted plan"
@@ -174,20 +178,24 @@ def describe(node: str, u: dict) -> str:
     if node == "reviewer":
         return f"Verified citations and workload · {u.get('revision_count', 0)} repairs"
     if node == "simple_lookup":
-        return "Looked up job-ad facts"
+        return "Looked up O*NET facts"
     return node
 
 
 def serialise(s: dict) -> dict:
     p = s.get("draft_pathway")
-    flags = s.get("skill_flags", {})
+    reqs, outlook = s.get("requirements", {}), s.get("outlook", {})
     return {"route": s.get("route"), "route_reason": s.get("route_reason"), "answer": s.get("answer"),
             "status": s.get("status"), "narrative": s.get("narrative", ""), "narrative_mode": s.get("narrative_mode"),
-            "gaps": [g.model_dump() | {"onet_hot": flags.get(g.skill_id, {}).get("onet_hot", False)}
+            "occupation": s.get("occupation", {}),
+            "gaps": [g.model_dump() | {"hot": bool(reqs.get(g.skill_id, {}).get("hot")),
+                                       "outlook": outlook.get(g.skill_id, {}).get("direction")}
                      for g in s.get("skill_gaps", [])],
+            "outlook": {"items": [{"skill_id": k, **v} for k, v in outlook.items() if v["direction"] != "stable"],
+                        "model": _outlook_meta()} if outlook else None,
             "comparison": s.get("scenario_comparison", []),
             "evidence": [e.model_dump() for e in s.get("evidence", [])],
-            "forecast": s.get("forecast"), "plan": p.model_dump() if p else None,
+            "plan": p.model_dump() if p else None,
             "issues": [i.model_dump() for i in s.get("validation_issues", [])],
             "retrieval": s.get("retrieval", {}), "usage": summarize(s.get("usage", [])),
             "revision_count": s.get("revision_count", 0)}
@@ -222,15 +230,16 @@ class AnalyzeIn(BaseModel):
     weekly_learning_hours: float = Field(gt=0, le=80)
     skills: list[SkillIn] = Field(max_length=40)
     query: str = Field(default="Analyze my skill gaps and create a 30-60-90 day plan", max_length=500)
-    forecast: bool = False
 
 
 @app.post("/api/analyze")
 def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
     try:
+        soc = resolve_occupation(body.target_role)
+        if not soc:
+            raise HTTPException(422, "Unknown occupation: pick one from the O*NET search.")
         req = Request(request_id=uuid.uuid4().hex[:8], audience="individual", employee_id=user["employee_id"],
-                      target_role=body.target_role, scenario=body.scenario,
-                      query=body.query + (" forecast" if body.forecast else ""),
+                      target_role=soc, scenario=body.scenario, query=body.query,
                       profile=Profile(weekly_learning_hours=body.weekly_learning_hours,
                                       skills=[Skill(name=s.name, level=s.level) for s in body.skills]))
     except ValidationError as e:
@@ -262,12 +271,12 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
             remember(pid, final)
         yield sse({"t": "meta", "route": out["route"], "status": out["status"], "plan_id": pid,
                    "usage": out["usage"], "retrieval": out["retrieval"], "evidence": out["evidence"],
-                   "target_role": req.target_role, "scenario": req.scenario})
+                   "target_role": req.target_role, "occupation": out["occupation"], "scenario": req.scenario})
         yield sse({"t": "owl", "state": "update", "say": "Writing your briefing"})
         for piece in chunks(out["narrative"] or out["answer"] or ""):
             yield sse({"t": "text", "delta": piece})
             time.sleep(0.03)  # presentation pacing of already-verified text
-        for kind in ("gaps", "comparison", "forecast", "issues", "plan"):
+        for kind in ("gaps", "comparison", "outlook", "issues", "plan"):
             if out[kind]:
                 yield sse({"t": "section", "kind": kind, "data": out[kind]})
                 time.sleep(0.12)
@@ -359,7 +368,6 @@ def acknowledge(pid: str, user: dict = Depends(need("employee"))):
 class TeamIn(BaseModel):
     csv: str = Field(max_length=2_000_000)
     scenario: str = Field(pattern="^(assistive|agentic)$")
-    forecast: bool = False
 
 
 @app.post("/api/team/validate")
@@ -373,8 +381,7 @@ def _parse(body: TeamIn):
         df = pd.read_csv(StringIO(body.csv))
     except Exception:
         return [], ["could not read CSV"]
-    roles = {r for r in ROLE_SOC if search_role_skills(r)[0]}
-    return parse_team(df, roles, body.scenario, body.forecast, cfg.max_upload_rows, cfg.max_team_size)
+    return parse_team(df, resolve_occupation, body.scenario, cfg.max_upload_rows, cfg.max_team_size)
 
 
 @app.post("/api/team")
@@ -405,7 +412,7 @@ def team(body: TeamIn, user: dict = Depends(need("hr_advisor"))):
             for r in reqs:
                 pool.submit(worker, r)
             yield sse({"t": "roster", "ids": [r.employee_id for r in reqs],
-                       "roles": {r.employee_id: r.target_role for r in reqs}})
+                       "roles": {r.employee_id: occupation(r.target_role)["title"] for r in reqs}})
             remaining = len(reqs)
             while remaining:
                 kind, r, payload = events.get()
@@ -429,7 +436,7 @@ def team(body: TeamIn, user: dict = Depends(need("hr_advisor"))):
                         a["total_gap_levels"] += g.gap
                 if out["status"] == "flagged":
                     flagged.append(r.employee_id)
-                yield sse({"t": "employee", "id": r.employee_id, "plan_id": pid, "role": r.target_role,
+                yield sse({"t": "employee", "id": r.employee_id, "plan_id": pid, "role": occupation(r.target_role)["title"],
                            "hours": r.profile.weekly_learning_hours, "status": out["status"],
                            "top_gaps": [g["skill_id"] for g in out["gaps"] if g["gap"] > 0][:3],
                            "est_hours": sum(g["gap"] for g in out["gaps"]) * HOURS_PER_LEVEL})
@@ -444,12 +451,32 @@ def team(body: TeamIn, user: dict = Depends(need("hr_advisor"))):
 
 
 @app.get("/api/public/specimen")
-def specimen():
-    """Real, public aggregate shown on the sign-in page (no auth): top skills in 2023 Data Analyst ads."""
-    skills, ev, _ = search_role_skills("Data Analyst")
-    return {"role": "Data Analyst", "skills": list(skills.items())[:5],
-            "postings": next((e.excerpt.split(" of ")[1].split(" ")[0] for e in ev if " of " in e.excerpt), None),
-            "source": ev[0].title if ev else None, "url": ev[0].url if ev else None}
+def specimen(soc: str = "29-1141.00"):
+    """Real, public O*NET example for the sign-in page (no auth): most important skills for one occupation."""
+    o = occupation(soc) or occupation("29-1141.00")
+    top = list(o["skills"].items())[:5]
+    return {"role": o["title"], "skills": [[k, v["importance"]] for k, v in top], "unit": "O*NET importance (1-5)",
+            "source": "O*NET 31.0 Database (CC BY 4.0)", "url": f"https://www.onetonline.org/link/summary/{soc}"}
+
+
+@app.get("/api/occupations")
+def occupations(q: str = "", limit: int = 12, user: dict = Depends(current_user)):
+    return {"results": search_occupations(q[:80], max(1, min(limit, 30)))}
+
+
+@app.get("/api/occupations/{soc}")
+def occupation_detail(soc: str, user: dict = Depends(current_user)):
+    o = occupation(soc)
+    if not o:
+        raise HTTPException(404, "occupation not found")
+    return {"soc": soc, "title": o["title"], "description": o["description"], "job_zone": o["job_zone"],
+            "skills": [{"name": k, "importance": v["importance"], "required": v["required"]} for k, v in o["skills"].items()],
+            "tools": o["tech"], "url": f"https://www.onetonline.org/link/summary/{soc}"}
+
+
+def _outlook_meta():
+    from mcp_server.server import OUTLOOK, _outlook_asset
+    return _outlook_asset(OUTLOOK.stat().st_mtime)["model"] if OUTLOOK.exists() else None
 
 
 @app.get("/api/sample-team")
@@ -479,8 +506,8 @@ def health():
 def _warm():
     """Fast path first (MCP knowledge tools + role list), then the slow MiniLM load."""
     try:
-        for r in ROLE_SOC:
-            search_role_skills(r)
+        for soc in ("29-1141.00", "47-2111.00", "13-2011.00", "15-2051.00"):
+            role_requirements(soc)
         from mcp_server.retrieval import warm
         warm()
     except Exception:

@@ -1,4 +1,9 @@
-# Architecture (v0.2, 2026-10-20)
+# Architecture (v0.3, 2026-10-20)
+
+v0.3: every O*NET occupation; requirements from O*NET 31.0; no training data at runtime; STF-KAN (trained on the
+O*NET release history) feeds the Market Analyst through an exported outlook asset (`skill_outlook` MCP tool);
+graph = supervisor -> {profiler || knowledge_search || market_analyst} -> gap_analysis -> pathway -> coach -> reviewer.
+
 
 ```text
 Streamlit (login, role-based: employee | hr_advisor)          FastMCP server (in-process or MCP_URL / --http)

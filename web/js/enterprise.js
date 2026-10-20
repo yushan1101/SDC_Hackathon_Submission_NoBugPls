@@ -1,7 +1,7 @@
 // AiversePulse Enterprise (HR advisors): overview, upload + live team run, review queue, plans register.
 import { api, stream, h, $, icon, toast, fmtTime, ApiError } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
-import { gapsBlock, comparisonBlock, forecastBlock, planBlock, historyBlock, sourceItem, staticText } from "./blocks.js";
+import { gapsBlock, comparisonBlock, outlookBlock, planBlock, historyBlock, sourceItem, staticText } from "./blocks.js";
 
 const app = $("#app");
 const AGENTS = ["supervisor", "profiler", "knowledge_search", "gap_analysis", "market_analyst", "pathway", "coach", "reviewer"];
@@ -166,13 +166,12 @@ function runView(main) {
   const errors = h("ul", { class: "errors", role: "alert" });
   const runBtn = h("button", { class: "btn primary", type: "button", disabled: !S.csv || S.running ? true : null, onclick: run }, "Run analysis");
   const live = h("div", { style: { display: "grid", gap: "16px" } });
-  const fc = h("input", { type: "checkbox" });
   const file = h("input", { type: "file", accept: ".csv,text/csv", class: "sr-only", onchange: (e) => load(e.target.files[0]) });
   const drop = h("label", { class: "drop", ondragover: (e) => { e.preventDefault(); drop.classList.add("over"); },
     ondragleave: () => drop.classList.remove("over"), ondrop: (e) => { e.preventDefault(); drop.classList.remove("over"); load(e.dataTransfer.files[0]); } },
     file, icon("upload"), h("strong", {}, "Drop a team CSV or choose a file"),
     h("span", { class: "muted mono", style: { "font-size": "12px" } }, "employee_id, target_role, weekly_hours, skill, level"),
-    h("span", { class: "muted", style: { "font-size": "12px" } }, "Max 5,000 rows · 500 employees · pseudonymous IDs only"));
+    h("span", { class: "muted", style: { "font-size": "12px" } }, "target_role: any O*NET job title or code · max 5,000 rows · 500 employees · pseudonymous IDs only"));
 
   async function load(f) {
     if (!f) return;
@@ -202,7 +201,7 @@ function runView(main) {
     let raf = 0;
     const soon = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(redraw); };
     try {
-      await stream("/api/team", { csv: S.csv, scenario: S.scenario, forecast: fc.checked }, (ev) => {
+      await stream("/api/team", { csv: S.csv, scenario: S.scenario }, (ev) => {
         if (ev.t === "owl") S.status.set(ev.state, ev.say);
         else if (ev.t === "roster") ev.ids.forEach((id) => S.rows.set(id, { id, role: ev.roles[id], status: "running", ticks: new Set() }));
         else if (ev.t === "tick") S.rows.get(ev.id)?.ticks.add(ev.node);
@@ -226,7 +225,6 @@ function runView(main) {
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Team file")), h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, drop, preview)),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Checks")),
         h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, schema, errors,
-          h("label", { class: "check" }, fc, "Include experimental forecasts"),
           runBtn, h("p", { class: "muted", style: { "font-size": "12px" } }, "Each employee runs the full 8-agent pipeline in parallel. Drafts are never approved automatically.")))),
     live));
   if (S.csv) setCsv(S.csv, "current file");
@@ -272,7 +270,7 @@ async function loadDetail(id, detail, aside, wrap) {
     r?.issues?.filter((i) => i.severity === "error").map((i) => h("div", { class: "issue error" }, i.message)),
     r?.gaps?.length ? gapsBlock(r.gaps) : null,
     r?.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null,
-    r?.forecast ? forecastBlock(r.forecast) : null,
+    r?.outlook ? outlookBlock(r.outlook) : null,
     planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null,
       approverLabel: "I have reviewed this plan", title: "90-day plan", onChange: async (next) => {
         if (next === "approved") S.status.set("celebrating", `${d.subject_id} approved`);

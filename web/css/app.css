@@ -220,6 +220,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .skill-rows { display: grid; }
 .skill-row { display: grid; grid-template-columns: minmax(120px, 1fr) auto 40px; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
 .skill-row .name { font-weight: 600; overflow-wrap: anywhere; }
+.occ-search { position: relative; }
+.occ-results { position: absolute; z-index: var(--z-drawer); left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px 0; list-style: none; max-height: 320px; overflow: auto; background: var(--surface); border: 1px solid var(--ink); border-radius: var(--radius); box-shadow: 0 12px 28px oklch(0.2 0.01 40 / 0.12); }
+.occ-results li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; padding: 10px 12px; cursor: pointer; }
+.occ-results li .mono { margin-left: auto; font-size: 12px; }
+.occ-results li:hover, .occ-results li[aria-selected="true"] { background: var(--sunken); }
+.occ-card { display: grid; gap: 6px; padding: 14px 16px; border: 1px solid var(--rule-strong); border-radius: var(--radius); background: var(--surface); }
+.occ-card p { font-size: 14px; }
+.trend { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; font: 600 12px/1 var(--font-mono); }
+.trend.rising { color: var(--ok); }
+.trend.falling { color: var(--danger); }
 .add-skill { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .suggest { display: flex; flex-wrap: wrap; gap: 8px; }
 .scenario { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -314,6 +324,8 @@ table.data tbody tr { }
 .approve-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid var(--ink); border-radius: var(--radius); background: var(--surface); }
 .approve-bar .right { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .issues { display: grid; gap: 6px; }
+.deferred summary { cursor: pointer; }
+.deferred p { margin-top: 6px; }
 .issue { padding: 8px 12px; font-size: 14px; border: 1px solid; border-radius: var(--radius); }
 .issue.warning { color: var(--warn); background: var(--warn-soft); }
 .issue.error { color: var(--danger); background: var(--danger-soft); }

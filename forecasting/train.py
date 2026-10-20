@@ -15,7 +15,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from forecasting import prompt_encoder  # noqa: E402
-from forecasting.datasets import SPLITS, fit_scale, load_series, noise_floor_mae, windows  # noqa: E402
+from forecasting.datasets import fit_scale, load_onet_series, load_series, noise_floor_mae, windows  # noqa: E402
 from forecasting.evaluate import baseline, fit_linear, mae, predict_linear, rmse  # noqa: E402
 from forecasting.inference import to_tensors  # noqa: E402
 from forecasting.model import VARIANTS, STFKAN  # noqa: E402
@@ -41,7 +41,7 @@ def train_variant(variant, data, dev, s, scale, text_emb, a, ar_init=None):
                    ar_init=ar_init, hidden=a.hidden, sem_dim=a.sem_dim, grid=a.grid).to(a.device)
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=a.weight_decay)
     w_all = dev["train_w"]
-    val_g = np.array([s.keys[i][2] == "global" for i in data["val"]["series"]])
+    val_g = np.array([s.keys[i][2] == s.headline for i in data["val"]["series"]])
     inputs, _, target = dev["train"]
     n = len(target)
     best, best_state, bad = float("inf"), None, 0
@@ -73,9 +73,11 @@ def interval_q(pred, y, q=0.8):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="all", choices=("all",) + VARIANTS)
-    ap.add_argument("--data", default="data/snapshots/weekly_skill_demand.csv")
-    ap.add_argument("--window", type=int, default=12)
-    ap.add_argument("--horizon", type=int, default=4)
+    ap.add_argument("--dataset", default="onet", choices=("onet", "jobs"),
+                    help="onet: O*NET release history 2020-2026, all occupations (default); jobs: 2023 job ads")
+    ap.add_argument("--data", default=None)
+    ap.add_argument("--window", type=int, default=None)
+    ap.add_argument("--horizon", type=int, default=None)
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--patience", type=int, default=5)
@@ -95,16 +97,21 @@ def main():
     ap.add_argument("--global-weight", type=float, default=1.0,
                     help="loss weight of global-series windows relative to country windows (global = what the app serves)")
     a = ap.parse_args()
+    onet = a.dataset == "onet"
+    a.data = a.data or ("data/training/onet_history.csv" if onet else "data/snapshots/weekly_skill_demand.csv")
+    a.window = a.window or (8 if onet else 12)
+    a.horizon = a.horizon or (2 if onet else 4)
     t_start = time.time()
     out = Path(a.save_dir); out.mkdir(parents=True, exist_ok=True)
 
-    s = load_series(a.data)
+    s = load_onet_series(a.data) if onet else load_series(a.data)
+    SPLITS = s.splits
     scale = fit_scale(s)
     data = {k: windows(s, k, a.window, a.horizon) for k in SPLITS}
     print({k: len(v["y"]) for k, v in data.items()}, f"scale={scale:.4f} device={a.device}")
 
-    emb = None if a.no_text else prompt_encoder.encode([prompt_encoder.prompt(*k) for k in s.keys],
-                                                       out / "embeddings.npz")
+    texts = [prompt_encoder.onet_prompt(*k) if onet else prompt_encoder.prompt(*k) for k in s.keys]
+    emb = None if a.no_text else prompt_encoder.encode(texts, out / "embeddings.npz", device=a.device)
     text_emb = None if emb is None else torch.as_tensor(emb)
     semantic_source = f"{prompt_encoder.MODEL_ID}@{prompt_encoder.MODEL_REVISION[:7]}" if emb is not None else "learned role/skill ID embeddings"
 
@@ -112,7 +119,7 @@ def main():
     w = np.ones(len(data["train"]["y"]))
     if a.loss_weight == "sqrt_n":
         w = np.sqrt(np.nan_to_num(data["train"]["n_eligible"], nan=1.0)).mean(1)
-    w = w * np.where([s.keys[i][2] == "global" for i in data["train"]["series"]], a.global_weight, 1.0)
+    w = w * np.where([s.keys[i][2] == s.headline for i in data["train"]["series"]], a.global_weight, 1.0)
     dev["train_w"] = (torch.as_tensor(w / w.mean(), dtype=torch.float32, device=a.device)[:, None]
                       if a.loss_weight != "none" or a.global_weight != 1.0 else None)
     results = {}
@@ -133,7 +140,7 @@ def main():
         train_seconds[v] = round(time.time() - t0, 2)
         preds[f"stf_kan:{v}"] = (lambda m: lambda sp: predict(m, dev[sp], scale))(models[v])
     cache = {(name, sp): f(sp) for name, f in preds.items() for sp in ("val", "test")}
-    is_global = {sp: np.array([s.keys[i][2] == "global" for i in data[sp]["series"]]) for sp in ("val", "test")}
+    is_global = {sp: np.array([s.keys[i][2] == s.headline for i in data[sp]["series"]]) for sp in ("val", "test")}
     for name in preds:
         results[name] = {sp: {"mae": mae(cache[name, sp], data[sp]["y"]), "rmse": rmse(cache[name, sp], data[sp]["y"]),
                               "global_mae": mae(cache[name, sp][is_global[sp]], data[sp]["y"][is_global[sp]])}
@@ -154,14 +161,15 @@ def main():
     torch.save({"state_dict": m.state_dict(), "variant": best_learned, "roles": s.roles, "skills": s.skills,
                 "keys": s.keys, "window": a.window, "horizon": a.horizon, "scale": scale,
                 "text_emb": text_emb, "selected": selected, "linear_w": w_lin,
-                "interval_q80_pp": interval,
+                "interval_q80_pp": interval, "dataset": a.dataset, "headline": s.headline,
                 "hparams": {"hidden": a.hidden, "sem_dim": a.sem_dim, "grid": a.grid}}, out / "stf_kan_best.pt")
     for v, mm in models.items():  # every variant kept so ensembles can be assembled later
         torch.save(mm.cpu().state_dict(), out / f"variant_{v}.pt")
     (out / "scaler.json").write_text(json.dumps({"type": "window_mean_center / train_diff_std",
                                                  "scale": scale, "fit_on": SPLITS["train"]}))
     (out / "feature_schema.json").write_text(json.dumps({
-        "window": a.window, "horizon": a.horizon, "target": "mention_percent (pp)",
+        "window": a.window, "horizon": a.horizon,
+        "target": "O*NET importance rescaled 0-100 (skills) / Hot Technology x100 (tools)" if onet else "mention_percent (pp)",
         "inputs": ["x_scaled[W]", "mask[W]", "trend[3]", "rfft_bins[<=3 amp,phase] (gate only)", "semantic"],
         "roles": s.roles, "skills": s.skills}, indent=1))
     manifest = {
@@ -177,13 +185,13 @@ def main():
     (out / "training_manifest.json").write_text(json.dumps(manifest, indent=1))
     rows = "\n".join(f"| {k} | {r['val']['mae']:.3f} | {r['test']['mae']:.3f} | {r['test']['rmse']:.3f} |"
                      for k, r in results.items())
-    (out / "model_card.md").write_text(f"""# STF-KAN skill-mention forecaster (experimental)
+    data_line = ("- Data: O*NET release history 25.0 (Aug 2020) .. 31.0 (Aug 2026), CC BY 4.0, every rated occupation;\n"
+                 f"  {len(s.keys)} series (occupation x skill importance / tool Hot flag). Headline = skill series."
+                 if onet else f"- Data: hf:Ashy24/data_jobs 2023 job ads; {len(s.keys)} series. Headline = global series.")
+    (out / "model_card.md").write_text(f"""# STF-KAN forecaster ({a.dataset}) — training/evaluation artifact
 
-- Data: hf:Ashy24/data_jobs (Apache-2.0), job ads 2023-01-01..2023-12-31; {len(s.keys)} series = global + country
-  series (role-country pairs averaging >=30 ads/week) x 30 skills. Headline metric = the 300 global series.
-- Sampling-noise floor (a perfect forecaster's expected test MAE): all {floor['test']['all']:.3f} pp,
-  global {floor['test']['global']:.3f} pp.
-- Target: weekly % of eligible job ads mentioning a skill; 12-week input -> 4-week output.
+{data_line}
+- Window {a.window} -> horizon {a.horizon} steps. Training data is never read by the live agents.
 - Splits by target dates: {SPLITS}. Selection on validation only.
 - Semantic branch: {semantic_source}. Seed {a.seed}. Device {manifest['gpu'] or a.device}.
 - Selected by validation MAE: **{selected}** (checkpoint saved: stf_kan:{best_learned}).

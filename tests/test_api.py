@@ -44,12 +44,13 @@ def test_auth_csrf_and_headers(client):
 
 def test_public_stream_and_approval(client):
     login(client, "ana")
-    body = {"target_role": "Data Analyst", "scenario": "assistive", "weekly_learning_hours": 6,
-            "skills": [{"name": "python", "level": 3}, {"name": "sql", "level": 2}]}
+    body = {"target_role": "29-1141.00", "scenario": "assistive", "weekly_learning_hours": 6,
+            "skills": [{"name": "communication", "level": 3}, {"name": "Critical Thinking", "level": 2}]}
+    assert client.post("/api/analyze", json={**body, "target_role": "Astronaut chef"}, headers={"X-AP": "1"}).status_code == 422
     ev = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))
     kinds = [e["t"] for e in ev]
     agents = [e["node"] for e in ev if e["t"] == "agent"]
-    assert {"supervisor", "profiler", "knowledge_search", "gap_analysis", "pathway", "coach", "reviewer"} <= set(agents)
+    assert {"supervisor", "profiler", "knowledge_search", "market_analyst", "gap_analysis", "pathway", "coach", "reviewer"} <= set(agents)
     # verified text streams only after every agent finished; sections follow the text
     assert kinds.index("meta") > max(i for i, k in enumerate(kinds) if k == "agent")
     assert kinds.index("text") > kinds.index("meta") and kinds[-1] == "done"
@@ -57,6 +58,8 @@ def test_public_stream_and_approval(client):
     known = {x["id"] for x in next(e for e in ev if e["t"] == "meta")["evidence"]}
     import re
     assert all(c in known for c in re.findall(r"\[([^\[\]]{3,120})\]", text))
+    meta_ev = next(e for e in ev if e["t"] == "meta")["evidence"]
+    assert all(e["id"].split(":")[0] in ("onet", "learn", "stfkan") for e in meta_ev)  # no 2023 job-ad evidence
     pid = ev[-1]["plan_id"]
     assert client.post(f"/api/plans/{pid}/approve", json={"version": 1, "confirmed": False}, headers={"X-AP": "1"}).status_code == 409
     assert client.post(f"/api/plans/{pid}/approve", json={"version": 1, "confirmed": True}, headers={"X-AP": "1"}).json()["status"] == "approved"

@@ -56,6 +56,44 @@ mutating calls need the `X-AP` header, strict CSP. Streamlit (`app.py`) stays as
 LLM agents are off unless `GEMINI_API_KEY` and `LLM_FAST_MODEL` are set (see `.env.example`); everything works
 deterministically without them. GPU is not needed (training is CPU-minutes); RunPod remains optional.
 
+### Works for any job (O*NET 31.0)
+The live agents cover all 899 rated O*NET occupations (search ~45k job titles: "nurse", "electrician", …).
+Required levels = O*NET importance >= 3/5 skills, level rescaled 0-7 -> 0-5; Hot/In-Demand tools at an assumed
+level 2. **Training data is never read at runtime**: the 2023 job-ad dataset and the O*NET release history are
+used only to train/evaluate STF-KAN (guarded by a test).
+
+### STF-KAN skill outlook (asset tool for the agents)
+Trained on the O*NET release history 25.0 (Aug 2020) -> 31.0 (Aug 2026): 47,780 series (every occupation x skill
+importance / tool Hot flag), 25 quarterly releases, 484k training windows, 3-seed ensemble on an RTX 4060.
+The Market Analyst agent reads only the exported asset `data/snapshots/onet_outlook.json` over MCP
+(`skill_outlook`), and the Gap Analyst ranks gaps by need x importance x outlook (required levels stay O*NET).
+
+| held-out test (O*NET 30.2-31.0) | value |
+|---|---|
+| skill importance MAE: last value / STF-KAN ensemble | 0.137 / 0.141 (98% of steps never change; persistence kept for levels) |
+| rising-skill ranking AUC: STF-KAN / best heuristic | **0.568** / 0.528 (validated on 30.0-30.1 first) |
+| lift of "rising" flags (top 5% chosen on validation) | **1.39x** the base rate (2.1%) |
+| falling-skill and tool flags | off: STF-KAN did not beat heuristics on validation |
+
+Reproduce: `python scripts/build_onet_history.py` -> `python scripts/train_and_select.py --dataset onet --seeds 42 7 2026
+--out artifacts/onet -- --device cuda --batch-size 512 --lr 0.003` -> `python scripts/eval_direction.py --ckpt
+artifacts/onet/stf_kan_best.pt` -> `python scripts/export_outlook.py --ckpt artifacts/onet/stf_kan_best.pt`.
+The earlier 2023 job-ad experiment (`--dataset jobs`) remains reproducible as a training-only study.
+
+### Web app (recommended UI)
+```bash
+uvicorn server.api:app --port 8600     # public: http://localhost:8600   ·   HR: http://localhost:8600/enterprise
+```
+FastAPI + plain HTML/CSS/JS (`web/`), no build step. The report streams like a chat: each agent's progress
+arrives live over Server-Sent Events, then the Reviewer-verified summary types out with citation chips and the
+gap table, scenario comparison, forecast chart and editable 30/60/90 plan build in turn. The JobSmart owl
+(`web/owl/`, cut from your sheet by `scripts/extract_owl.py`) always shows the real agent state. HR runs a
+team and watches each employee's 8-agent trace fill live. Session cookies are HttpOnly + SameSite=Strict,
+mutating calls need the `X-AP` header, strict CSP. Streamlit (`app.py`) stays as a fallback.
+
+LLM agents are off unless `GEMINI_API_KEY` and `LLM_FAST_MODEL` are set (see `.env.example`); everything works
+deterministically without them. GPU is not needed (training is CPU-minutes); RunPod remains optional.
+
 ### Forecast accuracy (held-out Nov-Dec 2023, MAE in percentage points)
 Trained on an RTX 4060 Laptop GPU (CUDA 12.8): GPU sweep of 13 configs, then an 8-seed deep ensemble.
 All choices (hyperparameters, variant, global-series loss weight 32, go/no-go) were made on validation only.

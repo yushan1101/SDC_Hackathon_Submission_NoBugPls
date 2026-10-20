@@ -15,7 +15,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from forecasting.datasets import SPLITS, fit_scale, load_series, windows  # noqa: E402
+from forecasting.datasets import fit_scale, load_onet_series, load_series, windows  # noqa: E402
 from forecasting.evaluate import mae, rmse  # noqa: E402
 from forecasting.inference import load_model  # noqa: E402
 from forecasting.train import interval_q, predict, to_device  # noqa: E402
@@ -24,7 +24,8 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--seeds", nargs="+", default=["42", "7", "2026"])
 ap.add_argument("--out", default="artifacts")
 ap.add_argument("--work", default="checkpoints")
-ap.add_argument("--data", default="data/snapshots/weekly_skill_demand.csv")
+ap.add_argument("--dataset", default="onet", choices=("onet", "jobs"))
+ap.add_argument("--data", default=None)
 ap.add_argument("--select-on", default="all", choices=("all", "global"), help="validation subset for go/no-go")
 a, extra = ap.parse_known_args()
 extra = [x for x in extra if x != "--"]
@@ -33,7 +34,8 @@ runs = {}
 for seed in a.seeds:
     d = Path(a.work) / f"seed{seed}"
     if not (d / "training_manifest.json").exists():  # reuse finished seeds (re-evaluation only)
-        subprocess.run([sys.executable, "forecasting/train.py", "--seed", seed, "--save-dir", str(d), "--data", a.data] + extra,
+        subprocess.run([sys.executable, "forecasting/train.py", "--seed", seed, "--save-dir", str(d), "--dataset", a.dataset]
+                       + (["--data", a.data] if a.data else []) + extra,
                        check=True)
     runs[seed] = (d, json.loads((d / "training_manifest.json").read_text()))
 
@@ -49,15 +51,16 @@ ck["members"] = [{k: v for k, v in torch.load(runs[s][0] / f"variant_{variant}.p
 ck["variant"] = variant
 ck.pop("state_dict", None)
 
-s = load_series(a.data)
+cfg = runs[a.seeds[0]][1]["config"]
+s = load_onet_series(cfg["data"]) if a.dataset == "onet" else load_series(cfg["data"])
 scale = fit_scale(s)
-data = {k: windows(s, k) for k in ("val", "test")}
+data = {k: windows(s, k, cfg["window"], cfg["horizon"]) for k in ("val", "test")}
 tmp = Path(a.work) / "ensemble.pt"
 torch.save(ck, tmp)
 model, _ = load_model(tmp)
 dev = {k: to_device(v, scale, "cpu") for k, v in data.items()}
 pred = {k: predict(model, dev[k], scale) for k in data}
-is_g = {k: np.array([s.keys[i][2] == "global" for i in data[k]["series"]]) for k in data}
+is_g = {k: np.array([s.keys[i][2] == s.headline for i in data[k]["series"]]) for k in data}
 ens = {k: {"mae": mae(pred[k], data[k]["y"]), "rmse": rmse(pred[k], data[k]["y"]),
            "global_mae": mae(pred[k][is_g[k]], data[k]["y"][is_g[k]])} for k in data}
 
@@ -74,9 +77,9 @@ selected = f"ensemble:{variant}x{len(a.seeds)}" if serve_ensemble else best_base
 ck["selected"] = "stf_kan:ensemble" if serve_ensemble else best_base
 # separate 80% bands for global vs country series (their error scales differ ~2x); from validation only
 ck["interval_q80_pp"] = {g: interval_q(pred["val"][m], data["val"]["y"][m]) for g, m in
-                         (("global", is_g["val"]), ("country", ~is_g["val"]))}
+                         ((s.headline, is_g["val"]), ("other", ~is_g["val"]))}
 coverage = {}
-for g, m in (("global", is_g["test"]), ("country", ~is_g["test"])):
+for g, m in ((s.headline, is_g["test"]), ("other", ~is_g["test"])):
     q = np.asarray(ck["interval_q80_pp"][g])
     yt, pt = data["test"]["y"][m], pred["test"][m]
     coverage[g] = float(((yt >= pt - q) & (yt <= pt + q)).mean())

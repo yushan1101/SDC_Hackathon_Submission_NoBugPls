@@ -6,13 +6,12 @@ import pandas as pd
 import streamlit as st
 
 from agents.gap_analyst import SCENARIO_NOTES
-from agents.knowledge import search_role_skills
+from agents.knowledge import resolve_occupation, snapshot
 from config.settings import get_settings
 from core.graph import run, run_team
 from governance import accounts, approval
 from governance.audit import connect
-from mcp_server.ingest import ROLE_SOC
-from ui import forecast, profile, results, review, team
+from ui import profile, results, review, team
 
 SESSION_IDLE_MINUTES = 30
 st.set_page_config(page_title="AiversePulse Enterprise", layout="wide")
@@ -37,7 +36,7 @@ def _warm():  # load MiniLM + Chroma once per server process, off the request pa
 
 
 db, _ = _db(), _warm()
-ROLES = sorted(r for r in ROLE_SOC if search_role_skills(r)[0])
+ROLES = sorted(o["title"] for o in snapshot()["occupations"].values())  # every rated O*NET occupation
 
 
 def login():
@@ -72,7 +71,6 @@ with st.sidebar:
         st.rerun()
     scenario = st.radio("AI scenario", ["assistive", "agentic"], format_func=str.title)
     st.caption(SCENARIO_NOTES[scenario])
-    want_forecast = st.checkbox("Show experimental forecast (2023 backtest)")
     st.caption(f"LLM agents: {'on (' + cfg.llm_fast_model + ')' if cfg.llm_enabled else 'off (deterministic)'}")
     st.divider()
     st.caption("Decision support only. Not for hiring, firing or performance decisions. "
@@ -102,7 +100,7 @@ st.title("AiversePulse Enterprise")
 if user["role"] == "employee":
     tab_new, tab_mine = st.tabs(["New analysis", "My plans"])
     with tab_new:
-        req = profile.intake(ROLES, scenario, want_forecast, user["employee_id"])
+        req = profile.intake(ROLES, scenario, user["employee_id"])
         if req:
             with st.spinner("Agents working..."):
                 s = run(req)
@@ -110,7 +108,6 @@ if user["role"] == "employee":
             st.session_state.last_pid = keep(s, user["employee_id"], "individual") if s["route"] == "complex" else None
         if s := st.session_state.get("last"):
             results.show_result(s)
-            forecast.show_forecast(s.get("forecast"))
             if st.session_state.get("last_pid"):
                 review.review(db, st.session_state.last_pid, user, s)
     with tab_mine:
@@ -126,7 +123,7 @@ elif user["role"] == "hr_advisor":
             st.caption("Showing the bundled fictional sample team.")
         st.dataframe(df.head(200), hide_index=True, height=180)
         if st.button("Analyze team", type="primary"):
-            reqs, errs = team.parse_team(df, set(ROLES), scenario, want_forecast, cfg.max_upload_rows, cfg.max_team_size)
+            reqs, errs = team.parse_team(df, resolve_occupation, scenario, cfg.max_upload_rows, cfg.max_team_size)
             for e in errs:
                 st.error(e)
             if reqs:
@@ -138,7 +135,6 @@ elif user["role"] == "hr_advisor":
             team.show_team(t)
             emp = st.selectbox("Review an employee's draft", list(t["employees"]))
             results.show_result(t["employees"][emp])
-            forecast.show_forecast(t["employees"][emp].get("forecast"))
             review.review(db, t["plan_ids"][emp], user, t["employees"][emp])
     with tab_plans:
         plan_list("Plans prepared by HR")

@@ -1,37 +1,36 @@
-"""Deterministic gap matrix: required level from job-ad mention %, adjusted by a documented scenario assumption."""
+"""Deterministic gap matrix from O*NET requirements, adjusted by a documented scenario assumption.
+
+Required levels come from O*NET 31.0 expert/incumbent ratings for the chosen occupation (any job):
+skills with importance >= 3/5, level rescaled 0-7 -> 0-5; tools flagged Hot/In Demand at an assumed level 2.
+"""
 from core.state import Gap
 
-# ponytail: fixed thresholds, not learned. mention% of role postings -> required proficiency (0..5)
-LEVEL_THRESHOLDS = [(50, 4), (30, 3), (15, 2), (5, 1)]
-MIN_MENTION = 5.0
-
-# SCENARIO ASSUMPTIONS (team-authored, not evidence):
-#  assistive: AI helps people do today's work -> requirements as observed in 2023 ads.
-#  agentic:   AI agents take over routine tool work -> +1 on skills used to build/orchestrate
-#             automation, -1 on routine office/reporting tools.
-AGENTIC_UP = {"python", "aws", "azure", "gcp", "spark", "airflow", "docker", "kubernetes", "pytorch",
-              "tensorflow", "git", "databricks", "snowflake", "scikit-learn", "java", "scala", "linux"}
-AGENTIC_DOWN = {"excel", "powerpoint", "word", "sas", "sap", "tableau", "power bi"}
+# SCENARIO ASSUMPTIONS (team-authored, not evidence), applied to O*NET skill names:
+#  assistive: AI helps people do today's work -> O*NET levels as rated.
+#  agentic:   AI agents take over routine execution -> +1 on skills for directing, judging and checking
+#             automated work; -1 on routine operation/monitoring skills that agents absorb.
+AGENTIC_UP = {"Critical Thinking", "Complex Problem Solving", "Judgment and Decision Making", "Systems Analysis",
+              "Systems Evaluation", "Active Learning", "Monitoring", "Programming", "Technology Design"}
+AGENTIC_DOWN = {"Operation and Control", "Operations Monitoring", "Quality Control Analysis", "Equipment Selection"}
 SCENARIO_NOTES = {
-    "assistive": "Required levels follow 2023 job-ad mention rates directly.",
-    "agentic": "Assumption: agentic AI raises automation-building skills by +1 and lowers routine "
-               "office/reporting tools by -1 relative to 2023 job-ad rates.",
+    "assistive": "Required levels follow O*NET 31.0 ratings for the occupation.",
+    "agentic": "Assumption: agentic AI raises judgement and oversight skills (critical thinking, decision making, "
+               "systems analysis…) by +1 and lowers routine operation/monitoring skills by -1 relative to O*NET.",
 }
 
 
-def required_level(pct: float, skill: str, scenario: str) -> int:
-    base = next((lvl for t, lvl in LEVEL_THRESHOLDS if pct >= t), 0)
-    if scenario == "agentic":
+def required_level(base: int, skill: str, kind: str, scenario: str) -> int:
+    if scenario == "agentic" and kind == "skill":
         base += (skill in AGENTIC_UP) - (skill in AGENTIC_DOWN)
     return max(0, min(5, base))
 
 
-def analyze(levels: dict[str, int], role_skills: dict[str, float], scenario: str, eid) -> list[Gap]:
+def analyze(levels: dict[str, int], reqs: dict[str, dict], scenario: str) -> list[Gap]:
+    """reqs: {skill_id: {kind, required, importance, evidence_id}} from the Knowledge agent."""
     gaps = []
-    for skill, pct in role_skills.items():
-        if pct < MIN_MENTION:
-            continue
-        req, cur = required_level(pct, skill, scenario), levels.get(skill, 0)
-        gaps.append(Gap(skill_id=skill, current_level=cur, required_level=req, gap=max(0, req - cur),
-                        mention_percent=pct, rationale_source_ids=[ids] if isinstance(ids := eid(skill), str) else list(ids)))
-    return sorted(gaps, key=lambda g: (-g.gap * g.mention_percent, g.skill_id))
+    for skill, r in reqs.items():
+        req, cur = required_level(r["required"], skill, r["kind"], scenario), levels.get(skill, 0)
+        gaps.append(Gap(skill_id=skill, kind=r["kind"], current_level=cur, required_level=req, gap=max(0, req - cur),
+                        importance=r.get("importance"), rationale_source_ids=[r["evidence_id"]]))
+    # biggest gaps on the most important skills first; tools after skills of equal weight
+    return sorted(gaps, key=lambda g: (-g.gap * (g.importance or 3.0), g.kind != "skill", g.skill_id))

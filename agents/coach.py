@@ -14,17 +14,21 @@ SYSTEM = ("You explain workforce reskilling plans. Use ONLY facts in the DATA bl
           "only IDs listed in DATA. No salary, hiring or firing advice. Max 140 words.")
 
 
-def template(audience, subject, role, scenario, gaps, pathway, flags) -> str:
+def template(audience, subject, role, scenario, gaps, pathway, outlook=None) -> str:
+    """role = occupation title. outlook = {skill_id: {"direction", "evidence_id"}} from the STF-KAN asset."""
     who = "You" if audience == "individual" else f"Employee {subject}"
+    outlook = outlook or {}
     top = [g for g in gaps if g.gap > 0][:3]
     if not top:
-        return f"{who} already meet the modelled {role} requirements under the {scenario} scenario."
+        return f"{who} already meet the O*NET requirements for {role} under the {scenario} scenario."
     parts = []
     for g in top:
-        s = f"{g.skill_id} (level {g.current_level} → {g.required_level}; in {g.mention_percent}% of 2023 {role} ads [{g.rationale_source_ids[0]}])"
-        f = flags.get(g.skill_id, {})
-        if f.get("onet_hot") and len(f.get("evidence_ids", [])) > 1:
-            s += f", an O*NET Hot Technology [{f['evidence_ids'][1]}]"
+        why = (f"O*NET importance {g.importance:.1f}/5 for {role}" if g.kind == "skill" and g.importance
+               else f"a Hot/In-Demand technology for {role}")
+        s = f"{g.skill_id} (level {g.current_level} → {g.required_level}; {why} [{g.rationale_source_ids[0]}])"
+        o = outlook.get(g.skill_id)
+        if o and o["direction"] in ("rising", "falling"):
+            s += f", forecast {o['direction']} [{o['evidence_id']}]"
         parts.append(s)
     hours = sum(a.estimated_hours for a in pathway.activities)
     txt = f"{who} should prioritise " + "; ".join(parts) + f". The 90-day plan schedules {hours:.0f} hours."
@@ -33,9 +37,9 @@ def template(audience, subject, role, scenario, gaps, pathway, flags) -> str:
     return txt
 
 
-def explain(audience, subject, role, scenario, gaps, pathway, evidence, flags):
+def explain(audience, subject, role, scenario, gaps, pathway, evidence, outlook=None):
     """-> (text, usage | None, mode)."""
-    base = template(audience, subject, role, scenario, gaps, pathway, flags)
+    base = template(audience, subject, role, scenario, gaps, pathway, outlook)
     data = {"audience": audience, "role": role, "scenario": scenario,
             "gaps": [g.model_dump() for g in gaps if g.gap > 0][:6],
             "plan": [a.model_dump(include={"day_range", "skill_id", "estimated_hours"}) for a in pathway.activities],

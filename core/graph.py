@@ -1,14 +1,15 @@
-"""Multi-agent LangGraph.
+"""Multi-agent LangGraph for ANY O*NET occupation.
 
     supervisor --unsupported/simple--> simple_lookup -> END
         |complex (fan-out)
-        +--> profiler ---------+
-        +--> knowledge_search -+--> gap_analysis (both scenarios) --+--> market_analyst (forecast) --+
-                                                                    +--> pathway (+ learning, MCP) ---+--> coach -> reviewer -> END
+        +--> profiler ----------+
+        +--> knowledge_search --+--> gap_analysis (both scenarios, outlook-weighted) --> pathway (+ learning, MCP)
+        +--> market_analyst ----+                                                          --> coach -> reviewer -> END
 
-Agents: Profiler, Knowledge (FastMCP), Gap Analyst, Market Analyst (STF-KAN), Pathway, Coach
-(optional LLM), Reviewer (deterministic revision, <=2 repairs). Approval is NOT a node: it is a
-human action in governance/. HR teams run one graph per employee in parallel (run_team).
+Agents: Profiler, Knowledge (FastMCP, O*NET 31.0), Market Analyst (STF-KAN skill-outlook asset, trained
+offline on the O*NET release history), Gap Analyst, Pathway, Coach (optional LLM), Reviewer (<=2 repairs).
+No raw training data (2023 job ads, O*NET history) is read here: the Market Analyst only reads the model's
+exported outlook. Approval is NOT a node: it is a human action in governance/.
 """
 import logging
 import operator
@@ -20,27 +21,28 @@ from agents import coach, gap_analyst, knowledge, pathway, profiler
 from core.router import route_with_reason
 from core.state import Request, ValidationIssue
 from core.usage import record
-from validation.forecast_checks import check_forecast
 from validation.revision import MAX_REVISIONS, revise
 
 log = logging.getLogger(__name__)
+TREND_WEIGHT = 0.25  # ranking only: rising skills x1.25, falling x0.75; required levels stay O*NET
 
 
 class State(TypedDict, total=False):
     request: Request
+    occupation: dict
     route: str
     route_reason: str
     answer: str
     levels: dict
-    role_skills: dict
-    skill_flags: dict
+    requirements: dict
     evidence: list
     trend_evidence: list
     learning_evidence: list
+    outlook: dict
+    outlook_evidence: list
     retrieval: dict
     skill_gaps: list
     scenario_comparison: list
-    forecast: dict | None
     draft_pathway: Any
     narrative: str
     narrative_mode: str
@@ -65,70 +67,83 @@ def _timed(name, fn):
     return node
 
 
+def _soc(s):
+    return knowledge.resolve_occupation(s["request"].target_role)
+
+
 def n_supervisor(s):
     route, why = route_with_reason(s["request"].query)
-    return {"route": route, "route_reason": why}
+    soc = _soc(s)
+    occ = knowledge.occupation(soc) if soc else None
+    return {"route": route, "route_reason": why, "occupation": {"soc": soc, "title": occ["title"]} if occ else {}}
 
 
 def n_simple(s):
     if s["route"] == "unsupported":
         return {"answer": "This assistant only covers workforce skills, roles and reskilling.", "status": "rejected"}
-    r = s["request"]
-    skills, ev, _ = knowledge.search_role_skills(r.target_role)
-    top = ", ".join(f"{k} ({v}%)" for k, v in list(skills.items())[:5])
-    ans = f"Most-mentioned skills in 2023 {r.target_role} job ads: {top}." if top else "No local data for that role."
-    return {"answer": ans, "evidence": ev[:5], "status": "answered"}
+    reqs, ev, meta = knowledge.role_requirements(s["request"].target_role)
+    skills = [k for k, r in reqs.items() if r["kind"] == "skill"][:5]
+    ans = (f"Most important skills for {meta['title']} (O*NET 31.0): {', '.join(skills)}." if skills
+           else "That occupation is not in O*NET 31.0's rated occupations.")
+    return {"answer": ans, "evidence": [e for e in ev if e.id.split(":")[-1] in skills], "status": "answered"}
 
 
 def n_profiler(s):
-    levels, issues = profiler.profile_skills(s["request"].profile, knowledge.known_skills())
+    soc = _soc(s)
+    tools = [t["name"] for t in (knowledge.occupation(soc) or {}).get("tech", [])] if soc else []
+    levels, issues = profiler.profile_skills(s["request"].profile, set(knowledge.known_skills()), tools)
     return {"levels": levels, "validation_issues": issues}
 
 
 def n_knowledge(s):
     r = s["request"]
-    skills, ev, meta = knowledge.search_role_skills(r.target_role)
-    trends, mode = knowledge.labor_trends(r.target_role, r.scenario)
+    reqs, ev, meta = knowledge.role_requirements(r.target_role)
+    trends, mode = knowledge.labor_trends(r.target_role, r.scenario) if reqs else ([], "offline")
     meta["retrieval_mode"] = mode
-    issues = [] if skills else [ValidationIssue(code="no_evidence", severity="error", field="target_role",
-                                                message=f"No dated evidence for role '{r.target_role}'.")]
-    return {"role_skills": skills, "skill_flags": meta.get("flags", {}), "evidence": ev, "trend_evidence": trends,
-            "retrieval": meta, "validation_issues": issues}
+    issues = [] if reqs else [ValidationIssue(code="no_evidence", severity="error", field="target_role",
+                                              message=f"'{r.target_role}' is not an O*NET 31.0 rated occupation.")]
+    return {"requirements": reqs, "evidence": ev, "trend_evidence": trends, "retrieval": meta, "validation_issues": issues}
+
+
+def n_market(s):
+    """STF-KAN outlook for this occupation, read from the exported model asset via MCP (no raw data)."""
+    soc = _soc(s)
+    if not soc:
+        return {"outlook": {}, "outlook_evidence": []}
+    r = knowledge.call_tool("skill_outlook", {"role_id": soc})
+    return {"outlook": r.get("outlook", {}), "outlook_evidence": knowledge.to_evidence(r.get("evidence", []))}
 
 
 def n_gaps(s):
     r = s["request"]
-    flags = s.get("skill_flags", {})
-    eid = lambda k: flags.get(k, {}).get("evidence_ids") or [knowledge.evidence_id(r.target_role, k)]
-    gaps = {sc: gap_analyst.analyze(s.get("levels", {}), s.get("role_skills", {}), sc, eid)
-            for sc in ("assistive", "agentic")}
+    reqs, outlook = s.get("requirements", {}), s.get("outlook", {})
+    gaps = {sc: gap_analyst.analyze(s.get("levels", {}), reqs, sc) for sc in ("assistive", "agentic")}
+    trend = {"rising": 1, "falling": -1}
+    weight = lambda g: g.gap * (g.importance or 3.0) * (1 + TREND_WEIGHT * trend.get(outlook.get(g.skill_id, {}).get("direction"), 0))
+    for sc in gaps:
+        gaps[sc].sort(key=lambda g: (-weight(g), g.kind != "skill", g.skill_id))
     other = {g.skill_id: g for g in gaps["agentic" if r.scenario == "assistive" else "assistive"]}
     cmp = [{"skill_id": g.skill_id, "current": g.current_level,
             "assistive_required": (g if r.scenario == "assistive" else other[g.skill_id]).required_level,
-            "agentic_required": (g if r.scenario == "agentic" else other[g.skill_id]).required_level}
+            "agentic_required": (g if r.scenario == "agentic" else other[g.skill_id]).required_level,
+            "outlook": outlook.get(g.skill_id, {}).get("direction")}
            for g in gaps[r.scenario]]
     return {"skill_gaps": gaps[r.scenario], "scenario_comparison": cmp}
-
-
-def n_market(s):
-    gaps = [g for g in s.get("skill_gaps", []) if g.gap > 0]
-    if not gaps or "forecast" not in s["request"].query.lower():
-        return {"forecast": None}
-    return {"forecast": knowledge.call_tool("forecast_skill_demand",
-                                            {"role_id": s["request"].target_role, "skill_id": gaps[0].skill_id})}
 
 
 def n_pathway(s):
     r = s["request"]
     need = [g.skill_id for g in s.get("skill_gaps", []) if g.gap > 0][:8]
     learning = {k: knowledge.learning_resources(k, 1) for k in need}
-    p = pathway.build(s.get("skill_gaps", []), r.profile.weekly_learning_hours, r.target_role, r.scenario, learning)
+    p = pathway.build(s.get("skill_gaps", []), r.profile.weekly_learning_hours,
+                      s.get("occupation", {}).get("title") or r.target_role, r.scenario, learning)
     return {"draft_pathway": p, "learning_evidence": [e for v in learning.values() for e in v]}
 
 
 def _all_evidence(s):
     seen, out = set(), []
-    for e in s.get("evidence", []) + s.get("trend_evidence", []) + s.get("learning_evidence", []):
+    for e in (s.get("evidence", []) + s.get("trend_evidence", []) + s.get("learning_evidence", [])
+              + s.get("outlook_evidence", [])):
         if e.id not in seen:
             seen.add(e.id)
             out.append(e)
@@ -137,9 +152,9 @@ def _all_evidence(s):
 
 def n_coach(s):
     r = s["request"]
-    text, usage, mode = coach.explain(r.audience, r.employee_id or "you", r.target_role, r.scenario,
-                                      s.get("skill_gaps", []), s["draft_pathway"], _all_evidence(s),
-                                      s.get("skill_flags", {}))
+    title = s.get("occupation", {}).get("title") or r.target_role
+    text, usage, mode = coach.explain(r.audience, r.employee_id or "you", title, r.scenario,
+                                      s.get("skill_gaps", []), s["draft_pathway"], _all_evidence(s), s.get("outlook", {}))
     return {"narrative": text, "narrative_mode": mode, "_usage": [usage]}
 
 
@@ -157,19 +172,14 @@ def n_reviewer(s):
         else:
             issues.append(ValidationIssue(code="narrative_citation", severity="error", field="narrative",
                                           message=f"unverifiable citations: {bad[:3]}"))
-    f = s.get("forecast")
-    f_issues = check_forecast(f)
-    if f_issues:  # a bad forecast is withheld, never repaired into a pass
-        f = {"data_quality": "unavailable", "warnings": [i.message for i in f_issues]}
-    issues += f_issues
     blocked = any(i.severity == "error" for i in issues + s.get("validation_issues", []))
     status = "flagged" if blocked else p.status
-    return {"draft_pathway": p.model_copy(update={"status": status}), "forecast": f, "narrative": text,
+    return {"draft_pathway": p.model_copy(update={"status": status}), "narrative": text,
             "evidence": ev, "validation_issues": issues, "revision_count": n, "status": status}
 
 
-PIPELINE = {"profiler": n_profiler, "knowledge_search": n_knowledge, "gap_analysis": n_gaps,
-            "market_analyst": n_market, "pathway": n_pathway, "coach": n_coach, "reviewer": n_reviewer}
+PIPELINE = {"profiler": n_profiler, "knowledge_search": n_knowledge, "market_analyst": n_market,
+            "gap_analysis": n_gaps, "pathway": n_pathway, "coach": n_coach, "reviewer": n_reviewer}
 
 
 def build_graph():
@@ -180,13 +190,13 @@ def build_graph():
     for name, fn in PIPELINE.items():
         g.add_node(name, _timed(name, fn))
     g.add_edge(START, "supervisor")
-    g.add_conditional_edges("supervisor", lambda s: ["profiler", "knowledge_search"] if s["route"] == "complex"
-                            else ["simple_lookup"], ["profiler", "knowledge_search", "simple_lookup"])
+    fan = ["profiler", "knowledge_search", "market_analyst"]
+    g.add_conditional_edges("supervisor", lambda s: fan if s["route"] == "complex" else ["simple_lookup"],
+                            fan + ["simple_lookup"])
     g.add_edge("simple_lookup", END)
-    g.add_edge(["profiler", "knowledge_search"], "gap_analysis")  # join
-    g.add_edge("gap_analysis", "market_analyst")
+    g.add_edge(fan, "gap_analysis")  # join
     g.add_edge("gap_analysis", "pathway")
-    g.add_edge(["market_analyst", "pathway"], "coach")  # join
+    g.add_edge("pathway", "coach")
     g.add_edge("coach", "reviewer")
     g.add_edge("reviewer", END)
     return g.compile()

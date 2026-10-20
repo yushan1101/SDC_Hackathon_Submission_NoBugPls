@@ -2,7 +2,7 @@ from agents.pathway import build
 from core.state import Gap
 from validation.revision import MAX_REVISIONS, revise
 
-GAPS = [Gap(skill_id="sql", current_level=1, required_level=4, gap=3, mention_percent=58, rationale_source_ids=["e1"])]
+GAPS = [Gap(skill_id="Speaking", current_level=1, required_level=4, gap=3, importance=4.0, rationale_source_ids=["e1"])]
 
 
 def test_forged_citation_repaired():  # T-06

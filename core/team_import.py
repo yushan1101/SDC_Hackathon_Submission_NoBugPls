@@ -10,8 +10,8 @@ COLUMNS = ["employee_id", "target_role", "weekly_hours", "skill", "level"]
 EMP_ID = re.compile(r"^[A-Za-z0-9_-]{1,32}$")  # pseudonymous IDs only: no names / emails
 
 
-def parse_team(df: pd.DataFrame, roles: set[str], scenario: str, want_forecast: bool,
-               max_rows: int, max_team: int) -> tuple[list[Request], list[str]]:
+def parse_team(df: pd.DataFrame, resolve, scenario: str, max_rows: int, max_team: int) -> tuple[list[Request], list[str]]:
+    """resolve(target_role) -> O*NET SOC code or None (any official/alternate title or code is accepted)."""
     """-> (requests, errors). Rejects the whole file on any error; never guesses."""
     missing = [c for c in COLUMNS if c not in df.columns]
     if missing:
@@ -24,9 +24,11 @@ def parse_team(df: pd.DataFrame, roles: set[str], scenario: str, want_forecast: 
     bad_ids = sorted({e for e in df["employee_id"] if not EMP_ID.match(e)})
     if bad_ids:
         errs.append(f"employee_id must be pseudonymous [A-Za-z0-9_-]{{1,32}}: {bad_ids[:5]}")
-    bad_roles = sorted(set(df["target_role"]) - roles)
+    df["target_role"] = df["target_role"].astype(str).str.strip()
+    socs = {r: resolve(r) for r in set(df["target_role"])}
+    bad_roles = sorted(r for r, s in socs.items() if not s)
     if bad_roles:
-        errs.append(f"unknown target_role: {bad_roles[:5]}")
+        errs.append(f"unknown target_role (not an O*NET occupation title or code): {bad_roles[:5]}")
     reqs = []
     groups = list(df.groupby("employee_id"))
     if len(groups) > max_team:
@@ -37,8 +39,8 @@ def parse_team(df: pd.DataFrame, roles: set[str], scenario: str, want_forecast: 
             continue
         try:
             reqs.append(Request(request_id=eid, employee_id=eid, audience="hr", scenario=scenario,
-                                target_role=str(g["target_role"].iloc[0]),
-                                query="Analyze skill gaps and create a 30-60-90 plan" + (" forecast" if want_forecast else ""),
+                                target_role=socs.get(str(g["target_role"].iloc[0])) or str(g["target_role"].iloc[0]),
+                                query="Analyze skill gaps and create a 30-60-90 plan",
                                 profile=Profile(weekly_learning_hours=float(g["weekly_hours"].iloc[0]),
                                                 skills=[Skill(name=str(r.skill)[:60], level=int(r.level)) for r in g.itertuples()])))
         except (ValidationError, ValueError, TypeError) as e:

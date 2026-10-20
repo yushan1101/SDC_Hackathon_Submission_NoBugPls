@@ -1,10 +1,15 @@
-"""Chronological windows over weekly_skill_demand.csv; scaler fit on train weeks only.
+"""Training datasets for STF-KAN (training/evaluation only — never read by the live agents).
 
-Split by *target* dates (SDLC 5.4): a window belongs to a split only if all 4 target weeks fall
-inside it. Inputs may look back into earlier periods (that is the past, not leakage).
-Series key = (role, skill, geography); geography "global" is the headline set shown in the app.
+Two sources, same window machinery:
+- "onet" (default): O*NET release history 25.0 (Aug 2020) .. 31.0 (Aug 2026), every occupation.
+  Series = (occupation, skill|tool); value = O*NET importance rescaled to 0-100 (skills) or Hot Technology
+  flag x 100 (tools). Companion input = the same item's mean across all occupations at each release.
+- "jobs": 2023 weekly job-ad skill-mention % (10 data roles; the earlier experiment).
+
+Splits are by *target* label (release or week): a window belongs to a split only if all its target steps
+fall inside it. Inputs may look back into earlier periods (that is the past, not leakage).
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -12,16 +17,31 @@ import pandas as pd
 SPLITS = {"train": ("1900-01-01", "2023-08-31"),
           "val": ("2023-09-01", "2023-10-31"),
           "test": ("2023-11-01", "2099-12-31")}
+ONET_SPLITS = {"train": ("25.0", "29.3"), "val": ("30.0", "30.1"), "test": ("30.2", "31.0")}
+ONET_RELEASE_DATES = {f"{M}.{m}": f"{2020 + M - 25 + (1 if m >= 2 else 0)}-{['08', '11', '02', '05'][m]}"
+                      for M in range(25, 32) for m in range(4)}
+
+
+def _rel_key(label: str):
+    """Release labels compare numerically ("25.3" < "26.0"); ISO dates compare as strings."""
+    try:
+        a, b = label.split(".")
+        return (int(a), int(b))
+    except ValueError:
+        return label
 
 
 @dataclass
 class Series:
     roles: list[str]
     skills: list[str]
-    keys: list[tuple[str, str, str]]  # (role, skill, geography) per row
-    weeks: np.ndarray  # (T,) str
-    values: np.ndarray  # (S, T) mention %, NaN = missing
-    eligible: np.ndarray | None = None  # (S, T) eligible ads, for the sampling-noise floor
+    keys: list[tuple[str, str, str]]  # (role, item, group) per row; group = geography (jobs) or kind (onet)
+    weeks: np.ndarray  # (T,) labels: ISO week starts or O*NET release numbers
+    values: np.ndarray  # (S, T), NaN = missing
+    eligible: np.ndarray | None = None  # (S, T) eligible ads (jobs only), for the sampling-noise floor
+    companion: np.ndarray | None = None  # (S, T) pooled input series
+    splits: dict = field(default_factory=lambda: SPLITS)
+    headline: str = "global"  # group used for headline metrics
 
 
 def load_series(path="data/snapshots/weekly_skill_demand.csv", geographies: set[str] | None = None) -> Series:
@@ -34,54 +54,80 @@ def load_series(path="data/snapshots/weekly_skill_demand.csv", geographies: set[
     vals = df.pivot_table(index=idx, columns="week_start", values="mention_percent", dropna=False).sort_index()
     elig = df.pivot_table(index=idx, columns="week_start", values="eligible_posts", dropna=False).reindex(vals.index)
     keys = [tuple(k) for k in vals.index]
+    v = vals.to_numpy(dtype=float)
+    gidx = {(r, k): i for i, (r, k, g) in enumerate(keys) if g == "global"}
+    comp = np.stack([v[gidx.get((r, k), i)] for i, (r, k, _) in enumerate(keys)])
     return Series(sorted({k[0] for k in keys}), sorted({k[1] for k in keys}), keys,
-                  vals.columns.to_numpy().astype(str), vals.to_numpy(dtype=float), elig.to_numpy(dtype=float))
+                  vals.columns.to_numpy().astype(str), v, elig.to_numpy(dtype=float), comp)
+
+
+def load_onet_series(path="data/training/onet_history.csv", kinds=("skill", "tool")) -> Series:
+    df = pd.read_csv(path, dtype={"soc": str, "item": str, "kind": str})
+    df = df[df["kind"].isin(kinds)].sort_values(["soc", "item", "kind"]).reset_index(drop=True)
+    rels = [c for c in df.columns if c not in ("soc", "item", "kind")]
+    v = df[rels].to_numpy(dtype=float)
+    skill = (df["kind"] == "skill").to_numpy()
+    v[skill] = (v[skill] - 1) / 4 * 100  # importance 1-5 -> 0-100
+    v[~skill] *= 100                      # hot flag 0/1 -> 0/100
+    comp = pd.DataFrame(v).groupby([df["item"], df["kind"]]).transform("mean").to_numpy()  # cross-occupation mean
+    keys = list(zip(df["soc"], df["item"], df["kind"]))
+    return Series(sorted(df["soc"].unique()), sorted(df["item"].unique()), keys, np.array(rels), v,
+                  None, comp, ONET_SPLITS, "skill")
 
 
 def fit_scale(s: Series) -> float:
-    """Global std of train-period week-over-week changes (train weeks only)."""
-    train = s.values[:, s.weeks <= SPLITS["train"][1]]
-    return float(np.nanstd(np.diff(train, axis=1))) or 1.0
+    """Global std of train-period step-to-step changes (train labels only)."""
+    hi = _rel_key(s.splits["train"][1])
+    train = s.values[:, [_rel_key(w) <= hi for w in s.weeks]]
+    sd = float(np.nanstd(np.diff(train, axis=1)))
+    return sd if sd > 1e-6 else 1.0
+
+
+def _fill(x: np.ndarray) -> np.ndarray:
+    """Forward-fill inside each window (past only), then any leading gap with the window's observed mean."""
+    f = pd.DataFrame(x).ffill(axis=1).to_numpy()
+    mean = np.nanmean(np.where(np.isnan(x), np.nan, x), axis=1, keepdims=True)
+    return np.nan_to_num(np.where(np.isnan(f), mean, f), nan=0.0)
 
 
 def windows(s: Series, split: str, window: int = 12, horizon: int = 4):
-    """-> dict of arrays: x (N,W) forward-filled, mask (N,W), xg (N,W) matching global series (pooling),
-    logn (N,W) log1p eligible ads per input week, y (N,H), role, skill, series, t0, n_eligible (N,H)."""
-    lo, hi = SPLITS[split]
+    """Vectorised. -> dict: x (N,W) filled, mask (N,W), xg (N,W) companion, logn (N,W), y (N,H),
+    role, skill, series, t0, n_eligible (N,H)."""
+    lo, hi = (_rel_key(b) for b in s.splits[split])
+    T = s.values.shape[1]
+    n = T - window - horizon + 1
+    if n <= 0:
+        raise ValueError("series shorter than window + horizon")
+    lab = [_rel_key(w) for w in s.weeks]
+    ok_t = np.array([lo <= lab[t + window] and lab[t + window + horizon - 1] <= hi for t in range(n)])
+    view = lambda a: np.lib.stride_tricks.sliding_window_view(a, window + horizon, axis=1)[:, ok_t]
+    W = view(s.values)                                      # (S, nt, W+H)
+    S, nt = W.shape[:2]
+    X, Y = W[..., :window].reshape(-1, window), W[..., window:].reshape(-1, horizon)
+    keep = ~np.isnan(Y).any(1) & ((~np.isnan(X)).sum(1) >= window // 2)
+    series = np.repeat(np.arange(S), nt)[keep]
+    t0 = np.tile(np.flatnonzero(ok_t), S)[keep]
+    X, Y = X[keep], Y[keep]
+    C = view(s.companion if s.companion is not None else s.values)[..., :window].reshape(-1, window)[keep]
+    C = np.where(np.isnan(C), X, C)
+    if s.eligible is not None:
+        E = view(s.eligible)
+        logn = np.log1p(np.nan_to_num(E[..., :window].reshape(-1, window)[keep]))
+        n_el = E[..., window:].reshape(-1, horizon)[keep]
+    else:
+        logn, n_el = np.zeros_like(X), np.full_like(Y, np.nan)
     ri = {r: i for i, r in enumerate(s.roles)}
     si = {k: i for i, k in enumerate(s.skills)}
-    out = {k: [] for k in ("x", "mask", "xg", "logn", "y", "role", "skill", "series", "t0", "n_eligible")}
-    gidx = {(r, k): i for i, (r, k, g) in enumerate(s.keys) if g == "global"}
-    elig = s.eligible if s.eligible is not None else np.ones_like(s.values)
-    for n, (role, skill, _) in enumerate(s.keys):
-        v = s.values[n]
-        vg = s.values[gidx.get((role, skill), n)]
-        for t in range(len(v) - window - horizon + 1):
-            tgt = slice(t + window, t + window + horizon)
-            if not (lo <= s.weeks[tgt][0] and s.weeks[tgt][-1] <= hi) or np.isnan(v[tgt]).any():
-                continue
-            x = v[t:t + window]
-            m = ~np.isnan(x)
-            if m.sum() < window // 2:  # too sparse to forecast
-                continue
-            out["x"].append(_ffill(x))
-            out["mask"].append(m.astype(float))
-            out["xg"].append(_ffill(vg[t:t + window]))
-            out["logn"].append(np.log1p(np.nan_to_num(elig[n, t:t + window])))
-            out["y"].append(v[tgt])
-            out["role"].append(ri[role]); out["skill"].append(si[skill])
-            out["series"].append(n); out["t0"].append(t)
-            out["n_eligible"].append(s.eligible[n, tgt] if s.eligible is not None else np.full(horizon, np.nan))
-    return {k: np.asarray(a) for k, a in out.items()}
-
-
-def _ffill(x):
-    x = pd.Series(x).ffill().bfill().to_numpy()
-    return np.nan_to_num(x, nan=0.0)
+    role = np.array([ri[s.keys[i][0]] for i in series], dtype=np.int64)
+    skill = np.array([si[s.keys[i][1]] for i in series], dtype=np.int64)
+    return {"x": _fill(X), "mask": (~np.isnan(X)).astype(float), "xg": _fill(C), "logn": logn, "y": Y,
+            "role": role, "skill": skill, "series": series, "t0": t0, "n_eligible": n_el}
 
 
 def noise_floor_mae(b: dict) -> float:
-    """Expected MAE (pp) of a *perfect* forecaster, from binomial sampling noise of each target week:
-    E|X - p| ~ sqrt(2/pi) * sqrt(p(1-p)/n). Lower bound on achievable test MAE."""
+    """Expected MAE (pp) of a *perfect* forecaster from binomial sampling noise (job-ad data only).
+    NaN for O*NET (expert ratings have no sampling count)."""
+    if np.isnan(b["n_eligible"]).all():
+        return float("nan")
     p = np.clip(b["y"] / 100, 0, 1)
     return float(np.nanmean(100 * np.sqrt(2 / np.pi) * np.sqrt(p * (1 - p) / b["n_eligible"])))

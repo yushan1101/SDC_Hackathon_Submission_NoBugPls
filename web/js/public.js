@@ -1,7 +1,7 @@
 // AiversePulse (public users): sign-in, plan builder, chat-style streaming report, plans.
 import { api, stream, h, $, icon, toast, ApiError, reveal, RISE, DROP, GROW } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
-import { StreamText, gapsBlock, comparisonBlock, forecastBlock, issuesBlock, planBlock, historyBlock,
+import { StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
   sourceItem, staticText } from "./blocks.js";
 
 const app = $("#app");
@@ -11,11 +11,11 @@ const store = {
 };
 const S = {
   me: null, meta: null, status: null, sheet: null, sources: null, evidence: new Map(), busy: null,
-  profile: store.get("ap.profile", { target_role: "Data Analyst", scenario: "assistive", weekly_learning_hours: 6,
-    skills: [{ name: "python", level: 3 }, { name: "sql", level: 2 }], forecast: true }),
+  profile: store.get("ap.profile.v2", { target_role: null, target_title: null, scenario: "assistive", weekly_learning_hours: 6,
+    skills: [] }),
   thread: [],
 };
-const saveProfile = () => store.set("ap.profile", S.profile);
+const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
 // ---------------------------------------------------------------- boot
 async function boot() {
@@ -42,12 +42,12 @@ async function signIn() {
   const user = h("input", { class: "input", name: "username", autocomplete: "username", required: true, maxlength: 40 });
   const pass = h("input", { class: "input", name: "password", type: "password", autocomplete: "current-password", required: true, maxlength: 200 });
   const btn = h("button", { class: "btn primary", type: "submit" }, "Sign in");
-  const specimen = h("table", { class: "specimen", "aria-label": "Top skills in 2023 Data Analyst job ads" });
+  const specimen = h("table", { class: "specimen", "aria-label": "Most important skills for an example occupation (O*NET 31.0)" });
   app.replaceChildren(h("main", { class: "signin" },
     h("section", { class: "signin-story" },
       owl.el,
       h("h1", {}, "Know which skills the job market actually asks for."),
-      h("p", { class: "lede" }, "Free, evidence-based 90-day learning plans. Every claim links to its source: 2023 job ads and the O*NET 31.0 occupational database."),
+      h("p", { class: "lede" }, "Free, evidence-based 90-day learning plans for any job. Every claim links to its source in the O*NET 31.0 occupational database."),
       specimen),
     h("form", { class: "signin-form", onsubmit: async (e) => {
       e.preventDefault();
@@ -67,12 +67,12 @@ async function signIn() {
   user.focus();
   try {
     const sp = await fetch("/api/public/specimen").then((r) => r.json());
-    const max = Math.max(...sp.skills.map(([, v]) => v));
+    const max = 5;
     specimen.append(h("caption", { class: "sr-only" }, sp.source),
       h("tbody", {}, sp.skills.map(([k, v], i) => h("tr", {},
-        h("td", {}, k), h("td", { class: "num" }, `${v.toFixed(1)}%`),
+        h("td", {}, k), h("td", { class: "num" }, `${v.toFixed(2)}`),
         h("td", { style: { width: "55%" } }, reveal(h("div", { class: "bar", style: { width: `${(v / max) * 100}%`, "transform-origin": "left" } }), GROW, { duration: 900, delay: i * 90 }))))));
-    specimen.after(h("p", { class: "muted", style: { "font-size": "13px" } }, `Share of ${sp.postings} deduplicated Data Analyst postings, 2023 (data_jobs).`));
+    specimen.after(h("p", { class: "muted", style: { "font-size": "13px" } }, `Most important skills for ${sp.role}, O*NET importance out of 5 (O*NET 31.0). Works the same for any of ~900 occupations.`));
   } catch { /* specimen is decorative context; the form works without it */ }
 }
 
@@ -117,70 +117,122 @@ function route() {
     else if (page === "plans") plansView(main);
     else buildView(main);
   };
-  document.startViewTransition && !matchMedia("(prefers-reduced-motion: reduce)").matches ? document.startViewTransition(go) : go();
+  go();
+  reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });
   scrollTo({ top: 0 });
 }
 
 // ---------------------------------------------------------------- build
 function buildView(main) {
   const p = S.profile;
-  const known = new Set(S.meta.skills);
+  if (p.target_role && !/^\d{2}-\d{4}\.\d{2}$/.test(p.target_role)) { p.target_role = null; p.target_title = null; }
   const rows = h("div", { class: "skill-rows" });
-  const steps = ["Target role", "Your skills", "Time", "AI scenario"].map((t) => h("li", { "data-done": "true" }, t));
+  const steps = ["Target job", "Your skills", "Time", "AI scenario"].map((t) => h("li", { "data-done": "false" }, t));
+  let occ = null; // {soc, title, description, skills, tools}
   const levelSeg = (sk) => h("div", { class: "seg levels", role: "group", "aria-label": `${sk.name} proficiency, 0 to 5` },
     [0, 1, 2, 3, 4, 5].map((n) => h("button", { type: "button", "aria-pressed": String(sk.level === n), "aria-label": `level ${n}`,
       onclick: (e) => { sk.level = n; saveProfile(); e.currentTarget.parentElement.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(i === n))); } }, n)));
+  const needed = (name) => occ?.skills.find((s) => s.name === name);
   const drawRows = () => {
-    rows.replaceChildren(...p.skills.map((sk, i) => h("div", { class: "skill-row" },
-      h("span", { class: "name" }, sk.name, known.has(sk.name) ? null : h("span", { class: "muted", style: { "font-weight": 400 } }, " · not in job-ad data")),
-      levelSeg(sk),
-      h("button", { class: "btn ghost sm", type: "button", "aria-label": `Remove ${sk.name}`, onclick: () => { p.skills.splice(i, 1); saveProfile(); drawRows(); drawSuggest(); } }, "×"))));
+    rows.replaceChildren(...p.skills.map((sk, i) => {
+      const nd = needed(sk.name);
+      return h("div", { class: "skill-row" },
+        h("span", { class: "name" }, sk.name,
+          nd ? h("span", { class: "muted", style: { "font-weight": 400 } }, ` · needed at ${nd.required}/5`) : null),
+        levelSeg(sk),
+        h("button", { class: "btn ghost sm", type: "button", "aria-label": `Remove ${sk.name}`, onclick: () => { p.skills.splice(i, 1); saveProfile(); drawRows(); drawSuggest(); } }, "×"));
+    }));
     steps[1].dataset.done = String(p.skills.length > 0);
   };
-  const add = h("input", { class: "input", list: "skill-list", placeholder: "Add a skill, e.g. tableau", maxlength: 60, "aria-label": "Add a skill",
+  const add = h("input", { class: "input", placeholder: "Add a skill or tool, e.g. Excel", maxlength: 60, "aria-label": "Add a skill or tool",
     onfocus: () => S.status.set("listening", "Listening"),
     onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); addSkill(add.value); } } });
-  const addSkill = (name) => {
-    name = name.trim().toLowerCase();
-    if (!name || p.skills.some((s) => s.name === name) || p.skills.length >= 40) return;
-    p.skills.push({ name, level: 1 }); saveProfile(); add.value = ""; drawRows(); drawSuggest();
+  const addSkill = (name, level = 1) => {
+    name = name.trim();
+    if (!name || p.skills.some((s) => s.name.toLowerCase() === name.toLowerCase()) || p.skills.length >= 40) return;
+    p.skills.push({ name, level }); saveProfile(); add.value = ""; drawRows(); drawSuggest();
   };
-  const suggest = h("div", { class: "suggest", "aria-label": "Suggested skills" });
-  const drawSuggest = () => suggest.replaceChildren(...["excel", "sql", "python", "tableau", "power bi", "r", "aws", "spark"]
-    .filter((k) => !p.skills.some((s) => s.name === k)).slice(0, 6)
-    .map((k) => h("button", { class: "chip", type: "button", onclick: () => addSkill(k) }, "+ ", k)));
+  const suggest = h("div", { class: "suggest", "aria-label": "Suggested from this job" });
+  const drawSuggest = () => {
+    const pool = occ ? [...occ.skills.map((s) => s.name), ...occ.tools.map((t) => t.name)] : [];
+    suggest.replaceChildren(...pool.filter((k) => !p.skills.some((s) => s.name.toLowerCase() === k.toLowerCase())).slice(0, 8)
+      .map((k) => h("button", { class: "chip", type: "button", onclick: () => addSkill(k, 0) }, "+ ", k)));
+  };
+
+  // occupation picker: combobox over all O*NET occupations and ~45k alternate titles
+  const results = h("ul", { class: "occ-results", role: "listbox", id: "occ-list", hidden: true });
+  const picked = h("div", { class: "occ-picked" });
+  const search = h("input", { class: "input", type: "search", role: "combobox", "aria-expanded": "false", "aria-controls": "occ-list",
+    "aria-autocomplete": "list", placeholder: "Search any job, e.g. nurse, electrician, accountant", maxlength: 80, autocomplete: "off",
+    oninput: () => { clearTimeout(search._t); search._t = setTimeout(find, 160); },
+    onkeydown: (e) => {
+      const items = [...results.querySelectorAll("li")];
+      const i = items.findIndex((x) => x.getAttribute("aria-selected") === "true");
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const j = Math.max(0, Math.min(items.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)));
+        items.forEach((x, k) => x.setAttribute("aria-selected", String(k === j)));
+        search.setAttribute("aria-activedescendant", items[j]?.id || "");
+      } else if (e.key === "Enter" && i >= 0) { e.preventDefault(); items[i].click(); }
+      else if (e.key === "Escape") { results.hidden = true; search.setAttribute("aria-expanded", "false"); }
+    } });
+  async function find() {
+    const q = search.value.trim();
+    if (q.length < 2) { results.hidden = true; return; }
+    const { results: r } = await api(`/api/occupations?q=${encodeURIComponent(q)}`);
+    results.replaceChildren(...(r.length ? r.map((o, k) => h("li", { role: "option", id: `occ-${k}`, "aria-selected": "false", onclick: () => choose(o.soc) },
+      h("b", {}, o.title), o.matched ? h("span", { class: "muted" }, ` · “${o.matched}”`) : null, h("span", { class: "mono muted" }, o.soc)))
+      : [h("li", { class: "muted", role: "option", "aria-disabled": "true" }, "No O*NET occupation matches. Try a broader word.")]));
+    results.hidden = false; search.setAttribute("aria-expanded", "true");
+  }
+  async function choose(soc) {
+    occ = await api(`/api/occupations/${soc}`);
+    const changed = p.target_role !== soc;
+    p.target_role = soc; p.target_title = occ.title;
+    if (changed) {  // start from what this job needs: rate each (0 = never used)
+      const mine = new Map(p.skills.map((s) => [s.name.toLowerCase(), s.level]));
+      p.skills = occ.skills.slice(0, 8).map((s) => ({ name: s.name, level: mine.get(s.name.toLowerCase()) ?? 0 }));
+    }
+    saveProfile();
+    search.value = ""; results.hidden = true; search.setAttribute("aria-expanded", "false");
+    picked.replaceChildren(h("div", { class: "occ-card" },
+      h("div", {}, h("b", {}, occ.title), h("span", { class: "mono muted" }, ` ${occ.soc}`)),
+      h("p", { class: "muted" }, occ.description.length > 220 ? occ.description.slice(0, 220) + "…" : occ.description),
+      h("a", { href: occ.url, target: "_blank", rel: "noopener noreferrer" }, "O*NET OnLine profile")));
+    steps[0].dataset.done = "true";
+    drawRows(); drawSuggest();
+  }
+
   const hoursIn = h("input", { type: "number", min: "0.5", max: "80", step: "0.5", value: p.weekly_learning_hours, "aria-label": "Hours per week",
     onchange: () => { p.weekly_learning_hours = Math.min(80, Math.max(0.5, Number(hoursIn.value) || 6)); hoursIn.value = p.weekly_learning_hours; saveProfile(); } });
   const bump = (d) => { hoursIn.value = Math.min(80, Math.max(0.5, Number(hoursIn.value) + d)); hoursIn.dispatchEvent(new Event("change")); };
-  const role = h("select", { class: "input", "aria-label": "Target role", onchange: (e) => { p.target_role = e.target.value; saveProfile(); } },
-    S.meta.roles.map((r) => h("option", { value: r, selected: r === p.target_role ? true : null }, r)));
   const scen = (key, title, note) => h("label", {},
     h("input", { type: "radio", name: "scenario", value: key, checked: p.scenario === key ? true : null, onchange: () => { p.scenario = key; saveProfile(); } }),
     h("b", {}, title), h("span", { class: "muted" }, note));
-  const fc = h("input", { type: "checkbox", checked: p.forecast ? true : null, onchange: (e) => { p.forecast = e.target.checked; saveProfile(); } });
+  steps[2].dataset.done = steps[3].dataset.done = "true";
 
   main.replaceChildren(
     h("h1", { class: "page-title" }, "Build your plan"),
-    h("p", { class: "lede" }, "Four short answers. The agents compare them with 2023 job ads and O*NET, then write a plan you can edit and approve."),
+    h("p", { class: "lede" }, "Works for any job. The agents compare your skills with the O*NET 31.0 requirements for the job you pick, then write a plan you can edit and approve."),
     h("div", { class: "build" },
       h("ol", { class: "steps", "aria-label": "Steps" }, steps),
-      h("form", { onsubmit: (e) => { e.preventDefault(); start(); } },
-        h("section", { class: "form-section" }, h("h2", {}, "Target role"), role),
+      h("form", { onsubmit: (e) => { e.preventDefault(); if (!p.target_role) { toast("Pick a target job first.", "err"); search.focus(); return; } start(); } },
+        h("section", { class: "form-section" }, h("h2", {}, "Target job"),
+          h("div", { class: "occ-search" }, search, results), picked),
         h("section", { class: "form-section" }, h("h2", {}, "Your skills"),
-          h("p", { class: "muted" }, "0 = never used it, 5 = could teach it."), rows,
-          h("div", { class: "add-skill" }, add, h("button", { class: "btn", type: "button", onclick: () => addSkill(add.value) }, "Add")),
-          h("datalist", { id: "skill-list" }, S.meta.skills.map((k) => h("option", { value: k }))), suggest),
+          h("p", { class: "muted" }, "Rate each skill this job needs. 0 = never used it, 5 = could teach it."), rows,
+          h("div", { class: "add-skill" }, add, h("button", { class: "btn", type: "button", onclick: () => addSkill(add.value) }, "Add")), suggest),
         h("section", { class: "form-section" }, h("h2", {}, "Time you can give each week"),
           h("div", { class: "hours" }, h("div", { class: "stepper" },
             h("button", { type: "button", "aria-label": "Fewer hours", onclick: () => bump(-1) }, "−"), hoursIn,
             h("button", { type: "button", "aria-label": "More hours", onclick: () => bump(1) }, "+")), h("span", { class: "muted" }, "hours / week"))),
         h("section", { class: "form-section" }, h("h2", {}, "How will AI change this job?"),
           h("div", { class: "scenario" },
-            scen("assistive", "Assistive AI", "AI helps you do today's work. Required levels follow 2023 job ads."),
-            scen("agentic", "Agentic AI", "AI agents take over routine tool work. Automation skills weigh more; this is a stated assumption.")),
-          h("label", { class: "check" }, fc, "Include an experimental demand forecast (2023 backtest)")),
+            scen("assistive", "Assistive AI", "AI helps you do today's work. Required levels follow O*NET ratings."),
+            scen("agentic", "Agentic AI", "AI agents take over routine execution; judgement and oversight skills weigh more. A stated assumption."))),
         h("div", { class: "build-actions" }, h("button", { class: "btn primary", type: "submit" }, "Analyse my skills", icon("send"))))));
-  drawRows(); drawSuggest();
+  drawRows();
+  if (p.target_role) choose(p.target_role).catch(() => {});
   S.status.set("idle", "Ready when you are");
 }
 
@@ -201,9 +253,9 @@ function reportView(main) {
     S.composer = h("form", { class: "composer", onsubmit: (e) => { e.preventDefault(); composerSend(); } },
       h("div", { class: "quick" },
         quick("Compare with agentic AI", () => rerun({ scenario: S.profile.scenario === "agentic" ? "assistive" : "agentic" })),
-        quick("Show demand forecast", () => rerun({ forecast: true })),
         quick("I have more time: 10 h/week", () => rerun({ weekly_learning_hours: 10 })),
-        quick("Edit my skills", () => { location.hash = "#/build"; })),
+        quick("Edit my skills", () => { location.hash = "#/build"; }),
+        quick("Try a different job", () => { location.hash = "#/build"; })),
       h("div", { class: "row" }, S.input, S.sendBtn));
     S.reportEl = h("div", { class: "report" },
       h("div", { class: "thread-col", style: { display: "grid", gap: "24px", "min-width": 0 } },
@@ -236,7 +288,6 @@ function composerSend() {
   if (m) S.profile.weekly_learning_hours = Math.min(80, Math.max(0.5, Number(m[1])));
   if (/agentic/i.test(q)) S.profile.scenario = "agentic";
   if (/assistive/i.test(q)) S.profile.scenario = "assistive";
-  if (/forecast|trend|demand/i.test(q)) S.profile.forecast = true;
   saveProfile();
   S.input.value = "";
   start(q);
@@ -265,10 +316,10 @@ function setSources(evidence) {
 
 async function runTurn(params) {
   const p = params;
-  const label = p.query || `Plan for ${p.target_role}`;
+  const label = p.query || `Plan for ${p.target_title || p.target_role}`;
   S.thread.push(p);
   const userTurn = h("div", { class: "turn-user" }, h("p", { class: "q" }, label),
-    h("div", { class: "meta" }, [p.target_role, p.scenario === "agentic" ? "Agentic AI" : "Assistive AI", `${p.weekly_learning_hours} h/week`,
+    h("div", { class: "meta" }, [p.target_title || p.target_role, p.scenario === "agentic" ? "Agentic AI" : "Assistive AI", `${p.weekly_learning_hours} h/week`,
       ...p.skills.map((s) => `${s.name} ${s.level}`)].map((t) => h("span", {}, t))));
   const owl = new Owl({ size: 44, state: "thinking" });
   const say = h("span", { class: "muted" }, "Reading your request");
@@ -293,7 +344,7 @@ async function runTurn(params) {
   try {
     await stream("/api/analyze", {
       target_role: p.target_role, scenario: p.scenario, weekly_learning_hours: p.weekly_learning_hours,
-      skills: p.skills, forecast: !!p.forecast, ...(p.query ? { query: p.query } : {}),
+      skills: p.skills, ...(p.query ? { query: p.query } : {}),
     }, (ev) => {
       if (ev.t === "owl") mood(ev.state, ev.say);
       else if (ev.t === "agent") {
@@ -310,7 +361,7 @@ async function runTurn(params) {
       else if (ev.t === "section") {
         const d = ev.data;
         const el = ev.kind === "gaps" ? gapsBlock(d) : ev.kind === "comparison" ? comparisonBlock(d, p.scenario)
-          : ev.kind === "forecast" ? forecastBlock(d) : ev.kind === "issues" ? issuesBlock(d.filter((i) => i.severity === "error" || i.code === "deferred"))
+          : ev.kind === "outlook" ? outlookBlock(d) : ev.kind === "issues" ? issuesBlock(d.filter((i) => i.severity === "error"))
           : ev.kind === "plan" ? planHolder(planId, d, p.weekly_learning_hours, meta?.status || "draft") : null;
         if (el) body.append(el);
       } else if (ev.t === "done") {
@@ -352,7 +403,7 @@ async function plansView(main) {
     return;
   }
   main.append(h("div", { class: "plan-list", style: { "margin-top": "28px" } }, list.map((pl) => h("a", { class: "plan-item", href: `#/plans/${pl.plan_id}`, style: { color: "inherit", "text-decoration": "none" } },
-    h("div", {}, h("div", { class: "t" }, pl.target_role || "Plan", pl.audience === "hr" ? h("span", { class: "muted" }, " · from HR") : null),
+    h("div", {}, h("div", { class: "t" }, pl.target_title || pl.target_role || "Plan", pl.audience === "hr" ? h("span", { class: "muted" }, " · from HR") : null),
       h("div", { class: "m" }, `${pl.scenario || ""} · v${pl.version} · ${new Date(pl.created_utc).toLocaleDateString()}`)),
     h("span", { class: `tag ${pl.status}` }, pl.status)))));
 }
@@ -366,13 +417,14 @@ async function planDetail(main, id) {
   const blocks = h("div", { class: "body", style: { "max-width": "760px" } },
     r?.narrative ? staticText(r.narrative, highlight) : null,
     r?.gaps?.length ? gapsBlock(r.gaps) : null,
+    r?.outlook ? outlookBlock(r.outlook) : null,
     planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null,
       onChange: () => planDetail(main, id) }),
     d.audience === "hr" && d.status === "approved" ? h("div", { class: "approve-bar" }, h("span", {}, "HR approved this plan for you."),
       h("button", { class: "btn primary", onclick: async () => { await api(`/api/plans/${id}/acknowledge`, { method: "POST" }); toast("Acknowledged"); planDetail(main, id); } }, "Acknowledge")) : null,
     h("section", { class: "block" }, h("h3", {}, "History"), historyBlock(d.history)));
   main.replaceChildren(h("a", { href: "#/plans", class: "btn ghost sm" }, icon("back"), "All plans"),
-    h("h1", { class: "page-title", style: { "margin-top": "12px" } }, d.plan.target_role), blocks);
+    h("h1", { class: "page-title", style: { "margin-top": "12px" } }, r?.occupation?.title || d.plan.target_role), blocks);
 }
 
 boot().catch((e) => { app.replaceChildren(h("main", { class: "pub-main" }, h("div", { class: "issue error" }, `Could not start: ${e.message}`))); });
