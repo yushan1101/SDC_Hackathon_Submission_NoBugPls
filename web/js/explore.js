@@ -69,9 +69,9 @@ export function startView(main, { name } = {}) {
       h("h2", {}, "The world of work keeps moving."), h("p", {}, "Explore today's AI topics and the roles they may affect.")),
       h("a", { class: "home-cta home-cta-secondary", href: "#/today" }, "Explore Today", arrow()))));
   if ("IntersectionObserver" in window && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    main._homeObserver = new IntersectionObserver((entries, observer) => entries.forEach((entry) => {
-      if (entry.isIntersecting) { entry.target.classList.add("is-visible"); observer.unobserve(entry.target); }
-    }), { threshold: 0.12 });
+    main._homeObserver = new IntersectionObserver((entries) => entries.forEach((entry) => {
+      entry.target.classList.toggle("is-visible", entry.isIntersecting);
+    }), { threshold: 0.25, rootMargin: "-8% 0px -12% 0px" });
     sections.forEach((section) => { section.classList.add("home-reveal"); main._homeObserver.observe(section); });
   }
 }
