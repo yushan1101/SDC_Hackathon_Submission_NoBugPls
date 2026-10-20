@@ -136,33 +136,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .cite b { font-weight: 600; color: var(--accent); }
 
 /* ---------- owl companion ---------- */
-.owl { position: relative; width: var(--owl, 40px); height: var(--owl, 40px); flex: none; }
-.owl img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transform-origin: 50% 92%; transition: opacity var(--t-base) var(--ease-out); }
-.owl img.out { opacity: 0; }
-.owl[data-state="idle"] img.in      { animation: owl-breathe 3.6s var(--ease-in-out) infinite; }
-.owl[data-state="greeting"] img.in  { animation: owl-wave 0.9s var(--ease-in-out) 3; }
-.owl[data-state="listening"] img.in { animation: owl-bob 1.6s var(--ease-in-out) infinite; }
-.owl[data-state="thinking"] img.in  { animation: owl-tilt 2.4s var(--ease-in-out) infinite; }
-.owl[data-state="searching"] img.in { animation: owl-scan 1.4s var(--ease-in-out) infinite; }
-.owl[data-state="analyzing"] img.in { animation: owl-nod 0.9s var(--ease-in-out) infinite; }
-.owl[data-state="update"] img.in    { animation: owl-wiggle 0.6s var(--ease-in-out) infinite; }
-.owl[data-state="reminder"] img.in  { animation: owl-ring 1.2s var(--ease-in-out) infinite; }
-.owl[data-state="matched"] img.in   { animation: owl-hop 0.7s var(--ease-out) 2; }
-.owl[data-state="confused"] img.in  { animation: owl-shake 0.5s var(--ease-in-out) 3; }
-.owl[data-state="celebrating"] img.in { animation: owl-hop 0.6s var(--ease-out) infinite; }
-.owl[data-state="sleeping"] img.in  { animation: owl-breathe 5s var(--ease-in-out) infinite; }
-.owl.paused img { animation-play-state: paused !important; }
-@keyframes owl-breathe { 0%,100% { transform: translateY(0) scaleY(1); } 50% { transform: translateY(-2%) scaleY(1.02); } }
-@keyframes owl-wave    { 0%,100% { transform: rotate(0); } 30% { transform: rotate(-7deg); } 70% { transform: rotate(6deg); } }
-@keyframes owl-bob     { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4%); } }
-@keyframes owl-tilt    { 0%,100% { transform: rotate(0) translateY(0); } 40% { transform: rotate(-6deg) translateY(-2%); } }
-@keyframes owl-scan    { 0%,100% { transform: translateX(-5%) rotate(-2deg); } 50% { transform: translateX(5%) rotate(2deg); } }
-@keyframes owl-nod     { 0%,100% { transform: translateY(0); } 50% { transform: translateY(3%) rotate(1deg); } }
-@keyframes owl-wiggle  { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-3deg); } 75% { transform: rotate(3deg); } }
-@keyframes owl-ring    { 0%,60%,100% { transform: rotate(0); } 10%,30% { transform: rotate(-8deg); } 20%,40% { transform: rotate(8deg); } }
-@keyframes owl-hop     { 0%,100% { transform: translateY(0) scale(1, 1); } 15% { transform: translateY(0) scale(1.06, 0.94); } 45% { transform: translateY(-14%) scale(0.97, 1.03); } 75% { transform: translateY(0) scale(1.03, 0.97); } }
-@keyframes owl-shake   { 0%,100% { transform: translateX(0) rotate(0); } 25% { transform: translateX(-4%) rotate(-3deg); } 75% { transform: translateX(4%) rotate(3deg); } }
-
 .owl-status { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
 .owl-status .say { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32ch; }
 .owl-status .say::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: currentColor; vertical-align: 2px; opacity: 0.4; }
@@ -199,6 +172,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .signin-story h1 { font-size: clamp(34px, 4.6vw, 56px); line-height: 1.08; max-width: 16ch; }
 .specimen { width: 100%; max-width: 560px; border-collapse: collapse; }
 .specimen td { padding: 10px 0; border-top: 1px solid var(--rule); }
+.specimen td:first-child { white-space: nowrap; padding-right: 12px; }
 .specimen td:nth-child(2) { width: 64px; text-align: right; padding-right: 14px; }
 .specimen .bar { height: 3px; background: var(--accent); transform-origin: left; }
 .signin-form { background: var(--shell); color: var(--shell-ink); padding: clamp(32px, 5vw, 72px); display: grid; align-content: center; gap: 20px; }
@@ -543,6 +517,5 @@ dialog.drawer[open] { animation: drawer-in var(--t-slow) var(--ease-out); }
 /* ---------- reduced motion: keep state changes, drop travel ---------- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
-  .owl img.in { animation: none !important; }
   .prose .caret { animation: none; }
 }
