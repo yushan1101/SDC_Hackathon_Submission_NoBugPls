@@ -101,7 +101,7 @@ RunPod GPU (offline): O*NET ratings + release history → requirement model + ST
   that recommend while humans decide.
 - **Prototype:** a working end-to-end app, not mock-ups. Real data, streaming agent progress, an animated owl
   that shows what the agents are doing, and accessible layouts for desktop and mobile.
-- **Test:** 73 automated tests run on every push. They include red-team PDFs with hidden injections, a guard
+- **Test:** 74 automated tests run on every push. They include red-team PDFs with hidden injections, a guard
   that fails if live code reads training data, and honest model evaluation against baselines.
 
 For Phase 2 deployment, the frontend and API deploy separately, run without a GPU or paid LLM, and refresh
