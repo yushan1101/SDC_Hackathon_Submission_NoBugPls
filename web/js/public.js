@@ -43,12 +43,12 @@ async function signIn() {
   const user = h("input", { class: "input", name: "username", autocomplete: "username", required: true, maxlength: 40 });
   const pass = h("input", { class: "input", name: "password", type: "password", autocomplete: "current-password", required: true, maxlength: 200 });
   const btn = h("button", { class: "btn primary", type: "submit" }, "Sign in");
-  const specimen = h("table", { class: "specimen", "aria-label": "Most important skills for an example occupation (O*NET 31.0)" });
+  const specimen = h("table", { class: "specimen", "aria-label": "Most important skills for an example occupation (ESCO)" });
   app.replaceChildren(h("main", { class: "signin" },
     h("section", { class: "signin-story" },
       owl.el,
       h("h1", {}, "Know which skills the job market actually asks for."),
-      h("p", { class: "lede" }, "Free, evidence-based 90-day learning plans for any job. Every claim links to its source in the O*NET 31.0 occupational database."),
+      h("p", { class: "lede" }, "Free, evidence-based 90-day learning plans for any job. Every claim links to its public source, starting with ESCO, the European Commission's skills and occupations classification."),
       specimen),
     h("form", { class: "signin-form", onsubmit: async (e) => {
       e.preventDefault();
@@ -73,7 +73,7 @@ async function signIn() {
       h("tbody", {}, sp.skills.map(([k, v], i) => h("tr", {},
         h("td", {}, k), h("td", { class: "num" }, `${v.toFixed(2)}`),
         h("td", { style: { width: "55%" } }, reveal(h("div", { class: "bar", style: { width: `${(v / max) * 100}%`, "transform-origin": "left" } }), GROW, { duration: 900, delay: i * 90 }))))));
-    specimen.after(h("p", { class: "muted", style: { "font-size": "13px" } }, `Most important skills for ${sp.role}, O*NET importance out of 5 (O*NET 31.0). Works the same for any of ~900 occupations.`));
+    specimen.after(h("p", { class: "muted", style: { "font-size": "13px" } }, `Most important skills for ${sp.role} (ESCO), predicted importance out of 5. Works the same for any of ~3,000 occupations.`));
   } catch { /* specimen is decorative context; the form works without it */ }
 }
 
@@ -131,7 +131,7 @@ function route() {
 // ---------------------------------------------------------------- build
 function buildView(main) {
   const p = S.profile;
-  if (p.target_role && !/^\d{2}-\d{4}\.\d{2}$/.test(p.target_role)) { p.target_role = null; p.target_title = null; }
+  if (p.target_role && !/^\d{4}(\.\d+)*$/.test(p.target_role)) { p.target_role = null; p.target_title = null; }
   const rows = h("div", { class: "skill-rows" });
   const steps = ["Target job", "Your skills", "Time", "AI scenario"].map((t) => h("li", { "data-done": "false" }, t));
   let occ = null; // {soc, title, description, skills, tools}
@@ -165,7 +165,7 @@ function buildView(main) {
       .map((k) => h("button", { class: "chip", type: "button", onclick: () => addSkill(k, 0) }, "+ ", k)));
   };
 
-  // occupation picker: combobox over all O*NET occupations and ~45k alternate titles
+  // occupation picker: combobox over all ESCO occupations and their alternative labels
   const results = h("ul", { class: "occ-results", role: "listbox", id: "occ-list", hidden: true });
   const picked = h("div", { class: "occ-picked" });
   const search = h("input", { class: "input", type: "search", role: "combobox", "aria-expanded": "false", "aria-controls": "occ-list",
@@ -188,7 +188,7 @@ function buildView(main) {
     const { results: r } = await api(`/api/occupations?q=${encodeURIComponent(q)}`);
     results.replaceChildren(...(r.length ? r.map((o, k) => h("li", { role: "option", id: `occ-${k}`, "aria-selected": "false", onclick: () => choose(o.soc) },
       h("b", {}, o.title), o.matched ? h("span", { class: "muted" }, ` · “${o.matched}”`) : null, h("span", { class: "mono muted" }, o.soc)))
-      : [h("li", { class: "muted", role: "option", "aria-disabled": "true" }, "No O*NET occupation matches. Try a broader word.")]));
+      : [h("li", { class: "muted", role: "option", "aria-disabled": "true" }, "No ESCO occupation matches. Try a broader word.")]));
     results.hidden = false; search.setAttribute("aria-expanded", "true");
   }
   async function choose(soc) {
@@ -204,7 +204,7 @@ function buildView(main) {
     picked.replaceChildren(h("div", { class: "occ-card" },
       h("div", {}, h("b", {}, occ.title), h("span", { class: "mono muted" }, ` ${occ.soc}`)),
       h("p", { class: "muted" }, occ.description.length > 220 ? occ.description.slice(0, 220) + "…" : occ.description),
-      h("a", { href: occ.url, target: "_blank", rel: "noopener noreferrer" }, "O*NET OnLine profile")));
+      h("a", { href: occ.url, target: "_blank", rel: "noopener noreferrer" }, "ESCO occupation page")));
     steps[0].dataset.done = "true";
     drawRows(); drawSuggest();
   }
@@ -219,7 +219,7 @@ function buildView(main) {
 
   main.replaceChildren(
     h("h1", { class: "page-title" }, "Build your plan"),
-    h("p", { class: "lede" }, "Works for any job. The agents compare your skills with the O*NET 31.0 requirements for the job you pick, then write a plan you can edit and approve."),
+    h("p", { class: "lede" }, "Works for any job. The agents compare your skills with the ESCO requirements for the job you pick, then write a plan you can edit and approve."),
     h("div", { class: "build" },
       h("ol", { class: "steps", "aria-label": "Steps" }, steps),
       h("form", { onsubmit: (e) => { e.preventDefault(); if (!p.target_role) { toast("Pick a target job first.", "err"); search.focus(); return; } start(); } },
@@ -234,7 +234,7 @@ function buildView(main) {
             h("button", { type: "button", "aria-label": "More hours", onclick: () => bump(1) }, "+")), h("span", { class: "muted" }, "hours / week"))),
         h("section", { class: "form-section" }, h("h2", {}, "How will AI change this job?"),
           h("div", { class: "scenario" },
-            scen("assistive", "Assistive AI", "AI helps you do today's work. Required levels follow O*NET ratings."),
+            scen("assistive", "Assistive AI", "AI helps you do today's work. Required levels are the model's predictions."),
             scen("agentic", "Agentic AI", "AI agents take over routine execution; judgement and oversight skills weigh more. A stated assumption."))),
         h("div", { class: "build-actions" }, h("button", { class: "btn primary", type: "submit" }, "Analyse my skills", icon("send"))))));
   drawRows();

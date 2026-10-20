@@ -1,7 +1,7 @@
 """O*NET 31.0 -> compact requirements snapshot for EVERY rated occupation (the live agents' source of truth).
 
     python scripts/build_onet_snapshot.py --onet data/raw/onet/db_31_0_text.zip
-Writes data/snapshots/onet_occupations.json. O*NET 31.0 Database, CC BY 4.0, USDOL/ETA (US-oriented).
+Writes data/training_snapshots/onet_occupations.json. O*NET 31.0 Database, CC BY 4.0, USDOL/ETA (US-oriented).
 
 Rules (documented, deterministic):
 - A skill counts for an occupation when O*NET importance (IM, 1-5) >= 3.0 and the row is not suppressed.
@@ -19,7 +19,7 @@ import zipfile
 from collections import defaultdict
 from pathlib import Path
 
-OUT = Path("data/snapshots/onet_occupations.json")
+OUT = Path("data/training_snapshots/onet_occupations.json")
 IMPORTANT = 3.0
 MAX_TECH = 8
 

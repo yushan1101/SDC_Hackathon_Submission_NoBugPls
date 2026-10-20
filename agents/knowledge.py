@@ -1,7 +1,8 @@
-"""Knowledge Agent: occupation requirements for ANY O*NET occupation, via the FastMCP server.
+"""Knowledge Agent: occupation requirements for ANY ESCO occupation, via the FastMCP server.
 
-Live evidence = O*NET 31.0 only (skills, tools, descriptions, tasks) + official learning links.
-The 2023 job-ad dataset is training data for the forecasting model and is never read here.
+Live evidence = ESCO v1.2 (European Commission, public): occupations, descriptions, essential/optional skills,
+with importance and level predicted by a model trained offline on O*NET ratings. O*NET itself, the O*NET
+release history and the 2023 job-ad dataset are TRAINING data only and are never read here.
 Falls back to calling the tool functions directly if the MCP transport fails, so the demo stays up.
 """
 import asyncio
@@ -13,7 +14,7 @@ from functools import lru_cache
 from core.state import Evidence
 
 log = logging.getLogger(__name__)
-SOC = re.compile(r"^\d{2}-\d{4}\.\d{2}$")
+SOC = re.compile(r"^\d{4}(\.\d+)*$")  # ESCO occupation code (ISCO-08 unit group + ESCO suffix)
 
 
 @lru_cache(maxsize=1)
@@ -34,16 +35,17 @@ def _title_index() -> dict[str, str]:
 
 
 def resolve_occupation(text: str) -> str | None:
-    """SOC code, official title or any O*NET alternate title (case-insensitive) -> SOC code."""
+    """ESCO code, preferred title or any ESCO alternative label (case-insensitive) -> ESCO code."""
     t = (text or "").strip()
     if SOC.match(t):
         return t if occupation(t) else None
-    return _title_index().get(t.lower())
+    idx, low = _title_index(), t.lower()
+    return idx.get(low) or idx.get(re.sub(r"(?<=[a-z]{3})s\b", "", low))  # "Electricians" -> "electrician"
 
 
 def search_occupations(query: str, limit: int = 12) -> list[dict]:
     """Every query word must appear in the title; official occupation titles rank above alternate titles."""
-    words = re.findall(r"[a-z0-9]+", (query or "").lower())
+    words = [re.sub(r"(?<=[a-z]{3})s$", "", w) for w in re.findall(r"[a-z0-9]+", (query or "").lower())]
     if not words:
         return []
     occ = snapshot()["occupations"]
@@ -109,6 +111,6 @@ def learning_resources(skill: str, top_k: int = 2) -> list[Evidence]:
 
 
 @lru_cache(maxsize=1)
-def known_skills() -> frozenset[str]:
+def known_skills() -> frozenset[str]:  # every ESCO skill label used by an occupation
     occ = snapshot()["occupations"].values()
     return frozenset({s for o in occ for s in o["skills"]} | {t["name"] for o in occ for t in o["tech"]})

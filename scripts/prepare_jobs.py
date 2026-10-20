@@ -82,7 +82,7 @@ def build(df: pd.DataFrame, top_skills: int = 30, min_posts: int = 30, min_count
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", default="data/raw/data_jobs.csv")
-    ap.add_argument("--out-dir", default="data/snapshots")
+    ap.add_argument("--out-dir", default="data/training_snapshots")
     ap.add_argument("--top-skills", type=int, default=30)
     ap.add_argument("--min-posts", type=int, default=30)
     a = ap.parse_args()

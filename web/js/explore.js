@@ -1,7 +1,7 @@
 // Public entry paths: quick-match MCQ game, resume deep analysis, and the daily AI-trend board.
 import { api, upload, h, icon, toast, ApiError, reveal, RISE, DROP } from "./lib.js";
 import { Owl } from "./owl.js";
-import { matchesBlock, boardView } from "./blocks.js";
+import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
 
 const KEYS = ["A", "B", "C", "D"];
 
@@ -24,7 +24,7 @@ export function startView(main, { name } = {}) {
       path("#/quiz", "quiz", "Quick match game", "About 2 minutes · 13 questions",
         "Answer everyday work scenarios. We estimate your skill levels and rank the roles you fit today."),
       path("#/resume", "file", "Upload your resume", "PDF, Word or text · deep analysis",
-        "We convert it to Markdown, pull out skills with the exact lines that prove them, and match you across all 899 occupations."),
+        "We convert it to Markdown, pull out skills with the exact lines that prove them, and match you across all ESCO occupations."),
       path("#/build", "build", "Pick a job and rate yourself", "You choose the target",
         "Already know the role you want? Rate the skills it needs and go straight to your plan.")),
     h("p", { class: "note start-today" }, icon("pulse"), " ", h("a", { href: "#/today" }, "See today's AI-trend board"),
@@ -94,13 +94,13 @@ export async function quizView(main, ctx) {
         e.currentTarget.setAttribute("aria-pressed", String(st.fields.has(f.id))); owl.set("listening"); } }, f.label));
     stage.replaceChildren(reveal(h("div", { class: "q" },
       h("h2", {}, "Which kinds of work interest you?"),
-      h("p", { class: "muted" }, "Pick any. We only rank roles in these fields; skip to search all 899 occupations."),
+      h("p", { class: "muted" }, "Pick any. We only rank roles in these fields; skip to search every ESCO occupation."),
       h("div", { class: "field-chips" }, chips),
       h("h2", { class: "sub" }, "How much training or education do you have?"),
       h("div", { class: "field-chips" }, q.training.map((t) => h("button", { class: "chip", type: "button", "aria-pressed": String(st.zone === t.zone),
         onclick: (e) => { st.zone = st.zone === t.zone ? null : t.zone;
           e.currentTarget.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget && st.zone !== null))); } }, t.label))),
-      h("p", { class: "note" }, "Used to suggest roles within reach: at most one O*NET preparation level above yours, shown as a stretch."),
+      h("p", { class: "note" }, "Used to suggest roles within reach: at most one ISCO-08 skill level above yours, shown as a stretch."),
       h("div", { class: "row-actions" },
         h("button", { class: "btn primary", type: "button", onclick: () => go(0) }, "Start the game", icon("send")),
         h("button", { class: "btn ghost", type: "button", onclick: () => { st.fields.clear(); go(0); } }, "Skip, search everything"))), RISE));
@@ -109,7 +109,7 @@ export async function quizView(main, ctx) {
   async function finish() {
     owl.set("analyzing");
     stage.replaceChildren(h("div", { class: "q" }, h("h2", {}, "Matching you against every occupation…"),
-      h("p", { class: "muted" }, "Comparing your answers with O*NET 31.0 requirements and today's AI-trend board.")));
+      h("p", { class: "muted" }, "Comparing your answers with ESCO requirements and today's AI-trend board.")));
     try {
       const r = await api("/api/quiz/score", { method: "POST", body: { answers: st.answers, fields: [...st.fields], zone: st.zone } });
       owl.set("celebrating");
@@ -175,6 +175,7 @@ export function resumeView(main, ctx) {
     } }, "Re-match with my edits");
     const drawMatches = (m) => matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))) }));
     out.replaceChildren(
+      integrityBlock(r.integrity, "self"),
       h("div", { class: "cv-grid" },
         h("details", { class: "cv-md", open: matchMedia("(min-width: 900px)").matches || null },
           h("summary", {}, h("b", {}, "Your resume as Markdown"), h("span", { class: "note" }, ` · ${r.markdown.length.toLocaleString()} characters`)),
@@ -184,7 +185,7 @@ export function resumeView(main, ctx) {
           skills.length ? h("ul", {}, skills.map((s, i) => reveal(h("li", {},
             h("div", { class: "top" }, h("b", {}, s.name), s.kind === "tool" ? h("span", { class: "tag" }, "tool") : null, lv(s)),
             s.evidence?.[0] ? h("q", {}, s.evidence[0]) : null), DROP, { delay: Math.min(i, 10) * 35 })))
-            : h("p", { class: "note" }, "No O*NET skills or tools found. Try a resume with a skills or experience section."),
+            : h("p", { class: "note" }, "No ESCO skills or tools found. Try a resume with a skills or experience section."),
           h("div", { class: "row-actions" }, rematch))),
       matchHost);
     drawMatches(r.matches);

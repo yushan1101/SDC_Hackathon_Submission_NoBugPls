@@ -51,7 +51,7 @@ class Gap(BaseModel):
     current_level: int = Field(ge=0, le=5)
     required_level: int = Field(ge=0, le=5)
     gap: int = Field(ge=0)
-    importance: float | None = None  # O*NET importance 1-5 (None for tools)
+    importance: float | None = None  # predicted importance 1-5 for the ESCO skill
     rationale_source_ids: list[str] = []
 
 

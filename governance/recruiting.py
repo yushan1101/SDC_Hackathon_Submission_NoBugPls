@@ -96,8 +96,9 @@ def update_analysis(con, app_id: str, analysis: dict):
         con.execute("UPDATE applications SET analysis=?, fit=? WHERE id=?", (json.dumps(analysis), analysis.get("fit", 0.0), app_id))
 
 
-def resumes(con, opening_id: str) -> list[tuple[str, str]]:
-    return con.execute("SELECT id, resume_md FROM applications WHERE opening_id=?", (opening_id,)).fetchall()
+def resumes(con, opening_id: str) -> list[tuple[str, str, str]]:
+    """-> [(application id, visible resume Markdown, analysis JSON)]."""
+    return con.execute("SELECT id, resume_md, analysis FROM applications WHERE opening_id=?", (opening_id,)).fetchall()
 
 
 def set_recommendations(con, opening_id: str, recommended_ids: list[str]):

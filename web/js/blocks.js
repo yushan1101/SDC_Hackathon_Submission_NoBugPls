@@ -4,10 +4,10 @@ import { api, h, toast, fmtTime, ApiError, reveal, RISE, DROP, GROW } from "./li
 const PHASES = ["1-30", "31-60", "61-90"];
 const CITE = /\[([^\[\]]{3,120})\]/g;
 
-/** Short readable label for an evidence id, e.g. "onet:29-1141.00:skill:Speaking" -> "O*NET · Speaking". */
+/** Short readable label for an evidence id, e.g. "esco:2221.1:skill:Listen actively" -> "ESCO · Listen actively". */
 export function citeLabel(id) {
   const p = id.split(":");
-  if (p[0] === "onet") return p[2] === "skill" || p[2] === "tech" ? `O*NET · ${p.slice(3).join(":")}` : `O*NET · ${p[2] || p[1]}`;
+  if (p[0] === "esco") return p[2] === "skill" || p[2] === "tool" ? `ESCO · ${p.slice(3).join(":")}` : `ESCO · ${p[2] || p[1]}`;
   if (p[0] === "stfkan") return `STF-KAN · ${p.slice(2).join(":")}`;
   if (p[0] === "learn") return `learn · ${p.slice(1).join(":")}`;
   if (p[0] === "signal") return `Signal · ${p[2]} (${p[3]}, ${p[1]})`;
@@ -65,13 +65,13 @@ export function gapsBlock(gaps) {
         h("th", {}, "Level"), h("th", { class: "n" }, "Importance"))),
       h("tbody", {}, rows.map((g, i) => reveal(h("tr", {},
         h("td", {}, g.skill_id, " ",
-          g.kind === "tool" ? h("span", { class: `tag ${g.hot ? "hot" : ""}`, title: "O*NET Hot/In-Demand technology" }, g.hot ? "hot tool" : "tool") : null,
+          g.kind === "tool" ? h("span", { class: `tag ${g.hot ? "hot" : ""}`, title: "Tool or system listed by ESCO" }, g.hot ? "hot tool" : "tool") : null,
           ARROW[g.outlook] ? h("span", { class: `trend ${g.outlook}`, title: ARROW[g.outlook][1] }, ARROW[g.outlook][0],
             h("span", { class: "sr-only" }, ARROW[g.outlook][1])) : null),
         h("td", { class: "n hide-sm" }, g.current_level), h("td", { class: "n hide-sm" }, g.required_level),
         h("td", {}, meter(g), h("span", { class: "sr-only" }, `level ${g.current_level} of ${g.required_level} needed`)),
         h("td", { class: "n" }, g.importance != null ? `${g.importance.toFixed(1)} / 5` : "—")), DROP, { delay: Math.min(i, 8) * 45 }))))),
-    h("p", { class: "note" }, "Filled squares: your level. Vermilion: the gap to close. Needed levels and importance come from O*NET 31.0 ratings for this occupation; tools at level 2 are an assumption. ↑/↓: STF-KAN outlook."));
+    h("p", { class: "note" }, "Filled squares: your level. Vermilion: the gap to close. Skills are ESCO's essential and optional skills for this occupation; needed levels and importance are predictions from a model trained on O*NET ratings, not ESCO ratings. ↑/↓: STF-KAN outlook."));
 }
 
 export function comparisonBlock(cmp, scenario) {
@@ -84,7 +84,7 @@ export function comparisonBlock(cmp, scenario) {
   return block("Assistive versus agentic AI",
     h("h3", {}, "Assistive vs agentic AI"),
     h("div", { class: "cmp" },
-      col("Assistive AI", "assistive_required", "AI helps you do today's work: levels as rated by O*NET."),
+      col("Assistive AI", "assistive_required", "AI helps you do today's work: predicted levels as they are."),
       col("Agentic AI", "agentic_required", "AI agents take over routine tool work.")),
     h("p", { class: "note" }, `${changed.length} skills change between scenarios. The agentic levels are a stated team assumption, not evidence.`));
 }
@@ -100,9 +100,9 @@ export function outlookBlock(o) {
     rising.length
       ? [h("p", {}, "Likely to grow in importance for this job: ",
           rising.map((x, i) => [i ? ", " : "", h("b", {}, x.skill_id), h("span", { class: "trend rising", "aria-hidden": "true" }, "↑")]), "."),
-         h("p", { class: "note" }, `Flagged when STF-KAN ranks a skill in the top ${rf.top_percent}% of forecast increases. On held-out O*NET releases these flags were `,
+         h("p", { class: "note" }, `Flagged when STF-KAN ranks a skill in the top ${rf.top_percent}% of forecast increases. On held-out releases of its training data these flags were `,
            h("b", {}, `${Number(rf.test_lift).toFixed(2)}×`), ` more likely than average to rise (base rate ${(rf.test_base_rate * 100).toFixed(1)}%). It raises their priority in your plan; it never changes the required level.`)]
-      : h("p", {}, "No skill for this job is flagged as rising: its O*NET requirements look stable."),
+      : h("p", {}, "No skill for this job is flagged as rising: its requirements look stable."),
     h("p", { class: "note" }, `${m.name}, trained on the ${m.trained_on}. Falling-skill and tool flags are off: the model did not beat simple heuristics on validation.`));
 }
 
@@ -193,6 +193,26 @@ export function sourceItem(e) {
     h("span", { class: "m" }, [e.publisher, e.publication_date && `published ${e.publication_date}`, e.access_date && `accessed ${e.access_date}`].filter(Boolean).join(" · ")));
 }
 
+// ---------------------------------------------------------------- document integrity (hidden text, injection, fraud)
+const SEV = { CRITICAL: "flagged", HIGH: "flagged", MEDIUM: "draft", LOW: "draft", INFO: "draft" };
+
+/** Integrity report for an uploaded resume. audience "self" explains what was removed; "hr" shows the evidence. */
+export function integrityBlock(rep, audience = "hr") {
+  if (!rep) return null;
+  const f = rep.findings || [];
+  const level = rep.risk?.level || "CLEAN";
+  if (!f.length) return audience === "hr" ? h("p", { class: "note integrity-ok" }, "Document integrity: clean. No hidden text, injected instructions or fraud signals found.") : null;
+  return block("Document integrity",
+    h("h3", {}, "Document integrity ", h("span", { class: `tag ${level === "CLEAN" ? "approved" : SEV[level] || "draft"}` }, level.toLowerCase())),
+    h("p", { class: "note" }, audience === "hr"
+      ? (rep.risk?.hold ? "Held from AI recommendation until you review it. Hidden content was removed before screening; the agents only saw visible text." :
+        "Signals for your judgement. Hidden content was removed before screening; the agents only saw visible text.")
+      : "We only analyse what a person can see. These items were removed or flagged before the analysis:"),
+    h("ul", { class: "check-list" }, f.map((x) => h("li", { class: x.severity === "CRITICAL" || x.severity === "HIGH" ? "bad" : "" },
+      h("b", {}, x.technique), h("span", { class: "muted" }, ` · ${x.description}`),
+      audience === "hr" && x.evidence ? h("q", {}, x.evidence) : null))));
+}
+
 // ---------------------------------------------------------------- future roles, SDGs, daily AI-trend signals
 const pct = (x) => `${Math.round(x * 100)}%`;
 
@@ -205,7 +225,7 @@ export function sdgChip(g) {
 function momentum(m) {
   const out = [];
   if (m.emerging ?? m.emergence >= 1) out.push(h("span", { class: "trend rising", title: "Top 10% of roles for AI-driven growth on today's trend board" }, "↑ emerging"));
-  if (m.stretch) out.push(h("span", { class: "tag", title: "Needs one more O*NET preparation level than you have" }, "stretch"));
+  if (m.stretch) out.push(h("span", { class: "tag", title: "Needs one more ISCO-08 skill level than you have" }, "stretch"));
   if (m.under_pressure ?? m.pressure >= 2) out.push(h("span", { class: "trend falling", title: "Top 10% of roles for automation pressure on today's trend board" }, "↓ automation pressure"));
   return out;
 }
@@ -219,14 +239,14 @@ export function matchesBlock(matches, { onPlan, title = "Roles you could grow in
       h("span", { class: "rank num" }, i + 1),
       h("div", { class: "who" },
         h("div", {}, h("b", {}, m.title), h("span", { class: "mono muted" }, ` ${m.soc}`), momentum(m)),
-        h("span", { class: "note" }, m.top_gaps?.length ? `Closest gaps: ${m.top_gaps.join(", ")}` : "No skill gaps against O*NET requirements"),
+        h("span", { class: "note" }, m.top_gaps?.length ? `Closest gaps: ${m.top_gaps.join(", ")}` : "No skill gaps against ESCO requirements"),
         m.sdgs?.length ? h("span", { class: "sdgs" }, m.sdgs.map(sdgChip)) : null),
       h("div", { class: "fit" },
         h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
         h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 }))),
       onPlan ? h("button", { class: "btn sm", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null),
       DROP, { delay: Math.min(i, 8) * 45 }))),
-    h("p", { class: "note" }, note || "Match = how much of each role's O*NET 31.0 skill requirements you meet, weighted by importance. " +
+    h("p", { class: "note" }, note || "Match = how much of each role's ESCO skill requirements you meet, weighted by predicted importance. " +
       "↑/↓ come from today's AI-trend board (news, research and job-posting signals); they reorder roles, never change the match."));
 }
 
@@ -236,7 +256,7 @@ export function sdgBlock(sdgs) {
     h("h3", {}, "How this role serves the UN SDGs"),
     h("ul", { class: "sdg-list" }, sdgs.map((g) => h("li", {}, sdgChip(g),
       h("span", {}, h("b", {}, `Target ${g.target}`), " ", g.target_text)))),
-    h("p", { class: "note" }, "Matched by meaning between the O*NET occupation description and the 169 official UN SDG targets " +
+    h("p", { class: "note" }, "Matched by meaning between the ESCO occupation description and the 169 official UN SDG targets " +
       "(MiniLM similarity). An evidence-linked suggestion, not an official UN classification. Every plan activity also serves SDG 4 (education) and SDG 8 (decent work)."));
 }
 

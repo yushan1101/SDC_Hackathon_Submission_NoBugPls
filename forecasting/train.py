@@ -98,7 +98,7 @@ def main():
                     help="loss weight of global-series windows relative to country windows (global = what the app serves)")
     a = ap.parse_args()
     onet = a.dataset == "onet"
-    a.data = a.data or ("data/training/onet_history.csv" if onet else "data/snapshots/weekly_skill_demand.csv")
+    a.data = a.data or ("data/training/onet_history.csv" if onet else "data/training_snapshots/weekly_skill_demand.csv")
     a.window = a.window or (8 if onet else 12)
     a.horizon = a.horizon or (2 if onet else 4)
     t_start = time.time()

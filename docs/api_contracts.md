@@ -56,3 +56,15 @@ approval cannot recreate analysis that was never persisted.
   - Public (no account): `GET /api/apply/{token}`; `POST /api/apply/{token}` multipart name, email,
     consent=true, file.
 - Criteria dict: {top_k, min_fit, min_years, min_levels{skill: 1-5}, required_tools[], notes[], blocked[]}.
+
+## 2026-10-20 v0.4 changes
+- Live occupation/skill source is **ESCO v1.2**; occupation ids are ESCO codes (e.g. `2221.2`), field filters
+  are ISCO-08 prefixes, `job_zone` holds the ISCO-08 skill level (1-4). Requirement importance/level are
+  predictions of a model trained on O*NET (training only). Evidence ids: `esco:{code}:{skill|tool}:{label}`.
+- Requirements carry `essential` and `agentic` (+1/0/-1). Graph state adds `level_sources`
+  {requirement: the person's skill it was credited from}.
+- Resume endpoints and screening return `integrity` {findings[{technique, severity, description, evidence,
+  location}], risk{score, level, hold}, removed{hidden_chars, invisible_chars, injection_lines}, sha256};
+  screening adds `held`. `POST /api/apply/{token}` accepts the honeypot field `website` (must be empty) and
+  is rate-limited (429).
+- `POST /api/quiz/score` blends a text profile of the chosen answers; `zone` is the ISCO skill level.

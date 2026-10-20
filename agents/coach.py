@@ -20,11 +20,11 @@ def template(audience, subject, role, scenario, gaps, pathway, outlook=None) -> 
     outlook = outlook or {}
     top = [g for g in gaps if g.gap > 0][:3]
     if not top:
-        return f"{who} already meet the O*NET requirements for {role} under the {scenario} scenario."
+        return f"{who} already meet the ESCO skill requirements for {role} under the {scenario} scenario."
     parts = []
     for g in top:
-        why = (f"O*NET importance {g.importance:.1f}/5 for {role}" if g.kind == "skill" and g.importance
-               else f"a Hot/In-Demand technology for {role}")
+        why = (f"predicted importance {g.importance:.1f}/5 for {role}" if g.importance
+               else f"a tool listed for {role}")
         s = f"{g.skill_id} (level {g.current_level} → {g.required_level}; {why} [{g.rationale_source_ids[0]}])"
         o = outlook.get(g.skill_id)
         if o and o["direction"] in ("rising", "falling"):

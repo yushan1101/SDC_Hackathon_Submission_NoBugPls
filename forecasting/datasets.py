@@ -44,7 +44,7 @@ class Series:
     headline: str = "global"  # group used for headline metrics
 
 
-def load_series(path="data/snapshots/weekly_skill_demand.csv", geographies: set[str] | None = None) -> Series:
+def load_series(path="data/training_snapshots/weekly_skill_demand.csv", geographies: set[str] | None = None) -> Series:
     df = pd.read_csv(path)
     if "geography" not in df:
         df["geography"] = "global"

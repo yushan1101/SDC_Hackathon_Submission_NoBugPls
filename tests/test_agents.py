@@ -46,12 +46,12 @@ def test_market_analyst_uses_trained_outlook_asset(monkeypatch):
         assert "data/training" not in Path(str(file)).as_posix() and "weekly_skill_demand" not in str(file)
         return real_open(file, *a, **k)
     monkeypatch.setattr(builtins, "open", guarded)
-    s = run(req(role="47-2111.00", skills=(("troubleshooting", 2),)))
+    s = run(req(role="7411.1", skills=(("troubleshooting", 2),)))
     if not s["outlook"]:
         import pytest
         pytest.skip("no outlook asset installed")
     rising = {k for k, v in s["outlook"].items() if v["direction"] == "rising"}
     assert rising, "electricians should carry at least one validated rising flag"
     ids = {e.id for e in s["evidence"]}
-    assert all(f"stfkan:47-2111.00:{k}" in ids for k in rising)
+    assert all(f"stfkan:7411.1:{k}" in ids for k in rising)
     assert {c["skill_id"] for c in s["scenario_comparison"] if c["outlook"] == "rising"} == rising & {c["skill_id"] for c in s["scenario_comparison"]}

@@ -5,20 +5,20 @@ from mcp_server.ingest import PASSAGES
 
 
 def test_requirements_for_non_tech_jobs():
-    for soc, title in [("29-1141.00", "Registered Nurses"), ("47-2111.00", "Electricians"),
-                       ("43-4051.00", "Customer Service Representatives")]:
+    for soc, title in [("2221.2", "Nurse responsible for general care"), ("7411.1", "Electrician"),
+                       ("4225.1", "Customer service representative")]:
         reqs, ev, meta = role_requirements(soc)
         assert meta["title"] == title and len(reqs) >= 8
         ids = {e.id for e in ev}
         assert all(r["evidence_id"] in ids for r in reqs.values())
-        assert all(e.url.startswith("https://www.onetonline.org/") and e.publication_date for e in ev)
+        assert all(e.url.startswith("https://esco.ec.europa.eu/") and e.publication_date and "prediction" in e.excerpt for e in ev)
 
 
 def test_occupation_search_and_alternate_titles():
-    assert "29-1141.00" in [r["soc"] for r in search_occupations("registered nurse")]
-    assert resolve_occupation("Registered Nurses") == "29-1141.00"
-    assert resolve_occupation("electrician") == "47-2111.00"  # O*NET alternate title
-    assert resolve_occupation("13-2011.00") == "13-2011.00"
+    assert "2221.2" in [r["soc"] for r in search_occupations("nurse general care")]
+    assert resolve_occupation("Nurse responsible for general care") == "2221.2"
+    assert resolve_occupation("Electricians") == "7411.1"  # plural of the ESCO title
+    assert resolve_occupation("2411.1") == "2411.1"
     assert resolve_occupation("Astronaut chef of Mars") is None and search_occupations("") == []
 
 

@@ -2,7 +2,7 @@
 
     python scripts/export_outlook.py --ckpt artifacts/stf_kan_best.pt
 Runs OFFLINE after training: reads the training series once, predicts the next releases for every
-(occupation, requirement) the live app uses, and writes data/snapshots/onet_outlook.json. At runtime the
+(occupation, requirement) the live app uses, and writes data/training_snapshots/onet_outlook.json. At runtime the
 Market Analyst reads only this file (model output), never the training data.
 
 Direction rule (conservative): a flag is only ever set for a kind x direction where STF-KAN out-ranked both
@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from forecasting.datasets import ONET_RELEASE_DATES, load_onet_series  # noqa: E402
 from forecasting.inference import load_model, predict_batch  # noqa: E402
 
-OUT = Path("data/snapshots/onet_outlook.json")
+OUT = Path("data/training_snapshots/onet_outlook.json")
 
 
 def next_releases(last: str, n: int) -> list[str]:
@@ -62,7 +62,7 @@ def main():
     enabled = drep.get("enabled", {})
     rise_cut = drep.get("skill_rising_cut", {}).get("threshold_pp") if enabled.get("skill:rising") else None
 
-    snap = json.loads(Path("data/snapshots/onet_occupations.json").read_text(encoding="utf-8"))["occupations"]
+    snap = json.loads(Path("data/training_snapshots/onet_occupations.json").read_text(encoding="utf-8"))["occupations"]
     wanted = {(soc, name, "skill") for soc, o in snap.items() for name in o["skills"]} | \
              {(soc, t["name"], "tool") for soc, o in snap.items() for t in o["tech"]}
     occ: dict = {}

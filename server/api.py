@@ -40,6 +40,8 @@ from core.team_import import parse_team
 from core.usage import summarize
 from governance import accounts, approval, recruiting
 from mcp_server import signals
+from mcp_server.ingest import occupation_url
+from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
 from governance.audit import connect
 from validation.revision import validate
 
@@ -167,7 +169,7 @@ def describe(node: str, u: dict) -> str:
     if node == "knowledge_search":
         n = len(u.get("evidence", [])) + len(u.get("trend_evidence", []))
         title = u.get("retrieval", {}).get("title", "")
-        return f"Loaded O*NET 31.0 requirements for {title}: {len(u.get('requirements', {}))} items, {n} sources"
+        return f"Loaded ESCO requirements for {title}: {len(u.get('requirements', {}))} skills, {n} sources"
     if node == "gap_analysis":
         return f"Scored {sum(g.gap > 0 for g in u.get('skill_gaps', []))} gaps under both AI scenarios"
     if node == "market_analyst":
@@ -185,7 +187,7 @@ def describe(node: str, u: dict) -> str:
     if node == "reviewer":
         return f"Verified citations and workload · {u.get('revision_count', 0)} repairs"
     if node == "simple_lookup":
-        return "Looked up O*NET facts"
+        return "Looked up ESCO facts"
     return node
 
 
@@ -249,7 +251,7 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
     try:
         soc = resolve_occupation(body.target_role)
         if not soc:
-            raise HTTPException(422, "Unknown occupation: pick one from the O*NET search.")
+            raise HTTPException(422, "Unknown occupation: pick one from the ESCO search.")
         req = Request(request_id=uuid.uuid4().hex[:8], audience="individual", employee_id=user["employee_id"],
                       target_role=soc, scenario=body.scenario, query=body.query,
                       profile=Profile(weekly_learning_hours=body.weekly_learning_hours,
@@ -464,13 +466,18 @@ def team(body: TeamIn, user: dict = Depends(need("hr_advisor"))):
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+DEMO_ROLE = "nurse responsible for general care"
+
+
 @app.get("/api/public/specimen")
-def specimen(soc: str = "29-1141.00"):
-    """Real, public O*NET example for the sign-in page (no auth): most important skills for one occupation."""
-    o = occupation(soc) or occupation("29-1141.00")
-    top = list(o["skills"].items())[:5]
-    return {"role": o["title"], "skills": [[k, v["importance"]] for k, v in top], "unit": "O*NET importance (1-5)",
-            "source": "O*NET 31.0 Database (CC BY 4.0)", "url": f"https://www.onetonline.org/link/summary/{soc}"}
+def specimen(soc: str = ""):
+    """Real, public ESCO example for the sign-in page (no auth): most important skills for one occupation."""
+    soc = soc if occupation(soc) else resolve_occupation(DEMO_ROLE)
+    o = occupation(soc)
+    top = sorted(o["skills"].items(), key=lambda kv: -kv[1]["importance"])[:5]
+    return {"role": o["title"], "skills": [[k, v["importance"]] for k, v in top], "unit": "predicted importance (1-5)",
+            "source": "ESCO v1.2 (European Commission); importance predicted by a model trained on O*NET ratings",
+            "url": occupation_url(o)}
 
 
 @app.get("/api/occupations")
@@ -485,7 +492,7 @@ def occupation_detail(soc: str, user: dict = Depends(current_user)):
         raise HTTPException(404, "occupation not found")
     return {"soc": soc, "title": o["title"], "description": o["description"], "job_zone": o["job_zone"],
             "skills": [{"name": k, "importance": v["importance"], "required": v["required"]} for k, v in o["skills"].items()],
-            "tools": o["tech"], "url": f"https://www.onetonline.org/link/summary/{soc}"}
+            "tools": o["tech"], "url": occupation_url(o), "isco": o.get("isco")}
 
 
 def _outlook_meta():
@@ -587,7 +594,7 @@ def quiz_questions(user: dict = Depends(current_user)):
 class QuizIn(BaseModel):
     answers: dict[str, int] = Field(max_length=40)
     fields: list[str] = Field(default=[], max_length=13)
-    zone: int | None = Field(default=None, ge=1, le=5)  # O*NET Job Zone from the training question
+    zone: int | None = Field(default=None, ge=1, le=5)  # ISCO-08 skill level (1-4) from the training question
 
 
 @app.post("/api/quiz/score")
@@ -595,7 +602,7 @@ def quiz_score(body: QuizIn, user: dict = Depends(current_user)):
     levels, prefixes = quiz.score(body.answers, body.fields)
     if len(levels) < 3:
         raise HTTPException(422, "Answer at least three questions.")
-    return {"skills": [{"name": k, "level": v} for k, v in levels.items()], "matches": _matches(levels, prefixes, zone=body.zone)}
+    return {"skills": [{"name": k, "level": v} for k, v in levels.items()], "matches": _matches(levels, prefixes, quiz.profile_text(body.answers, body.fields) or None, zone=body.zone)}
 
 
 class MatchIn(BaseModel):
@@ -626,13 +633,15 @@ async def resume_analyze(file: UploadFile = File(...), user: dict = Depends(curr
 
 def _analyze_resume(filename: str, data: bytes) -> dict:
     try:
-        md = resume.to_markdown(filename, data)
+        md, integrity = resume.convert(filename, data)
     except ValueError as e:
         raise HTTPException(422, str(e))
     x = resume.extract(md)
     x["skills"] = resume.verify(md, x["skills"])
+    integrity["findings"] += fraud_signals(md, x["years_experience"], n_skills=len(x["skills"]))
+    integrity["risk"] = doc_risk(integrity["findings"])
     levels = {s["name"]: s["level"] for s in x["skills"]}
-    return {"markdown": md, "skills": x["skills"], "years_experience": x["years_experience"],
+    return {"markdown": md, "skills": x["skills"], "years_experience": x["years_experience"], "integrity": integrity,
             "matches": _matches(levels, text=resume.redact(md)) if levels else []}
 
 
@@ -666,7 +675,7 @@ def _opening_or_404(oid: str) -> dict:
 def opening_create(body: OpeningIn, user: dict = Depends(need("hr_advisor"))):
     o = occupation(body.soc)
     if not o:
-        raise HTTPException(422, "Unknown occupation: pick one from the O*NET search.")
+        raise HTTPException(422, "Unknown occupation: pick one from the ESCO search.")
     c = criteria.parse(body.criteria_text, body.soc)
     try:
         with DB_LOCK:
@@ -717,8 +726,11 @@ def opening_criteria(oid: str, body: CriteriaIn, user: dict = Depends(need("hr_a
     except ValueError as e:
         raise HTTPException(422, str(e))
     board = _board()
-    for aid, md in rows:  # the screening agents re-judge every application against the new thresholds
+    for aid, md, old in rows:  # the screening agents re-judge every application against the new thresholds
         r = screening.screen("resume.md", md.encode("utf-8"), o["soc"], c, board)
+        prev = json.loads(old or "{}")
+        if prev.get("integrity"):  # findings about the ORIGINAL file (hidden text etc.) must survive re-screening
+            r["analysis"]["integrity"], r["analysis"]["held"] = prev["integrity"], prev.get("held", False)
         with DB_LOCK:
             recruiting.update_analysis(db, aid, r["analysis"])
     return {"criteria": c, "summary": criteria.describe(c), "rescreened": len(rows)}
@@ -769,9 +781,25 @@ def apply_info(token: str):
                        "shortlisted. The original file is not stored."}
 
 
+APPLY_LIMIT, APPLY_WINDOW = 5, 600  # per client IP: 5 submissions / 10 minutes
+APPLY_HITS: dict[str, list[float]] = {}
+
+
+def _rate_limit(ip: str):  # ponytail: in-memory, per process; use a shared store behind a load balancer
+    now_ = time.time()
+    hits = [t for t in APPLY_HITS.get(ip, []) if now_ - t < APPLY_WINDOW]
+    if len(hits) >= APPLY_LIMIT:
+        raise HTTPException(429, "Too many submissions. Please try again later.")
+    APPLY_HITS[ip] = hits + [now_]
+
+
 @app.post("/api/apply/{token}")
-async def apply_submit(token: str, name: str = Form(..., max_length=80), email: str = Form(..., max_length=120),
-                       consent: bool = Form(...), file: UploadFile = File(...)):
+async def apply_submit(token: str, request: HttpRequest, name: str = Form(..., max_length=80),
+                       email: str = Form(..., max_length=120), consent: bool = Form(...), file: UploadFile = File(...),
+                       website: str = Form(default="", max_length=200)):
+    if website:  # honeypot field, invisible to people: bots fill it
+        raise HTTPException(422, "Submission rejected.")
+    _rate_limit(request.client.host if request.client else "?")
     o = _open_by_token(token)
     if not consent:
         raise HTTPException(422, "Consent is required to process your resume.")
@@ -780,8 +808,10 @@ async def apply_submit(token: str, name: str = Form(..., max_length=80), email: 
     data = await _read(file)
 
     def work():  # screening agents run off the event loop
+        with DB_LOCK:
+            seen = {fingerprint(md) for _, md, _ in recruiting.resumes(db, o["id"])}
         try:
-            r = screening.screen(file.filename or "resume.txt", data, o["soc"], o["criteria"], _board())
+            r = screening.screen(file.filename or "resume.txt", data, o["soc"], o["criteria"], _board(), seen)
             with DB_LOCK:
                 aid = recruiting.add_application(db, o["id"], {"name": name.strip(), "email": email.strip()},
                                                  r["md"], r["redacted"], r["analysis"])

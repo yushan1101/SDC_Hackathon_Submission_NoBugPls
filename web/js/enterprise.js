@@ -63,7 +63,7 @@ function shell() {
   const review = link("#/review", "Review queue", "review"); review.append(S.badge);
   app.replaceChildren(h("div", { class: "hr-shell" },
     h("nav", { class: "rail", "aria-label": "Primary" },
-      h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }, "AP"),
+      S.logo = h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }),
       link("#/overview", "Overview", "grid"), link("#/run", "Upload & run", "upload"), review, link("#/plans", "Plans register", "history"),
       link("#/openings", "Openings & screening", "people"), link("#/signals", "AI-trend signals", "pulse"),
       h("div", { style: { flex: 1 } }),
@@ -73,6 +73,11 @@ function shell() {
     h("main", { id: "main", class: "hr-main", tabindex: "-1" }),
     h("nav", { class: "hr-tabbar", "aria-label": "Primary" }, tab("#/overview", "Overview", "grid"), tab("#/run", "Run", "upload"),
       tab("#/review", "Review", "review"), tab("#/openings", "Hiring", "people"), tab("#/signals", "Signals", "pulse"))));
+  // the owl lives in the rail's logo spot; on phones (no rail) it moves back next to the status text
+  const narrow = matchMedia("(max-width: 767px)");
+  const place = () => (narrow.matches ? S.status.el.prepend(S.status.owl.el) : S.logo.append(S.status.owl.el));
+  narrow.addEventListener("change", place);
+  place();
   crumb();
   refreshPlans();
 }
@@ -175,7 +180,7 @@ function runView(main) {
     ondragleave: () => drop.classList.remove("over"), ondrop: (e) => { e.preventDefault(); drop.classList.remove("over"); load(e.dataTransfer.files[0]); } },
     file, icon("upload"), h("strong", {}, "Drop a team CSV or choose a file"),
     h("span", { class: "muted mono", style: { "font-size": "12px" } }, "employee_id, target_role, weekly_hours, skill, level"),
-    h("span", { class: "muted", style: { "font-size": "12px" } }, "target_role: any O*NET job title or code · max 5,000 rows · 500 employees · pseudonymous IDs only"));
+    h("span", { class: "muted", style: { "font-size": "12px" } }, "target_role: any ESCO job title or code · max 5,000 rows · 500 employees · pseudonymous IDs only"));
 
   async function load(f) {
     if (!f) return;

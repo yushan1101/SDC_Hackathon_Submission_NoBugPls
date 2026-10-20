@@ -1,18 +1,22 @@
 """Resume screening: a LangGraph of AI agents per application, plus a ranking agent across an opening.
 
-    parse_resume (file -> Markdown -> redacted) -> extract_skills (O*NET skills/tools + verbatim evidence)
-      -> assess_fit (occupation requirements, resume text similarity, daily trend board)
-      -> judge_criteria (each HR threshold pass/fail with evidence)
-rank_candidates(): recommends the top-k that pass every hard criterion, by fit, with reasons. Humans decide.
+    parse_resume (file -> visible-only Markdown via the document guard -> redacted) -> extract_skills (ESCO skills + verbatim evidence)
+      -> assess_fit (ESCO requirements, resume text similarity, daily trend board)
+      -> judge_criteria (each HR threshold pass/fail with evidence) + integrity (injection / fraud signals)
+rank_candidates(): recommends the top-k that pass every hard criterion, by fit, with reasons. Candidates whose
+document is high-risk are held for a human, never auto-rejected. Humans decide.
 """
 import logging
+import re
 import time
 from typing import Any, TypedDict
 
 from agents import resume
 from agents.knowledge import occupation
 from agents.matcher import fit_for
+from agents.skillmap import align
 from core.usage import record
+from validation.document_guard import fraud_signals, risk
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +30,8 @@ class ScreenState(TypedDict, total=False):
     soc: str
     criteria: dict
     board: Any
+    seen: Any
+    integrity: dict
     fit: dict
     checks: list
     passed: bool
@@ -43,8 +49,8 @@ def _timed(name, fn):
 
 
 def n_parse(s):
-    md = resume.to_markdown(s["filename"], s["data"])
-    return {"md": md, "redacted": resume.redact(md)}
+    md, report = resume.convert(s["filename"], s["data"])
+    return {"md": md, "redacted": resume.redact(md), "integrity": report}
 
 
 def n_extract(s):
@@ -61,21 +67,28 @@ def n_fit(s):
 def n_judge(s):
     c, x, f = s.get("criteria") or {}, s["extraction"], s["fit"]
     levels = {k["name"]: k for k in x["skills"]}
+    hit = align({k: v["level"] for k, v in levels.items()}, list(c.get("min_levels", {})))
     checks = []
     for skill, need in c.get("min_levels", {}).items():
-        have = levels.get(skill)
-        checks.append({"criterion": f"{skill} >= {need}", "pass": bool(have and have["level"] >= need),
-                       "found": have["level"] if have else 0, "evidence": (have or {}).get("evidence", [])[:1]})
-    for tool in c.get("required_tools", []):
-        have = levels.get(tool) or next((v for k, v in levels.items() if tool.lower() in k.lower() or k.lower() in tool.lower()), None)
-        checks.append({"criterion": f"uses {tool}", "pass": bool(have), "evidence": (have or {}).get("evidence", [])[:1]})
+        lvl, src, _ = hit.get(skill, (0, None, 0))
+        checks.append({"criterion": f"{skill} >= {need}", "pass": lvl >= need, "found": lvl,
+                       "matched": src, "evidence": levels[src]["evidence"][:1] if src else []})
+    for tool in c.get("required_tools", []):  # tools: the resume text itself must show them
+        rx = re.compile(rf"(?<![\w-]){re.escape(tool)}(?![\w-])", re.I)
+        line = next((l.strip("-# ").strip()[:160] for l in s["md"].split("\n") if rx.search(l)), None)
+        checks.append({"criterion": f"uses {tool}", "pass": bool(line), "evidence": [line] if line else []})
     if c.get("min_years") is not None:
         yrs = x.get("years_experience")
         checks.append({"criterion": f">= {c['min_years']} years", "pass": bool(yrs and yrs >= c["min_years"]), "found": yrs})
     if c.get("min_fit") is not None:
         checks.append({"criterion": f"match >= {c['min_fit']:.0%}", "pass": f.get("fit", 0) >= c["min_fit"],
                        "found": round(f.get("fit", 0), 2)})
-    return {"checks": checks, "passed": all(ch["pass"] for ch in checks)}
+    occ = occupation(s["soc"]) or {}
+    integ = dict(s["integrity"])
+    integ["findings"] = integ["findings"] + fraud_signals(s["md"], x.get("years_experience"), occ.get("description"),
+                                                          s.get("seen"), len(x["skills"]))
+    integ["risk"] = risk(integ["findings"])
+    return {"checks": checks, "passed": all(ch["pass"] for ch in checks), "integrity": integ}
 
 
 _G = None
@@ -98,12 +111,15 @@ def _graph():
     return _G
 
 
-def screen(filename: str, data: bytes, soc: str, criteria: dict, board: dict | None = None) -> dict:
-    """-> {md, redacted, analysis{skills, years, fit, checks, passed, usage}}. Raises ValueError on bad files."""
-    s = _graph().invoke({"filename": filename, "data": data, "soc": soc, "criteria": criteria, "board": board})
+def screen(filename: str, data: bytes, soc: str, criteria: dict, board: dict | None = None,
+           seen: set[str] | None = None) -> dict:
+    """-> {md, redacted, analysis{skills, years, fit, checks, passed, integrity, held, usage}}. ValueError on bad files.
+    seen: fingerprints of resumes already submitted to this opening (duplicate detection)."""
+    s = _graph().invoke({"filename": filename, "data": data, "soc": soc, "criteria": criteria, "board": board, "seen": seen})
     analysis = {"skills": s["extraction"]["skills"], "years_experience": s["extraction"]["years_experience"],
                 "fit": s["fit"].get("fit", 0.0), "coverage": s["fit"].get("coverage"), "top_gaps": s["fit"].get("top_gaps", []),
                 "checks": s["checks"], "passed": s["passed"], "usage": s["usage"],
+                "integrity": s["integrity"], "held": s["integrity"]["risk"]["hold"],
                 "occupation": (occupation(soc) or {}).get("title")}
     return {"md": s["md"], "redacted": s["redacted"], "analysis": analysis}
 
@@ -115,7 +131,7 @@ def _pct(x: float) -> str:
 def rank_candidates(apps: list[dict], criteria: dict) -> tuple[list[str], dict[str, str]]:
     """Ranking agent: candidates passing every hard criterion, by fit; top_k (default 5). -> (ids, reasons)."""
     k = criteria.get("top_k") or 5
-    eligible = sorted((a for a in apps if a["analysis"].get("passed")), key=lambda a: -a["fit"])
+    eligible = sorted((a for a in apps if a["analysis"].get("passed") and not a["analysis"].get("held")), key=lambda a: -a["fit"])
     chosen = eligible[:k]
     reasons = {}
     for i, a in enumerate(chosen, 1):
@@ -125,7 +141,11 @@ def rank_candidates(apps: list[dict], criteria: dict) -> tuple[list[str], dict[s
                             (", ".join(met) if met else "the role requirements") +
                             (f"; main gaps {', '.join(an['top_gaps'][:2])}" if an.get("top_gaps") else ""))
     for a in apps:
-        if a["id"] not in reasons:
+        if a["id"] not in reasons and a["analysis"].get("held"):
+            f = a["analysis"]["integrity"]["findings"]
+            reasons[a["id"]] = ("Held for human review: document integrity " + a["analysis"]["integrity"]["risk"]["level"] +
+                                " (" + ", ".join(dict.fromkeys(x["technique"] for x in f if x["severity"] in ("CRITICAL", "HIGH"))) + ").")
+        elif a["id"] not in reasons:
             failed = [c["criterion"] for c in a["analysis"].get("checks", []) if not c["pass"]]
             reasons[a["id"]] = ("Not recommended: misses " + ", ".join(failed)) if failed else \
                 f"Eligible but below the top {k} by match ({_pct(a['fit'])})."

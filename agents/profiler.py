@@ -1,48 +1,43 @@
-"""Normalize what people type into O*NET skill names and the target occupation's tools (deterministic)."""
-import re
+"""Profiler: align what people type, pick in the quiz or show in a resume to the target occupation's ESCO skills.
 
+Exact names count directly; otherwise each requirement is credited with the level of the person's most similar
+skill (MiniLM cosine, agents/skillmap.py). Every credited requirement keeps the person's own wording as its source.
+"""
 from core.state import Profile, ValidationIssue
 
-# everyday wording -> O*NET skill element (only unambiguous mappings)
-SKILL_ALIASES = {
-    "communication": "Speaking", "public speaking": "Speaking", "presenting": "Speaking",
-    "listening": "Active Listening", "reading": "Reading Comprehension", "math": "Mathematics", "maths": "Mathematics",
-    "problem solving": "Complex Problem Solving", "decision making": "Judgment and Decision Making",
-    "judgement": "Judgment and Decision Making", "teaching": "Instructing", "training others": "Instructing",
-    "customer service": "Service Orientation", "teamwork": "Coordination", "negotiating": "Negotiation",
-    "sales": "Persuasion", "coding": "Programming", "programming": "Programming", "time management": "Time Management",
-    "people management": "Management of Personnel Resources", "budgeting": "Management of Financial Resources",
-    "repair": "Repairing", "maintenance": "Equipment Maintenance", "quality control": "Quality Control Analysis",
-    "empathy": "Social Perceptiveness", "learning": "Active Learning", "systems thinking": "Systems Analysis",
+# everyday wording -> phrasing closer to ESCO labels (helps the semantic match on very short inputs)
+SKILL_ALIASES = {  # values are real ESCO labels where one exists
+    "public speaking": "Present arguments persuasively",
+    "presenting": "Present arguments persuasively", "listening": "Listen actively", "active listening": "Listen actively",
+    "critical thinking": "Address problems critically", "problem solving": "Address problems critically",
+    "analytical thinking": "Think analytically", "analysis": "Think analytically", "decision making": "Make time-critical decisions",
+    "leadership": "Lead a team", "team leadership": "Lead a team", "empathy": "Show empathy",
+    "customer service": "Customer service", "coding": "Computer programming", "programming": "Computer programming",
+    "excel": "Use spreadsheets", "microsoft excel": "Use spreadsheets", "spreadsheets": "Use spreadsheets",
+    "microsoft office": "Use microsoft office", "ms office": "Use microsoft office", "sql": "SQL",
+    "python": "Python (computer programming)", "java": "Java (computer programming)",
+    "teaching": "teach others", "training others": "train employees", "teamwork": "work in a team",
+    "time management": "manage time", "people management": "Manage staff", "budgeting": "Manage budgets",
+    "repair": "repair equipment", "maintenance": "maintain equipment", "quality control": "Perform quality control",
+    "negotiation": "Negotiate buying conditions", "sales": "Sell products", "cash handling": "Handle cash flow",
 }
-TOOL_ALIASES = {"excel": "excel", "word": "word", "powerpoint": "powerpoint", "outlook": "outlook",
-                "quickbooks": "quickbooks", "autocad": "autocad", "epic": "epic", "sap": "sap", "salesforce": "salesforce",
-                "power bi": "power bi", "powerbi": "power bi", "sql": "sql", "python": "python", "tableau": "tableau"}
 
 
-def normalize(name: str, known: set[str], tools: list[str]) -> str:
-    """-> canonical id: an O*NET skill name, one of the occupation's tool names, or the cleaned input."""
+def expand(name: str) -> str:
     n = " ".join(name.strip().split())
-    low = n.lower()
-    by_lower = {k.lower(): k for k in known}
-    if low in by_lower:
-        return by_lower[low]
-    if low in SKILL_ALIASES:
-        return SKILL_ALIASES[low]
-    key = TOOL_ALIASES.get(low, low)
-    for t in tools:  # "excel" -> "Microsoft Excel" when this occupation lists it
-        if re.search(rf"(?<![a-z0-9]){re.escape(key)}(?![a-z0-9])", t.lower()):
-            return t
-    return n
+    return SKILL_ALIASES.get(n.lower(), n)
 
 
-def profile_skills(profile: Profile, known: set[str], tools: list[str] | None = None) -> tuple[dict[str, int], list[ValidationIssue]]:
-    """-> {skill_id: level} (max level wins on duplicates) + warnings for inputs outside O*NET's vocabulary."""
-    levels, issues = {}, []
+def profile_skills(profile: Profile, targets: list[str]) -> tuple[dict[str, int], dict[str, str], list[ValidationIssue]]:
+    """-> ({requirement: credited level}, {requirement: the person's skill it came from}, warnings)."""
+    from agents.skillmap import align
+    mine: dict[str, int] = {}
     for s in profile.skills:
-        sid = normalize(s.name, known, tools or [])
-        levels[sid] = max(levels.get(sid, 0), s.level)
-        if sid not in known and sid not in (tools or []):
-            issues.append(ValidationIssue(code="unknown_skill", severity="warning", field="profile.skills",
-                                          message=f"'{s.name}' is not an O*NET skill or a listed tool for this job; kept but not scored."))
-    return levels, issues
+        k = expand(s.name)
+        mine[k] = max(mine.get(k, 0), s.level)
+    hit = align(mine, targets)
+    used = {src for _, src, _ in hit.values()}
+    issues = [ValidationIssue(code="unknown_skill", severity="warning", field="profile.skills",
+                              message=f"'{k}' did not match any skill this occupation needs; kept but not scored.")
+              for k, v in mine.items() if v > 0 and k not in used]
+    return {t: lv for t, (lv, _, _) in hit.items()}, {t: src for t, (_, src, _) in hit.items()}, issues

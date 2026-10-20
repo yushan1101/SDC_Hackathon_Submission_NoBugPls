@@ -11,7 +11,7 @@ EMP_ID = re.compile(r"^[A-Za-z0-9_-]{1,32}$")  # pseudonymous IDs only: no names
 
 
 def parse_team(df: pd.DataFrame, resolve, scenario: str, max_rows: int, max_team: int) -> tuple[list[Request], list[str]]:
-    """resolve(target_role) -> O*NET SOC code or None (any official/alternate title or code is accepted)."""
+    """resolve(target_role) -> ESCO occupation code or None (any official/alternate title or code is accepted)."""
     """-> (requests, errors). Rejects the whole file on any error; never guesses."""
     missing = [c for c in COLUMNS if c not in df.columns]
     if missing:
@@ -28,7 +28,7 @@ def parse_team(df: pd.DataFrame, resolve, scenario: str, max_rows: int, max_team
     socs = {r: resolve(r) for r in set(df["target_role"])}
     bad_roles = sorted(r for r, s in socs.items() if not s)
     if bad_roles:
-        errs.append(f"unknown target_role (not an O*NET occupation title or code): {bad_roles[:5]}")
+        errs.append(f"unknown target_role (not an ESCO occupation title or code): {bad_roles[:5]}")
     reqs = []
     groups = list(df.groupby("employee_id"))
     if len(groups) > max_team:

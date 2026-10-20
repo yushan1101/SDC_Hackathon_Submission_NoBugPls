@@ -46,7 +46,7 @@ def predict_linear(w, x):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--checkpoint", default="artifacts/stf_kan_best.pt")
-    ap.add_argument("--data", default="data/snapshots/weekly_skill_demand.csv")
+    ap.add_argument("--data", default="data/training_snapshots/weekly_skill_demand.csv")
     a = ap.parse_args()
     from forecasting.datasets import load_series, windows
     from forecasting.inference import load_model, predict_batch

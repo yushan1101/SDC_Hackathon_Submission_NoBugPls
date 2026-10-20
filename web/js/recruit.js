@@ -2,7 +2,7 @@
 // human decisions. Plus the daily AI-trend board (Signals).
 import { api, h, icon, toast, fmtTime, reveal, DROP, sleep } from "./lib.js";
 import { Owl } from "./owl.js";
-import { boardView } from "./blocks.js";
+import { boardView, integrityBlock } from "./blocks.js";
 
 const SCREEN_AGENTS = [["parse_resume", "Parse"], ["extract_skills", "Extract"], ["assess_fit", "Fit"], ["judge_criteria", "Judge"]];
 const EXAMPLE = "Top 5. Must know Epic and Microsoft Excel, critical thinking at least 3, 3+ years, match above 55%";
@@ -73,7 +73,7 @@ export async function openingsView(main, status) {
           : h("div", { class: "pad" }, h("p", { class: "muted" }, "No openings yet. Create one, then share its application link with candidates."))),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "New opening")),
         h("div", { class: "pad", style: { display: "grid", gap: "14px" } },
-          h("label", { class: "field" }, h("span", {}, "Occupation (O*NET)"), picker),
+          h("label", { class: "field" }, h("span", {}, "Occupation (ESCO)"), picker),
           h("label", { class: "field" }, h("span", {}, "Title"), title),
           h("div", { class: "field" }, h("span", {}, "Screening thresholds"), crit.el),
           create)))));
@@ -102,7 +102,8 @@ export async function openingDetail(main, id, status) {
     h("td", { class: "mono" }, c.ref),
     h("td", { class: "n num" }, `${Math.round(c.fit * 100)}%`),
     h("td", {}, checks(c.analysis.checks)),
-    h("td", { class: "hide-sm" }, c.recommended ? h("span", { class: "tag approved" }, "recommended") : h("span", { class: "muted" }, "—")),
+    h("td", { class: "hide-sm" }, c.recommended ? h("span", { class: "tag approved" }, "recommended")
+      : c.analysis.held ? h("span", { class: "tag flagged", title: "Document integrity findings: needs a human look" }, "held") : h("span", { class: "muted" }, "—")),
     h("td", {}, h("span", { class: `tag ${c.status === "shortlisted" ? "approved" : c.status === "declined" ? "flagged" : "draft"}` }, c.status.replace("_", " "))));
   const tbody = h("tbody", {}, d.candidates.map(row));
 
@@ -122,6 +123,7 @@ export async function openingDetail(main, id, status) {
       h("div", { class: "detail-head" }, h("h2", {}, h("span", { class: "id" }, c.ref), " · ", `${Math.round(c.fit * 100)}% match`),
         c.recommended ? h("span", { class: "tag approved" }, `recommended #${c.rank}`) : null),
       h("p", { class: "reason" }, c.reason),
+      integrityBlock(a.integrity, "hr"),
       h("div", { class: "agent-run", "aria-label": "Screening agents" }, SCREEN_AGENTS.map(([k, l]) => {
         const u = a.usage?.find((x) => x.node === k);
         return h("span", {}, h("i", { class: "on" }), l, u ? h("span", { class: "num muted" }, ` ${Math.round(u.ms)} ms`) : null);
@@ -169,7 +171,7 @@ export async function openingDetail(main, id, status) {
           : h("div", { class: "pad empty" }, new Owl({ size: 64, state: "sleeping" }).el, h("p", { class: "muted" }, "No applications yet. Share the link above; each resume is screened by the AI agents as it arrives."))),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Screening thresholds")),
         h("div", { class: "pad", style: { display: "grid", gap: "12px" } }, crit.el, save,
-          h("p", { class: "note" }, "Pipeline per resume: parse to Markdown → extract skills with quotes → assess fit (O*NET requirements, resume text, today's trend board) → judge each threshold. A ranking agent then recommends the best matches that pass every threshold.")))),
+          h("p", { class: "note" }, "Pipeline per resume: parse to Markdown → extract skills with quotes → document guard (hidden text, prompt injection, fraud signals) → assess fit (ESCO requirements, resume text, today's trend board) → judge each threshold. A ranking agent then recommends the best matches that pass every threshold.")))),
     pane,
     h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Activity"), h("span", { class: "muted", style: { "font-size": "12px" } }, "append-only · UTC")),
       h("ol", { class: "history pad" }, d.events.slice().reverse().map((e) => h("li", {},

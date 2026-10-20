@@ -1,66 +1,34 @@
-"""Resume agent: file -> Markdown -> redacted Markdown -> O*NET skills/tools with levels and verbatim evidence.
+"""Resume agent: file -> guarded Markdown -> redacted Markdown -> ESCO skills/tools with levels and verbatim evidence.
 
 Deterministic and explainable: every extracted skill carries exact quotes from the resume (the Reviewer can verify
 them), levels come from documented rules, and nothing is inferred from protected attributes. Raw files are never
 stored; callers keep only Markdown.
 """
-import io
 import re
 from functools import lru_cache
 
 from agents.knowledge import snapshot
-from agents.profiler import SKILL_ALIASES
+from validation.document_guard import fingerprint, inspect
 
 MAX_BYTES = 2_000_000
-# work verbs -> O*NET skill (documented heuristics; evidence quote always attached)
-VERB_SKILLS = {
-    r"\b(taught|teach(?:ing)?|trained|mentored|coached)\b": "Instructing",
-    r"\bnegotiat\w*": "Negotiation",
-    r"\b(budget\w*|forecast(?:ed|ing)? costs?|p&l)\b": "Management of Financial Resources",
-    r"\b(supervis\w*|managed (?:a )?team|led (?:a )?team|line manag\w*)\b": "Management of Personnel Resources",
-    r"\b(analy[sz]\w*|evaluat\w*|assess\w*)\b": "Critical Thinking",
-    r"\b(wrote|writing|authored|documented|reports?)\b": "Writing",
-    r"\b(present\w*|public speaking|briefed)\b": "Speaking",
-    r"\b(customer|client|patient)s?\b": "Service Orientation",
-    r"\b(repair\w*|fixed)\b": "Repairing",
-    r"\b(install\w*)\b": "Installation",
-    r"\b(troubleshoot\w*|diagnos\w*)\b": "Troubleshooting",
-    r"\b(programm\w*|developed software|coded|scripting)\b": "Programming",
-    r"\b(schedul\w*|deadlines?|prioriti[sz]\w*)\b": "Time Management",
-    r"\b(coordinat\w*|cross-functional)\b": "Coordination",
-    r"\b(sales|sold|persuad\w*|pitched)\b": "Persuasion",
-    r"\b(monitor\w*)\b": "Monitoring",
-    r"\b(quality (?:control|assurance)|inspect\w*|qa\b)": "Quality Control Analysis",
-    r"\b(research\w*|experiment\w*|laborator\w*)\b": "Science",
-    r"\b(statistic\w*|calculat\w*|math\w*)\b": "Mathematics",
-}
 SENIOR = re.compile(r"\b(lead|led|senior|principal|head of|architect\w*|expert|manag\w*|owner)\b", re.I)
 YEARS = re.compile(r"(\d{1,2})\+?\s*(?:years?|yrs)", re.I)
 
 
 # ----------------------------------------------------------------------------------- to markdown
-def to_markdown(filename: str, data: bytes) -> str:
+def convert(filename: str, data: bytes) -> tuple[str, dict]:
+    """-> (Markdown of the VISIBLE, sanitised content, integrity report). Hidden text, invisible characters and
+    instruction-like lines never reach the agents (validation/document_guard.py)."""
     if len(data) > MAX_BYTES:
         raise ValueError("file larger than 2 MB")
-    name = filename.lower()
-    if name.endswith(".pdf"):
-        from pypdf import PdfReader
-        text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(data)).pages[:20])
-        return _structure(text)
-    if name.endswith(".docx"):
-        from docx import Document
-        lines = []
-        for p in Document(io.BytesIO(data)).paragraphs:
-            t = p.text.strip()
-            if not t:
-                continue
-            style = (p.style.name or "").lower()
-            lines.append(f"## {t}" if style.startswith("heading") or style == "title" else
-                         f"- {t}" if "list" in style else t)
-        return "\n".join(lines)
-    if name.endswith((".txt", ".md")):
-        return _structure(data.decode("utf-8", "replace"))
-    raise ValueError("upload a PDF, DOCX, TXT or MD file")
+    text, report = inspect(filename, data)
+    md = text if filename.lower().endswith(".docx") else _structure(text)
+    report["sha256"] = fingerprint(md)
+    return md, report
+
+
+def to_markdown(filename: str, data: bytes) -> str:
+    return convert(filename, data)[0]
 
 
 def _structure(text: str) -> str:
@@ -108,19 +76,9 @@ def redact(md: str) -> str:
 
 
 # ----------------------------------------------------------------------------------- extraction
-@lru_cache(maxsize=1)
-def _vocab():
-    occ = snapshot()["occupations"].values()
-    skills = sorted({s for o in occ for s in o["skills"]})
-    tools = sorted({t["name"] for o in occ for t in o["tech"]})
-    vendor = re.compile(r"^(microsoft|adobe|apache|oracle|sap|google|amazon web services|amazon|ibm|autodesk|intuit)\s+", re.I)
-    tool_alias = {}
-    for t in tools:
-        tool_alias[t.lower()] = t
-        short = vendor.sub("", t).strip()
-        if len(short) >= 3 and short.lower() not in ("software", "office software"):
-            tool_alias.setdefault(short.lower(), t)
-    return skills, tool_alias
+UNIT = 0.60      # cosine between a resume line/phrase and an ESCO skill label to claim the skill
+LISTED = 0.68    # stricter for short skill-list items: they are claims, not described work
+MAX_SKILLS = 30
 
 
 def _quotes(md: str, rx: re.Pattern, limit: int = 2) -> list[str]:
@@ -141,37 +99,69 @@ def _seniority(md: str) -> int:
 
 
 def _level(md: str, rx: re.Pattern, base: int = 2, cap: int = 5) -> int:
-    """explicit mention 2 (inferred from work verbs 1) +1 if mentioned twice +whole-resume seniority, capped."""
+    """explicit mention 2 +1 if mentioned twice +whole-resume seniority, capped."""
     lines = [l for l in md.split("\n") if rx.search(l)]
     if not lines:
         return 0
     return min(cap, base + (len(lines) >= 2) + _seniority(md))
 
 
+def _units(md: str) -> list[tuple[str, str, bool]]:
+    """-> [(text to classify, the verbatim resume line it came from, is a short list item)]."""
+    out = []
+    for line in md.split("\n"):
+        raw = line.strip("-#* ").strip()
+        if len(raw) < 3 or raw == "[Candidate]" or raw.startswith("[removed"):
+            continue
+        parts = [p.strip() for p in re.split(r"[,;•|]", raw)] if raw.count(",") >= 2 or len(raw) < 60 else [raw]
+        for p in parts:
+            if 3 <= len(p) <= 220:
+                out.append((p, raw[:160], len(p) <= 40))
+        for sent in re.split(r"(?<=[.!?])\s+|:\s+", raw):  # long lines: also each sentence/clause
+            if len(raw) >= 60 and 12 <= len(sent) <= 220 and sent != raw:
+                out.append((sent, raw[:160], False))
+    return out[:300]
+
+
+@lru_cache(maxsize=1)
+def _tool_labels() -> dict[str, str]:
+    """Tool-like ESCO labels (software, systems), matched by exact mention."""
+    occ = snapshot()["occupations"].values()
+    return {t["name"].lower(): t["name"] for o in occ for t in o["tech"]}
+
+
 def extract(md: str) -> dict:
-    """-> {"skills": [{name, kind, level, evidence:[quotes]}], "years_experience": int|None}."""
-    skills, tool_alias = _vocab()
+    """-> {"skills": [{name, kind, level, evidence:[quotes], similarity}], "years_experience": int|None}.
+    Semantic classifier: each resume line/phrase is matched to ESCO skill labels; tools by exact mention."""
+    from agents.skillmap import encode, vocabulary
+    import numpy as np
+    names, V = vocabulary()
+    units = _units(md)
     found: dict[str, dict] = {}
-    names = {s: s for s in skills} | {k: v for k, v in SKILL_ALIASES.items() if v in skills}
-    for phrase, skill in sorted(names.items(), key=lambda kv: -len(kv[0])):
-        rx = re.compile(rf"(?<![\w-]){re.escape(phrase)}(?![\w-])", re.I)
-        if rx.search(md) and skill not in found:
-            found[skill] = {"name": skill, "kind": "skill", "level": _level(md, rx), "evidence": _quotes(md, rx)}
-    for pattern, skill in VERB_SKILLS.items():
-        if skill in found or skill not in skills:
-            continue
-        rx = re.compile(pattern, re.I)
-        if rx.search(md):
-            found[skill] = {"name": skill, "kind": "skill", "level": _level(md, rx, base=1, cap=4), "evidence": _quotes(md, rx)}
-    for alias, tool in sorted(tool_alias.items(), key=lambda kv: -len(kv[0])):
-        if tool in found:
-            continue
-        rx = re.compile(rf"(?<![\w-]){re.escape(alias)}(?![\w-])", re.I)
-        if rx.search(md):
-            found[tool] = {"name": tool, "kind": "tool", "level": _level(md, rx), "evidence": _quotes(md, rx)}
+    for low, tool in _tool_labels().items():
+        rx = re.compile(rf"(?<![\w-]){re.escape(low)}(?![\w-])", re.I)
+        if len(low) >= 3 and rx.search(md):
+            found[tool] = {"name": tool, "kind": "tool", "level": _level(md, rx), "evidence": _quotes(md, rx), "similarity": 1.0}
+    if units:
+        from agents.profiler import expand
+        S = encode([expand(u) if listed else u for u, _, listed in units]) @ V.T
+        for i, (text, line, listed) in enumerate(units):
+            for j in np.argsort(-S[i])[:2]:
+                sim = float(S[i, j])
+                if sim < (LISTED if listed else UNIT):
+                    break
+                name = names[j]
+                prev = found.get(name)
+                if prev and (prev["similarity"] >= sim or prev["kind"] == "tool"):
+                    if line not in prev["evidence"] and len(prev["evidence"]) < 2:
+                        prev["evidence"].append(line)
+                    continue
+                found[name] = {"name": name, "kind": "skill", "similarity": round(sim, 3),
+                               "level": min(5 if listed else 4, (2 if listed else 1) + (sim >= 0.75) + _seniority(md)),
+                               "evidence": [line] + ([q for q in (prev or {}).get("evidence", []) if q != line][:1])}
     yrs = [int(m.group(1)) for m in YEARS.finditer(md)]
-    return {"skills": sorted(found.values(), key=lambda s: (-s["level"], s["name"])),
-            "years_experience": max(yrs) if yrs else None}
+    ranked = sorted(found.values(), key=lambda s: (-s["similarity"], -s["level"], s["name"]))[:MAX_SKILLS]
+    return {"skills": sorted(ranked, key=lambda s: (-s["level"], s["name"])), "years_experience": max(yrs) if yrs else None}
 
 
 def verify(md: str, items: list[dict]) -> list[dict]:

@@ -6,7 +6,7 @@ Sources (public, keyless, fetched at most once a day, attribution kept on every 
     skipped when rate-limited)
   - Arbeitnow + Remotive job-board APIs: share of current postings mentioning each topic -> labour-market demand
 Prediction model (transparent, per topic): log-linear trend on weekly counts with a Poisson-noise z-score, Holt
-forecast for the next 4 weeks, and a recent-vs-prior rate test for arXiv/jobs; topics map to O*NET occupations by
+forecast for the next 4 weeks, and a recent-vs-prior rate test for arXiv/jobs; topics map to ESCO occupations by
 MiniLM similarity (exposure). Capability topics that rise => emerging roles; automation topics that rise =>
 declining pressure on exposed routine roles. All outputs are signals with dates and sources, not certainties.
 
@@ -207,7 +207,7 @@ def _direction(z: float) -> str:
 # ----------------------------------------------------------------------------------- exposure (topic -> occupations)
 @lru_cache(maxsize=1)
 def _exposure() -> np.ndarray:
-    """(n_topics, n_occupations) cosine similarity between topic descriptions and O*NET occupations (MiniLM)."""
+    """(n_topics, n_occupations) cosine similarity between topic descriptions and ESCO occupations (MiniLM)."""
     from agents.matcher import occupation_vectors
     from mcp_server.retrieval import _embed
     _, b = occupation_vectors()

@@ -1,4 +1,4 @@
-"""Multi-agent LangGraph for ANY O*NET occupation.
+"""Multi-agent LangGraph for ANY ESCO occupation.
 
     supervisor --unsupported/simple--> simple_lookup -> END
         |complex (fan-out)
@@ -6,10 +6,10 @@
         +--> knowledge_search --+--> gap_analysis (both scenarios, outlook-weighted) --> pathway (+ learning, MCP)
         +--> market_analyst ----+                                                          --> coach -> reviewer -> END
 
-Agents: Profiler, Knowledge (FastMCP, O*NET 31.0), Market Analyst (STF-KAN skill-outlook asset, trained
-offline on the O*NET release history), Gap Analyst, Pathway, Coach (optional LLM), Reviewer (<=2 repairs).
-No raw training data (2023 job ads, O*NET history) is read here: the Market Analyst only reads the model's
-exported outlook. Approval is NOT a node: it is a human action in governance/.
+Agents: Profiler (semantic skill alignment), Knowledge (FastMCP + Chroma RAG over ESCO), Market Analyst
+(STF-KAN skill-outlook asset + daily AI-trend board + UN SDG mapping), Gap Analyst, Pathway, Coach (optional
+LLM), Reviewer (<=2 repairs). No training data (O*NET, its release history, 2023 job ads) is read here: models
+trained on it are served only as exported assets. Approval is NOT a node: it is a human action in governance/.
 """
 import logging
 import operator
@@ -24,7 +24,7 @@ from core.usage import record
 from validation.revision import MAX_REVISIONS, revise
 
 log = logging.getLogger(__name__)
-TREND_WEIGHT = 0.25  # ranking only: rising skills x1.25, falling x0.75; required levels stay O*NET
+TREND_WEIGHT = 0.25  # ranking only: rising skills x1.25, falling x0.75; required levels unchanged
 
 
 class State(TypedDict, total=False):
@@ -34,6 +34,7 @@ class State(TypedDict, total=False):
     route_reason: str
     answer: str
     levels: dict
+    level_sources: dict
     requirements: dict
     evidence: list
     trend_evidence: list
@@ -85,16 +86,16 @@ def n_simple(s):
         return {"answer": "This assistant only covers workforce skills, roles and reskilling.", "status": "rejected"}
     reqs, ev, meta = knowledge.role_requirements(s["request"].target_role)
     skills = [k for k, r in reqs.items() if r["kind"] == "skill"][:5]
-    ans = (f"Most important skills for {meta['title']} (O*NET 31.0): {', '.join(skills)}." if skills
-           else "That occupation is not in O*NET 31.0's rated occupations.")
+    ans = (f"Most important skills for {meta['title']} (ESCO): {', '.join(skills)}." if skills
+           else "That occupation is not in ESCO.")
     return {"answer": ans, "evidence": [e for e in ev if e.id.split(":")[-1] in skills], "status": "answered"}
 
 
 def n_profiler(s):
     soc = _soc(s)
-    tools = [t["name"] for t in (knowledge.occupation(soc) or {}).get("tech", [])] if soc else []
-    levels, issues = profiler.profile_skills(s["request"].profile, set(knowledge.known_skills()), tools)
-    return {"levels": levels, "validation_issues": issues}
+    targets = list((knowledge.occupation(soc) or {}).get("skills", {})) if soc else []
+    levels, sources, issues = profiler.profile_skills(s["request"].profile, targets)
+    return {"levels": levels, "level_sources": sources, "validation_issues": issues}
 
 
 def n_knowledge(s):
@@ -103,7 +104,7 @@ def n_knowledge(s):
     trends, mode = knowledge.labor_trends(r.target_role, r.scenario) if reqs else ([], "offline")
     meta["retrieval_mode"] = mode
     issues = [] if reqs else [ValidationIssue(code="no_evidence", severity="error", field="target_role",
-                                              message=f"'{r.target_role}' is not an O*NET 31.0 rated occupation.")]
+                                              message=f"'{r.target_role}' is not an ESCO occupation.")]
     return {"requirements": reqs, "evidence": ev, "trend_evidence": trends, "retrieval": meta, "validation_issues": issues}
 
 

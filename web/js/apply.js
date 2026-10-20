@@ -29,6 +29,7 @@ async function boot() {
     const fd = new FormData();
     fd.append("name", name.value.trim()); fd.append("email", email.value.trim());
     fd.append("consent", consent.checked ? "true" : "false"); fd.append("file", file.files[0]);
+    fd.append("website", form.querySelector("[name=website]").value);
     try {
       const r = await upload(`/api/apply/${encodeURIComponent(token)}`, fd);
       owl.set("celebrating");
@@ -41,13 +42,14 @@ async function boot() {
     h("label", { class: "field" }, h("span", {}, "Email"), email),
     h("div", { class: "field" }, h("span", {}, "Resume"),
       h("label", { class: "cv-drop", for: "apply-file" }, file, icon("upload"), h("b", {}, "Choose your resume"), fileName)),
+    h("label", { class: "hp", "aria-hidden": "true" }, "Website", h("input", { name: "website", tabindex: "-1", autocomplete: "off" })),
     h("label", { class: "check" }, consent, "I agree that my resume is processed to assess this application, as described under “How your resume is handled”."),
     err, btn);
   app.replaceChildren(h("main", { class: "pub-main apply" },
     h("div", { class: "start-head" }, h("div", {},
       h("p", { class: "wordmark-sm" }, "AiversePulse · application"),
       h("h1", { class: "page-title" }, info.title),
-      info.occupation && info.occupation !== info.title ? h("p", { class: "muted" }, `O*NET occupation: ${info.occupation}`) : null),
+      info.occupation && info.occupation !== info.title ? h("p", { class: "muted" }, `ESCO occupation: ${info.occupation}`) : null),
       owl.el),
     h("div", { class: "apply-grid" }, form,
       h("aside", { class: "apply-aside" },

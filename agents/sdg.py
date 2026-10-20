@@ -40,8 +40,13 @@ def confident(items: list[dict]) -> list[dict]:
     return keep or [DECENT_WORK]
 
 
+def _with_text(items: list[dict]) -> list[dict]:
+    t = sdg_map().get("targets", {})
+    return [x if "target_text" in x else x | {"target_text": t.get(x["target"], "")} for x in items]
+
+
 def role_sdgs(soc: str) -> tuple[list[dict], list[Evidence]]:
-    items = confident(sdg_map()["occupations"].get(soc, []))
+    items = _with_text(confident(sdg_map()["occupations"].get(soc, [])))
     return items, [_evidence(soc, x) for x in items]
 
 

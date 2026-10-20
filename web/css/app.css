@@ -392,7 +392,9 @@ dialog.sheet .sheet-body { padding: 8px 16px 24px; display: grid; gap: 4px; }
    ===================================================================================== */
 .hr-shell { display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-rows: 56px minmax(0, 1fr); height: 100dvh; }
 .rail { grid-row: 1 / -1; background: var(--shell); color: var(--shell-ink-2); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; z-index: var(--z-nav); }
-.rail .logo { width: 36px; height: 36px; display: grid; place-items: center; margin-bottom: 14px; font: 700 13px var(--font-mono); color: var(--shell); background: var(--shell-ink); border-radius: var(--radius); text-decoration: none; }
+.rail .logo { width: 48px; height: 48px; display: grid; place-items: center; margin-bottom: 10px; border-radius: var(--radius); text-decoration: none; }
+.rail .logo:hover { background: oklch(1 0 0 / 0.08); }
+.rail .logo .owl { --owl: 44px; width: 44px !important; height: 44px !important; }
 .rail a { position: relative; width: 44px; height: 44px; display: grid; place-items: center; border-radius: var(--radius); color: inherit; transition: background var(--t-fast), color var(--t-fast); }
 .rail a svg { width: 20px; height: 20px; }
 .rail a:hover { color: var(--shell-ink); background: oklch(1 0 0 / 0.08); }
@@ -661,6 +663,10 @@ table.data tbody tr.rec td:first-child b { color: var(--accent); }
 .cand-body pre.md { margin: 8px 0 0; max-height: 380px; overflow: auto; padding: 14px; background: var(--sunken); border: 1px solid var(--rule); font: 12px/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .cand-body .decide { display: grid; gap: 10px; padding-top: 16px; border-top: 1px solid var(--rule); }
 .cand-body .contact p { font-size: 15px; }
+
+.hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.integrity-ok { color: var(--ok); }
+.cv-out > .block:first-child { padding: 16px; border: 1px solid var(--rule-strong); border-radius: var(--radius); background: var(--surface); }
 
 /* ---------- public: application page ---------- */
 .apply { display: grid; gap: 32px; max-width: 1040px; }

@@ -1,7 +1,7 @@
 from core.graph import run, run_team
 from core.state import Profile, Request, Skill
 
-NURSE = "29-1141.00"
+NURSE = "2221.2"
 
 
 def req(query="Analyze my skill gaps and create a 30-60-90 day plan", scenario="assistive", hours=6,
@@ -30,20 +30,21 @@ def test_complex_draft_with_real_evidence():  # T-03
     assert s["route"] == "complex" and s["status"] in ("draft", "flagged")
     ids = {e.id for e in s["evidence"]}
     assert all(e in ids for a in s["draft_pathway"].activities for e in a.evidence_ids)
-    ct = next(g for g in s["skill_gaps"] if g.skill_id == "Critical Thinking")  # "critical thinking" normalised
+    ct = next(g for g in s["skill_gaps"] if g.skill_id == "Address problems critically")  # "critical thinking" -> ESCO
     assert ct.current_level == 2 and ct.gap == max(0, ct.required_level - 2)
-    sp = next(g for g in s["skill_gaps"] if g.skill_id == "Speaking")  # "communication" alias
-    assert sp.current_level == 3
+    assert s["level_sources"]["Address problems critically"] == "Address problems critically"
+    com = [g for g in s["skill_gaps"] if g.skill_id.startswith("Communicate") and g.current_level > 0]
+    assert com and s["level_sources"][com[0].skill_id] == "communication"  # semantic match to the person's word
 
 
 def test_scenarios_differ():  # T-04
     a = {g.skill_id: g.required_level for g in run(req())["skill_gaps"]}
     b = {g.skill_id: g.required_level for g in run(req(scenario="agentic"))["skill_gaps"]}
-    assert a != b and b["Critical Thinking"] == min(5, a["Critical Thinking"] + 1)
+    assert a != b and b["Solve problems in healthcare"] == min(5, a["Solve problems in healthcare"] + 1)
 
 
 def test_works_for_any_occupation():
-    for role in ("Electricians", "13-2011.00", "Customer Service Representatives"):
+    for role in ("Electricians", "2411.1", "Customer Service Representatives"):
         s = run(req(role=role, skills=(("excel", 2), ("mathematics", 3))))
         assert s["status"] in ("draft", "flagged") and s["skill_gaps"] and s["narrative"]
         assert not any(i.code == "no_evidence" for i in s["validation_issues"])

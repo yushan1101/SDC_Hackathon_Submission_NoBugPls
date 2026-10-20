@@ -1,4 +1,4 @@
-"""Map every O*NET occupation and skill to the 17 UN SDGs (official goal + target text) -> data/snapshots/sdg_map.json
+"""Map every ESCO occupation and skill to the 17 UN SDGs (official goal + target text) -> data/snapshots/sdg_map.json
 
     python scripts/build_sdg_map.py
 Method: MiniLM cosine similarity between each occupation (title, description, core tasks) / skill (O*NET
@@ -10,7 +10,6 @@ import io
 import json
 import sys
 import urllib.request
-import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -39,34 +38,33 @@ def main():
 
     def top_goals(vecs, k):
         S = np.asarray(vecs) @ T.T  # (n, 169)
+        G = np.full((len(S), 17), -1.0); J = np.zeros((len(S), 17), int)
+        for j in range(len(targets)):  # best target per goal
+            g = gid[j] - 1
+            better = S[:, j] > G[:, g]
+            G[better, g], J[better, g] = S[better, j], j
+        mu, sd = G.mean(1, keepdims=True), G.std(1, keepdims=True) + 1e-9
+        Z = (G - mu) / sd
         out = []
-        for row in S:
-            best = {}
-            for j, s in enumerate(row):
-                g = int(gid[j])
-                if g not in best or s > best[g][0]:
-                    best[g] = (float(s), j)
-            ranked = sorted(best.items(), key=lambda kv: -kv[1][0])
-            mu, sd = np.mean([v[0] for v in best.values()]), np.std([v[0] for v in best.values()]) + 1e-9
-            out.append([{"goal": g, "score": round(s, 3), "z": round((s - mu) / sd, 2), "target": targets[j][1],
-                         "target_text": targets[j][2]} for g, (s, j) in ranked[:k]])
+        for i in range(len(S)):
+            order = np.argsort(-G[i])[:k]
+            out.append([{"goal": int(g + 1), "score": round(float(G[i, g]), 3), "z": round(float(Z[i, g]), 2),
+                         "target": targets[J[i, g]][1]} for g in order])
         return out
 
     occ = snapshot()["occupations"]
     socs = list(occ)
-    occ_vec = _embed([f"{o['title']}. {o['description']} {' '.join(o['tasks'][:4])}" for o in occ.values()])
-    z = zipfile.ZipFile("data/raw/onet/db_31_0_text.zip")
-    cm = [l.split("\t") for l in z.read("db_31_0_text/Content Model Reference.txt").decode("utf-8", "replace").splitlines()[1:]]
+    occ_vec = _embed([f"{o['title']}. {o['description']}" for o in occ.values()])
     names = sorted({s for o in occ.values() for s in o["skills"]})
-    defs = {n: next((c[2] for c in cm if len(c) > 2 and c[1] == n), n) for n in names}
-    sk_vec = _embed([f"{n}: {defs[n]}" for n in names])
-    out = {"source": "UN Statistics Division SDG API (goals + 169 targets); O*NET 31.0 (CC BY 4.0)",
+    sk_vec = np.concatenate([_embed(names[i:i + 512]) for i in range(0, len(names), 512)])
+    out = {"source": "UN Statistics Division SDG API (goals + 169 targets); ESCO v1.2 (European Commission)",
            "method": "MiniLM similarity to official SDG targets; semantic mapping, not an official UN classification",
            "goals": [{"goal": i + 1, "short": SHORT[i], "title": g["title"], "color": COLORS[i],
                       "url": f"https://sdgs.un.org/goals/goal{i + 1}"} for i, g in enumerate(goals)],
+           "targets": {code: title for _, code, title in targets},
            "occupations": dict(zip(socs, top_goals(occ_vec, 3))),
-           "skills": {n: {"definition": defs[n], "sdgs": g} for n, g in zip(names, top_goals(sk_vec, 2))}}
-    OUT.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
+           "skills": {n: {"sdgs": g} for n, g in zip(names, top_goals(sk_vec, 2))}}
+    OUT.write_text(json.dumps(out, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
     cover = sorted({x["goal"] for v in out["occupations"].values() for x in v})
     print(f"{len(socs)} occupations, {len(names)} skills -> {OUT} ({OUT.stat().st_size / 1e6:.2f} MB); goals used: {cover}")
 
