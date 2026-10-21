@@ -162,29 +162,50 @@ export function planBlock({ planId, plan, version, status, weeklyHours, onChange
   const acts = plan.activities.map((a) => ({ ...a }));
   const tagEl = h("span", { class: `tag ${status}` }, status);
   const verEl = h("span", { class: "num muted" }, `v${version}`);
-  const phases = PHASES.map((p) => {
+  const phaseNames = ["Foundation", "Practical application", "Portfolio & review"];
+  const phases = PHASES.map((p, phaseIndex) => {
     const mine = acts.filter((a) => a.day_range === p);
     const used = mine.reduce((s, a) => s + a.estimated_hours, 0);
-    return h("div", { class: "phase" },
-      h("h4", {}, `Days ${p}`, h("span", { class: "hours" }, icon("clock"), cap ? `${Math.round(used)} of ${Math.round(cap)} h` : `${Math.round(used)} h`)),
-      h("div", { class: "budget", "aria-hidden": "true" }, h("div", { style: { transform: `scaleX(${cap ? Math.min(1, used / cap) : 1})`, "transform-origin": "left", height: "100%" } },
-        reveal(h("i"), GROW, { duration: 700 }))),
-      mine.length ? mine.map((a, i) => reveal(h("div", { class: "act" },
+    const activityCards = mine.map((a, i) => {
+      const input = h("input", { class: "input hrs", type: "number", min: "0.5", max: "200", step: "0.5", value: a.estimated_hours,
+        disabled: status === "approved" ? true : null,
+        oninput: (e) => { a.estimated_hours = Number(e.target.value); saveBtn.disabled = false; } });
+      const description = a.activity.length > 150
+        ? h("details", { class: "activity-details" }, h("summary", {}, `${a.activity.slice(0, 135).trimEnd()}… Show details`), h("p", {}, a.activity))
+        : h("p", {}, a.activity);
+      const goals = (a.sdg_links || []).map((s) => {
+        const n = String(s).replace(/\D/g, "");
+        return h("span", { class: "sdg-n", style: { "--sdg": SDG_COLORS[n] || "#888" }, title: `UN SDG ${n}`, "aria-label": `UN SDG ${n}` }, n);
+      });
+      const main = h("div", { class: "act-main" },
         h("div", { class: "top" }, h("b", {}, a.skill_id),
-          h("label", {}, h("span", { class: "sr-only" }, `Hours for ${a.skill_id}, days ${p}`),
-            h("input", { class: "input hrs", type: "number", min: "0.5", max: "200", step: "0.5", value: a.estimated_hours,
-              disabled: status === "approved" ? true : null,
-              oninput: (e) => { a.estimated_hours = Number(e.target.value); saveBtn.disabled = false; } }))),
-        h("span", {}, a.activity),
-        (a.sdg_links || []).length ? h("span", { class: "sdg-nums" }, a.sdg_links.map((s) => { const n = String(s).replace(/\D/g, "");
-          return h("span", { class: "sdg-n", style: { "--sdg": SDG_COLORS[n] || "#888" }, title: `UN SDG ${n}`, "aria-label": `UN SDG ${n}` }, n); })) : null), DROP, { delay: i * 60 })) : h("p", { class: "note" }, "No activities in this phase."));
+          h("label", {}, h("span", { class: "sr-only" }, `Hours for ${a.skill_id}, days ${p}`), input)),
+        h("div", { class: "act-description" }, description),
+        goals.length ? h("span", { class: "sdg-nums", "aria-label": "Related Sustainable Development Goals" }, goals) : null);
+      return reveal(h("article", { class: "act" }, main,
+        h("span", { class: "act-hours" }, icon("clock"), `${a.estimated_hours} h`)), DROP, { delay: i * 60 });
+    });
+    const heading = h("h4", {},
+      h("span", { class: "phase-title" }, `Days ${p} — ${phaseNames[phaseIndex]}`),
+      h("span", { class: "hours" }, icon("clock"), cap ? `${Number(used.toFixed(1))} of ${Number(cap.toFixed(1))} h` : `${Number(used.toFixed(1))} learning hours`));
+    const summary = phaseIndex === 0 ? "Learn essential skills and build your foundation."
+      : phaseIndex === 1 ? "Practice skills through real-world activities."
+      : "Build evidence of your skills and review progress.";
+    const budget = h("div", { class: "budget", "aria-hidden": "true" },
+      h("div", { style: { transform: `scaleX(${cap ? Math.min(1, used / cap) : 1})`, "transform-origin": "left", height: "100%" } },
+        reveal(h("i"), GROW, { duration: 700 })));
+    const activityList = mine.length ? h("div", { class: "phase-activities" }, activityCards)
+      : h("p", { class: "note" }, "No activities in this phase.");
+    const phaseSummary = h("summary", { class: "phase-toggle" },
+      h("span", { class: "phase-step", "aria-hidden": "true" }, phaseIndex + 1),
+      h("div", { class: "phase-intro" }, heading, h("p", { class: "phase-summary" }, summary)),
+      icon("chevron"));
+    const content = h("div", { class: "phase-content" }, budget, activityList);
+    return h("details", { class: "phase" }, phaseSummary, content);
   });
-  const planEl = h("div", { class: "plan", "data-tab": "0" }, phases);
-  const sdgGuide = h("p", { class: "note sdg-guide" },
-    "Goal tags on each activity show its connection: SDG 4 for learning, SDG 8 for decent work, and (when mapped) one additional goal matched to that skill. These are evidence-linked suggestions, not official UN classifications.");
-  const tabs = h("div", { class: "seg phase-tabs", role: "group", "aria-label": "Plan phase" },
-    PHASES.map((p, i) => h("button", { type: "button", "aria-pressed": String(i === 0),
-      onclick: (e) => { planEl.dataset.tab = String(i); tabs.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget))); } }, p)));
+  const planEl = h("div", { class: "plan" }, phases);
+  const sdgGuide = h("details", { class: "note sdg-guide" }, h("summary", {}, "How activities connect to the SDGs"),
+    h("p", {}, "Goal tags on each activity show its connection: SDG 4 for learning, SDG 8 for decent work, and (when mapped) one additional goal matched to that skill. These are evidence-linked suggestions, not official UN classifications."));
   const errBox = h("div", { class: "issues" });
   const saveBtn = h("button", { class: "btn", type: "button", disabled: true, onclick: save }, "Save as new draft");
   const confirm = h("input", { type: "checkbox", onchange: () => { approveBtn.disabled = !confirm.checked; } });
@@ -219,12 +240,12 @@ export function planBlock({ planId, plan, version, status, weeklyHours, onChange
       approveBtn.disabled = false;
     }
   }
-  return block("30, 60, 90 day plan",
+  return reveal(h("section", { class: "block plan-block", "aria-label": "30, 60, 90 day plan" },
     h("h3", {}, title),
     plan.deferred_skills?.length ? h("details", { class: "note deferred" },
       h("summary", {}, `${plan.deferred_skills.length} more skills don't fit in ${weeklyHours ? weeklyHours + " h/week" : "the weekly hours"}; the plan covers the highest-priority gaps first.`),
       h("p", {}, plan.deferred_skills.join(", "))) : null,
-    tabs, sdgGuide, planEl, errBox, bar);
+    sdgGuide, planEl, errBox, bar), RISE, { duration: 420 });
 }
 
 export function historyBlock(hist) {
@@ -278,6 +299,34 @@ function momentum(m) {
   return out;
 }
 
+function sdgMatchDetails(sdgs) {
+  const connections = sdgs.map((g) => {
+    const heading = h("div", { class: "sdg-connection-head" },
+      h("span", { class: "sdg-n", style: { "--sdg": g.color }, "aria-hidden": "true" }, g.goal),
+      h("b", {}, `SDG ${g.goal} · ${g.short}`));
+    const target = g.target
+      ? h("p", { class: "sdg-target" }, h("b", {}, "Relevant target: "), g.target)
+      : null;
+    const explanation = g.target && g.target_text
+      ? `ESCO role description matched to UN target ${g.target}: ${g.target_text}`
+      : `ESCO role description semantically matched to ${g.short}.`;
+    return h("li", { class: "sdg-connection-card" }, heading, target,
+      h("p", { class: "sdg-connection-copy" }, h("b", {}, "Connection to this career: "), explanation));
+  });
+  const body = h("ul", { class: "sdg-connections" }, connections);
+  const panel = h("div", { class: "sdg-expand-panel", "aria-hidden": "true", inert: true },
+    h("div", { class: "sdg-expand-inner" }, body));
+  const toggle = h("button", { type: "button", class: "sdg-match-toggle", "aria-expanded": "false",
+    onclick: () => {
+      const expanded = toggle.getAttribute("aria-expanded") !== "true";
+      toggle.setAttribute("aria-expanded", String(expanded));
+      panel.classList.toggle("is-open", expanded);
+      panel.setAttribute("aria-hidden", String(!expanded));
+      if (expanded) panel.removeAttribute("inert"); else panel.setAttribute("inert", "");
+    } }, "How this role connects to the goals", icon("chevron"));
+  return [toggle, panel];
+}
+
 /** Ranked future roles. onPlan(match) builds a full plan for one of them. */
 export function matchesBlock(matches, { onPlan, title = "Roles you could grow into", note } = {}) {
   if (!matches?.length) return block("Role matches", h("h3", {}, title), h("p", { class: "note" }, "No matches yet. Add a few more skills."));
@@ -285,23 +334,24 @@ export function matchesBlock(matches, { onPlan, title = "Roles you could grow in
     h("h3", {}, title),
     h("ol", { class: "matches" }, matches.map((m, i) => reveal(h("li", {},
       h("span", { class: "rank num" }, i + 1),
-      h("div", { class: "who" },
-        h("div", { class: "job-line", title: `ESCO ${m.soc}` }, jobIcon(m.soc, { size: 44, labelled: true }), h("b", {}, m.title), momentum(m)),
-        h("span", { class: "gaps" }, m.top_gaps?.length ? [icon("target"), `To learn: ${m.top_gaps.slice(0, 2).join(", ")}`,
-          m.top_gaps.length > 2 ? h("span", { class: "more", title: m.top_gaps.slice(2).join(", ") }, ` +${m.top_gaps.length - 2}`) : null] : [icon("check"), "No skill gaps"]),
-        m.sdgs?.length ? [
-          h("span", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))),
-          h("details", { class: "sdg-match-detail" }, h("summary", {}, "How this role connects to the goals"),
-            h("ul", {}, m.sdgs.map((g) => h("li", {},
-              h("b", {}, `SDG ${g.goal} · ${g.short}`),
-              h("span", {}, g.target && g.target_text
-                ? `ESCO role description matched to UN target ${g.target}: ${g.target_text}`
-                : `ESCO role description semantically matched to ${g.short}.`)))))
-        ] : null),
-      h("div", { class: "fit" },
-        h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
-        h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 }))),
-      onPlan ? h("button", { class: "btn sm", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null),
+      h("div", { class: "match-content" },
+        h("div", { class: "match-head" },
+          h("div", { class: "who" },
+            h("div", { class: "job-line", title: `ESCO ${m.soc}` },
+              jobIcon(m.soc, { size: 44, labelled: true }), h("b", {}, m.title),
+              h("span", { class: "match-badges" }, momentum(m)))),
+          h("div", { class: "fit" },
+            h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
+            h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 })))),
+        h("div", { class: "gaps" }, m.top_gaps?.length
+          ? [icon("target"), h("b", {}, "To learn"), h("span", { class: "gap-chips" }, m.top_gaps.slice(0, 3).map((gap) => h("span", { class: "gap-chip" }, gap))),
+            m.top_gaps.length > 3 ? h("details", { class: "more-gaps" }, h("summary", {}, `+${m.top_gaps.length - 3} more`),
+              h("ul", {}, m.top_gaps.slice(3).map((gap) => h("li", {}, gap)))) : null]
+          : [icon("check"), h("b", {}, "To learn"), h("span", {}, "No skill gaps identified")]),
+        m.sdgs?.length ? h("div", { class: "match-sdgs" },
+          h("div", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))),
+          sdgMatchDetails(m.sdgs)) : null),
+      onPlan ? h("button", { class: "btn sm primary match-plan", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null),
       DROP, { delay: Math.min(i, 8) * 45 }))),
     h("p", { class: "note" }, note || "Match = the share of each role's ESCO skills you already have. Trend arrows come from today's AI-trend board; they reorder roles, never change the match."));
 }
