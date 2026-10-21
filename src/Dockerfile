@@ -8,10 +8,12 @@ COPY . .
 RUN pip install -e ".[ai]" \
  && python -c "from mcp_server.retrieval import _encoder; _encoder()" \
  && python -m mcp_server.ingest --index-only \
- && useradd --create-home app && chown -R app /app
+ && useradd --create-home app && mkdir -p /app/state && chown -R app /app
 USER app
-# data/ holds the SQLite audit DB: mount a volume so approvals survive restarts
-VOLUME ["/app/data"]
+# Only runtime state persists (accounts, plans, audit log, trend history, today's live passages). data/ stays part of the
+# image, so a rebuild always ships fresh ESCO snapshots and search index instead of a stale copy kept in a volume.
+ENV DATABASE_PATH=/app/state/audit.sqlite3
+VOLUME ["/app/state"]
 EXPOSE 8600
 HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request;urllib.request.urlopen('http://localhost:8600/healthz')"
 # Web app (public: /  ·  enterprise: /enterprise). Put TLS in front (Secure cookies are set automatically on https).
