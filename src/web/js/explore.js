@@ -7,7 +7,8 @@ import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
 const KEYS = ["A", "B", "C", "D"];
 
 // ---------------------------------------------------------------- start: choose a path
-export function startView(main, { name } = {}) {
+export function startView(main, { name, guest } = {}) {
+  if (guest) return guestHome(main);
   // One decision per card. The old hero buttons, repeated giant cards and demo
   // mockups offered the same choices three times and pushed the real actions down.
   const option = (href, ic, title, description, action, featured = false) =>
@@ -26,6 +27,46 @@ export function startView(main, { name } = {}) {
       option("#/resume", "file", "Use my résumé", "Upload PDF, Word or text to find skills supported by evidence.", "Upload résumé")),
     h("p", { class: "home-updates" }, "Want to see how AI is changing jobs? ",
       h("a", { href: "#/today" }, "Explore today's signals", icon("send")))));
+}
+
+// The full landing page for visitors who are not signed in: the three ways in, each with a live-looking demo.
+function guestHome(main) {
+  const go = (href, label, cls = "btn") => h("a", { class: cls, href }, label, icon("send"));
+  const way = (id, cls, ic, heading, text, href, button, demo) =>
+    h("section", { class: `way ${cls}`, "aria-labelledby": `way-${id}` },
+      h("div", {}, h("span", { class: "core-ic way-ic" }, icon(ic)), h("h2", { id: `way-${id}` }, heading), h("p", {}, text)), demo, go(href, button));
+  // demos show the real mechanism: a real quiz item, a resume line with its quoted skill, the 30/60/90 plan
+  const quizDemo = h("div", { class: "demo", "aria-hidden": "true" },
+    h("p", { class: "demo-q" }, "A spreadsheet total looks wrong. You…"),
+    h("div", { class: "demo-opt" }, h("kbd", {}, "A"), "Flag it and move on"),
+    h("div", { class: "demo-opt" }, h("kbd", {}, "B"), "Re-add the column by hand"),
+    h("div", { class: "demo-opt on" }, h("kbd", {}, "C"), "Trace the formula and fix it"));
+  const resumeDemo = h("div", { class: "demo", "aria-hidden": "true" },
+    h("p", { class: "demo-line" }, "“Automated monthly reporting with ", h("mark", {}, "Python scripts"), " and SQL queries.”"),
+    h("span", { class: "demo-skill" }, icon("sources"), "Python (computer programming)"));
+  const planDemo = h("div", { class: "demo demo-phases", "aria-hidden": "true" },
+    [["1–30", "Foundations"], ["31–60", "Apply it on real work"], ["61–90", "Show it, get it reviewed"]].map(([d, t]) =>
+      h("div", {}, h("b", {}, `Days ${d}`), h("span", {}, t))));  // same phases as agents/pathway.py
+  const owl = new Owl({ size: 168, state: "greeting" });
+  main.replaceChildren(h("div", { class: "home" },
+    h("section", { class: "home-hero" }, owl.el,
+      h("h1", {}, "Where could your skills take you?"),
+      h("p", {}, "Find roles you could grow into and get a 90-day plan you approve, every claim cited."),
+      h("div", { class: "home-actions", role: "group", "aria-label": "Start here" },
+        go("#/quiz", "Start Quick Match", "btn primary"),
+        h("a", { class: "btn", href: "#/resume" }, icon("file"), "Upload résumé"),
+        h("a", { class: "btn", href: "#/build" }, icon("target"), "Pick a job"))),
+    h("div", { class: "home-ways" },
+      way("quiz", "way-quiz", "quiz", "Discover what you’re good at", "13 everyday work questions, about 2 minutes. We estimate your skills and suggest roles.",
+        "#/quiz", "Start Quick Match", quizDemo),
+      way("resume", "way-resume", "file", "Let your résumé speak", "PDF, Word or text. Every skill we find quotes the line that proves it.",
+        "#/resume", "Upload résumé", resumeDemo),
+      way("plan", "way-plan", "target", "Already know where you’re headed?", "Pick any ESCO occupation, see the skills to build, and get a plan that fits your week.",
+        "#/build", "Pick a job", planDemo)),
+    h("section", { class: "home-today", "aria-labelledby": "home-today" },
+      h("h2", { id: "home-today" }, "The world of work keeps moving."),
+      h("p", {}, "Today’s AI topics and the roles they may affect, rebuilt every day."),
+      go("#/today", "See today"))));
 }
 
 // ---------------------------------------------------------------- quiz game

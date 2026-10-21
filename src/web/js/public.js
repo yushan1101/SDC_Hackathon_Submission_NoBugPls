@@ -80,7 +80,7 @@ async function signIn(next = "start") {
       h("label", { class: "field" }, h("span", {}, "Password"), pass),
       err, btn,
       h("p", { class: "fine" }, "Accounts are issued by your administrator. Decision support only: plans stay drafts until you approve them."),
-      h("p", { class: "fine" }, "HR advisor? ", h("a", { href: "enterprise.html", style: { color: "inherit" } }, "Open AiversePulse Enterprise")))));
+      h("p", { class: "fine" }, "Employees and HR advisors both sign in here; HR advisors go straight to the Enterprise console."))));
   user.focus();
   try {
     const sp = await api("/api/public/specimen");
