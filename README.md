@@ -253,7 +253,7 @@ curl -X POST https://api.runpod.ai/v2/$RUNPOD_ENDPOINT_ID/runsync \
 
 ## Submission Checklist
 
-- [ ] Team name, domain (Domain 1 / Domain 2) and SDG track filled in
+- [x] Team name, domain (Domain 1 / Domain 2) and SDG track filled in
 - [ ] Slide deck link added
 - [ ] Demo video link added
 - [ ] Replit used, with proof of use in `submission/`
