@@ -538,6 +538,7 @@ async function planDetail(main, id, focusPlan = false) {
   try { d = await api(`/api/plans/${id}`); } catch (e) { main.replaceChildren(h("div", { class: "issue error" }, e.message)); return; }
   const r = d.report;
   const approved = d.status === "approved";
+  const totalHours = d.plan.activities.reduce((sum, activity) => sum + Number(activity.estimated_hours || 0), 0);
   setSources(r?.evidence || []);
   const reportContent = h("div", { class: "plan-report-content" },
     !r ? h("p", { class: "note" }, "This older plan has no saved report. Approval cannot restore it. Build a new plan to generate the full analysis; your saved 90-day plan is below.") : null,
@@ -549,7 +550,11 @@ async function planDetail(main, id, focusPlan = false) {
     r?.sdgs?.length ? sdgBlock(r.sdgs) : null,
     r?.issues?.length ? issuesBlock(r.issues) : null);
   const planFocus = h("section", { class: "plan-focus", tabindex: "-1", "aria-label": approved ? "Approved plan and implementation" : "Proposed plan" },
-    approved ? h("p", { class: "lede" }, "Your plan is approved. Follow the activities in each phase to put it into action.") : null,
+    h("div", { class: "plan-hero" },
+      h("div", { class: "plan-hero-title" }, h("div", {}, h("p", { class: "eyebrow" }, "90-day learning roadmap"),
+        h("h2", {}, "Your learning roadmap")), h("span", { class: `tag ${d.status}` }, d.status)),
+      h("p", { class: "plan-hero-copy" }, approved ? "Your approved plan is ready. Follow the phases below to put it into action." : "Your learning plan, organized into three practical phases."),
+      h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days"), h("span", {}, icon("plans"), `${totalHours} estimated learning hours`))),
     planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null,
       title: approved ? "Your approved 90-day plan" : "Your proposed 90-day plan",
       onChange: () => planDetail(main, id, true) }));
