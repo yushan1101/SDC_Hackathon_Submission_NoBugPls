@@ -55,9 +55,9 @@ When assigned a task, follow this sequence:
 
 | Owner | Main directories | Interfaces that require coordination |
 |---|---|---|
-| **A — Orchestration** | `core/`, `agents/`, `tools/`, `validation/revision.py` | Shared state, LangGraph edges, router, usage metrics |
-| **B — Forecasting/ML** | `forecasting/`, `scripts/prepare_jobs.py`, training/evaluation | Forecast schema, inference adapter, checkpoint metadata |
-| **C — Knowledge/Governance** | `mcp_server/`, `governance/`, `validation/evidence.py` | MCP tool signatures, evidence model, approval status |
+| **A — Orchestration** | `core/`, `agents/`, `tools/`, `src/validation/revision.py` | Shared state, LangGraph edges, router, usage metrics |
+| **B — Forecasting/ML** | `forecasting/`, `src/scripts/prepare_jobs.py`, training/evaluation | Forecast schema, inference adapter, checkpoint metadata |
+| **C — Knowledge/Governance** | `mcp_server/`, `governance/`, `src/validation/evidence.py` | MCP tool signatures, evidence model, approval status |
 | **D — UI/QA/Pitch** | `app.py`, `ui/`, E2E test fixtures, screenshots | User-facing schemas, review/approval events |
 
 **Branch convention:** `feature/router`, `feature/forecast`, `feature/mcp-governance`, `feature/ui`. No schema-breaking shared-state change without updating `docs/api_contracts.md` and alerting all owners. Use one daily integration/merge checkpoint.
@@ -151,7 +151,7 @@ AiversePulse_Enterprise_Project_Scaffold/
 ├── README.md                    # Human quickstart
 ├── CONTRIBUTING.md              # Collaboration practices
 ├── app.py                       # Streamlit entrypoint
-├── pyproject.toml               # Base + optional AI dependencies
+├── src/pyproject.toml               # Base + optional AI dependencies
 ├── .env.example                 # Non-secret configuration template
 ├── .gitignore
 ├── .github/workflows/ci.yml
@@ -208,11 +208,11 @@ AiversePulse_Enterprise_Project_Scaffold/
 │   ├── results.py
 │   ├── forecast.py
 │   └── review.py
-├── data/
+├── src/data/
 │   ├── samples/sample_profile.json
 │   ├── metadata/README.md
 │   └── snapshots/README.md
-├── scripts/
+├── src/scripts/
 │   ├── prepare_jobs.py
 │   ├── build_index.py
 │   └── run_training.sh
@@ -234,7 +234,7 @@ AiversePulse_Enterprise_Project_Scaffold/
 
 ### 3.1 Existing scaffold types
 
-`core/state.py` already defines `Skill`, `Profile`, `Request`, `Evidence`, `ValidationIssue`. **Extend, do not silently replace** these classes. In the scaffold `Skill.level` is an integer from **0 to 5**, and `Profile.weekly_learning_hours` is **>0 to <=80**.
+`src/core/state.py` already defines `Skill`, `Profile`, `Request`, `Evidence`, `ValidationIssue`. **Extend, do not silently replace** these classes. In the scaffold `Skill.level` is an integer from **0 to 5**, and `Profile.weekly_learning_hours` is **>0 to <=80**.
 
 Proposed validated extension:
 
@@ -339,7 +339,7 @@ No dataset has been downloaded/trained by the project scaffold. Confirm current 
 
 ### 4.2 FastMCP contract
 
-Implement the following **real** server tools in `mcp_server/server.py`:
+Implement the following **real** server tools in `src/mcp_server/server.py`:
 
 ```text
 search_labor_trends(role_id: str, scenario: str, as_of_date: str, top_k: int = 5) -> list[Evidence]
@@ -502,18 +502,18 @@ Track for each pipeline stage: route, model/provider/version, input/output token
 
 | Screen | Input / display | Responsible module |
 |---|---|---|
-| Employee Profile | skills, 0–5 levels, target role, hours/week | `ui/profile.py` |
-| Scenario Selector | Assistive AI vs Agentic AI with documented assumptions | `app.py` / `ui/profile.py` |
-| Results | normalized skill matrix, gaps, sources with dates and URLs | `ui/results.py` |
-| Forecast (experimental) | selected skill, 12-week history, 4-week output, model name, uncertainty/data-quality caveat | `ui/forecast.py` |
-| Plan Review | 30/60/90 cards, edit controls, flags, approval confirmation, audit event | `ui/review.py` |
+| Employee Profile | skills, 0–5 levels, target role, hours/week | `src/ui/profile.py` |
+| Scenario Selector | Assistive AI vs Agentic AI with documented assumptions | `app.py` / `src/ui/profile.py` |
+| Results | normalized skill matrix, gaps, sources with dates and URLs | `src/ui/results.py` |
+| Forecast (experimental) | selected skill, 12-week history, 4-week output, model name, uncertainty/data-quality caveat | `src/ui/forecast.py` |
+| Plan Review | 30/60/90 cards, edit controls, flags, approval confirmation, audit event | `src/ui/review.py` |
 | Efficiency Sidebar | route, actual measured model calls/tokens, baseline comparison | `app.py` |
 
 **UI invariants:** source link opens actual URL; warnings are not hidden; forecast display says "historical backtest" when relevant; synthetic previews carry an explicit synthetic label; there is no auto-approval on page reload.
 
 ### Offline demo fixture
 
-Use `data/samples/sample_profile.json` plus a **real-attributed** local evidence snapshot, deterministic skill-gap mapping, and a baseline forecasting fallback. If not enough evidence is available, demonstrate with an explicitly incomplete/flagged draft instead of inventing citations.
+Use `src/data/samples/sample_profile.json` plus a **real-attributed** local evidence snapshot, deterministic skill-gap mapping, and a baseline forecasting fallback. If not enough evidence is available, demonstrate with an explicitly incomplete/flagged draft instead of inventing citations.
 
 ---
 
@@ -545,17 +545,17 @@ Total: **14 hours maximum allocated training time** (not a guaranteed required r
 
 ```bash
 # local workstation / prep
-python scripts/prepare_jobs.py --input data/raw/data_jobs.csv
+python src/scripts/prepare_jobs.py --input src/data/raw/data_jobs.csv
 pytest -q
 
 # RunPod GPU Pod, once Owner B implements the training CLI
-python forecasting/train.py \
+python src/forecasting/train.py \
   --model stf_kan --window 12 --horizon 4 \
   --batch-size 64 --epochs 30 --device cuda \
   --save-dir /workspace/checkpoints
 
 # evaluation and checkpoint export, after interfaces exist
-python forecasting/evaluate.py --checkpoint /workspace/checkpoints/best.pt
+python src/forecasting/evaluate.py --checkpoint /workspace/checkpoints/best.pt
 ```
 
 **Training integrity:** store training cutoffs, feature order, fitted scaler, tokenizer/embedding model revision, seed, data hash, source/license notes and eval metrics with the model. Checkpoints and downloaded data must be backed up before deleting the Pod.
@@ -659,10 +659,10 @@ python -m venv .venv
 pip install -e .
 # Optional once dependencies/versions are checked: pip install -e '.[ai]'
 pytest -q
-streamlit run app.py
+streamlit run src/app.py
 ```
 
-**Known state:** the existing `app.py` is a scaffold UI; `forecasting/train.py` intentionally exits with a TODO message and many agent/MCP/governance modules are placeholders. Passing starter smoke tests **does not imply end-to-end implementation**.
+**Known state:** the existing `app.py` is a scaffold UI; `src/forecasting/train.py` intentionally exits with a TODO message and many agent/MCP/governance modules are placeholders. Passing starter smoke tests **does not imply end-to-end implementation**.
 
 ### 11.2 Three-minute pitch order
 

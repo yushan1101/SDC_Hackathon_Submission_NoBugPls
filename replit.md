@@ -8,15 +8,16 @@ frontend. Keep the repository's Python stack and directory structure.
 Use the **Start application** workflow (the Run button), which runs:
 
 ```sh
-uv run --no-sync uvicorn server.api:app --host 0.0.0.0 --port 5000 --proxy-headers --forwarded-allow-ips '*'
+cd src && uv run uvicorn server.api:app --host 0.0.0.0 --port 5000 --proxy-headers --forwarded-allow-ips '*'
 ```
 
 - Public app: `/`
 - HR app: `/enterprise`
 - Health check: `/healthz`
-- Dependencies are declared in `pyproject.toml` and resolved in `uv.lock`.
-  To restore the serving environment, run `uv sync` (no AI extra required).
-- Tests: `uv run --no-sync pytest -q`
+- Dependencies are declared in `src/pyproject.toml` and resolved in `src/uv.lock`.
+  To restore the serving environment, run `cd src && uv sync --extra ai` (the `ai` extra adds the Chroma vector
+  index and Gemini; without it the app still runs with keyword retrieval and template summaries).
+- Tests: `cd src && uv run --no-sync pytest -q ../tests`
 
 ## Accounts and data
 

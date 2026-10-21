@@ -1,0 +1,21 @@
+# Server deployment (copy to /opt/aiversepulse/compose.yml). Lives beside .env, models/ and state/ - see .github/workflows/deploy.yml
+# AiversePulse backend (FastAPI + agents + in-process FastMCP + Chroma + STF-KAN on CPU), also serves the web app.
+#   cd /opt/aiversepulse && docker compose up -d --build
+services:
+  api:
+    build: ./app/src
+    image: aiversepulse-api
+    container_name: aiversepulse-api
+    restart: unless-stopped
+    env_file: .env                      # LLM keys and models; never baked into the image
+    environment:                        # these win over .env: paths inside the container
+      DATABASE_PATH: /app/state/audit.sqlite3
+      OUTLOOK_ARTIFACT_DIR: /app/models/onet
+      OUTLOOK_HISTORY_PATH: /app/models/onet_history.csv
+      MCP_URL: ""
+      CORS_ORIGINS: "https://sdc.olgtx.com,http://sdc.olgtx.com"   # public address via Cloudflare + nginx
+    volumes:
+      - ./state:/app/state                                  # accounts, plans, audit log, trend history, live passages
+      - ./models/onet:/app/models/onet:ro                   # STF-KAN checkpoint + manifest (checksum-checked)
+      - ./models/onet_history.csv:/app/models/onet_history.csv:ro
+    ports: ["8600:8600"]

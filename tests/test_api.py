@@ -117,6 +117,18 @@ H = {"X-AP": "1"}
 RESUME = open("data/samples/sample_resume_nurse.md", "rb").read()
 
 
+def test_quiz_missing_runtime_returns_retryable_error(client, monkeypatch):
+    import server.api as api
+    login(client, "ana")
+    q = client.get("/api/quiz").json()
+    def missing(*args, **kwargs):
+        raise ModuleNotFoundError("sentence_transformers")
+    monkeypatch.setattr(api.matcher, "match_roles", missing)
+    r = client.post("/api/quiz/score", json={"answers": {x["id"]: 2 for x in q["questions"]}}, headers=H)
+    assert r.status_code == 503
+    assert "local AI runtime" in r.json()["detail"]
+
+
 def test_quiz_resume_and_match(client):
     login(client, "ana")
     q = client.get("/api/quiz").json()
@@ -216,3 +228,37 @@ def test_public_landing_static_assets_and_separate_frontend(client):
     assert ok.status_code == 200
     evil = client.post("/api/login", json={"username": "ana", "password": PW}, headers={**H, "Origin": "https://evil.example"})
     assert evil.status_code == 403 and "access-control-allow-origin" not in evil.headers
+
+
+def test_forecasts_endpoint_gated(client):
+    client.cookies.clear()
+    assert client.post("/api/forecasts", json={"role_id": "2149.2"}, headers={"X-AP": "1"}).status_code == 401
+    login(client, "ana")
+    r = client.post("/api/forecasts", json={"role_id": "2149.2"}, headers={"X-AP": "1"}).json()
+    assert r["forecast"]["status"] == "available" and r["forecast"]["mode"] in ("live_cpu_inference", "precomputed_asset")
+    r = client.post("/api/forecasts", json={"role_id": "zzzz not a job"}, headers={"X-AP": "1"}).json()
+    assert r["forecast"]["status"] == "unavailable" and r["forecast"]["reason"]
+
+
+def test_readiness_reports_db_mcp_model_without_secrets(client):
+    r = client.get("/api/health").json()
+    assert r["db"]["ok"] and r["mcp"]["ok"] and r["mcp"]["tools"] == 8
+    assert r["model"]["mode"] in ("live_cpu_inference", "precomputed_asset")
+    assert "key" not in json.dumps(r).lower() and ":\\" not in json.dumps(r) and "/src/" not in json.dumps(r)
+
+
+def test_resume_stream_reports_real_stages_then_result(client):
+    login(client, "ana")
+    cv = (b"# Alex\nCustomer support team lead with 6 years of experience in SaaS help desks.\n"
+          b"- Led a team of 5 agents handling 300 tickets a day in Zendesk.\n- Wrote macros and SQL queries to find recurring product bugs.\n"
+          b"- Built weekly Excel dashboards for churn and response times.\n## Skills\nZendesk, SQL, Excel, Python basics, coaching, conflict resolution\n")
+    r = client.post("/api/resume/analyze/stream", files={"file": ("sam.md", cv, "text/markdown")}, headers={"X-AP": "1"})
+    evs = events(r)
+    stages = [e["stage"] for e in evs if e["t"] == "stage"]
+    assert stages == ["read", "guard", "skills", "verify", "match", "advice"]  # LLM step absent: LLM_RESUME is off in tests
+    pcts = [e["pct"] for e in evs if "pct" in e]
+    assert pcts == sorted(pcts) and pcts[-1] == 100
+    res = evs[-1]
+    assert res["t"] == "result" and res["data"]["skills"] and res["data"]["insight"]["advice"] is not None
+    bad = events(client.post("/api/resume/analyze/stream", files={"file": ("x.exe", b"MZ", "application/octet-stream")}, headers={"X-AP": "1"}))
+    assert bad[-1]["t"] == "error" and bad[-1]["message"]

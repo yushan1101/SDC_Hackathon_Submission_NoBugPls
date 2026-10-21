@@ -1,20 +1,26 @@
 # Data sources
 
-**Runtime (live agents):** O*NET 31.0 only (+ official learning links) and the exported STF-KAN outlook asset.
-**Training only (never read at runtime):** O*NET release history 25.0-31.0 (`data/training/`, gitignored, rebuilt by
-`scripts/build_onet_history.py`) and the 2023 data_jobs job ads (earlier forecasting experiment).
+**Runtime (live agents), public sources only:** ESCO v1.2 occupations and skills, the daily AI-trend board
+(Hacker News, arXiv, Arbeitnow, Remotive), UN SDG goals and targets, official learning links, and the exported
+model outputs (requirement levels for ESCO skills, STF-KAN outlook).
+**Training only (never read at runtime; enforced by `tests/test_runtime_sources.py`):** O*NET 31.0 ratings, the
+O*NET release history 25.0-31.0, and the 2023 data_jobs job ads. They live in `src/data/raw/`, `src/data/training/`
+and `src/data/training_snapshots/`.
 
 | Source | Use | License / terms | Snapshot |
 |---|---|---|---|
-| data_jobs (Luke Barousse), HF mirror `Ashy24/data_jobs` | TRAINING ONLY: 2023 job-ad forecasting experiment | Apache-2.0 (card) | rev `ae47402`, lastModified 2026-09-17; ads 2023-01-01..2023-12-31 |
-| O*NET 31.0 Database (USDOL/ETA) | RUNTIME: requirements for all 899 rated occupations (skills IM/LV, Hot/In-Demand tools), descriptions, tasks, 44,945 job titles |
-| O*NET releases 25.0 .. 30.3 (USDOL/ETA) | TRAINING ONLY: STF-KAN outlook (quarterly series Aug 2020 - Aug 2026) | CC BY 4.0 | August 2026 release, `db_31_0_text.zip` |
-| Official vendor/project docs (python.org, Microsoft Learn, AWS, Apache, ...) | learning resources | link only | URLs checked live at ingest |
-| sentence-transformers/all-MiniLM-L6-v2 | embeddings | Apache-2.0 | rev `1110a24` |
+| ESCO v1.2 (European Commission) | RUNTIME: 2,938 occupations, 12,569 skills, essential/optional links, ISCO-08 codes | Free reuse with attribution (Decision 2011/833/EU) | `src/data/snapshots/esco_raw.json`, fetched 2026-10-20 via the public ESCO API |
+| UN Statistics Division SDG API | RUNTIME: 17 goals, 169 targets for SDG mapping | UN public information | `src/data/snapshots/sdg_map.json` |
+| Hacker News (Algolia API), arXiv API, Arbeitnow, Remotive | RUNTIME: daily AI-trend signals | public APIs; counts and short excerpts only | SQLite `signal_counts`, `signal_boards` |
+| O*NET 31.0 Database (USDOL/ETA) | TRAINING ONLY: 140,381 importance/level ratings train the ESCO requirement model | CC BY 4.0 | `db_31_0_text.zip` (gitignored) |
+| O*NET releases 25.0 .. 30.3 (USDOL/ETA) | TRAINING ONLY: STF-KAN outlook (quarterly series Aug 2020 - Aug 2026) | CC BY 4.0 | rebuilt by `src/scripts/build_onet_history.py` |
+| data_jobs (Luke Barousse), HF mirror `Ashy24/data_jobs` | TRAINING ONLY: 2023 job-ad forecasting experiment | Apache-2.0 (card) | rev `ae47402`; ads 2023-01-01..2023-12-31 |
+| Official vendor/project docs (python.org, Microsoft Learn, AWS, Apache, ...) | learning resources | link only | URLs checked at ingest |
+| sentence-transformers/all-MiniLM-L6-v2 | embeddings (matching, RAG, SDG mapping) | Apache-2.0 | rev `1110a24` |
 
-Derived, committed: `data/snapshots/weekly_skill_demand.csv` (aggregates only: 2,610 series = global + country
-series for role-country pairs averaging >=30 ads/week, x 30 skills x 53 weeks), `role_skills.json`,
-`knowledge_passages.json` (580 attributed passages). Raw files stay in `data/raw/` (gitignored).
+Derived, committed: `src/data/snapshots/esco_occupations.json` (ESCO + predicted levels), `esco_outlook.json`,
+`knowledge_passages.json` (18,444 attributed passages), `sdg_map.json`. Training-side aggregates are in
+`src/data/training_snapshots/`.
 
 Known data caveats: Google-Jobs scrape, data roles only; country parsing in data_jobs is imperfect
 (e.g. "Sudan" appears as a high-volume country); weeks with <30 eligible ads are missing, not 0%.

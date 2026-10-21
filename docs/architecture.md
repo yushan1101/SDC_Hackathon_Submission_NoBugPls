@@ -10,7 +10,7 @@ Streamlit (login, role-based: employee | hr_advisor)          FastMCP server (in
    |  employee: self-service plan, my plans, acknowledge          search_labor_trends   search_role_skills
    |  hr:       team CSV -> parallel runs, team plans               retrieve_learning_resources   forecast_skill_demand
    v                                                                   |-> Chroma (MiniLM vectors) | offline JSON snapshot
-LangGraph multi-agent graph (core/graph.py)                           |-> STF-KAN checkpoint | baseline
+LangGraph multi-agent graph (src/core/graph.py)                           |-> STF-KAN checkpoint | baseline
    supervisor --simple/unsupported--> simple_lookup
        | complex: fan-out
    profiler || knowledge_search(MCP) -> gap_analysis (both scenarios)
@@ -22,13 +22,13 @@ governance/: SQLite plans, immutable versions (trigger), approval/auth events, s
   Coach rewrites the summary and the supervisor classifies ambiguous queries; tokens are provider-reported.
 - **Reviewer** = schema/evidence/math/capacity/forecast checks, <=2 targeted repairs (pathway + narrative
   citations), unresolved -> `flagged`. An agent exception becomes an `agent_error` issue, never a crash.
-- **Authorization** lives in `governance/approval.py` (`can_act`), not only in the UI: HR never sees an
+- **Authorization** lives in `src/governance/approval.py` (`can_act`), not only in the UI: HR never sees an
   employee's self-service plans; employees only see plans for their own pseudonymous `employee_id`.
 - **Forecasting**: STF-KAN = Time-KAN + parameter-free RFFT harmonic branch + MiniLM projection + linear AR
   anchor (ridge-initialised), quality-gated fusion, one head; interval = validation error quantiles.
   Inputs pool the matching global series and weekly ad counts. Served model chosen on validation only.
 
 ## Deviations from SDLC v1.1 (recorded here per section 13)
-- Role->O*NET-SOC mapping (`mcp_server/ingest.py: ROLE_SOC`) is a team assumption.
+- Role->O*NET-SOC mapping (`src/mcp_server/ingest.py: ROLE_SOC`) is a team assumption.
 - No WEF passages: no verifiable, licensable excerpts were ingested; nothing is cited from it.
 - Additional job-posting datasets were evaluated (see data_sources.md) and rejected for training.
