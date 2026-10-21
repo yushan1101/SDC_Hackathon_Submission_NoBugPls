@@ -1,5 +1,6 @@
 // Enterprise recruiting: openings with natural-language thresholds, AI screening agents, blind ranked review,
 // human decisions. Plus the daily AI-trend board (Signals).
+import { jobIcon } from "./jobicons.js";
 import { api, h, icon, toast, fmtTime, reveal, DROP, sleep } from "./lib.js";
 import { Owl } from "./owl.js";
 import { boardView, integrityBlock } from "./blocks.js";
@@ -23,8 +24,9 @@ function criteriaEditor({ soc, text = "", onState }) {
   box.addEventListener("input", () => { clearTimeout(box._t); box._t = setTimeout(parse, 300); });
   parse();
   return { el: h("div", { class: "crit" }, box,
-    h("p", { class: "note" }, "Write thresholds the way you would tell a colleague. The AI agents echo back exactly what they will apply; " +
-      "anything they cannot parse is shown, never silently dropped. Criteria about age, gender, ethnicity or other protected characteristics are refused."),
+    h("details", { class: "hint" }, h("summary", {}, icon("info"), "How to write"),
+      h("p", {}, "The AI agents echo back exactly what they will apply; anything they cannot parse is shown, never silently dropped. " +
+        "Criteria about age, gender, ethnicity or other protected characteristics are refused.")),
     out), get text() { return box.value.trim(); }, get parsed() { return last; } };
 }
 
@@ -38,7 +40,7 @@ function occPicker(onPick) {
     if (q.length < 2) { results.hidden = true; return; }
     const { results: r } = await api(`/api/occupations?q=${encodeURIComponent(q)}`);
     results.replaceChildren(...r.map((o) => h("li", { role: "option", onclick: () => { search.value = o.title; results.hidden = true; search.setAttribute("aria-expanded", "false"); onPick(o); } },
-      h("b", {}, o.title), h("span", { class: "mono muted" }, o.soc))));
+      jobIcon(o.soc, { size: 32, labelled: true }), h("b", { title: `ESCO ${o.soc}` }, o.title))));
     results.hidden = !r.length; search.setAttribute("aria-expanded", String(!!r.length));
   }
   return h("div", { class: "occ-search" }, search, results);
@@ -68,7 +70,7 @@ export async function openingsView(main, status) {
           h("thead", {}, h("tr", {}, h("th", {}, "Role"), h("th", { class: "n" }, "Applicants"), h("th", { class: "n" }, "Recommended"), h("th", {}, "Status"), h("th", { class: "hide-sm" }, "Created"))),
           h("tbody", {}, list.map((o) => h("tr", { "data-href": "1", tabindex: "0", onclick: () => { location.hash = `#/openings/${o.id}`; },
             onkeydown: (e) => e.key === "Enter" && (location.hash = `#/openings/${o.id}`) },
-            h("td", {}, h("b", {}, o.title), h("span", { class: "mono muted" }, ` ${o.soc}`)), h("td", { class: "n" }, o.applications), h("td", { class: "n" }, o.recommended),
+            h("td", {}, h("span", { class: "job-line", title: `ESCO ${o.soc}` }, jobIcon(o.soc, { size: 32, labelled: true }), h("b", {}, o.title))), h("td", { class: "n" }, o.applications), h("td", { class: "n" }, o.recommended),
             h("td", {}, h("span", { class: `tag ${o.status === "open" ? "approved" : "draft"}` }, o.status)), h("td", { class: "mono hide-sm" }, fmtTime(o.created_utc)))))))
           : h("div", { class: "pad" }, h("p", { class: "muted" }, "No openings yet. Create one, then share its application link with candidates."))),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "New opening")),

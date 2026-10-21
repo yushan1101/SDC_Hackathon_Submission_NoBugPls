@@ -85,11 +85,40 @@ def search_labor_trends(role_id: str, scenario: str = "assistive", as_of_date: s
 
 
 OUTLOOK = Path(__file__).resolve().parents[1] / "data" / "snapshots" / "esco_outlook.json"  # exported model output (ESCO-keyed)
+ONET_MAP = OUTLOOK.with_name("esco_onet_map.json")  # ESCO skill -> closest O*NET series the model forecasts
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=2)
+def _load(path: str, mtime: float) -> dict:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
 def _outlook_asset(mtime: float) -> dict:
-    return json.loads(OUTLOOK.read_text(encoding="utf-8"))
+    return _load(str(OUTLOOK), mtime)
+
+
+def _forecast(role_id: str) -> tuple[dict, dict]:
+    """Gate (blueprint 7): live STF-KAN inference on CPU; else the offline-exported model output, labeled as such;
+    else unavailable with a reason. Never invented numbers."""
+    from forecasting.serving import WARNING, Unavailable, outlook_for
+    reason = "ESCO-to-O*NET map not installed"
+    if ONET_MAP.exists():
+        mp = _load(str(ONET_MAP), ONET_MAP.stat().st_mtime).get(role_id)
+        if mp is None:
+            return {}, {"status": "unavailable", "mode": None, "reason": "no comparable trained occupation (similarity < 0.55)"}
+        try:
+            out, meta = outlook_for({k: (mp["soc"], v[0], v[1]) for k, v in mp["skills"].items()})
+            for k, f in out.items():
+                f |= {"via_similarity": mp["skills"][k][2], "source_series": f"{mp['soc']}:{mp['skills'][k][0]}"}
+            return out, meta
+        except Unavailable as e:
+            reason = str(e)
+    if OUTLOOK.exists():
+        a = _outlook_asset(OUTLOOK.stat().st_mtime)
+        return a["occupations"].get(role_id, {}), {"status": "available", "mode": "precomputed_asset", "device": None,
+                                                  "model_version": None, "reason": f"live inference unavailable: {reason}",
+                                                  "data_relevance_warning": WARNING}
+    return {}, {"status": "unavailable", "mode": None, "reason": reason}
 
 
 def _outlook_text(skill: str, title: str, f: dict, m: dict) -> str:
@@ -104,22 +133,25 @@ def _outlook_text(skill: str, title: str, f: dict, m: dict) -> str:
 
 @mcp.tool
 def skill_outlook(role_id: str) -> dict:
-    """STF-KAN outlook for an ESCO occupation's skills (model trained offline on a skills-taxonomy release history).
-    Reads only the model's exported asset (no training data). Empty when no trained asset is installed."""
-    if not OUTLOOK.exists():
-        return {"available": False, "outlook": {}, "evidence": []}
-    a = _outlook_asset(OUTLOOK.stat().st_mtime)
-    occ, m = a["occupations"].get(role_id, {}), a["model"]
+    """STF-KAN outlook for an ESCO occupation's skills (model trained offline on the O*NET release history).
+    Runs the trained checkpoint live on CPU when installed; otherwise serves its exported output, labeled
+    `mode=precomputed_asset`; otherwise `available=False` with a reason. `forecast` says which happened."""
+    from config.settings import get_settings
+    occ, fc = _forecast(role_id)
+    m = _outlook_asset(OUTLOOK.stat().st_mtime)["model"] if OUTLOOK.exists() else {}
+    if fc["status"] != "available":
+        return {"available": False, "forecast": fc, "model": m, "outlook": {}, "evidence": []}
     o = _occ(role_id) or {"title": role_id}
     ev = []
     for skill, f in occ.items():
         f["evidence_id"] = f"stfkan:{role_id}:{skill}"
         if f["direction"] != "stable":
-            ev.append({"id": f["evidence_id"], "url": "https://github.com/yushan1101/SDC_Hackathon_Submission_NoBugPls/blob/devby/docs/requirements_trace.md", "category": "forecast",
+            ev.append({"id": f["evidence_id"], "url": get_settings().model_card_url, "category": "forecast",
                        "title": f"STF-KAN outlook: {skill} for {o['title']}", "license": "model output",
-                       "publisher": f"AiversePulse STF-KAN ({m['trained_on']})", "publication_date": m["created"][:10],
+                       "publisher": f"AiversePulse STF-KAN ({m.get('trained_on', fc.get('model_version'))})",
+                       "publication_date": (m.get("created") or fc.get("trained_at") or "")[:10],
                        "excerpt": _outlook_text(skill, o["title"], f, m)})
-    return {"available": True, "model": m, "outlook": occ, "evidence": ev}
+    return {"available": True, "forecast": fc, "model": m, "outlook": occ, "evidence": ev}
 
 
 @mcp.tool
@@ -163,6 +195,7 @@ def match_roles(skills: dict, top_k: int = 8) -> dict:
 
 if __name__ == "__main__":
     if "--http" in sys.argv:
-        mcp.run(transport="http", host="127.0.0.1", port=8765)
+        from config.settings import get_settings
+        mcp.run(transport="http", host=get_settings().mcp_host, port=get_settings().mcp_port)
     else:
         mcp.run()

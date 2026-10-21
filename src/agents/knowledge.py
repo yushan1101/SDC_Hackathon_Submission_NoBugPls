@@ -69,13 +69,29 @@ def call_tool(name: str, args: dict) -> dict:
         from fastmcp import Client
 
         async def go():
-            async with Client(get_settings().mcp_url or server.mcp) as c:
+            async with Client(get_settings().mcp_url or server.mcp, timeout=get_settings().mcp_timeout_s) as c:
                 return (await c.call_tool(name, args)).data
         return asyncio.run(go())
     except Exception as e:
         log.warning("MCP call %s failed (%s); direct fallback", name, type(e).__name__)
         fn = getattr(server, name)
         return getattr(fn, "fn", fn)(**args)
+
+
+def mcp_status() -> dict:
+    """Readiness over the real MCP protocol (no direct-call fallback): tool count or the failure type."""
+    from config.settings import get_settings
+    from mcp_server import server
+    try:
+        from fastmcp import Client
+
+        async def go():
+            async with Client(get_settings().mcp_url or server.mcp, timeout=get_settings().mcp_timeout_s) as c:
+                return [t.name for t in await c.list_tools()]
+        tools = asyncio.run(go())
+        return {"ok": bool(tools), "transport": "http" if get_settings().mcp_url else "in-process", "tools": len(tools)}
+    except Exception as e:
+        return {"ok": False, "error": type(e).__name__}
 
 
 def to_evidence(items: list[dict]) -> list[Evidence]:

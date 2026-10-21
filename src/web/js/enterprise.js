@@ -1,4 +1,5 @@
 // AiversePulse Enterprise (HR advisors): overview, upload + live team run, review queue, plans register.
+import { jobIcon } from "./jobicons.js";
 import { api, stream, h, $, icon, toast, fmtTime, ApiError } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
 import { gapsBlock, comparisonBlock, outlookBlock, planBlock, historyBlock, sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
@@ -52,7 +53,7 @@ function signIn() {
 // ---------------------------------------------------------------- shell
 function shell() {
   S.status = new OwlStatus({ size: 32, say: "Ready" });
-  const link = (href, label, ic) => h("a", { href, "data-route": href, "aria-label": label }, icon(ic), h("span", { class: "tip" }, label));
+  const link = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), h("span", { class: "lbl" }, label));
   const tab = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), label);
   S.badge = h("span", { class: "badge", hidden: true });
   S.seg = h("div", { class: "seg scenario-switch", role: "group", "aria-label": "AI scenario" },
@@ -60,14 +61,14 @@ function shell() {
       onclick: (e) => { S.scenario = k; S.seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget))); crumb(); } },
       k === "assistive" ? "Assistive" : "Agentic")));
   S.crumb = h("div", { class: "crumb" });
-  const review = link("#/review", "Review queue", "review"); review.append(S.badge);
+  const review = link("#/review", "Review", "review"); review.append(S.badge);
   app.replaceChildren(h("div", { class: "hr-shell" },
     h("nav", { class: "rail", "aria-label": "Primary" },
-      S.logo = h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }),
-      link("#/overview", "Overview", "grid"), link("#/run", "Upload & run", "upload"), review, link("#/plans", "Plans register", "history"),
-      link("#/openings", "Openings & screening", "people"), link("#/signals", "AI-trend signals", "pulse"),
+      h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }, S.logo = h("span", { class: "logo-owl" }), h("span", { class: "lbl wordmark" }, "AiversePulse")),
+      link("#/overview", "Overview", "grid"), link("#/run", "Run team", "upload"), review, link("#/plans", "Plans", "history"),
+      link("#/openings", "Hiring", "people"), link("#/signals", "Signals", "pulse"),
       h("div", { style: { flex: 1 } }),
-      h("a", { href: "#", "aria-label": "Sign out", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "tip" }, "Sign out"))),
+      h("a", { href: "#", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "lbl" }, "Sign out"))),
     h("header", { class: "hr-top" }, S.crumb, S.seg, S.status.el,
       h("div", { class: "who" }, h("div", {}, S.me.display_name), h("div", { class: "muted" }, "HR advisor"))),
     h("main", { id: "main", class: "hr-main", tabindex: "-1" }),
@@ -126,21 +127,22 @@ function strip(row) {
 
 function stats() {
   const latest = S.plans.filter((p) => p.audience === "hr");
-  const cell = (n, label, cls = "") => h("div", { class: `stat ${cls}` }, h("b", {}, n), h("span", {}, label));
+  const cell = (n, label, ic, cls = "") => h("div", { class: `stat ${cls}` }, h("span", { class: "stat-ic" }, icon(ic)), h("b", {}, n), h("span", {}, label));
   return h("div", { class: "stats" },
-    cell(new Set(latest.map((p) => p.subject_id)).size, "employees with plans"),
-    cell(latest.filter((p) => p.status === "draft").length, "drafts awaiting review"),
-    cell(latest.filter((p) => p.status === "flagged").length, "flagged for manual fix", "flag"),
-    cell(latest.filter((p) => p.status === "approved").length, "approved"));
+    cell(new Set(latest.map((p) => p.subject_id)).size, "Employees", "people"),
+    cell(latest.filter((p) => p.status === "draft").length, "To review", "clock"),
+    cell(latest.filter((p) => p.status === "flagged").length, "Flagged", "flag", "flag"),
+    cell(latest.filter((p) => p.status === "approved").length, "Approved", "check", "ok"));
 }
 
 function needsPanel() {
   const max = Math.max(1, ...S.needs.map((n) => n.employees_with_gap));
-  return h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Team training priorities"), h("span", { class: "muted", style: { "font-size": "12px" } }, "aggregated · individuals are never ranked")),
+  return h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Team training priorities"), h("span", { class: "info", title: "Aggregated across the team; individuals are never ranked.", "aria-label": "Aggregated across the team; individuals are never ranked.", role: "img" }, icon("info"))),
     h("div", { class: "pad" }, S.needs.length ? h("div", { class: "bars" }, S.needs.slice(0, 10).map((n) => h("div", { class: "bar-row" },
       h("span", {}, n.skill_id), h("div", { class: "track" }, h("div", { class: "fill", style: { transform: `scaleX(${n.employees_with_gap / max})` } })),
       h("span", { class: "num" }, n.employees_with_gap))))
-      : h("p", { class: "muted" }, "Run an analysis to see where the team needs training.")));
+      : h("div", { class: "empty-state" }, h("span", { class: "stat-ic" }, icon("upload")), h("p", {}, "No team analysed yet."),
+          h("a", { class: "btn primary sm", href: "#/run" }, icon("upload"), "Run analysis"))));
 }
 
 function rosterTable() {
@@ -150,10 +152,13 @@ function rosterTable() {
     h("div", { class: "table-wrap" }, h("table", { class: "data" },
       h("thead", {}, h("tr", {}, h("th", {}, "Employee"), h("th", {}, "Target role"), h("th", { class: "n hide-sm" }, "h/week"), h("th", {}, "Agents"), h("th", { class: "hide-sm" }, "Top gaps"), h("th", {}, "Status"))),
       h("tbody", {}, rows.map((r) => h("tr", { "data-href": r.plan_id ? `#/review/${r.plan_id}` : null, onclick: () => r.plan_id && (location.hash = `#/review/${r.plan_id}`) },
-        h("td", { class: "mono" }, r.id), h("td", {}, r.role), h("td", { class: "n hide-sm" }, r.hours ?? "–"), h("td", {}, strip(r)),
+        h("td", { class: "mono" }, r.id), h("td", {}, h("span", { class: "job-line" }, r.soc ? jobIcon(r.soc, { size: 28, labelled: true }) : null, r.role)), h("td", { class: "n hide-sm" }, r.hours ?? "–"), h("td", {}, strip(r)),
         h("td", { class: "hide-sm" }, r.top_gaps?.join(", ") || "–"),
         h("td", {}, r.status === "running" ? h("span", { class: "muted" }, "running") : h("span", { class: `tag ${r.status}` }, r.error ? "error" : r.status))))))));
 }
+
+// newest plan per employee, so a re-run doesn't list the same person twice
+const latestPerEmployee = (plans) => [...plans.reduce((m, p) => (!m.has(p.subject_id) || m.get(p.subject_id).created_utc < p.created_utc ? m.set(p.subject_id, p) : m), new Map()).values()];
 
 async function overview(main) {
   await refreshPlans();
@@ -161,9 +166,9 @@ async function overview(main) {
     h("div", { class: "view-head" }, h("h1", {}, "Overview"), h("a", { class: "btn primary sm", href: "#/run" }, icon("upload"), "Upload team")),
     stats(), h("div", { class: "overview" }, needsPanel(),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Needs your review")),
-        h("div", { class: "pad", style: { display: "grid", gap: "8px" } }, S.plans.filter((p) => p.audience === "hr" && p.status !== "approved").slice(0, 6).map((p) =>
-          h("a", { href: `#/review/${p.plan_id}`, style: { display: "flex", "justify-content": "space-between", gap: "8px", color: "inherit", "text-decoration": "none" } },
-            h("span", {}, h("span", { class: "mono" }, p.subject_id), h("span", { class: "muted" }, ` · ${p.target_role}`)), h("span", { class: `tag ${p.status}` }, p.status))),
+        h("div", { class: "pad review-list" }, latestPerEmployee(S.plans.filter((p) => p.audience === "hr" && p.status !== "approved")).slice(0, 6).map((p) =>
+          h("a", { href: `#/review/${p.plan_id}`, class: "review-row" },
+            h("span", { class: "who" }, h("b", {}, p.subject_id), h("span", { class: "muted" }, `${p.target_role} · v${p.version} · ${fmtTime(p.created_utc)}`)), h("span", { class: `tag ${p.status}` }, p.status))),
           S.plans.some((p) => p.audience === "hr" && p.status !== "approved") ? null : h("p", { class: "muted" }, "Nothing waiting. Approved plans live in the register.")))),
     rosterTable()));
 }
@@ -255,7 +260,7 @@ async function reviewView(main, id) {
     shown.length ? shown.map((p) => h("button", { class: "queue-item", "aria-current": String(p.plan_id === id),
       onclick: () => { location.hash = `#/review/${p.plan_id}`; } },
       h("span", { class: "l1" }, h("span", { class: "id" }, p.subject_id), h("span", { class: `tag ${p.status}` }, p.status)),
-      h("span", { class: "l2" }, `${p.target_role} · v${p.version} · `, h("time", { class: "mono", datetime: p.created_utc }, fmtTime(p.created_utc)))))
+      h("span", { class: "l2" }, `${p.target_role} · v${p.version} · `, h("time", { datetime: p.created_utc }, fmtTime(p.created_utc)))))
       : h("div", { class: "empty", style: { padding: "24px 14px" } }, new Owl({ size: 64, state: "sleeping" }).el, h("p", { class: "muted" }, "Nothing here. Upload a team to create drafts."), h("a", { class: "btn sm", href: "#/run" }, "Upload team")));
   const detail = h("section", { class: "detail", "aria-label": "Plan detail" });
   const aside = h("aside", { class: "aside", "aria-label": "Evidence and audit" });

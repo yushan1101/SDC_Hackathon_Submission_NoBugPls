@@ -209,14 +209,15 @@ def serialise(s: dict) -> dict:
                                        "outlook": outlook.get(g.skill_id, {}).get("direction")}
                      for g in s.get("skill_gaps", [])],
             "outlook": {"items": [{"skill_id": k, **v} for k, v in outlook.items() if v["direction"] != "stable"],
-                        "model": _outlook_meta()} if outlook else None,
+                        "model": _outlook_meta(), "forecast": s.get("forecast")} if outlook else None,
+            "forecast": s.get("forecast"),  # live_cpu_inference | precomputed_asset | unavailable, with reason
             "comparison": s.get("scenario_comparison", []),
             "signals": s.get("signals"),
             "sdgs": [x | goal_meta(x["goal"]) for x in s.get("sdgs", [])],
             "evidence": [e.model_dump() for e in s.get("evidence", [])],
             "plan": p.model_dump() if p else None,
             "issues": [i.model_dump() for i in s.get("validation_issues", [])],
-            "retrieval": s.get("retrieval", {}), "usage": summarize(s.get("usage", [])),
+            "retrieval": s.get("retrieval", {}), "usage": summarize(s.get("usage", [])), "followup": s.get("followup"),
             "revision_count": s.get("revision_count", 0)}
 
 
@@ -252,6 +253,11 @@ class AnalyzeIn(BaseModel):
     weekly_learning_hours: float = Field(gt=0, le=80)
     skills: list[SkillIn] = Field(max_length=40)
     query: str = Field(default="Analyze my skill gaps and create a 30-60-90 day plan", max_length=500)
+    previous_plan_id: str | None = Field(default=None, max_length=40)  # follow-up: reuse that run's unaffected agents
+
+
+AGENT_NAME = {"profiler": "Profiler", "knowledge_search": "Knowledge", "market_analyst": "Market analyst", "gap_analysis": "Gap analyst",
+              "pathway": "Pathway", "coach": "Coach", "reviewer": "Reviewer"}
 
 
 @app.post("/api/analyze")
@@ -267,13 +273,26 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
     except ValidationError as e:
         raise HTTPException(422, str(e).splitlines()[0])
 
+    prev = None
+    if body.previous_plan_id:  # only the caller's own run; if the server restarted, it falls back to a full run
+        with DB_LOCK:
+            if approval.can_act(db, body.previous_plan_id, user):
+                prev = RESULTS.get(body.previous_plan_id)
+
     def gen():
         t0 = time.perf_counter()
         yield sse({"t": "owl", "state": "thinking", "say": "Reading your request"})
-        final = None
+        final, ran = None, None  # ran = agents that ran on a follow-up (None = full briefing)
         try:
-            for kind, node, upd in graph.stream(req):
-                if kind == "update":
+            for kind, node, upd in (graph.stream_followup(prev, req) if prev else graph.stream(req)):
+                if kind == "plan":
+                    ran = set(upd["run"])
+                    yield sse({"t": "plan", **upd, "label": f"Changed: {', '.join(upd['changed'])} · running " +
+                               ", ".join(AGENT_NAME[n] for n in upd["run"])})
+                elif kind == "reused":
+                    yield sse({"t": "agent", "node": node, "reused": True, "label": f"{AGENT_NAME.get(node, node)}: reused, unaffected by this change",
+                               "ms": round(1000 * (time.perf_counter() - t0))})
+                elif kind == "update":
                     yield sse({"t": "agent", "node": node, "label": describe(node, upd),
                                "ms": round(1000 * (time.perf_counter() - t0))})
                     if node in OWL:
@@ -287,7 +306,9 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
             return
         out = serialise(final)
         pid = None
-        if out["route"] == "complex":
+        if ran is not None and ran <= {"coach", "reviewer"}:
+            pid = body.previous_plan_id  # a question changes no plan: keep answering about the same one
+        elif out["route"] == "complex":
             with DB_LOCK:
                 pid = approval.create(db, out["plan"], user["employee_id"], "individual", out["issues"])
             remember(pid, final)
@@ -298,7 +319,14 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
         for piece in chunks(out["narrative"] or out["answer"] or ""):
             yield sse({"t": "text", "delta": piece})
             time.sleep(0.03)  # presentation pacing of already-verified text
+        # full briefing: every section. Follow-up: what changed, then only the sections whose agents re-ran.
+        made_by = {"gaps": "gap_analysis", "comparison": "gap_analysis", "outlook": "market_analyst", "signals": "market_analyst",
+                   "sdgs": "market_analyst", "plan": "pathway"}
+        if ran is not None and out["followup"] and out["followup"]["changed"] != ["question"]:
+            yield sse({"t": "section", "kind": "changes", "data": out["followup"]})
         for kind in ("gaps", "comparison", "outlook", "signals", "sdgs", "issues", "plan"):
+            if ran is not None and kind in made_by and made_by[kind] not in ran:
+                continue
             if out[kind]:
                 yield sse({"t": "section", "kind": kind, "data": out[kind]})
                 time.sleep(0.12)
@@ -460,7 +488,7 @@ def team(body: TeamIn, user: dict = Depends(need("hr_advisor"))):
                         a["total_gap_levels"] += g.gap
                 if out["status"] == "flagged":
                     flagged.append(r.employee_id)
-                yield sse({"t": "employee", "id": r.employee_id, "plan_id": pid, "role": occupation(r.target_role)["title"],
+                yield sse({"t": "employee", "id": r.employee_id, "plan_id": pid, "role": occupation(r.target_role)["title"], "soc": r.target_role,
                            "hours": r.profile.weekly_learning_hours, "status": out["status"],
                            "top_gaps": [g["skill_id"] for g in out["gaps"] if g["gap"] > 0][:3],
                            "est_hours": sum(g["gap"] for g in out["gaps"]) * HOURS_PER_LEVEL})
@@ -506,6 +534,21 @@ def occupation_detail(soc: str, user: dict = Depends(current_user)):
 def _outlook_meta():
     from mcp_server.server import OUTLOOK, _outlook_asset
     return _outlook_asset(OUTLOOK.stat().st_mtime)["model"] if OUTLOOK.exists() else None
+
+
+class ForecastIn(BaseModel):
+    role_id: str = Field(min_length=1, max_length=200)
+
+
+@app.post("/api/forecasts")
+def forecasts(body: ForecastIn, user: dict = Depends(current_user)):
+    """Blueprint section 7: gated STF-KAN outlook for one occupation (ESCO code or title). Unavailable -> reason."""
+    from mcp_server.server import skill_outlook
+    soc = resolve_occupation(body.role_id)
+    if not soc:
+        return {"role_id": body.role_id, "forecast": {"status": "unavailable", "reason": "not an ESCO occupation"}, "outlook": {}}
+    r = getattr(skill_outlook, "fn", skill_outlook)(soc)
+    return {"role_id": soc, "forecast": r["forecast"], "outlook": r["outlook"]}
 
 
 @app.get("/api/sample-team")
@@ -654,6 +697,7 @@ def _analyze_resume(filename: str, data: bytes) -> dict:
     integrity["risk"] = doc_risk(integrity["findings"])
     levels = {s["name"]: s["level"] for s in x["skills"]}
     return {"markdown": md, "skills": x["skills"], "years_experience": x["years_experience"], "integrity": integrity,
+            "extraction_mode": x["extraction_mode"], "llm_usage": x["llm_usage"],
             "matches": _matches(levels, text=resume.redact(md)) if levels else []}
 
 
@@ -857,6 +901,24 @@ def enterprise_ui():
 @app.get("/healthz")
 def health():
     return {"ok": True}
+
+
+@app.get("/api/health")
+def readiness():
+    """Blueprint section 11: app, db, MCP, model and LLM readiness. No hostnames, paths or keys."""
+    from agents.knowledge import mcp_status
+    from forecasting.serving import paths
+    try:
+        db.execute("SELECT 1")
+        dbs = {"ok": True}
+    except Exception as e:
+        dbs = {"ok": False, "error": type(e).__name__}
+    ck, hist, man = paths()
+    model = {"ok": all(p.exists() for p in (ck, hist, man)),
+             "mode": "live_cpu_inference" if all(p.exists() for p in (ck, hist, man)) else "precomputed_asset"}
+    llm = {"enabled": cfg.llm_enabled, "model": cfg.llm_fast_model or None, "resume": cfg.llm_resume}
+    mcp = mcp_status()
+    return {"ok": dbs["ok"] and mcp["ok"], "db": dbs, "mcp": mcp, "model": model, "llm": llm}
 
 
 # web/ at the root too, so the HTML's relative asset paths (css/, js/, owl/, config.js) resolve exactly as they do on

@@ -216,3 +216,20 @@ def test_public_landing_static_assets_and_separate_frontend(client):
     assert ok.status_code == 200
     evil = client.post("/api/login", json={"username": "ana", "password": PW}, headers={**H, "Origin": "https://evil.example"})
     assert evil.status_code == 403 and "access-control-allow-origin" not in evil.headers
+
+
+def test_forecasts_endpoint_gated(client):
+    client.cookies.clear()
+    assert client.post("/api/forecasts", json={"role_id": "2149.2"}, headers={"X-AP": "1"}).status_code == 401
+    login(client, "ana")
+    r = client.post("/api/forecasts", json={"role_id": "2149.2"}, headers={"X-AP": "1"}).json()
+    assert r["forecast"]["status"] == "available" and r["forecast"]["mode"] in ("live_cpu_inference", "precomputed_asset")
+    r = client.post("/api/forecasts", json={"role_id": "zzzz not a job"}, headers={"X-AP": "1"}).json()
+    assert r["forecast"]["status"] == "unavailable" and r["forecast"]["reason"]
+
+
+def test_readiness_reports_db_mcp_model_without_secrets(client):
+    r = client.get("/api/health").json()
+    assert r["db"]["ok"] and r["mcp"]["ok"] and r["mcp"]["tools"] == 8
+    assert r["model"]["mode"] in ("live_cpu_inference", "precomputed_asset")
+    assert "key" not in json.dumps(r).lower() and ":\\" not in json.dumps(r) and "/src/" not in json.dumps(r)

@@ -102,11 +102,26 @@ python src/scripts/build_sdg_map.py                # UN SDG API -> sdg_map.json
 python -m mcp_server.ingest                    # ESCO passages + Chroma index (RAG)
 ```
 
-### STF-KAN skill outlook (asset tool for the agents)
+### STF-KAN skill outlook (live CPU inference for the agents)
 Trained on the O*NET release history 25.0 (Aug 2020) -> 31.0 (Aug 2026): 47,780 series (every occupation x skill
 importance / tool Hot flag), 25 quarterly releases, 484k training windows, 3-seed ensemble on an RTX 4060.
-The Market Analyst agent reads only the exported asset `src/data/snapshots/onet_outlook.json` over MCP
-(`skill_outlook`), and the Gap Analyst ranks gaps by need x importance x outlook (required levels stay O*NET).
+The Market Analyst calls the MCP `skill_outlook` tool, which runs the checkpoint live on CPU
+(`src/forecasting/serving.py`), and the Gap Analyst ranks gaps by need x importance x outlook (required levels stay
+ESCO). Gate, in order: `artifact_manifest.json` present -> checkpoint and input history match its SHA-256 -> series set
+matches -> run. Any failure falls back to the exported model output (`esco_outlook.json`, labeled
+`mode=precomputed_asset` with the reason), else `unavailable` with a reason; the reviewer adds a warning either way and
+validates values (1-5 range, horizon, direction, model version) before the draft is shown. Every analysis carries
+`forecast = {status, mode, device, model_version, latency_ms, reason}` and `POST /api/forecasts {role_id}` returns the
+same for one occupation. Offline export and live serving share one code path; `tests/test_serving.py` checks that live
+CPU output equals the exported asset record by record.
+
+Deploying on a CPU-only server: copy `src/artifacts/onet/{stf_kan_best.pt, artifact_manifest.json,
+direction_report.json}` and `src/data/training/onet_history.csv` (all gitignored, ~85 MB). Without them the app still
+works and labels the outlook as precomputed. First call loads the model (~2 s on CPU); later calls are cached.
+
+Coverage limit: ESCO skills are mapped to the closest O*NET item of the closest O*NET occupation (MiniLM, cosine >= 0.6,
+`esco_onet_map.json`). Only 1,135 of 2,278 ESCO occupations get at least one mapped skill (2,651 skills in total), so
+many roles show "outlook unavailable" rather than a guessed value.
 
 | held-out test (O*NET 30.2-31.0) | value |
 |---|---|
@@ -119,6 +134,21 @@ Reproduce: `python src/scripts/build_onet_history.py` -> `python src/scripts/tra
 --out src/artifacts/onet -- --device cuda --batch-size 512 --lr 0.003` -> `python src/scripts/eval_direction.py --ckpt
 src/artifacts/onet/stf_kan_best.pt` -> `python src/scripts/export_outlook.py --ckpt src/artifacts/onet/stf_kan_best.pt`.
 The earlier 2023 job-ad experiment (`--dataset jobs`) remains reproducible as a training-only study.
+
+Experiment, not shipped: XGBoost rising-skill ranker (`src/scripts/train_rising.py`, CUDA or `--device cpu`, ~1 min).
+Adds cross-sectional features (how often a skill rose at past O*NET updates, overall and within its SOC group; years
+since the occupation was last re-surveyed; distance from the cross-occupation mean). O*NET re-rates ~10% of
+occupations once a year, so "overall" AUC includes the easy non-update quarters; "within update" is the honest number.
+
+| rising skills, same event as above | STF-KAN | XGBoost |
+|---|---|---|
+| test overall AUC (31.0) | 0.568 | 0.851 |
+| test within-update AUC (31.0) | 0.576 | 0.699 |
+| validation within-update AUC (28.0 / 29.0 / 30.0) | - / - / 0.585 | 0.519 / 0.634 / 0.512 |
+| validation lift of top-10% flags | - | 1.01x |
+
+Validation did not confirm the test gain, so the app keeps the STF-KAN flags; choosing XGBoost on the test result
+would be test-set selection.
 
 ### Earlier experiment: 2023 job-ad forecasting (training-only study, not used by the app)
 Trained on an RTX 4060 Laptop GPU (CUDA 12.8): GPU sweep of 13 configs, then an 8-seed deep ensemble.

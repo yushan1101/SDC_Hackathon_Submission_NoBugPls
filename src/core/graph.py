@@ -8,8 +8,8 @@
 
 Agents: Profiler (semantic skill alignment), Knowledge (FastMCP + Chroma RAG over ESCO), Market Analyst
 (STF-KAN skill-outlook asset + daily AI-trend board + UN SDG mapping), Gap Analyst, Pathway, Coach (optional
-LLM), Reviewer (<=2 repairs). No training data (O*NET, its release history, 2023 job ads) is read here: models
-trained on it are served only as exported assets. Approval is NOT a node: it is a human action in governance/.
+LLM), Reviewer (<=2 repairs). No training data is read here. The STF-KAN
+outlook runs live on CPU behind the MCP skill_outlook gate (forecasting/serving.py); see State.forecast. Approval is NOT a node: it is a human action in governance/.
 """
 import logging
 import operator
@@ -21,6 +21,7 @@ from agents import coach, gap_analyst, knowledge, pathway, profiler
 from core.router import route_with_reason
 from core.state import Request, ValidationIssue
 from core.usage import record
+from validation.forecast_checks import check_outlook
 from validation.revision import MAX_REVISIONS, revise
 
 log = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class State(TypedDict, total=False):
     trend_evidence: list
     learning_evidence: list
     outlook: dict
+    forecast: dict  # how the outlook was produced: live_cpu_inference | precomputed_asset | unavailable (+ reason)
     outlook_evidence: list
     signals: Any
     sdgs: list
@@ -53,6 +55,8 @@ class State(TypedDict, total=False):
     revision_count: int
     status: str
     usage: Annotated[list, operator.add]
+    issues_by_node: Annotated[dict, lambda a, b: {**(a or {}), **(b or {})}]  # who raised what, so follow-ups can reuse it
+    followup: dict  # follow-up turns only: what changed (computed, not generated) and the user's question
 
 
 def _timed(name, fn):
@@ -66,6 +70,7 @@ def _timed(name, fn):
                                                          message=f"{name} failed: {type(e).__name__}")]}
         extra = out.pop("_usage", [])
         out["usage"] = [record(name, 1000 * (time.perf_counter() - t))] + [u for u in extra if u]
+        out["issues_by_node"] = {name: list(out.get("validation_issues", []))}
         return out
     return node
 
@@ -109,16 +114,18 @@ def n_knowledge(s):
 
 
 def n_market(s):
-    """STF-KAN outlook (exported asset), today's AI-trend board and SDG mapping for this occupation, all via MCP."""
+    """STF-KAN outlook (live CPU inference, gated), today's AI-trend board and SDG mapping for this occupation, via MCP."""
     soc = _soc(s)
     if not soc:
         return {"outlook": {}, "outlook_evidence": []}
     r = knowledge.call_tool("skill_outlook", {"role_id": soc})
+    fc = r.get("forecast") or {"status": "unavailable", "reason": "skill_outlook returned no forecast metadata"}
     t = knowledge.call_tool("trend_signals", {"role_id": soc})
     g = knowledge.call_tool("sdg_for", {"role_id": soc})
     signals = {"day": t["day"], "sources": t["sources"], **t.get("role", {}),
                "topics": [x for x in t["topics"] if x["id"] in t.get("role", {}).get("topics", [])]} if t.get("available") else None
-    return {"outlook": r.get("outlook", {}), "signals": signals, "sdgs": g.get("sdgs", []),
+    return {"outlook": r.get("outlook", {}), "forecast": fc, "signals": signals, "sdgs": g.get("sdgs", []),
+            "validation_issues": check_outlook(r.get("outlook", {}), fc),
             "outlook_evidence": knowledge.to_evidence(r.get("evidence", []) + t.get("evidence", []) + g.get("evidence", []))}
 
 
@@ -162,7 +169,8 @@ def n_coach(s):
     r = s["request"]
     title = s.get("occupation", {}).get("title") or r.target_role
     text, usage, mode = coach.explain(r.audience, r.employee_id or "you", title, r.scenario,
-                                      s.get("skill_gaps", []), s["draft_pathway"], _all_evidence(s), s.get("outlook", {}))
+                                      s.get("skill_gaps", []), s["draft_pathway"], _all_evidence(s), s.get("outlook", {}),
+                                      followup=s.get("followup"))
     return {"narrative": text, "narrative_mode": mode, "_usage": [usage]}
 
 
@@ -249,3 +257,88 @@ def stream(request: Request):
         else:
             final = chunk
     yield "final", None, final
+
+
+# ---------------------------------------------------------------- follow-ups: run only the agents a change affects
+ORDER = ["profiler", "knowledge_search", "market_analyst", "gap_analysis", "pathway", "coach", "reviewer"]
+DOWNSTREAM = {  # what each input feeds; deterministic, so no LLM call decides which agents run
+    "skills": {"profiler", "gap_analysis", "pathway", "coach", "reviewer"},
+    "scenario": {"gap_analysis", "pathway", "coach", "reviewer"},
+    "hours": {"pathway", "coach", "reviewer"},
+    "question": {"coach", "reviewer"},
+}
+
+
+def plan_rerun(prev: Request, req: Request) -> tuple[set | None, list[str]]:
+    """-> (agents to run, what changed). None = different job: run the whole graph."""
+    if prev.target_role != req.target_role or prev.audience != req.audience:
+        return None, ["job"]
+    changed = []
+    if sorted((s.name.lower(), s.level) for s in prev.profile.skills) != sorted((s.name.lower(), s.level) for s in req.profile.skills):
+        changed.append("skills")
+    if prev.scenario != req.scenario:
+        changed.append("scenario")
+    if prev.profile.weekly_learning_hours != req.profile.weekly_learning_hours:
+        changed.append("hours")
+    if not changed:
+        changed.append("question")
+    return set().union(*(DOWNSTREAM[c] for c in changed)), changed
+
+
+def followup_diff(prev: State, cur: State, changed: list[str], query: str | None) -> dict:
+    """Before -> after facts for the Coach and the "What changed" card. Pure arithmetic over agent outputs."""
+    d: dict = {"changed": changed, "question": query if "question" in changed else None}
+    pr, cr = prev["request"], cur["request"]
+    if "hours" in changed:
+        d["weekly_hours"] = [pr.profile.weekly_learning_hours, cr.profile.weekly_learning_hours]
+    if "scenario" in changed:
+        d["scenario"] = [pr.scenario, cr.scenario]
+    pp, cp = prev.get("draft_pathway"), cur.get("draft_pathway")
+    if pp and cp and pp is not cp:
+        hrs = lambda p: round(sum(a.estimated_hours for a in p.activities))
+        d["plan_hours"] = [hrs(pp), hrs(cp)]
+        d["activities"] = [len(pp.activities), len(cp.activities)]
+        d["deferred"] = [len(pp.deferred_skills), len(cp.deferred_skills)]
+    pg = {g.skill_id: g for g in prev.get("skill_gaps", [])}
+    cg = cur.get("skill_gaps", [])
+    if cg is not prev.get("skill_gaps"):
+        d["open_gaps"] = [sum(g.gap > 0 for g in pg.values()), sum(g.gap > 0 for g in cg)]
+        d["required_changed"] = [[g.skill_id, pg[g.skill_id].required_level, g.required_level] for g in cg
+                                 if g.skill_id in pg and pg[g.skill_id].required_level != g.required_level][:6]
+        d["gaps_narrowed"] = [g.skill_id for g in cg if g.skill_id in pg and g.gap < pg[g.skill_id].gap][:6]
+    return d
+
+
+def stream_followup(prev_state: State | None, request: Request):
+    """Like stream(), but reuses the previous run's agent outputs and re-runs only what the change affects.
+    Inside a conversation an in-domain question goes to the Coach (with the briefing as context) instead of a
+    generic lookup; off-topic stays rejected. Yields ("plan", None, {...}), ("update"|"reused", node, partial),
+    then ("final", None, state)."""
+    route, why = route_with_reason(request.query)
+    if prev_state and route == "simple":
+        route, why = "complex", "follow-up question about this briefing"
+    need, changed = plan_rerun(prev_state["request"], request) if prev_state and route == "complex" else (None, [])
+    if need is None:
+        yield from stream(request)
+        return
+    s: dict = {k: v for k, v in prev_state.items() if k not in ("validation_issues", "usage")}
+    s.update(request=request, route=route, route_reason=why)
+    by_node = dict(prev_state.get("issues_by_node", {}))
+    usage = [record("supervisor", 0.0)]
+    flat = lambda skip=None: [i for n in ORDER if n != skip for i in by_node.get(n, [])]
+    yield "plan", None, {"changed": changed, "run": [n for n in ORDER if n in need], "reused": [n for n in ORDER if n not in need]}
+    for name in ORDER:
+        if name not in need:
+            yield "reused", name, {}
+            continue
+        s["validation_issues"] = flat(skip=name)  # the reviewer judges everything raised so far
+        if name == "coach":
+            s["followup"] = followup_diff(prev_state, s, changed, request.query)
+        out = _timed(name, PIPELINE[name])(s)
+        by_node.update(out.pop("issues_by_node", {}))
+        usage += out.pop("usage", [])
+        out.pop("validation_issues", None)
+        s.update(out)
+        yield "update", name, {**out, "validation_issues": by_node.get(name, [])}
+    s.update(validation_issues=flat(), issues_by_node=by_node, usage=usage)
+    yield "final", None, s

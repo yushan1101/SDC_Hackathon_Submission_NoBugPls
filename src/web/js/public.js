@@ -1,7 +1,8 @@
 // AiversePulse (public users): sign-in, plan builder, chat-style streaming report, plans.
-import { api, stream, h, $, icon, toast, ApiError, reveal, RISE, DROP, GROW } from "./lib.js";
+import { jobIcon } from "./jobicons.js";
+import { api, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP, GROW } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
-import { StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
+import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { startView, quizView, resumeView, todayView } from "./explore.js";
 
@@ -12,8 +13,8 @@ const store = {
 };
 const S = {
   me: null, meta: null, status: null, sheet: null, sources: null, evidence: new Map(), busy: null,
-  profile: store.get("ap.profile.v2", { target_role: null, target_title: null, scenario: "assistive", weekly_learning_hours: 6,
-    skills: [] }),
+  // saved profile over the defaults, so an older or partial save never drops a required field
+  profile: { target_role: null, target_title: null, scenario: "assistive", weekly_learning_hours: 6, skills: [], ...store.get("ap.profile.v2", {}) },
   thread: [],
 };
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
@@ -90,31 +91,45 @@ async function signIn(next = "start") {
 function shell() {
   S.status = new OwlStatus({ size: 32, say: "Ready when you are" });
   S.sources = h("aside", { class: "sources", "aria-label": "Sources" }, h("h2", {}, "Sources"),
-    h("p", { class: "muted", style: { "font-size": "13px" } }, "Citations from your report appear here."));
+    h("p", { class: "muted" }, "Citations from your report appear here."));
   S.sheetBody = h("div", { class: "sheet-body" });
   S.sheet = h("dialog", { class: "sheet", "aria-label": "Sources" },
     h("div", { class: "sheet-head" }, h("strong", {}, "Sources"), h("button", { class: "btn sm", onclick: () => S.sheet.close() }, "Close")),
     S.sheetBody);
-  const nav = (href, label) => h("a", { href, "data-route": href }, label);
+  const nav = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), h("span", {}, label));
   const tab = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), label);
   const guest = !S.me;
+  const core = [["#/quiz", "Quick Match", "13 questions · about 2 minutes", "quiz"],
+    ["#/resume", "Upload résumé", "PDF, Word or text", "file"],
+    ["#/build", "Pick a job", "Any ESCO occupation", "target"]];
+  const menu = h("div", { id: "core-menu", popover: "auto", class: "core-menu", "aria-label": "Start" },
+    core.map(([href, label, hint, ic]) => h("a", { href, class: "core-item", onclick: () => menu.hidePopover?.() },
+      h("span", { class: "core-ic" }, icon(ic)), h("span", { class: "core-t" }, h("b", {}, label), h("span", {}, hint)))));
+  menu.addEventListener("toggle", (e) => {  // sit under the Start button that opened it (desktop); mobile keeps the CSS bottom sheet position
+    if (e.newState !== "open") return;
+    const b = [...document.querySelectorAll('[popovertarget="core-menu"]')].find((x) => x.offsetParent && x.className === "nav-menu");
+    if (!b || innerWidth < 700) { menu.style.removeProperty("left"); menu.style.removeProperty("translate"); return; }
+    const r = b.getBoundingClientRect();
+    menu.style.left = `${Math.max(12, Math.min(r.left - 8, innerWidth - menu.offsetWidth - 12))}px`;
+    menu.style.translate = "0 0";
+  });
+  const startBtn = (cls) => h("button", { type: "button", class: cls, popovertarget: "core-menu", "data-route": "#/discover", "aria-haspopup": "true" },
+    icon("spark"), h("span", {}, "Start"), cls === "nav-menu" ? icon("chevron") : null);
   app.replaceChildren(
     h("a", { class: "sr-only", href: "#main" }, "Skip to content"),
     h("header", { class: "pub-top" },
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
-      h("nav", { class: "pub-nav", "aria-label": "Primary" }, guest
-        ? [nav("#/start", "Home"), nav("#/today", "Today")]
-        : [nav("#/start", "Start"), nav("#/report", "Report"), nav("#/today", "Today"), nav("#/plans", "My plans")]),
+      h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), startBtn("nav-menu"), nav("#/today", "Today", "pulse"),
+        guest ? null : [nav("#/report", "Report", "report"), nav("#/plans", "My plans", "plans")]),
       S.status.el,
       guest
         ? h("div", { class: "top-actions" }, h("a", { class: "btn sm top-signin", href: "#/signin" }, "Sign in"),
             h("a", { class: "btn sm primary top-start", href: "#/quiz" }, "Get started", icon("send")))
-        : h("button", { class: "btn sm signout", onclick: signOut }, "Sign out")),
+        : h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out")),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
-    h("nav", { class: "tabbar", "aria-label": "Primary" }, guest
-      ? [tab("#/start", "Home", "build"), tab("#/today", "Today", "pulse"), tab("#/signin", "Sign in", "out")]
-      : [tab("#/start", "Start", "build"), tab("#/report", "Report", "report"), tab("#/today", "Today", "pulse"), tab("#/plans", "Plans", "plans")]),
-    S.sheet);
+    h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), startBtn("tab-menu"), tab("#/today", "Today", "pulse"),
+      guest ? tab("#/signin", "Sign in", "user") : tab("#/plans", "Plans", "plans")),
+    menu, S.sheet);
 }
 
 async function signOut() {
@@ -135,7 +150,7 @@ function route() {
     return;
   }
   if (!$("#main")) shell();  // coming back from the full-page sign-in
-  const section = ["quiz", "resume", "build"].includes(page) ? "#/start" : hash;
+  const section = ["quiz", "resume", "build"].includes(page) ? "#/discover" : hash;
   document.querySelectorAll("[data-route]").forEach((a) => {
     if (section.startsWith(a.dataset.route)) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
@@ -217,7 +232,7 @@ function buildView(main) {
     if (q.length < 2) { results.hidden = true; return; }
     const { results: r } = await api(`/api/occupations?q=${encodeURIComponent(q)}`);
     results.replaceChildren(...(r.length ? r.map((o, k) => h("li", { role: "option", id: `occ-${k}`, "aria-selected": "false", onclick: () => choose(o.soc) },
-      h("b", {}, o.title), o.matched ? h("span", { class: "muted" }, ` · “${o.matched}”`) : null, h("span", { class: "mono muted" }, o.soc)))
+      jobIcon(o.soc, { size: 36, labelled: true }), h("b", { title: `ESCO ${o.soc}` }, o.title), o.matched ? h("span", { class: "muted" }, ` · “${o.matched}”`) : null))
       : [h("li", { class: "muted", role: "option", "aria-disabled": "true" }, "No ESCO occupation matches. Try a broader word.")]));
     results.hidden = false; search.setAttribute("aria-expanded", "true");
   }
@@ -232,7 +247,7 @@ function buildView(main) {
     saveProfile();
     search.value = ""; results.hidden = true; search.setAttribute("aria-expanded", "false");
     picked.replaceChildren(h("div", { class: "occ-card" },
-      h("div", {}, h("b", {}, occ.title), h("span", { class: "mono muted" }, ` ${occ.soc}`)),
+      h("div", { class: "job-line", title: `ESCO ${occ.soc}` }, jobIcon(occ.soc, { size: 48, labelled: true }), h("b", {}, occ.title)),
       h("p", { class: "muted" }, occ.description.length > 220 ? occ.description.slice(0, 220) + "…" : occ.description),
       h("a", { href: occ.url, target: "_blank", rel: "noopener noreferrer" }, "ESCO occupation page")));
     steps[0].dataset.done = "true";
@@ -240,12 +255,11 @@ function buildView(main) {
   }
 
   const hoursIn = h("input", { type: "number", min: "0.5", max: "80", step: "0.5", value: p.weekly_learning_hours, "aria-label": "Hours per week",
-    onchange: () => { p.weekly_learning_hours = Math.min(80, Math.max(0.5, Number(hoursIn.value) || 6)); hoursIn.value = p.weekly_learning_hours; saveProfile(); } });
+    onchange: () => { p.weekly_learning_hours = Math.min(80, Math.max(0.5, Number(hoursIn.value) || 6)); hoursIn.value = p.weekly_learning_hours; saveProfile(); steps[2].dataset.done = "true"; } });
   const bump = (d) => { hoursIn.value = Math.min(80, Math.max(0.5, Number(hoursIn.value) + d)); hoursIn.dispatchEvent(new Event("change")); };
   const scen = (key, title, note) => h("label", {},
-    h("input", { type: "radio", name: "scenario", value: key, checked: p.scenario === key ? true : null, onchange: () => { p.scenario = key; saveProfile(); } }),
+    h("input", { type: "radio", name: "scenario", value: key, checked: p.scenario === key ? true : null, onchange: () => { p.scenario = key; saveProfile(); steps[3].dataset.done = "true"; } }),
     h("b", {}, title), h("span", { class: "muted" }, note));
-  steps[2].dataset.done = steps[3].dataset.done = "true";
 
   main.replaceChildren(
     h("h1", { class: "page-title" }, "Build your plan"),
@@ -305,18 +319,70 @@ function reportView(main) {
       h("div", { class: "thread-col", style: { display: "grid", gap: "24px", "min-width": 0 } },
         h("div", { style: { display: "flex", "justify-content": "space-between", "align-items": "end", gap: "12px", "flex-wrap": "wrap" } },
           h("h1", { class: "page-title" }, "Your briefing"),
-          h("button", { class: "btn sm only-narrow", type: "button", onclick: () => S.sheet.showModal() }, icon("sources"), "Sources")),
+          h("div", { class: "row-actions" },
+            h("button", { class: "btn sm", type: "button", popovertarget: "history-menu" }, icon("history"), "History"),
+            h("button", { class: "btn sm only-narrow", type: "button", onclick: () => S.sheet.showModal() }, icon("sources"), "Sources"))),
+        S.history = h("div", { id: "history-menu", popover: "auto", class: "core-menu history-menu", "aria-label": "Past briefings" }),
         S.threadEl, S.composer),
       S.sources);
   }
   main.replaceChildren(S.reportEl);
+  loadHistory();
   if (S.pending) { const q = S.pending; S.pending = null; runTurn(q); }
   else if (!S.thread.length) {
-    S.threadEl.replaceChildren(h("div", { class: "empty" }, new Owl({ size: 96, state: "idle" }).el,
-      h("h2", {}, "No briefing yet"),
-      h("p", { class: "muted" }, "Play the quick match game, upload your resume or pick a job, and the AI agents will write your briefing here."),
-      h("a", { class: "btn primary", href: "#/start" }, "Get started")));
+    S.threadEl.replaceChildren(briefingStarter());
+    S.composer.hidden = true;  // nothing to change until a briefing exists
   }
+}
+
+/** Past briefings for this person (newest first): each opens its saved report and plan. */
+async function loadHistory() {
+  if (!S.history) return;
+  let plans = [];
+  try { plans = (await api("/api/plans")).filter((p) => p.audience === "individual").slice(0, 12); } catch { /* history is optional */ }
+  S.history.replaceChildren(h("p", { class: "history-head" }, icon("history"), "Past briefings"),
+    ...(plans.length ? plans.map((p) => h("a", { class: "core-item", href: `#/plans/${p.plan_id}`, onclick: () => S.history.hidePopover?.() },
+      h("span", { class: "core-ic" }, icon("report")),
+      h("span", { class: "core-t" }, h("b", {}, p.target_role || "Plan"),
+        h("span", {}, `${p.scenario === "agentic" ? "Agentic" : "Assistive"} AI · ${fmtTime(p.created_utc)} · v${p.version}`)),
+      h("span", { class: `tag ${p.status}` }, p.status)))
+      : [h("p", { class: "muted", style: { padding: "8px 12px" } }, "No briefings yet.")]));  // spread: replaceChildren does not flatten
+}
+
+/** Empty briefing: start one right here. A saved target job runs in one click; otherwise search any job. */
+function briefingStarter() {
+  const p = S.profile;
+  const ready = p.target_role && p.skills.length;
+  const search = h("input", { class: "input", type: "search", placeholder: "Search any job, e.g. nurse, electrician, accountant",
+    "aria-label": "Job to brief on", role: "combobox", "aria-expanded": "false", "aria-controls": "brief-results", autocomplete: "off" });
+  const results = h("ul", { class: "occ-results", id: "brief-results", role: "listbox", hidden: true });
+  let timer;
+  search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(find, 200); });
+  async function find() {
+    const q = search.value.trim();
+    if (q.length < 2) { results.hidden = true; return; }
+    const { results: r } = await api(`/api/occupations?q=${encodeURIComponent(q)}`);
+    results.replaceChildren(...(r.length ? r.map((o) => h("li", { role: "option", onclick: () => choose(o) },
+      jobIcon(o.soc, { size: 36, labelled: true }), h("b", { title: `ESCO ${o.soc}` }, o.title)))
+      : [h("li", { class: "muted", role: "option", "aria-disabled": "true" }, "No ESCO occupation matches. Try a broader word.")]));
+    results.hidden = false; search.setAttribute("aria-expanded", "true");
+  }
+  async function choose(o) {
+    results.hidden = true;
+    const occ = await api(`/api/occupations/${o.soc}`);
+    const mine = new Map(p.skills.map((s) => [s.name.toLowerCase(), s.level]));
+    // same start as Pick a job: this job's skills, at your saved level or 0 (never used) until you rate them
+    Object.assign(p, { target_role: occ.soc, target_title: occ.title,
+      skills: occ.skills.slice(0, 8).map((s) => ({ name: s.name, level: mine.get(s.name.toLowerCase()) ?? 0 })) });
+    saveProfile();
+    start();
+  }
+  return h("div", { class: "brief-start" }, new Owl({ size: 96, state: "idle" }).el,
+    h("h2", {}, "No briefing yet"),
+    ready ? h("button", { type: "button", class: "btn primary brief-go", onclick: () => start() },
+      jobIcon(p.target_role, { size: 28 }), `Write my briefing for ${p.target_title || "my target job"}`) : null,
+    h("p", { class: "muted" }, ready ? "Or brief on a different job:" : "Choose a job and the AI agents write your briefing here."),
+    h("div", { class: "occ-search brief-search" }, search, results));
 }
 
 function rerun(change) {
@@ -354,17 +420,21 @@ function highlight(id) {
 function setSources(evidence) {
   evidence.forEach((e) => S.evidence.set(e.id, e));
   const list = [...S.evidence.values()];
-  S.sources.replaceChildren(h("h2", {}, "Sources"), h("p", { class: "muted", style: { "font-size": "13px" } }, `${list.length} dated sources`), list.map(sourceItem));
+  S.sources.replaceChildren(h("h2", {}, "Sources"), h("p", { class: "muted" }, `${list.length} dated sources`), ...list.map(sourceItem));  // spread: replaceChildren does not flatten arrays
   S.sheetBody.replaceChildren(...list.map((e) => { const el = sourceItem(e); el.removeAttribute("id"); el.dataset.id = e.id; return el; }));
 }
 
 async function runTurn(params) {
+  S.composer.hidden = false;
   const p = params;
   const label = p.query || `Plan for ${p.target_title || p.target_role}`;
   S.thread.push(p);
   const userTurn = h("div", { class: "turn-user" }, h("p", { class: "q" }, label),
-    h("div", { class: "meta" }, [p.target_title || p.target_role, p.scenario === "agentic" ? "Agentic AI" : "Assistive AI", `${p.weekly_learning_hours} h/week`,
-      ...p.skills.map((s) => `${s.name} ${s.level}`)].map((t) => h("span", {}, t))));
+    h("div", { class: "req-pills" },
+      h("span", { class: "meta-pill" }, p.target_role ? jobIcon(p.target_role, { size: 24 }) : null, p.target_title || p.target_role),
+      h("span", { class: "meta-pill" }, icon("spark"), p.scenario === "agentic" ? "Agentic AI" : "Assistive AI"),
+      h("span", { class: "meta-pill" }, icon("clock"), `${p.weekly_learning_hours} h/week`),
+      h("span", { class: "meta-pill", title: p.skills.map((s) => `${s.name}: ${s.level}`).join("\n") }, icon("check"), `${p.skills.length} skills`)));
   const owl = new Owl({ size: 44, state: "thinking" });
   const say = h("span", { class: "muted" }, "Reading your request");
   const traceList = h("ol");
@@ -376,39 +446,45 @@ async function runTurn(params) {
   const body = h("div", { class: "body" }, trace, prose);
   const turn = h("article", { class: "turn-owl", "aria-label": "JobSmart briefing" }, owl.el,
     h("div", { class: "body" }, h("div", { class: "who" }, "JobSmart", say), body));
-  S.threadEl.querySelector(".empty")?.remove();
+  S.threadEl.querySelector(".empty, .brief-start")?.remove();
   S.threadEl.append(reveal(userTurn, RISE), reveal(turn, RISE, { delay: 120 }));
   turn.scrollIntoView({ behavior: "smooth", block: "start" });
 
   const st = new StreamText(prose, highlight);
   const ctrl = new AbortController();
   setBusy(ctrl);
-  let steps = 0, t0 = performance.now(), planId = null, meta = null;
+  let steps = 0, reused = 0, t0 = performance.now(), planId = null, meta = null, insights = null;
   const mood = (state, text) => { owl.set(state); S.status.set(state, text || say.textContent); if (text) say.textContent = text; };
   try {
     await stream("/api/analyze", {
       target_role: p.target_role, scenario: p.scenario, weekly_learning_hours: p.weekly_learning_hours,
-      skills: p.skills, ...(p.query ? { query: p.query } : {}),
+      skills: p.skills, ...(p.query ? { query: p.query } : {}), ...(S.lastPlanId ? { previous_plan_id: S.lastPlanId } : {}),
     }, (ev) => {
       if (ev.t === "owl") mood(ev.state, ev.say);
-      else if (ev.t === "agent") {
-        steps++;
-        running.before(reveal(h("li", {}, h("span", { class: "dot" }), h("span", {}, ev.label), h("span", { class: "ms" }, `${ev.ms} ms`)),
+      else if (ev.t === "plan") {  // the router's decision for this follow-up
+        running.before(h("li", { class: "plan-step" }, icon("spark"), h("span", {}, ev.label), h("span", { class: "ms" })));
+        reused = ev.reused.length;
+      } else if (ev.t === "agent") {
+        if (!ev.reused) steps++;
+        running.before(reveal(h("li", { class: ev.reused ? "reused" : null }, ev.reused ? icon("history") : h("span", { class: "dot" }), h("span", {}, ev.label), h("span", { class: "ms" }, ev.reused ? "" : `${ev.ms} ms`)),
           [{ opacity: 0, clipPath: "inset(0 0 100% 0)" }, { opacity: 1, clipPath: "inset(0)" }], { duration: 240 }));
         mood(owl.state, ev.label);
       } else if (ev.t === "meta") {
-        meta = ev; planId = ev.plan_id; setSources(ev.evidence || []);
+        meta = ev; planId = ev.plan_id; if (planId) S.lastPlanId = planId; setSources(ev.evidence || []); loadHistory();
         running.remove(); trace.querySelector(".spinner")?.remove();
-        sumText.textContent = `Worked through ${steps} agent steps · ${(ev.usage.ms / 1000).toFixed(1)} s · ${ev.usage.llm_calls} LLM calls`;
+        sumText.textContent = `Ran ${steps} agent steps${reused ? `, reused ${reused}` : ""} · ${(ev.usage.ms / 1000).toFixed(1)} s · ${ev.usage.llm_calls} LLM calls`;
         setTimeout(() => { trace.open = false; }, 700);
       } else if (ev.t === "text") st.push(ev.delta);
       else if (ev.t === "section") {
         const d = ev.data;
-        const el = ev.kind === "gaps" ? gapsBlock(d) : ev.kind === "comparison" ? comparisonBlock(d, p.scenario)
+        const el = ev.kind === "changes" ? changesBlock(d) : ev.kind === "gaps" ? gapsBlock(d) : ev.kind === "comparison" ? comparisonBlock(d, p.scenario)
           : ev.kind === "outlook" ? outlookBlock(d) : ev.kind === "signals" ? signalsBlock(d) : ev.kind === "sdgs" ? sdgBlock(d)
           : ev.kind === "issues" ? issuesBlock(d.filter((i) => i.severity === "error"))
           : ev.kind === "plan" ? planHolder(planId, d, p.weekly_learning_hours, meta?.status || "draft") : null;
-        if (el) body.append(el);
+        if (el && ["outlook", "signals", "sdgs"].includes(ev.kind)) {  // three small insight cards share one row
+          insights ??= body.appendChild(h("div", { class: "insights" }));
+          insights.append(el);
+        } else if (el) body.append(el);
       } else if (ev.t === "done") {
         st.end();
         if (ev.status === "flagged") body.append(h("p", { class: "note" }, "This draft is flagged. Edit the plan and save a new draft before approving."));

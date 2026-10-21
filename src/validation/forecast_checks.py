@@ -20,3 +20,26 @@ def check_forecast(f: dict | None, horizon: int = 4) -> list[ValidationIssue]:
     if not f.get("is_historical_backtest"):
         issues.append(err("forecast_label", "must be labeled a historical backtest"))
     return issues
+
+
+def check_outlook(outlook: dict, fc: dict | None) -> list[ValidationIssue]:
+    """Gate B for the STF-KAN skill outlook: labeled mode, values in range, known direction. Unavailable -> warning."""
+    if not fc or fc.get("status") != "available":
+        reason = (fc or {}).get("reason") or "no forecast returned"
+        return [ValidationIssue(code="forecast_unavailable", severity="warning", field="outlook",
+                                message=f"Skill outlook unavailable: {reason}. Gaps are ranked without it.")]
+    issues = []
+    if fc.get("mode") == "precomputed_asset":
+        issues.append(ValidationIssue(code="forecast_precomputed", severity="warning", field="outlook",
+                                      message=f"Skill outlook served from the exported model output ({fc.get('reason')})."))
+    elif fc.get("mode") != "live_cpu_inference" or not fc.get("model_version"):
+        issues.append(ValidationIssue(code="forecast_label", severity="error", field="outlook",
+                                      message="forecast must state its mode and model version"))
+    for skill, f in outlook.items():
+        lo, hi = (1, 5) if f.get("unit", "").startswith(("O*NET importance", "forecast importance")) else (0, 1)
+        vals = [f.get("current")] + list(f.get("forecast") or [])
+        if f.get("direction") not in ("rising", "falling", "stable") or not f.get("forecast") \
+                or any(v is None or not lo <= v <= hi for v in vals):
+            issues.append(ValidationIssue(code="forecast_bounds", severity="error", field="outlook",
+                                          message=f"invalid outlook for {skill}"))
+    return issues

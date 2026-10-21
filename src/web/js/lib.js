@@ -6,7 +6,11 @@ const CREDS = API_BASE ? "include" : "same-origin";  // cross-origin API needs c
 export const apiUrl = (path) => API_BASE + path;
 
 export class ApiError extends Error {
-  constructor(status, detail, body) { super(detail); this.status = status; this.body = body; }
+  constructor(status, detail, body) {
+    // FastAPI validation errors arrive as a list of {loc, msg}; show them as one readable sentence
+    super(Array.isArray(detail) ? detail.map((d) => `${(d.loc || []).slice(-1)[0] ?? "input"}: ${d.msg}`).join("; ") : detail);
+    this.status = status; this.body = body;
+  }
 }
 
 export async function api(path, { method = "GET", body, signal } = {}) {
@@ -79,6 +83,19 @@ export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 /** Static SVG icons (trusted, authored here). */
 const ICONS = {
+  info: '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 11v6 M12 7.5h.01"/>',
+  flag: '<path d="M5 21V4 M5 4.5c3-1.6 5.5 1.6 8.5 0s4.5-1 5.5-.5v8.5c-1-.5-2.5-1.1-5.5.5s-5.5-1.6-8.5 0"/>',
+  home: '<path d="M4 11l8-6 8 6 M6 10v9h12v-9 M10 19v-5h4v5"/>',
+  spark: '<path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z"/>',
+  chevron: '<path d="M6 9l6 6 6-6"/>',
+  target: '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M12 12h.01"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  clock: '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 7v5l3 2"/>',
+  user: '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0"/>',
+  search: '<path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z M20 20l-4-4"/>',
+  up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  flat: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   build: '<path d="M4 20h16M6 16l9-9 3 3-9 9H6v-3z"/>',
   report: '<path d="M5 4h10l4 4v12H5z M14 4v5h5 M8 13h8 M8 17h5"/>',
   plans: '<path d="M6 4h12v16H6z M9 8h6 M9 12h6 M9 16h4"/>',

@@ -6,79 +6,43 @@ import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
 const KEYS = ["A", "B", "C", "D"];
 
 // ---------------------------------------------------------------- start: choose a path
-export function startView(main, { name, guest = false } = {}) {
-  const arrow = () => icon("send");
-  const pill = (text) => h("span", { class: "home-pill" }, text);
-  const smallCard = (label, title, ...children) => h("div", { class: "home-demo-card" },
-    h("span", { class: "home-eyebrow" }, label), h("h3", {}, title), ...children);
-  const quizArt = h("div", { class: "home-art home-art-quiz", "aria-hidden": "true" },
-    h("div", { class: "home-orbit" }),
-    smallCard("A LITTLE SELF-DISCOVERY", "What makes you, you?",
-      h("div", { class: "home-demo-option" }, h("span", {}, "A"), "Solving the tricky problem", h("b", {}, "✓")),
-      h("div", { class: "home-demo-option" }, h("span", {}, "B"), "Bringing people together"),
-      h("div", { class: "home-demo-progress" }, h("i"))),
-    h("span", { class: "home-float home-float-top" }, icon("quiz"), "Play to discover"),
-    h("span", { class: "home-float home-float-bottom" }, "✦", "Your strengths, uncovered"));
-  const resumeArt = h("div", { class: "home-art home-art-resume", "aria-hidden": "true" },
-    h("div", { class: "home-document" }, icon("file"), h("span", { class: "home-doc-title" }, "Your experience"),
-      [88, 65, 80, 55].map((width) => h("i", { style: { width: `${width}%` } })),
-      h("div", { class: "home-doc-highlight" }, "Skills hiding in plain sight"),
-      [70, 90, 58].map((width) => h("i", { style: { width: `${width}%` } }))),
-    h("span", { class: "home-float home-resume-tag tag-one" }, "✦", "Problem solving"),
-    h("span", { class: "home-float home-resume-tag tag-two" }, "✓", "Communication"),
-    h("span", { class: "home-float home-resume-tag tag-three" }, "↗", "New possibilities"));
-  const careerArt = h("div", { class: "home-art home-art-career", "aria-hidden": "true" },
-    h("div", { class: "home-career-line" }),
-    [["01", "Find your direction", "Choose a role that inspires you"], ["02", "Know your next step", "See the skills to build"], ["03", "Make it happen", "Your own 90-day plan"]].map(([n, title, note]) =>
-      h("div", { class: `home-road-step home-road-${n}` }, h("span", {}, n), h("div", {}, h("b", {}, title), h("small", {}, note)))),
-    h("span", { class: "home-float home-career-star" }, "✦"));
-  const feature = (id, number, label, visual, heading, subheading, description, href, button, tags) =>
-    h("section", { class: `home-feature home-feature-${id}`, id: `home-${id}`, "aria-labelledby": `home-title-${id}` },
-      visual,
-      h("div", { class: "home-feature-copy" }, h("span", { class: "home-eyebrow" }, `${number} / ${label}`),
-        h("h2", { id: `home-title-${id}` }, heading), h("p", { class: "home-subheading" }, subheading),
-        h("p", { class: "home-description" }, description), h("div", { class: "home-tags" }, tags.map(pill)),
-        h("a", { class: "home-cta", href }, button, arrow())));
-  const owl = new Owl({ size: 230, state: "greeting" });
-  const sections = [
-    feature("match", "01", "GET TO KNOW YOURSELF", quizArt, "Discover Your Career Potential",
-      "Find your strengths and explore career opportunities through a quick interactive assessment.",
-      "Answer 13 everyday work scenario questions in approximately 2 minutes. AiversePulse will estimate your skill levels and recommend suitable career paths based on your responses.",
-      "#/quiz", "Start Quick Match", ["13 questions", "About 2 minutes"]),
-    feature("resume", "02", "CONNECT THE DOTS", resumeArt, "Unlock Insights from Your Resume",
-      "Discover your existing skills and explore career opportunities based on your experience.",
-      "Upload your resume in PDF, Word, or text format. AiversePulse will extract your skills, analyze your experience, and match your profile with relevant occupations.",
-      "#/resume", "Upload Resume", ["PDF, Word or text", "Evidence-backed skills"]),
-    feature("career", "03", "TURN AMBITION INTO ACTION", careerArt, "Choose Your Future Career",
-      "Already have a dream job in mind? Discover the skills you need to achieve it.",
-      "Select your desired occupation and evaluate your current skill levels. AiversePulse will identify skill gaps and guide you toward a personalized career development plan.",
-      "#/build", "Explore Career Paths", ["Your target role", "Your 90-day plan"]),
-  ];
-  main.replaceChildren(h("div", { class: "home-landing" },
-    h("section", { class: "home-hero" },
-      h("div", { class: "home-hero-copy" }, h("span", { class: "home-eyebrow" }, "YOUR NEXT CHAPTER STARTS HERE"),
-        h("h1", {}, name ? `Where next, ${name}?` : "Where could your skills take you?"),
-        h("p", {}, "AI is changing every job, unevenly. Find the roles you could grow into, see which skills are rising today, and get a 90-day plan you approve. Every claim cites a dated source."),
-        h("div", { class: "home-actions", role: "group", "aria-label": "Start here" },
-          h("a", { class: "home-cta", href: "#/quiz" }, icon("quiz"), "Start Quick Match", arrow()),
-          h("a", { class: "home-cta home-cta-secondary", href: "#/resume" }, icon("file"), "Upload resume"),
-          h("a", { class: "home-cta home-cta-secondary", href: "#/build" }, icon("build"), "Pick a job")),
-        guest ? h("p", { class: "home-guest-note" }, "Free to explore. Sign in with the account your organisation gave you to start.") : null,
-        h("button", { type: "button", class: "home-scroll", onclick: () => sections[0].scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }) }, "See how each one works", h("span", { "aria-hidden": "true" }, "↓")),
-        h("div", { class: "home-hero-note" }, h("span", {}, "✦"), "A little clarity. A lot of possibility.")),
-      h("div", { class: "home-mascot" }, h("div", { class: "home-mascot-ring" }), owl.el,
-        h("span", { class: "home-mascot-note" }, "Let’s find your next move."))),
-    h("div", { class: "home-section-intro" }, h("span", { class: "home-eyebrow" }, "THREE WAYS FORWARD"), h("p", {}, "Start where you are. Grow from there.")),
-    ...sections,
-    h("aside", { class: "home-today" }, h("div", {}, h("span", { class: "home-eyebrow" }, "KEEP YOUR FINGER ON THE PULSE"),
-      h("h2", {}, "The world of work keeps moving."), h("p", {}, "Explore today's AI topics and the roles they may affect.")),
-      h("a", { class: "home-cta home-cta-secondary", href: "#/today" }, "Explore Today", arrow()))));
-  if ("IntersectionObserver" in window && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    main._homeObserver = new IntersectionObserver((entries) => entries.forEach((entry) => {
-      entry.target.classList.toggle("is-visible", entry.isIntersecting);
-    }), { threshold: 0.25, rootMargin: "-8% 0px -12% 0px" });
-    sections.forEach((section) => { section.classList.add("home-reveal"); main._homeObserver.observe(section); });
-  }
+export function startView(main, { name } = {}) {
+  const go = (href, label, cls = "btn") => h("a", { class: cls, href }, label, icon("send"));
+  const way = (id, cls, ic, heading, text, href, button, demo) =>
+    h("section", { class: `way ${cls}`, "aria-labelledby": `way-${id}` },
+      h("div", {}, h("span", { class: "core-ic way-ic" }, icon(ic)), h("h2", { id: `way-${id}` }, heading), h("p", {}, text)), demo, go(href, button));
+  // demos show the real mechanism: a real quiz item, a resume line with its quoted skill, the 30/60/90 plan
+  const quizDemo = h("div", { class: "demo", "aria-hidden": "true" },
+    h("p", { class: "demo-q" }, "A spreadsheet total looks wrong. You…"),
+    h("div", { class: "demo-opt" }, h("kbd", {}, "A"), "Flag it and move on"),
+    h("div", { class: "demo-opt" }, h("kbd", {}, "B"), "Re-add the column by hand"),
+    h("div", { class: "demo-opt on" }, h("kbd", {}, "C"), "Trace the formula and fix it"));
+  const resumeDemo = h("div", { class: "demo", "aria-hidden": "true" },
+    h("p", { class: "demo-line" }, "“Automated monthly reporting with ", h("mark", {}, "Python scripts"), " and SQL queries.”"),
+    h("span", { class: "demo-skill" }, icon("sources"), "Python (computer programming)"));
+  const planDemo = h("div", { class: "demo demo-phases", "aria-hidden": "true" },
+    [["1–30", "Foundations"], ["31–60", "Apply it on real work"], ["61–90", "Show it, get it reviewed"]].map(([d, t]) =>
+      h("div", {}, h("b", {}, `Days ${d}`), h("span", {}, t))));  // same phases as agents/pathway.py
+  const owl = new Owl({ size: 168, state: "greeting" });
+  main.replaceChildren(h("div", { class: "home" },
+    h("section", { class: "home-hero" }, owl.el,
+      h("h1", {}, name ? `Where next, ${name}?` : "Where could your skills take you?"),
+      h("p", {}, "Find roles you could grow into and get a 90-day plan you approve, every claim cited."),
+      h("div", { class: "home-actions", role: "group", "aria-label": "Start here" },
+        go("#/quiz", "Start Quick Match", "btn primary"),
+        h("a", { class: "btn", href: "#/resume" }, icon("file"), "Upload résumé"),
+        h("a", { class: "btn", href: "#/build" }, icon("target"), "Pick a job"))),
+    h("div", { class: "home-ways" },
+      way("quiz", "way-quiz", "quiz", "Discover what you’re good at", "13 everyday work questions, about 2 minutes. We estimate your skills and suggest roles.",
+        "#/quiz", "Start Quick Match", quizDemo),
+      way("resume", "way-resume", "file", "Let your résumé speak", "PDF, Word or text. Every skill we find quotes the line that proves it.",
+        "#/resume", "Upload résumé", resumeDemo),
+      way("plan", "way-plan", "target", "Already know where you’re headed?", "Pick any ESCO occupation, see the skills to build, and get a plan that fits your week.",
+        "#/build", "Pick a job", planDemo)),
+    h("section", { class: "home-today", "aria-labelledby": "home-today" },
+      h("h2", { id: "home-today" }, "The world of work keeps moving."),
+      h("p", {}, "Today’s AI topics and the roles they may affect, rebuilt every day."),
+      go("#/today", "See today"))));
 }
 
 // ---------------------------------------------------------------- quiz game
@@ -120,10 +84,9 @@ export async function quizView(main, ctx) {
     const opts = item.options.map((o, k) => h("button", { class: "opt", type: "button", "aria-pressed": String(st.answers[item.id] === k),
       onclick: () => pick(k) }, h("kbd", {}, KEYS[k]), h("span", {}, o)));
     stage.replaceChildren(reveal(h("div", { class: "q" },
-      h("p", { class: "note" }, `Measures: ${item.skills.join(", ")}`),
       h("h2", {}, item.prompt),
       h("div", { class: "opts", role: "group", "aria-label": "Answers" }, opts),
-      h("p", { class: "note" }, "Pick the answer closest to what you actually do.", h("span", { class: "kbd-hint" }, " Keys 1 to 4 work too."))),
+      h("p", { class: "note" }, `Pick what you actually do. This measures ${item.skills.join(", ")}.`, h("span", { class: "kbd-hint" }, " Keys 1 to 4 work too."))),
       [{ opacity: 0, transform: "translateX(24px)" }, { opacity: 1, transform: "none" }], { duration: 320 }));
     opts[st.answers[item.id] ?? 0]?.focus({ preventScroll: true });
   }
@@ -193,7 +156,7 @@ export function resumeView(main, ctx) {
   main.replaceChildren(
     h("div", { class: "start-head" }, h("div", {},
       h("h1", { class: "page-title" }, "Deep analysis from your resume"),
-      h("p", { class: "lede" }, "Converted to Markdown in memory, never stored. Every skill we find quotes the line that proves it; edit anything we got wrong.")), owl.el),
+      h("p", { class: "lede" }, "Read in memory, never stored. Every skill quotes the line that proves it, and you can edit any of them.")), owl.el),
     drop, out);
 
   async function send(file) {
@@ -245,9 +208,8 @@ export function resumeView(main, ctx) {
 
 // ---------------------------------------------------------------- today: daily AI-trend board
 export async function todayView(main, { onRefresh } = {}) {
-  main.replaceChildren(h("h1", { class: "page-title" }, "Today's AI-trend board"),
-    h("p", { class: "lede" }, "Built once a day from public signals: Hacker News story counts, arXiv papers and live job postings. " +
-      "The AI agents use it to predict which roles are emerging or under automation pressure."),
+  main.replaceChildren(h("h1", { class: "page-title today-title" }, "Today in AI"),
+    h("p", { class: "lede today-lede" }, "Which AI topics are moving, and which jobs they pull forward or put under pressure. Rebuilt every day."),
     h("p", { class: "muted" }, "Loading…"));
   const b = await api("/api/signals/today");
   main.lastChild.replaceWith(boardView(b, { onRefresh }));

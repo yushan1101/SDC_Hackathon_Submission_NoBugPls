@@ -48,7 +48,7 @@ AiversePulse runs a team of AI agents (LangGraph + an MCP tool server):
 
 A person approves every plan and every hiring decision.
 
-Models trained offline on O*NET learn how important each skill is and forecast which skills are rising. Only their outputs are used live; O*NET itself is training data only.
+Models trained offline on O*NET learn how important each skill is and forecast which skills are rising. The STF-KAN outlook runs live on CPU inside the agent workflow (its input is the O*NET release history, checked against the model's manifest); without those artifacts the app serves the model's exported output and says so.
 
 ### Key Features
 

@@ -2,7 +2,6 @@
 import hashlib
 import json
 import os
-from pathlib import Path
 import sqlite3
 from datetime import datetime, timezone
 
@@ -24,7 +23,8 @@ def now() -> str:
 
 
 def connect(path: str | None = None) -> sqlite3.Connection:
-    path = path or os.getenv("DATABASE_PATH", str(Path(__file__).resolve().parents[1] / "data" / "audit.sqlite3"))
+    from config.settings import get_settings
+    path = path or get_settings().database_path
     if path != ":memory:":
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     con = sqlite3.connect(path, check_same_thread=False)

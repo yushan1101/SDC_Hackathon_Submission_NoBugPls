@@ -1,5 +1,6 @@
 // Report building blocks shared by the public report and the Enterprise review pane.
-import { api, h, toast, fmtTime, ApiError, reveal, RISE, DROP, GROW } from "./lib.js";
+import { api, h, icon, toast, fmtTime, ApiError, reveal, RISE, DROP, GROW } from "./lib.js";
+import { jobIcon } from "./jobicons.js";
 
 const PHASES = ["1-30", "31-60", "61-90"];
 const CITE = /\[([^\[\]]{3,120})\]/g;
@@ -52,58 +53,88 @@ export function staticText(text, onCite) {
 
 const block = (label, ...kids) => reveal(h("section", { class: "block", "aria-label": label }, ...kids), RISE, { duration: 420 });
 
-const ARROW = { rising: ["↑", "forecast rising"], falling: ["↓", "forecast falling"] };
+/** A briefing card: icon tile + title (+ info tooltip) + one big figure, then the content. */
+const info = (text) => h("span", { class: "info", role: "img", title: text, "aria-label": text }, icon("info"));
+const card = (label, ic, title, { figure, unit, note, cls = "" } = {}, ...kids) => reveal(h("section", { class: `block brief-card ${cls}`, "aria-label": label },
+  h("header", { class: "bc-head" }, h("span", { class: "bc-ic" }, icon(ic)), h("h3", {}, title), note ? info(note) : null),
+  figure != null ? h("p", { class: "bc-figure" }, h("b", {}, figure), unit ? h("span", {}, unit) : null) : null, ...kids), RISE, { duration: 420 });
+
+// official UN SDG colours (sdgs.un.org brand guide), for number-only goal tiles
+const SDG_COLORS = { 1: "#E5243B", 2: "#DDA63A", 3: "#4C9F38", 4: "#C5192D", 5: "#FF3A21", 6: "#26BDE2", 7: "#FCC30B", 8: "#A21942", 9: "#FD6925",
+  10: "#DD1367", 11: "#FD9D24", 12: "#BF8B2E", 13: "#3F7E44", 14: "#0A97D9", 15: "#56C02B", 16: "#00689D", 17: "#19486A" };
+const ARROW = { rising: ["up", "forecast rising"], falling: ["down", "forecast falling"] };
 
 export function gapsBlock(gaps) {
   const rows = gaps.filter((g) => g.required_level > 0).slice(0, 14);
-  const meter = (g) => h("span", { class: "meter", "aria-hidden": "true" },
-    Array.from({ length: 5 }, (_, i) => h("i", { class: i < g.current_level ? "have" : i < g.required_level ? "on" : "" })));
-  return block("Skill gaps",
-    h("h3", {}, "Skill gaps"),
-    h("div", { class: "table-wrap" }, h("table", { class: "data" },
-      h("thead", {}, h("tr", {}, h("th", {}, "Skill or tool"), h("th", { class: "n hide-sm" }, "You"), h("th", { class: "n hide-sm" }, "Needed"),
-        h("th", {}, "Level"), h("th", { class: "n" }, "Importance"))),
-      h("tbody", {}, rows.map((g, i) => reveal(h("tr", {},
-        h("td", {}, g.skill_id, " ",
-          g.kind === "tool" ? h("span", { class: `tag ${g.hot ? "hot" : ""}`, title: "Tool or system listed by ESCO" }, g.hot ? "hot tool" : "tool") : null,
-          ARROW[g.outlook] ? h("span", { class: `trend ${g.outlook}`, title: ARROW[g.outlook][1] }, ARROW[g.outlook][0],
-            h("span", { class: "sr-only" }, ARROW[g.outlook][1])) : null),
-        h("td", { class: "n hide-sm" }, g.current_level), h("td", { class: "n hide-sm" }, g.required_level),
-        h("td", {}, meter(g), h("span", { class: "sr-only" }, `level ${g.current_level} of ${g.required_level} needed`)),
-        h("td", { class: "n" }, g.importance != null ? `${g.importance.toFixed(1)} / 5` : "—")), DROP, { delay: Math.min(i, 8) * 45 }))))),
-    h("p", { class: "note" }, "Filled squares: your level. Vermilion: the gap to close. Skills are ESCO's essential and optional skills for this occupation; needed levels and importance are predictions from a model trained on O*NET ratings, not ESCO ratings. ↑/↓: STF-KAN outlook."));
+  const open = rows.filter((g) => g.required_level > g.current_level);
+  const row = (g, i) => reveal(h("li", { class: "gap-row", title: g.importance != null ? `Importance ${g.importance.toFixed(1)} / 5` : null },
+    h("span", { class: "gr-name" }, h("b", {}, g.skill_id),
+      g.kind === "tool" ? h("span", { class: `tag ${g.hot ? "hot" : ""}`, title: "Tool or system listed by ESCO" }, g.hot ? "hot tool" : "tool") : null,
+      ARROW[g.outlook] ? h("span", { class: `trend ${g.outlook}`, title: ARROW[g.outlook][1] }, icon(ARROW[g.outlook][0]), h("span", { class: "sr-only" }, ARROW[g.outlook][1])) : null),
+    h("span", { class: "gr-bar", role: "img", "aria-label": `level ${g.current_level} of ${g.required_level} needed` },
+      h("i", { class: "need", style: { width: `${g.required_level * 20}%` } }), h("i", { class: "have", style: { width: `${g.current_level * 20}%` } })),
+    h("span", { class: "gr-lv num" }, `${g.current_level} → ${g.required_level}`)), DROP, { delay: Math.min(i, 8) * 45 });
+  const top = rows.slice(0, 5), rest = rows.slice(5);
+  return card("Skill gaps", "target", "Skill gaps",
+    { figure: open.length, unit: open.length === 1 ? "skill to build" : "skills to build",
+      note: "Bars: dark = your level, blue = level this job needs (0-5). Arrows: STF-KAN outlook. Skills are this job's ESCO skills; needed levels are predicted by a model trained on O*NET ratings, not ESCO ratings. Hover a skill for its importance." },
+    h("ol", { class: "gap-list" }, top.map(row)),
+    rest.length ? h("details", { class: "more" }, h("summary", {}, `Show ${rest.length} more`), h("ol", { class: "gap-list" }, rest.map(row))) : null);
 }
 
 export function comparisonBlock(cmp, scenario) {
   const changed = cmp.filter((c) => c.assistive_required !== c.agentic_required);
-  const col = (name, key, note) => h("div", {},
-    h("b", {}, name, scenario === key.split("_")[0] ? h("span", { class: "muted" }, " · current") : null),
-    h("span", { class: "note" }, note),
-    cmp.slice(0, 8).map((c) => h("div", { class: `row ${c.assistive_required !== c.agentic_required ? "changed" : ""}` },
-      h("span", {}, c.skill_id), h("b", { class: "num" }, `level ${c[key]}`))));
-  return block("Assistive versus agentic AI",
-    h("h3", {}, "Assistive vs agentic AI"),
-    h("div", { class: "cmp" },
-      col("Assistive AI", "assistive_required", "AI helps you do today's work: predicted levels as they are."),
-      col("Agentic AI", "agentic_required", "AI agents take over routine tool work.")),
-    h("p", { class: "note" }, `${changed.length} skills change between scenarios. The agentic levels are a stated team assumption, not evidence.`));
+  const shown = (changed.length ? changed : cmp).slice(0, 5);
+  const side = (name, key, note) => {
+    const current = scenario === key.split("_")[0];
+    return h("div", { class: `cmp-side ${current ? "current" : ""}` },
+      h("span", { class: "cmp-tag" }, icon(current ? "check" : "flat"), current ? "Your scenario" : "Compare"),
+      h("b", { class: "cmp-name" }, name), h("p", {}, note),
+      h("ul", {}, shown.map((c) => h("li", {}, h("span", {}, c.skill_id), h("b", { class: "num" }, `level ${c[key]}`)))));
+  };
+  return card("Assistive versus agentic AI", "spark", "Assistive vs agentic AI",
+    { figure: changed.length, unit: changed.length === 1 ? "skill changes" : "skills change",
+      note: "The agentic levels are a stated team assumption, not evidence. Assistive = predicted levels as they are." },
+    h("div", { class: "cmp-sides" },
+      side("Assistive AI", "assistive_required", "AI helps you do today's work."),
+      side("Agentic AI", "agentic_required", "AI agents take over routine tool work.")));
 }
 
 export function outlookBlock(o) {
   if (!o) return null;
   const m = o.model;
-  if (!m) return block("Skill outlook", h("h3", {}, "Skill outlook"), h("p", { class: "note" }, "No trained STF-KAN outlook asset is installed."));
+  if (!m) return card("Skill outlook", "up", "Rising skills", {}, h("p", { class: "bc-line" }, "No outlook model installed."));
   const rf = m.rising_flag || {};
   const rising = o.items.filter((x) => x.direction === "rising");
-  return block("Skill outlook",
-    h("h3", {}, "Skill outlook"),
-    rising.length
-      ? [h("p", {}, "Likely to grow in importance for this job: ",
-          rising.map((x, i) => [i ? ", " : "", h("b", {}, x.skill_id), h("span", { class: "trend rising", "aria-hidden": "true" }, "↑")]), "."),
-         h("p", { class: "note" }, `Flagged when STF-KAN ranks a skill in the top ${rf.top_percent}% of forecast increases. On held-out releases of its training data these flags were `,
-           h("b", {}, `${Number(rf.test_lift).toFixed(2)}×`), ` more likely than average to rise (base rate ${(rf.test_base_rate * 100).toFixed(1)}%). It raises their priority in your plan; it never changes the required level.`)]
-      : h("p", {}, "No skill for this job is flagged as rising: its requirements look stable."),
-    h("p", { class: "note" }, `${m.name}, trained on the ${m.trained_on}. Falling-skill and tool flags are off: the model did not beat simple heuristics on validation.`));
+  return card("Skill outlook", "up", "Rising skills",
+    { figure: rising.length || "None", unit: rising.length ? "likely to grow" : "flagged; requirements look stable",
+      note: `Flagged when STF-KAN ranks a skill in the top ${rf.top_percent}% of forecast increases; on held-out releases these flags were ${Number(rf.test_lift).toFixed(2)}x more likely than average to rise (base rate ${(rf.test_base_rate * 100).toFixed(1)}%). Raises priority in your plan, never the required level. ${m.name}, trained on the ${m.trained_on}. ${forecastMode(o.forecast)}Falling-skill and tool flags are off.` },
+    rising.length ? h("div", { class: "chips" }, rising.slice(0, 6).map((x) => h("span", { class: "chip-static" }, icon("up"), x.skill_id))) : null);
+}
+
+function forecastMode(f) {
+  if (!f) return "";
+  return f.mode === "live_cpu_inference" ? `Computed live on CPU (${f.model_version}, ${f.latency_ms} ms). `
+    : `Served from the exported model output; live inference unavailable (${f.reason}). `;
+}
+
+/** Follow-up: before -> after for whatever this turn changed (computed by the graph, not written by the LLM). */
+export function changesBlock(f) {
+  const row = (ic, label, [a, b], fmt = (x) => x) => a === b ? null : h("li", {},
+    h("span", { class: "ch-label" }, icon(ic), label), h("span", { class: "ch-val" }, h("s", {}, fmt(a)), icon("send"), h("b", {}, fmt(b))));
+  const rows = [
+    f.weekly_hours && row("clock", "Weekly time", f.weekly_hours, (x) => `${x} h`),
+    f.scenario && row("spark", "AI scenario", f.scenario, (x) => (x === "agentic" ? "Agentic" : "Assistive")),
+    f.plan_hours && row("plans", "Hours in plan", f.plan_hours, (x) => `${x} h`),
+    f.activities && row("review", "Activities", f.activities),
+    f.deferred && row("flag", "Skills waiting for time", f.deferred),
+    f.open_gaps && row("target", "Open skill gaps", f.open_gaps),
+  ].filter(Boolean);
+  const moved = (f.required_changed || []).map(([skill, a, b]) => h("span", { class: "chip-static" }, icon(b > a ? "up" : "down"), `${skill}: ${a} → ${b}`));
+  return card("What changed", "history", "What changed", { figure: rows.length + moved.length || "No", unit: rows.length + moved.length ? "updates in your plan" : "changes to your plan" },
+    rows.length ? h("ul", { class: "changes" }, rows) : null,
+    moved.length ? h("div", { class: "chips" }, moved) : null,
+    f.gaps_narrowed?.length ? h("p", { class: "bc-line" }, `Gaps narrowed: ${f.gaps_narrowed.join(", ")}`) : null);
 }
 
 export function issuesBlock(issues) {
@@ -121,7 +152,7 @@ export function planBlock({ planId, plan, version, status, weeklyHours, onChange
     const mine = acts.filter((a) => a.day_range === p);
     const used = mine.reduce((s, a) => s + a.estimated_hours, 0);
     return h("div", { class: "phase" },
-      h("h4", {}, `Days ${p}`, h("span", { class: "num muted" }, cap ? `${used.toFixed(1)} / ${cap} h` : `${used.toFixed(1)} h`)),
+      h("h4", {}, `Days ${p}`, h("span", { class: "hours" }, icon("clock"), cap ? `${Math.round(used)} of ${Math.round(cap)} h` : `${Math.round(used)} h`)),
       h("div", { class: "budget", "aria-hidden": "true" }, h("div", { style: { transform: `scaleX(${cap ? Math.min(1, used / cap) : 1})`, "transform-origin": "left", height: "100%" } },
         reveal(h("i"), GROW, { duration: 700 }))),
       mine.length ? mine.map((a, i) => reveal(h("div", { class: "act" },
@@ -131,7 +162,8 @@ export function planBlock({ planId, plan, version, status, weeklyHours, onChange
               disabled: status === "approved" ? true : null,
               oninput: (e) => { a.estimated_hours = Number(e.target.value); saveBtn.disabled = false; } }))),
         h("span", {}, a.activity),
-        h("span", { class: "note" }, (a.sdg_links || []).join(" · "))), DROP, { delay: i * 60 })) : h("p", { class: "note" }, "No activities in this phase."));
+        (a.sdg_links || []).length ? h("span", { class: "sdg-nums" }, a.sdg_links.map((s) => { const n = String(s).replace(/\D/g, "");
+          return h("span", { class: "sdg-n", style: { "--sdg": SDG_COLORS[n] || "#888" }, title: `UN SDG ${n}`, "aria-label": `UN SDG ${n}` }, n); })) : null), DROP, { delay: i * 60 })) : h("p", { class: "note" }, "No activities in this phase."));
   });
   const planEl = h("div", { class: "plan", "data-tab": "0" }, phases);
   const tabs = h("div", { class: "seg phase-tabs", role: "group", "aria-label": "Plan phase" },
@@ -216,17 +248,17 @@ export function integrityBlock(rep, audience = "hr") {
 // ---------------------------------------------------------------- future roles, SDGs, daily AI-trend signals
 const pct = (x) => `${Math.round(x * 100)}%`;
 
-export function sdgChip(g) {
-  return h("a", { class: "sdg", href: `https://sdgs.un.org/goals/goal${g.goal}`, target: "_blank", rel: "noopener noreferrer",
-    style: { "--sdg": g.color }, title: `UN Sustainable Development Goal ${g.goal}: ${g.short}` },
-    h("b", {}, g.goal), g.short);
+export function sdgChip(g, { compact = false } = {}) {
+  return h("a", { class: compact ? "sdg-n" : "sdg", href: `https://sdgs.un.org/goals/goal${g.goal}`, target: "_blank", rel: "noopener noreferrer",
+    style: { "--sdg": g.color }, title: `UN Sustainable Development Goal ${g.goal}: ${g.short}`, "aria-label": compact ? `UN SDG ${g.goal}: ${g.short}` : null },
+    compact ? String(g.goal) : [h("b", {}, g.goal), g.short]);
 }
 
 function momentum(m) {
   const out = [];
-  if (m.emerging ?? m.emergence >= 1) out.push(h("span", { class: "trend rising", title: "Top 10% of roles for AI-driven growth on today's trend board" }, "↑ emerging"));
+  if (m.emerging ?? m.emergence >= 1) out.push(h("span", { class: "trend rising", title: "Top 10% of roles for AI-driven growth on today's trend board" }, icon("up"), "emerging"));
   if (m.stretch) out.push(h("span", { class: "tag", title: "Needs one more ISCO-08 skill level than you have" }, "stretch"));
-  if (m.under_pressure ?? m.pressure >= 2) out.push(h("span", { class: "trend falling", title: "Top 10% of roles for automation pressure on today's trend board" }, "↓ automation pressure"));
+  if (m.under_pressure ?? m.pressure >= 2) out.push(h("span", { class: "trend falling", title: "Top 10% of roles for automation pressure on today's trend board" }, icon("down"), "automation pressure"));
   return out;
 }
 
@@ -238,42 +270,40 @@ export function matchesBlock(matches, { onPlan, title = "Roles you could grow in
     h("ol", { class: "matches" }, matches.map((m, i) => reveal(h("li", {},
       h("span", { class: "rank num" }, i + 1),
       h("div", { class: "who" },
-        h("div", {}, h("b", {}, m.title), h("span", { class: "mono muted" }, ` ${m.soc}`), momentum(m)),
-        h("span", { class: "note" }, m.top_gaps?.length ? `Closest gaps: ${m.top_gaps.join(", ")}` : "No skill gaps against ESCO requirements"),
-        m.sdgs?.length ? h("span", { class: "sdgs" }, m.sdgs.map(sdgChip)) : null),
+        h("div", { class: "job-line", title: `ESCO ${m.soc}` }, jobIcon(m.soc, { size: 44, labelled: true }), h("b", {}, m.title), momentum(m)),
+        h("span", { class: "gaps" }, m.top_gaps?.length ? [icon("target"), `To learn: ${m.top_gaps.slice(0, 2).join(", ")}`,
+          m.top_gaps.length > 2 ? h("span", { class: "more", title: m.top_gaps.slice(2).join(", ") }, ` +${m.top_gaps.length - 2}`) : null] : [icon("check"), "No skill gaps"]),
+        m.sdgs?.length ? h("span", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))) : null),
       h("div", { class: "fit" },
         h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
         h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 }))),
       onPlan ? h("button", { class: "btn sm", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null),
       DROP, { delay: Math.min(i, 8) * 45 }))),
-    h("p", { class: "note" }, note || "Match = how much of each role's ESCO skill requirements you meet, weighted by predicted importance. " +
-      "↑/↓ come from today's AI-trend board (news, research and job-posting signals); they reorder roles, never change the match."));
+    h("p", { class: "note" }, note || "Match = the share of each role's ESCO skills you already have. Trend arrows come from today's AI-trend board; they reorder roles, never change the match."));
 }
 
 export function sdgBlock(sdgs) {
   if (!sdgs?.length) return null;
-  return block("UN Sustainable Development Goals",
-    h("h3", {}, "How this role serves the UN SDGs"),
-    h("ul", { class: "sdg-list" }, sdgs.map((g) => h("li", {}, sdgChip(g),
-      h("span", {}, h("b", {}, `Target ${g.target}`), " ", g.target_text)))),
-    h("p", { class: "note" }, "Matched by meaning between the ESCO occupation description and the 169 official UN SDG targets " +
-      "(MiniLM similarity). An evidence-linked suggestion, not an official UN classification. Every plan activity also serves SDG 4 (education) and SDG 8 (decent work)."));
+  return card("UN Sustainable Development Goals", "target", "UN goals served",
+    { figure: sdgs.length, unit: sdgs.length === 1 ? "goal" : "goals",
+      note: "Matched by meaning between the ESCO occupation description and the 169 official UN SDG targets (MiniLM similarity). An evidence-linked suggestion, not an official UN classification. Every plan activity also serves SDG 4 and SDG 8." },
+    h("div", { class: "sdg-nums" }, sdgs.map((g) => h("a", { class: "sdg-n big", href: `https://sdgs.un.org/goals/goal${g.goal}`, target: "_blank", rel: "noopener noreferrer",
+      style: { "--sdg": g.color }, title: `SDG ${g.goal}: ${g.short}. Target ${g.target}: ${g.target_text}`, "aria-label": `UN SDG ${g.goal}: ${g.short}` }, String(g.goal)))),
+    h("p", { class: "bc-line" }, sdgs.map((g) => g.short).slice(0, 3).join(" · ")));
 }
 
 /** Report section: what today's AI-trend board says about this occupation. */
 export function signalsBlock(sig) {
-  if (!sig) return block("AI-trend signals", h("h3", {}, "AI-trend signals"), h("p", { class: "note" }, "No daily trend board has been built yet."));
+  if (!sig) return card("AI-trend signals", "pulse", "Today's AI trend", {}, h("p", { class: "bc-line" }, "No daily trend board built yet."));
   const em = sig.emergence ?? 0, pr = sig.pressure ?? 0;
-  const arrow = (d) => (d === "rising" ? "↑" : d === "falling" ? "↓" : "→");
-  return block("AI-trend signals",
-    h("h3", {}, `AI-trend signals · ${sig.day}`),
-    h("p", {}, em >= 0.5 ? "Today's signals point toward growth for this role" : em <= -0.5 ? "Today's signals lean against this role" : "Today's signals are neutral for this role",
-      pr >= 1 ? ", with automation pressure on its routine tasks." : "."),
-    sig.topics?.length ? h("ul", { class: "topic-list" }, sig.topics.map((t) => h("li", {},
-      h("b", {}, t.label), h("span", { class: `trend ${t.direction}` }, arrow(t.direction)),
-      h("span", { class: "note" }, ` z ${t.z > 0 ? "+" : ""}${t.z} · ${t.confidence} confidence · skills ${t.skills.join(", ")}`)))) : null,
-    h("p", { class: "note" }, `Emergence ${em.toFixed(2)}, pressure ${pr.toFixed(2)} (exposure-weighted topic momentum). Sources: ` +
-      [sig.sources?.hn && "Hacker News", sig.sources?.arxiv && "arXiv", ...(sig.sources?.jobs || [])].filter(Boolean).join(", ") + ". Signals, not certainties."));
+  const verdict = em >= 0.5 ? "Growing" : em <= -0.5 ? "Shrinking" : "Neutral";
+  return card("AI-trend signals", "pulse", "Today's AI trend",
+    { figure: verdict, unit: pr >= 1 ? "with automation pressure on routine tasks" : `for this role · ${sig.day}`,
+      note: `Emergence ${em.toFixed(2)}, pressure ${pr.toFixed(2)} (exposure-weighted topic momentum) on ${sig.day}. Sources: ` +
+        [sig.sources?.hn && "Hacker News", sig.sources?.arxiv && "arXiv", ...(sig.sources?.jobs || [])].filter(Boolean).join(", ") + ". Signals, not certainties." },
+    sig.topics?.length ? h("div", { class: "chips" }, sig.topics.slice(0, 4).map((t) => h("span", { class: `chip-static trend-${t.direction}`,
+      title: `z ${t.z > 0 ? "+" : ""}${t.z} · ${t.confidence} confidence · skills ${t.skills.join(", ")}` },
+      icon(t.direction === "rising" ? "up" : t.direction === "falling" ? "down" : "flat"), t.label))) : null);
 }
 
 function spark(values) {
@@ -292,33 +322,48 @@ export function boardView(b, { onRefresh } = {}) {
   if (!b?.available) return h("div", { class: "empty" }, h("h2", {}, "No trend board yet"),
     h("p", { class: "muted" }, b?.message || "The board is built once a day from public news, research and job-posting signals."),
     onRefresh ? h("button", { class: "btn primary", onclick: onRefresh }, "Build today's board") : null);
-  const src = [b.sources.hn && "Hacker News (8 weekly counts)", b.sources.arxiv && "arXiv (14 vs 42 days)",
-    b.sources.jobs?.length && `${b.sources.postings} live postings (${b.sources.jobs.join(", ")})`].filter(Boolean);
   const evid = new Map(b.evidence.map((e) => [e.id, e]));
   const label = (id) => b.topics.find((t) => t.id === id)?.label;
+  const pill = (ic, text, title) => h("span", { class: "meta-pill", title }, icon(ic), text);
+  const meta = h("div", { class: "board-meta" },
+    pill("clock", fmtTime(b.created_utc), `Board for ${b.day}`),
+    b.sources.hn ? pill("pulse", "Hacker News", "8 weekly story counts per topic") : null,
+    b.sources.arxiv ? pill("file", "arXiv", "papers, last 14 vs 42 days") : null,
+    b.sources.jobs?.length ? pill("search", `${b.sources.postings.toLocaleString()} job posts`, `live postings from ${b.sources.jobs.join(", ")}`) : null,
+    onRefresh ? h("button", { class: "btn sm", onclick: onRefresh }, icon("history"), "Refresh") : null);
+  const dir = (t) => [icon(t.direction === "rising" ? "up" : t.direction === "falling" ? "down" : "flat"), t.direction || "stable"];
+  // one card per topic: the trend, its weekly change, its 8-week line, and one place for its sources
+  const card = (t, i) => {
+    const hn = t.sources.hn, jobs = t.sources.jobs;
+    const growth = hn ? `${hn.weekly_growth_pct > 0 ? "+" : ""}${hn.weekly_growth_pct.toFixed(1)}%` : null;
+    const links = t.evidence_ids.filter((id) => evid.has(id)).map((id) => evid.get(id));
+    return reveal(h("article", { class: "topic-card" },
+      h("div", { class: "tc-top" }, h("h4", {}, t.label),
+        h("span", { class: `trend ${t.direction}`, title: `Trend strength z = ${t.z.toFixed(1)} (rising at z ≥ 2, falling at z ≤ −2); confidence ${t.confidence}` }, dir(t))),
+      h("div", { class: "tc-figure" },
+        growth ? h("div", { title: "Weekly growth of Hacker News stories on this topic over 8 weeks" }, h("b", {}, growth), h("span", {}, "per week on HN")) : h("div", {}, h("b", {}, t.z > 0 ? `+${t.z.toFixed(1)}` : t.z.toFixed(1)), h("span", {}, "trend strength")),
+        hn ? spark(hn.weekly) : null),
+      h("div", { class: "tc-foot" },
+        jobs ? h("span", { class: "tc-jobs", title: `${jobs.mentions} of ${jobs.postings} live postings` }, icon("search"), `${jobs.mentions} job posts`) : h("span"),
+        t.kind === "automation" ? h("span", { class: "tc-kind", title: "Automation topic: adds pressure to the roles it touches" }, icon("flag"), "automation") : null,
+        links.length ? h("details", { class: "tc-src" }, h("summary", {}, icon("sources"), `${links.length} sources`),
+          h("ul", {}, links.map((e) => h("li", {}, h("a", { href: e.url, target: "_blank", rel: "noopener noreferrer" }, e.title))))) : null)),
+      DROP, { delay: Math.min(i, 12) * 30 });
+  };
+  const topics = [...b.topics].sort((a, z) => Math.abs(z.z) - Math.abs(a.z));
   const roleList = (rows, key, cls) => h("ol", { class: "role-list" }, rows.slice(0, 8).map((r) => h("li", {},
-    h("b", {}, r.title), h("span", { class: `num trend ${cls}` }, (r[key] > 0 ? "+" : "") + r[key].toFixed(2)),
-    h("span", { class: "note" }, r.drivers.map(label).filter(Boolean).join(" · ")))));
-  const dir = (t) => (t.direction === "rising" ? "↑ rising" : t.direction === "falling" ? "↓ falling" : "→ stable");
-  return h("div", { class: "board" },
-    h("p", { class: "board-meta" }, h("b", {}, `Board for ${b.day}`), ` · built ${fmtTime(b.created_utc)} · `, src.join(" · "),
-      onRefresh ? h("button", { class: "btn sm", onclick: onRefresh }, "Refresh now") : null),
-    block("AI topics today", h("h3", {}, "AI topics today"),
-      h("div", { class: "table-wrap" }, h("table", { class: "data topics" },
-        h("thead", {}, h("tr", {}, h("th", {}, "Topic"), h("th", {}, "Signal"), h("th", { class: "n" }, "z"),
-          h("th", { class: "hide-sm" }, "8 weeks"), h("th", { class: "n hide-sm" }, "Postings"), h("th", { class: "hide-sm" }, "Sources"))),
-        h("tbody", {}, b.topics.map((t, i) => reveal(h("tr", {},
-          h("td", {}, h("b", {}, t.label), t.kind === "automation" ? h("span", { class: "note" }, " · automation") : null),
-          h("td", {}, h("span", { class: `trend ${t.direction}` }, dir(t)), h("span", { class: "note" }, ` ${t.confidence}`)),
-          h("td", { class: "n num" }, (t.z > 0 ? "+" : "") + t.z.toFixed(1)),
-          h("td", { class: "hide-sm" }, t.sources.hn ? spark(t.sources.hn.weekly) : "—"),
-          h("td", { class: "n hide-sm num" }, t.sources.jobs ? `${t.sources.jobs.mentions}` : "—"),
-          h("td", { class: "hide-sm" }, t.evidence_ids.filter((id) => evid.has(id)).map((id) => h("a", { class: "cite", href: evid.get(id).url,
-            target: "_blank", rel: "noopener noreferrer", title: evid.get(id).excerpt }, h("b", {}, id.split(":").pop()))))),
-        DROP, { delay: Math.min(i, 10) * 30 }))))),
-      h("p", { class: "note" }, "z: trend strength (log-linear weekly growth over its standard error, averaged across sources). Rising at z ≥ 2, falling at z ≤ −2. Hover a source for its counts.")),
+    jobIcon(r.soc, { size: 40, labelled: true }),
+    h("span", { class: "rl-t" }, h("b", { title: `ESCO ${r.soc}` }, r.title), h("span", {}, r.drivers.map(label).filter(Boolean).slice(0, 2).join(" · "))),
+    h("span", { class: `rl-score trend ${cls}`, title: key === "score" ? "AI-driven growth score" : "Automation pressure score" }, icon(cls === "rising" ? "up" : "down"), r[key].toFixed(1)))));
+  return h("div", { class: "board" }, meta,
+    h("section", { class: "board-section", "aria-labelledby": "bt" },
+      h("div", { class: "board-head" }, h("h2", { id: "bt" }, "AI topics today"),
+        h("span", { class: "info", role: "img", title: "Weekly change = growth of Hacker News stories per week over 8 weeks. Trend direction uses the combined trend strength (z) across sources: rising at z ≥ 2, falling at z ≤ −2.",
+          "aria-label": "How trends are measured" }, icon("info"))),
+      h("div", { class: "topic-grid" }, topics.map(card))),
     h("div", { class: "board-roles" },
-      block("Emerging roles", h("h3", {}, "Roles AI is pulling forward"), roleList(b.emerging_roles, "score", "rising")),
-      block("Roles under pressure", h("h3", {}, "Roles with automation pressure"), roleList(b.declining_roles, "pressure", "falling"))),
-    h("p", { class: "note" }, b.method, " The AI agents read this board through the trend_signals MCP tool; it reorders role matches and adds dated evidence to every report."));
+      h("section", { class: "role-card" }, h("h3", {}, icon("up"), "Roles AI is pulling forward"), roleList(b.emerging_roles, "score", "rising")),
+      h("section", { class: "role-card" }, h("h3", {}, icon("down"), "Roles under automation pressure"), roleList(b.declining_roles, "pressure", "falling"))),
+    h("details", { class: "hint board-method" }, h("summary", {}, icon("info"), "How this board is built"),
+      h("p", {}, b.method, " The AI agents read it through the trend_signals MCP tool; it reorders role matches and adds dated evidence to every report.")));
 }

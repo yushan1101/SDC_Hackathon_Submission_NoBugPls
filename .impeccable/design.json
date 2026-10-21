@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-21T00:00:00Z",
+  "title": "Design System: AiversePulse",
+  "extensions": {
+    "colorMeta": {
+      "accent-blue": { "role": "primary", "displayName": "Clear Signal Blue", "canonical": "oklch(0.53 0.19 263)", "hexApprox": "#2c62d7", "tonalRamp": ["oklch(0.2 0.1 263)", "oklch(0.3 0.15 263)", "oklch(0.41 0.18 263)", "oklch(0.53 0.19 263)", "oklch(0.64 0.15 263)", "oklch(0.75 0.1 263)", "oklch(0.86 0.06 263)", "oklch(0.955 0.028 262)"] },
+      "accent-field": { "role": "primary", "displayName": "Lead Card Blue", "canonical": "oklch(0.55 0.17 258)", "hexApprox": "#276ed2", "tonalRamp": ["oklch(0.2 0.09 258)", "oklch(0.3 0.13 258)", "oklch(0.42 0.16 258)", "oklch(0.55 0.17 258)", "oklch(0.65 0.13 258)", "oklch(0.76 0.09 258)", "oklch(0.87 0.05 258)", "oklch(0.97 0.015 258)"] },
+      "accent-soft": { "role": "primary", "displayName": "Blue Wash", "canonical": "oklch(0.955 0.028 262)", "hexApprox": "#e6f1ff" },
+      "link-blue": { "role": "primary", "displayName": "Link Blue", "canonical": "oklch(0.47 0.18 263)", "hexApprox": "#1f50be" },
+      "paper-white": { "role": "neutral", "displayName": "Paper White", "canonical": "oklch(1 0 0)", "hexApprox": "#ffffff" },
+      "blue-grey-field": { "role": "neutral", "displayName": "Blue-Grey Field", "canonical": "oklch(0.968 0.007 255)", "hexApprox": "#f1f5f9" },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "oklch(0.22 0.02 262)", "hexApprox": "#161b24", "tonalRamp": ["oklch(0.15 0.02 262)", "oklch(0.22 0.02 262)", "oklch(0.33 0.02 262)", "oklch(0.44 0.02 262)", "oklch(0.58 0.018 262)", "oklch(0.72 0.014 260)", "oklch(0.84 0.012 258)", "oklch(0.968 0.007 255)"] },
+      "ink-secondary": { "role": "neutral", "displayName": "Secondary Ink", "canonical": "oklch(0.44 0.02 262)", "hexApprox": "#4d535e" },
+      "rule": { "role": "neutral", "displayName": "Hairline", "canonical": "oklch(0.92 0.008 258)", "hexApprox": "#e1e5ea" },
+      "rule-strong": { "role": "neutral", "displayName": "Firm Hairline", "canonical": "oklch(0.84 0.012 258)", "hexApprox": "#c6cbd2" },
+      "navy-shell": { "role": "neutral", "displayName": "Navy Shell", "canonical": "oklch(0.24 0.05 262)", "hexApprox": "#121f37" },
+      "shell-ink": { "role": "neutral", "displayName": "Shell Ink", "canonical": "oklch(0.97 0.006 262)", "hexApprox": "#f3f5f9" },
+      "shell-ink-secondary": { "role": "neutral", "displayName": "Shell Secondary Ink", "canonical": "oklch(0.8 0.03 262)", "hexApprox": "#b3bed2" },
+      "ok": { "role": "status", "displayName": "Approved Green", "canonical": "oklch(0.47 0.11 150)", "hexApprox": "#206b38" },
+      "ok-soft": { "role": "status", "displayName": "Approved Tint", "canonical": "oklch(0.95 0.035 150)", "hexApprox": "#dff6e2" },
+      "warn": { "role": "status", "displayName": "Caution Ochre", "canonical": "oklch(0.5 0.11 70)", "hexApprox": "#8a5600" },
+      "warn-soft": { "role": "status", "displayName": "Caution Tint", "canonical": "oklch(0.965 0.04 85)", "hexApprox": "#fff2d6" },
+      "danger": { "role": "status", "displayName": "Flag Red", "canonical": "oklch(0.5 0.18 28)", "hexApprox": "#b3241f" },
+      "danger-soft": { "role": "status", "displayName": "Flag Tint", "canonical": "oklch(0.955 0.03 28)", "hexApprox": "#ffe9e5" },
+      "hr-ground": { "role": "neutral", "displayName": "HR Ground", "canonical": "oklch(0.975 0.005 258)", "hexApprox": "#f5f7fa" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The home hero line only; max 12ch." },
+      "headline": { "displayName": "Headline", "purpose": "Card headings, section closers and quiz questions." },
+      "page-title": { "displayName": "Page Title", "purpose": "The opening line on each app screen." },
+      "title": { "displayName": "Title", "purpose": "Every public h3/h4, in Geist 600 at 18-22px." },
+      "lede": { "displayName": "Lede", "purpose": "The one supporting sentence under a headline, in secondary ink." },
+      "body": { "displayName": "Body", "purpose": "Public default text, 17px." },
+      "prose": { "displayName": "Prose", "purpose": "Streamed report answers at 18px with a 68ch measure." },
+      "label": { "displayName": "Label", "purpose": "Buttons, chips, field labels, notes and toasts." },
+      "floor": { "displayName": "Floor", "purpose": "Tags, citations, chart text and IDs; the smallest public size." },
+      "mono": { "displayName": "Mono", "purpose": "Numbers, IDs and keycaps with tabular figures." },
+      "hr-body": { "displayName": "Enterprise Body", "purpose": "The dense 15px base for the HR console; headings also in Geist." }
+    },
+    "shadows": [
+      { "name": "action-lift", "value": "0 6px 16px -6px oklch(0.53 0.19 263 / 0.55)", "purpose": "Under the primary blue pill only." },
+      { "name": "card-hover-lift", "value": "0 28px 48px -30px oklch(0.25 0.06 262 / 0.5)", "purpose": "Home cards on hover with translateY(-4px), only for hover devices without reduced motion." },
+      { "name": "insert", "value": "0 12px 28px -16px oklch(0.25 0.04 262 / 0.35)", "purpose": "A white demo insert sitting on a blue-grey card." },
+      { "name": "composer", "value": "0 12px 32px -12px oklch(0.25 0.04 262 / 0.22)", "purpose": "The floating question composer on the report screen." },
+      { "name": "owl-drop", "value": "drop-shadow(0 18px 24px oklch(0.4 0.12 262 / 0.18))", "purpose": "Filter on the hero owl." },
+      { "name": "focus-halo", "value": "0 0 0 3px oklch(0.955 0.028 262)", "purpose": "Input focus halo alongside the blue border." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Default easing for state changes and card lift." },
+      { "name": "ease-in-out", "value": "cubic-bezier(0.65, 0, 0.35, 1)", "purpose": "Pulses on busy indicators." },
+      { "name": "t-fast", "value": "140ms", "purpose": "Button, chip and input transitions." },
+      { "name": "t-base", "value": "240ms", "purpose": "Toasts, segmented controls, disclosure chevrons." },
+      { "name": "t-slow", "value": "420ms", "purpose": "Card hover lift." },
+      { "name": "reduced-motion", "value": "1ms durations, single iteration", "purpose": "All motion collapses under prefers-reduced-motion: reduce." }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "699px" },
+      { "name": "tablet", "value": "767px" },
+      { "name": "cards-stack", "value": "899px" },
+      { "name": "rails-collapse", "value": "1099px" },
+      { "name": "wide-collapse", "value": "1199px" },
+      { "name": "container", "value": "1240px" }
+    ],
+    "owl": {
+      "recolour": ".owl-svg { filter: hue-rotate(-32deg) saturate(1.08); }",
+      "sizes": { "hero": "168px", "quiz": "120px", "report-turn": "44px" },
+      "rule": "Only character in the system; one owl per home screen; reflects real agent state."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one blue action per block; pill, 46px, on the action lift shadow.",
+      "html": "<button class=\"ds-btn-primary\">Start Quick Match <svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h14M13 6l6 6-6 6\"/></svg></button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 22px; border: 1px solid oklch(0.53 0.19 263); border-radius: 999px; background: oklch(0.53 0.19 263); color: oklch(1 0 0); font: 500 17px/1 'Geist', system-ui, sans-serif; cursor: pointer; box-shadow: 0 6px 16px -6px oklch(0.53 0.19 263 / 0.55); transition: background 140ms cubic-bezier(0.16, 1, 0.3, 1), transform 140ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-primary:hover { background: color-mix(in oklch, oklch(0.53 0.19 263), black 10%); border-color: transparent; } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: 2px solid oklch(0.53 0.19 263); outline-offset: 2px; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary ways in; white pill with a firm hairline that turns ink on hover.",
+      "html": "<button class=\"ds-btn-outline\">Upload résumé</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 22px; border: 1px solid oklch(0.84 0.012 258); border-radius: 999px; background: oklch(1 0 0); color: oklch(0.22 0.02 262); font: 500 17px/1 'Geist', system-ui, sans-serif; cursor: pointer; transition: border-color 140ms cubic-bezier(0.16, 1, 0.3, 1), transform 140ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-outline:hover { border-color: oklch(0.22 0.02 262); } .ds-btn-outline:active { transform: translateY(1px); } .ds-btn-outline:focus-visible { outline: 2px solid oklch(0.53 0.19 263); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "46px field, 10px radius, blue border plus blue-wash halo on focus.",
+      "html": "<label class=\"ds-field\"><span>Job title</span><input class=\"ds-input\" placeholder=\"Search ESCO occupations\"></label>",
+      "css": ".ds-field { display: grid; gap: 6px; font: 500 15px 'Geist', system-ui, sans-serif; color: oklch(0.22 0.02 262); } .ds-input { min-height: 46px; padding: 10px 14px; border: 1px solid oklch(0.84 0.012 258); border-radius: 10px; background: oklch(1 0 0); color: oklch(0.22 0.02 262); font: 400 17px 'Geist', system-ui, sans-serif; transition: border-color 140ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 140ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-input::placeholder { color: oklch(0.44 0.02 262); } .ds-input:focus { outline: none; border-color: oklch(0.53 0.19 263); box-shadow: 0 0 0 3px oklch(0.955 0.028 262); }"
+    },
+    {
+      "name": "Header Navigation",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "White 68px bar, serif wordmark, pill links, one outline and one blue action.",
+      "html": "<header class=\"ds-top\"><a class=\"ds-wordmark\" href=\"#\">AiversePulse</a><nav class=\"ds-nav\"><a href=\"#\" aria-current=\"page\">Home</a><a href=\"#\">Today</a></nav><span class=\"ds-actions\"><a class=\"ds-top-btn\" href=\"#\">Sign in</a><a class=\"ds-top-btn ds-top-primary\" href=\"#\">Get started</a></span></header>",
+      "css": ".ds-top { display: flex; align-items: center; gap: 24px; height: 68px; padding: 0 20px; background: oklch(1 0 0); border-bottom: 1px solid oklch(0.92 0.008 258); } .ds-wordmark { font: 600 24px/1 'EB Garamond', Garamond, serif; letter-spacing: -0.01em; color: oklch(0.22 0.02 262); text-decoration: none; } .ds-nav { display: flex; gap: 4px; } .ds-nav a { padding: 8px 14px; border-radius: 999px; color: oklch(0.44 0.02 262); font: 500 16px 'Geist', system-ui, sans-serif; text-decoration: none; transition: background 140ms, color 140ms; } .ds-nav a:hover, .ds-nav a[aria-current=page] { color: oklch(0.22 0.02 262); background: oklch(0.968 0.007 255); } .ds-nav a:focus-visible, .ds-top-btn:focus-visible { outline: 2px solid oklch(0.53 0.19 263); outline-offset: 2px; } .ds-actions { margin-left: auto; display: flex; gap: 8px; } .ds-top-btn { display: inline-flex; align-items: center; min-height: 38px; padding: 0 16px; border: 1px solid oklch(0.84 0.012 258); border-radius: 999px; color: oklch(0.22 0.02 262); font: 500 15px 'Geist', system-ui, sans-serif; text-decoration: none; } .ds-top-btn:hover { background: oklch(0.968 0.007 255); } .ds-top-primary { background: oklch(0.53 0.19 263); border-color: oklch(0.53 0.19 263); color: oklch(1 0 0); } .ds-top-primary:hover { background: color-mix(in oklch, oklch(0.53 0.19 263), black 10%); }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Pill choice or quick prompt at 15px; wraps to a 22px radius.",
+      "html": "<button class=\"ds-chip\">Which skills are rising?</button>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 16px; border: 1px solid oklch(0.84 0.012 258); border-radius: 22px; background: oklch(1 0 0); color: oklch(0.22 0.02 262); font: 500 15px/1.35 'Geist', system-ui, sans-serif; text-align: left; cursor: pointer; transition: border-color 140ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-chip:hover { border-color: oklch(0.22 0.02 262); } .ds-chip:focus-visible { outline: 2px solid oklch(0.53 0.19 263); outline-offset: 2px; }"
+    },
+    {
+      "name": "Tag",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "Sentence-case status pill at the 14px floor.",
+      "html": "<span class=\"ds-tag ds-tag-ok\">Approved</span> <span class=\"ds-tag\">Draft</span>",
+      "css": ".ds-tag { display: inline-flex; align-items: center; padding: 0 10px; border: 1px solid currentColor; border-radius: 999px; font: 500 14px/22px 'Geist', system-ui, sans-serif; color: oklch(0.44 0.02 262); } .ds-tag-ok { color: oklch(0.47 0.11 150); background: oklch(0.95 0.035 150); }"
+    },
+    {
+      "name": "Lead Way Card",
+      "kind": "card",
+      "refersTo": "way-card-lead",
+      "description": "The one saturated blue field per screen: serif heading, one sentence, a real quiz item, an inverted pill.",
+      "html": "<section class=\"ds-way ds-way-lead\"><div><h2>Discover what you’re good at</h2><p>13 everyday work questions, about 2 minutes.</p></div><div class=\"ds-demo\"><p class=\"ds-demo-q\">A spreadsheet total looks wrong. You…</p><div class=\"ds-opt\"><kbd>A</kbd>Flag it and move on</div><div class=\"ds-opt ds-on\"><kbd>C</kbd>Trace the formula and fix it</div></div><a class=\"ds-way-btn\" href=\"#\">Start Quick Match</a></section>",
+      "css": ".ds-way { display: grid; align-content: space-between; gap: 36px; padding: 44px; border-radius: 32px; background: oklch(0.968 0.007 255); color: oklch(0.22 0.02 262); transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 420ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-way:hover { transform: translateY(-4px); box-shadow: 0 28px 48px -30px oklch(0.25 0.06 262 / 0.5); } .ds-way h2 { margin: 0; font: 500 48px/1.08 'EB Garamond', Garamond, serif; letter-spacing: -0.015em; max-width: 14ch; } .ds-way p { margin: 14px 0 0; font: 400 18px/1.5 'Geist', system-ui, sans-serif; max-width: 34ch; } .ds-way-lead { background: oklch(0.55 0.17 258); color: oklch(1 0 0); } .ds-way-lead p { color: oklch(0.97 0.015 258); } .ds-demo { display: grid; gap: 10px; } .ds-way .ds-demo-q { margin: 0 0 6px; font: 500 30px/1.2 'EB Garamond', Garamond, serif; color: oklch(1 0 0); } .ds-opt { display: flex; align-items: center; gap: 12px; min-height: 54px; padding: 0 18px; border-radius: 14px; background: oklch(1 0 0 / 0.16); color: oklch(1 0 0); font: 400 17px 'Geist', system-ui, sans-serif; } .ds-opt kbd { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: oklch(1 0 0 / 0.22); font: 500 14px 'Geist Mono', monospace; } .ds-opt.ds-on { background: oklch(1 0 0); color: oklch(0.22 0.02 262); } .ds-opt.ds-on kbd { background: oklch(0.53 0.19 263); color: oklch(1 0 0); } .ds-way-btn { justify-self: start; display: inline-flex; align-items: center; min-height: 46px; padding: 0 22px; border-radius: 999px; background: oklch(1 0 0); color: oklch(0.53 0.19 263); font: 500 17px 'Geist', system-ui, sans-serif; text-decoration: none; } .ds-way-btn:hover { background: oklch(0.96 0.02 258); } .ds-way-btn:focus-visible { outline: 2px solid oklch(1 0 0); outline-offset: 2px; }"
+    },
+    {
+      "name": "Way Card with Insert",
+      "kind": "card",
+      "refersTo": "way-card",
+      "description": "Blue-grey 32px card; a white insert quotes the résumé line and a dark pill names the ESCO skill.",
+      "html": "<section class=\"ds-way2\"><div><h2>Let your résumé speak</h2><p>Every skill we find quotes the line that proves it.</p></div><p class=\"ds-line\">“Automated monthly reporting with <mark>Python scripts</mark> and SQL queries.”</p><span class=\"ds-skill\">Python (computer programming)</span></section>",
+      "css": ".ds-way2 { display: grid; gap: 28px; padding: 44px; border-radius: 32px; background: oklch(0.968 0.007 255); color: oklch(0.22 0.02 262); } .ds-way2 h2 { margin: 0; font: 500 48px/1.08 'EB Garamond', Garamond, serif; letter-spacing: -0.015em; max-width: 14ch; } .ds-way2 p { margin: 14px 0 0; font: 400 18px/1.5 'Geist', system-ui, sans-serif; color: oklch(0.44 0.02 262); max-width: 34ch; } .ds-way2 .ds-line { margin: 0; max-width: none; padding: 20px 22px; border-radius: 18px; background: oklch(1 0 0); color: oklch(0.22 0.02 262); box-shadow: 0 12px 28px -16px oklch(0.25 0.04 262 / 0.35); } .ds-line mark { background: oklch(0.955 0.028 262); color: oklch(0.22 0.02 262); padding: 1px 4px; border-radius: 4px; } .ds-skill { justify-self: end; display: inline-flex; padding: 12px 18px; border-radius: 999px; background: oklch(0.22 0.02 262); color: oklch(1 0 0); font: 400 16px 'Geist', system-ui, sans-serif; }"
+    },
+    {
+      "name": "Quiz Answer Option",
+      "kind": "custom",
+      "refersTo": "answer-option",
+      "description": "64px tile, 16px corners, 18px text, keycap leading.",
+      "html": "<button class=\"ds-answer\"><kbd>B</kbd>Re-add the column by hand</button>",
+      "css": ".ds-answer { display: grid; grid-template-columns: 34px 1fr; gap: 14px; align-items: center; width: 100%; min-height: 64px; padding: 12px 18px; border: 1px solid oklch(0.84 0.012 258); border-radius: 16px; background: oklch(1 0 0); color: oklch(0.22 0.02 262); font: 400 18px 'Geist', system-ui, sans-serif; text-align: left; cursor: pointer; transition: border-color 140ms, background 140ms; } .ds-answer:hover { border-color: oklch(0.22 0.02 262); } .ds-answer:focus-visible { outline: 2px solid oklch(0.53 0.19 263); outline-offset: 2px; } .ds-answer kbd { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid oklch(0.84 0.012 258); border-radius: 10px; font: 500 14px 'Geist Mono', monospace; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Open Page",
+    "overview": "A white page that says one thing at a time, in a voice large enough to read from across the desk. Each block carries one serif line, one sentence and one action. The interface trusts big type and empty white to do the work that kickers, numbered steps, badge clusters and floating fake-UI labels do on a crowded SaaS landing page. One clear blue marks everything you can act on. The JobSmart owl, recoloured into that blue, is the only character on the page.\n\nThe public site breathes. Sections sit 72 to 128px apart, cards are large and soft-cornered, and the smallest public text is 14px. The demos inside the cards show the real mechanism at reading size: an actual quiz item, a quoted résumé line turning into an ESCO skill, the 30/60/90 plan. They are not decoration. The HR console (Enterprise) uses the same palette and the same Geist UI face, but it stays dense: 15px body, Geist for headings too, and tables at 14px.\n\nConfirmed rejections come from the user and PRODUCT.md: purple gradients, glassmorphism, glowing cards, warm cream paper grounds, and eyebrow kickers above section headings.",
+    "keyCharacteristics": [
+      "White ground, one blue hue (263) for every action, selection, focus ring and link.",
+      "EB Garamond 500 for headlines and big display numbers. Geist for everything you operate.",
+      "Pill controls throughout. Containers get rounder as they get bigger, up to 32px.",
+      "Flat at rest. Cards lift slightly on hover, and the owl casts a soft shadow.",
+      "Public text never goes below 14px."
+    ],
+    "rules": [
+      { "name": "The One Blue Rule", "body": "Every interactive or selected thing is the same blue (hue 263). No second accent hue, and no purple anywhere.", "section": "colors" },
+      { "name": "The One Field Rule", "body": "The saturated blue field appears once per screen, on the lead card. Every other card is blue-grey on white.", "section": "colors" },
+      { "name": "The Fourteen Floor Rule", "body": "No text on a public screen is set below 14px. Secondary text is 14–15px, never 11–13px. Enterprise may drop to 12–13px for dense tables and rails.", "section": "typography" },
+      { "name": "The Serif Says, Sans Does Rule", "body": "EB Garamond is for h1, h2 and display numerals. Everything you click, read in a table or scan as a label is Geist. Enterprise sets headings in Geist too.", "section": "typography" },
+      { "name": "The Flat-Until-Touched Rule", "body": "Cards have no shadow at rest. Lift is a response to hover, or it marks a white insert sitting on a field.", "section": "elevation" },
+      { "name": "The Bigger-Is-Rounder Rule", "body": "The larger the surface, the softer its corner. Controls are always pills.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do give each block one serif line, one sentence and one action.",
+      "Do keep every public text at 14px or above. Supporting text is 15–18px.",
+      "Do use the one blue (hue 263) for every action, selection, focus ring and progress fill.",
+      "Do make every control a pill, and round containers more as they grow (up to 32px).",
+      "Do show the real mechanism inside cards (real quiz items, quoted résumé lines, real plan phases) at reading size.",
+      "Do carry depth with tonal fields (white on blue-grey, blue-grey on white), and add lift only on hover.",
+      "Do keep Enterprise on the same palette and Geist, at a dense 15px base."
+    ],
+    "donts": [
+      "Don't put eyebrow kickers or uppercase letter-spaced labels above headings.",
+      "Don't number sections or features decoratively (01/02/03). Numbers appear only when they are data, like \"Days 1–30\".",
+      "Don't float fake-UI labels or badge clusters around cards. Pills are controls or real data, never ornament.",
+      "Don't introduce a second accent hue, purple, gradients, glassmorphism or glowing cards.",
+      "Don't use a warm cream or paper-tinted ground. The page is pure white.",
+      "Don't use the saturated blue field for more than the one lead card on a screen.",
+      "Don't set h3/h4 or UI labels in the serif on public screens, or any heading in the serif in Enterprise.",
+      "Don't use glyph or emoji icons. Icons are drawn SVG line icons from the shared set."
+    ]
+  }
+}

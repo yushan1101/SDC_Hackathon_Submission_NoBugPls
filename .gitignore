@@ -30,3 +30,6 @@ src/models/
 
 # the raw hackathon template folder (its files are merged into this repo)
 SDC_Hackathon_Submission_Template/
+
+# design-review screenshots (local evidence, regenerated each review)
+.impeccable/review/

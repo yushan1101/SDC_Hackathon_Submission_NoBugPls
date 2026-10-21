@@ -17,7 +17,9 @@ def main() -> None:
     os.chdir(SRC)  # data/ (database, snapshots) is resolved relative to src/
     sys.path.insert(0, str(SRC))
     import uvicorn
-    uvicorn.run("server.api:app", host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", "8600")),
+    from config.settings import get_settings
+    s = get_settings()
+    uvicorn.run("server.api:app", host=s.host, port=s.port,
                 proxy_headers=True, forwarded_allow_ips="*")
 
 

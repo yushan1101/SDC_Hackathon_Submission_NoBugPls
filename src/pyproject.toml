@@ -29,6 +29,7 @@ dependencies = [
 [project.optional-dependencies]
 ai = ["langgraph>=1.2", "fastmcp>=4.1", "chromadb>=1.5", "sentence-transformers>=6.1", "torch>=2.4",
       "google-genai>=2.8"]
+train = ["xgboost>=3.0"]  # offline only (scripts/train_rising.py); the server reads exported JSON, no GPU needed
 
 [tool.setuptools.packages.find]
 where = ["."]
