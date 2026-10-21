@@ -34,4 +34,4 @@ SDC_Hackathon_Submission_Template/
 # design-review screenshots (local evidence, regenerated each review)
 .impeccable/review/
 # daily live RAG copy (rebuilt by the trend refresh)
-src/data/snapshots/live_passages.json
+src/data/live_passages.json

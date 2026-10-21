@@ -609,6 +609,11 @@ def signals_refresh(user: dict = Depends(need("hr_advisor"))):
 
 
 def _daily():  # ponytail: in-process hourly check; use cron / a job queue when running more than one worker
+    try:  # a restart the same day skips the refresh below, so re-index today's saved live passages
+        from mcp_server.retrieval import restore_live
+        log.info("live index ready: %s passages", restore_live())
+    except Exception:
+        log.exception("live index restore failed; the next daily refresh rebuilds it")
     while True:
         b = _board()
         if not b or b["day"] < datetime.now(timezone.utc).date().isoformat():

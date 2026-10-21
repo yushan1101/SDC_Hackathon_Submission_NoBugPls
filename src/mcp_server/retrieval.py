@@ -3,13 +3,13 @@
 Retrieved text is DATA: it is never used as instructions, only displayed/cited.
 """
 import json
+from pathlib import Path
 import logging
 import re
 import threading
 from functools import lru_cache
 
 from mcp_server.ingest import PASSAGES
-LIVE_FILE = PASSAGES.with_name("live_passages.json")
 
 log = logging.getLogger(__name__)
 COLLECTION = "aiversepulse_passages"
@@ -93,9 +93,24 @@ def build_index(passages: list[dict]) -> int:
     return col.count()
 
 
+def live_file() -> Path:
+    """Today's live passages, saved beside the database (the persistent volume in Docker) so a restart can re-index them."""
+    from config.settings import get_settings
+    return Path(get_settings().database_path).parent / "live_passages.json"
+
+
+def restore_live() -> int:
+    """On startup: rebuild the live collection from the saved copy when it is missing (e.g. after a container restart)."""
+    try:
+        with _LOCK:
+            return _client().get_collection(LIVE).count()
+    except Exception:
+        return index_live(live_offline()) if live_offline() else 0
+
+
 def index_live(passages: list[dict]) -> int:
     """Replace the live collection with today's passages (and keep a JSON copy for the offline fallback)."""
-    LIVE_FILE.write_text(json.dumps(passages), encoding="utf-8")
+    live_file().write_text(json.dumps(passages), encoding="utf-8")
     live_offline.cache_clear()
     with _LOCK:
         client = _client()
@@ -115,7 +130,8 @@ def index_live(passages: list[dict]) -> int:
 
 @lru_cache
 def live_offline() -> list[dict]:
-    return json.loads(LIVE_FILE.read_text(encoding="utf-8")) if LIVE_FILE.exists() else []
+    f = live_file()
+    return json.loads(f.read_text(encoding="utf-8")) if f.exists() else []
 
 
 def search_live(query: str, top_k: int = 3) -> tuple[list[dict], str]:
