@@ -7,6 +7,26 @@ import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
 const KEYS = ["A", "B", "C", "D"];
 
 // ---------------------------------------------------------------- start: choose a path
+// Scroll reveal: fade + rise, staggered, plays once per element.
+function scrollReveal(main, selector) {
+  if (!("IntersectionObserver" in window) || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const targets = [...main.querySelectorAll(selector)];
+  targets.forEach((el) => {
+    el.classList.add("reveal");
+    const i = [...el.parentElement.children].indexOf(el);
+    const base = el.parentElement.classList.contains("way") ? 160 : 0;   // card first, then its content
+    el.style.setProperty("--d", `${base + i * 90}ms`);
+  });
+  main._homeObserver = new IntersectionObserver((entries, obs) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add("is-visible");
+      obs.unobserve(entry.target);
+    });
+  }, { threshold: 0.1, rootMargin: "0px 0px -8% 0px" });
+  targets.forEach((el) => main._homeObserver.observe(el));
+}
+
 export function startView(main, { name, guest, jumpToday } = {}) {
   if (guest) return guestHome(main, { jumpToday });
   // One decision per card. The old hero buttons, repeated giant cards and demo
@@ -25,6 +45,7 @@ export function startView(main, { name, guest, jumpToday } = {}) {
       option("#/quiz", "quiz", "Explore my strengths", "Answer 13 everyday work questions. About 2 minutes.", "Quick Match", true),
       option("#/report", "target", "I have a target job", "Compare your skills with the requirements for a job you choose.", "Build a plan"),
       option("#/resume", "file", "Use my résumé", "Upload PDF, Word or text to find skills supported by evidence.", "Upload résumé"))));  // today's signals are one tap away in the header (Today)
+  scrollReveal(main, ".intro-hero > *, .entry-card");
 }
 
 // The full landing page for visitors who are not signed in: the three ways in, each with a live-looking demo.
@@ -64,6 +85,7 @@ function guestHome(main, { jumpToday } = {}) {
       today)));
   api("/api/signals/today").then((b) => today.replaceWith(boardView(b))).catch(() => today.remove())
     .finally(() => jumpToday && document.getElementById("home-today")?.scrollIntoView({ block: "start" }));  // after the board is in, so nothing scrolls over it
+  if (!jumpToday) scrollReveal(main, ".home-hero > *, .way, .way > *, .home-today");  // skipped when jumping to Today so the scroll position stays exact
 }
 
 // ---------------------------------------------------------------- quiz game

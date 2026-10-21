@@ -1713,3 +1713,21 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
   .act, .block, .brief-card, .phase { break-inside: avoid; box-shadow: none !important; }
   a { color: inherit; }
 }
+
+/* ---------- scroll reveal (home page) ---------- */
+.reveal {
+  opacity: 0; translate: 0 48px; scale: .97;
+  transition:
+    opacity 900ms cubic-bezier(.22, 1, .36, 1) var(--d, 0ms),
+    translate 900ms cubic-bezier(.22, 1, .36, 1) var(--d, 0ms),
+    scale 900ms cubic-bezier(.22, 1, .36, 1) var(--d, 0ms),
+    transform var(--t-slow, 400ms) var(--ease-out, ease),
+    box-shadow var(--t-slow, 400ms) var(--ease-out, ease),
+    border-color var(--t-fast, 150ms) ease,
+    background var(--t-fast, 150ms) ease;
+}
+.reveal.is-visible { opacity: 1; translate: 0 0; scale: 1; }
+.way.reveal { translate: 0 72px; }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; translate: none; scale: none; transition-duration: 0ms !important; }
+}
