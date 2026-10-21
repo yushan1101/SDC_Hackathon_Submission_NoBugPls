@@ -91,6 +91,22 @@ def test_public_stream_and_approval(client):
     assert client.post("/api/analyze", json=body, headers={"X-AP": "1"}).status_code == 403
 
 
+def test_conversation_is_saved_and_can_be_continued(client):
+    login(client, "ana")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6,
+            "skills": [{"name": "communication", "level": 3}]}
+    first = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))[-1]["plan_id"]
+    saved = client.get(f"/api/plans/{first}").json()["report"]
+    assert saved["request"]["skills"] == body["skills"] and saved["request"]["weekly_learning_hours"] == 6
+    assert [t["q"] for t in saved["thread"]] == [None] and saved["thread"][0]["a"] == saved["narrative"]
+    # a follow-up carries the whole conversation forward, wherever its answer is saved
+    ev = events(client.post("/api/analyze", json={**body, "query": "Which skill should I start with?", "previous_plan_id": first},
+                            headers={"X-AP": "1"}))
+    later = client.get(f"/api/plans/{ev[-1]['plan_id']}").json()["report"]["thread"]
+    assert [t["q"] for t in later] == [None, "Which skill should I start with?"] and later[1]["a"]
+    assert later[0]["title"]  # each turn names its job, so a reopened chat labels turns correctly
+
+
 def test_team_stream_ticks_and_validation(client):
     login(client, "hr1")
     bad = client.post("/api/team", json={"csv": "employee_id,target_role\nx@y.com,Data Analyst", "scenario": "assistive"},

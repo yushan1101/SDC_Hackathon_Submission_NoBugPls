@@ -46,7 +46,7 @@ const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build
 
 function cleanDestination(next) {
   return ["start", "today", "quiz", "resume", "build", "report", "plans"].includes(next) ||
-    (next.startsWith("plans/") && /^[A-Za-z0-9_-]+$/.test(next.slice(6))) ? next : "start";
+    (/^(plans|report)\/[A-Za-z0-9_-]+$/.test(next)) ? next : "start";
 }
 async function signIn(next = "start") {
   // Only internal hash routes can be used as post-login destinations.
@@ -112,14 +112,14 @@ function shell() {
     h("header", { class: "pub-top" },
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
       // guests get one page (the home, with today's board on it) and one action: sign in
-      guest ? null : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/today", "Today", "pulse"),
-        nav("#/report", "Report", "report"), nav("#/plans", "My plans", "plans")),
+      guest ? null : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/today", "AI trends", "pulse"),
+        nav("#/report", "Chat", "report"), nav("#/plans", "My plans", "plans")),
       guest ? null : S.status.el,
       guest
         ? h("div", { class: "top-actions" }, h("a", { class: "btn sm primary top-signin", href: "#/signin" }, icon("user"), "Sign in"))
         : h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out")),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
-    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/today", "Today", "pulse"),
+    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/today", "AI trends", "pulse"), tab("#/report", "Chat", "report"),
       tab("#/plans", "Plans", "plans")),
     S.sheet].filter(Boolean));  // replaceChildren would print a null as the text "null"
 }
@@ -139,7 +139,7 @@ function route() {
   // Unknown routes and malformed nested routes return home instead of showing
   // the wrong page. Plans are the only normal route with a detail identifier.
   if (!allowed.has(requested) || (rest.length && requested !== "signin") ||
-      (id && requested !== "signin" && requested !== "plans")) {
+      (id && !["signin", "plans", "report"].includes(requested))) {
     location.replace("#/start");
     return;
   }
@@ -167,7 +167,7 @@ function route() {
   if (main.classList.contains("home-page")) homeScrollTop = window.scrollY;
   main._homeObserver?.disconnect();
   main.classList.toggle("home-page", page === "start");
-  if (page === "report") reportView(main);
+  if (page === "report") reportView(main, id);
   else if (page === "plans" && id) planDetail(main, id);
   else if (page === "plans") plansView(main);
   else if (page === "build") buildView(main);
@@ -309,7 +309,7 @@ function start(query) {
 }
 
 // ---------------------------------------------------------------- report (chat)
-function reportView(main) {
+function reportView(main, openId) {
   if (!S.reportEl) {
     S.threadEl = h("div", { class: "thread", "aria-live": "off" });
     S.input = h("input", { class: "input", placeholder: "Ask for a change, e.g. “I only have 3 hours a week”", maxlength: 500, "aria-label": "Message" });
@@ -320,13 +320,14 @@ function reportView(main) {
         quick("Compare with agentic AI", () => rerun({ scenario: S.profile.scenario === "agentic" ? "assistive" : "agentic" })),
         quick("I have more time: 10 h/week", () => rerun({ weekly_learning_hours: 10 })),
         quick("Edit my skills", () => { location.hash = "#/build"; }),
-        quick("Try a different job", () => { location.hash = "#/start"; })),
+        quick("Try a different job", askForJob)),
       h("div", { class: "row" }, S.input, S.sendBtn));
     S.reportEl = h("div", { class: "report" },
       h("div", { class: "thread-col", style: { display: "grid", gap: "24px", "min-width": 0 } },
         h("div", { style: { display: "flex", "justify-content": "space-between", "align-items": "end", gap: "12px", "flex-wrap": "wrap" } },
-          h("h1", { class: "page-title" }, "Your briefing"),
+          h("h1", { class: "page-title" }, "Chat"),
           h("div", { class: "row-actions" },
+            h("button", { class: "btn sm", type: "button", onclick: newChat }, icon("spark"), "New chat"),
             h("button", { class: "btn sm", type: "button", popovertarget: "history-menu" }, icon("history"), "History"),
             h("button", { class: "btn sm only-narrow", type: "button", onclick: () => S.sheet.showModal() }, icon("sources"), "Sources"))),
         S.history = h("div", { id: "history-menu", popover: "auto", class: "core-menu history-menu", "aria-label": "Past briefings" }),
@@ -336,6 +337,7 @@ function reportView(main) {
   main.replaceChildren(S.reportEl);
   loadHistory();
   if (S.pending) { const q = S.pending; S.pending = null; runTurn(q); }
+  else if (openId && openId !== S.openId) openConversation(openId);
   else if (!S.thread.length) {
     S.threadEl.replaceChildren(briefingStarter());
     S.composer.hidden = true;  // nothing to change until a briefing exists
@@ -348,7 +350,7 @@ async function loadHistory() {
   let plans = [];
   try { plans = (await api("/api/plans")).filter((p) => p.audience === "individual").slice(0, 12); } catch { /* history is optional */ }
   S.history.replaceChildren(h("p", { class: "history-head" }, icon("history"), "Past briefings"),
-    ...(plans.length ? plans.map((p) => h("a", { class: "core-item", href: `#/plans/${p.plan_id}`, onclick: () => S.history.hidePopover?.() },
+    ...(plans.length ? plans.map((p) => h("a", { class: "core-item", href: `#/report/${p.plan_id}`, onclick: () => S.history.hidePopover?.() },
       h("span", { class: "core-ic" }, icon("report")),
       h("span", { class: "core-t" }, h("b", {}, p.target_role || "Plan"),
         h("span", {}, `${p.scenario === "agentic" ? "Agentic" : "Assistive"} AI · ${fmtTime(p.created_utc)} · v${p.version}`)),
@@ -356,40 +358,103 @@ async function loadHistory() {
       : [h("p", { class: "muted", style: { padding: "8px 12px" } }, "No briefings yet.")]));  // spread: replaceChildren does not flatten
 }
 
-/** Empty briefing: start one right here. A saved target job runs in one click; otherwise search any job. */
-function briefingStarter() {
-  const p = S.profile;
-  const ready = p.target_role && p.skills.length;
+/** Job search used inside the chat (empty chat, and "Try a different job"): pick any ESCO occupation. */
+function jobPicker(onPick) {
   const search = h("input", { class: "input", type: "search", placeholder: "Search any job, e.g. nurse, electrician, accountant",
-    "aria-label": "Job to brief on", role: "combobox", "aria-expanded": "false", "aria-controls": "brief-results", autocomplete: "off" });
-  const results = h("ul", { class: "occ-results", id: "brief-results", role: "listbox", hidden: true });
+    "aria-label": "Job to plan for", role: "combobox", "aria-expanded": "false", autocomplete: "off" });
+  const results = h("ul", { class: "occ-results", role: "listbox", hidden: true });
   let timer;
   search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(find, 200); });
   async function find() {
     const q = search.value.trim();
     if (q.length < 2) { results.hidden = true; return; }
     const { results: r } = await api(`/api/occupations?q=${encodeURIComponent(q)}`);
-    results.replaceChildren(...(r.length ? r.map((o) => h("li", { role: "option", onclick: () => choose(o) },
+    results.replaceChildren(...(r.length ? r.map((o) => h("li", { role: "option", onclick: () => { results.hidden = true; onPick(o); } },
       jobIcon(o.soc, { size: 36, labelled: true }), h("b", { title: `ESCO ${o.soc}` }, o.title)))
-      : [h("li", { class: "muted", role: "option", "aria-disabled": "true" }, "No ESCO occupation matches. Try a broader word.")]));
+      : [h("li", { class: "muted", role: "option", "aria-disabled": "true" }, "No job matches. Try a broader word.")]));
     results.hidden = false; search.setAttribute("aria-expanded", "true");
   }
-  async function choose(o) {
-    results.hidden = true;
-    const occ = await api(`/api/occupations/${o.soc}`);
-    const mine = new Map(p.skills.map((s) => [s.name.toLowerCase(), s.level]));
-    // same start as Pick a job: this job's skills, at your saved level or 0 (never used) until you rate them
-    Object.assign(p, { target_role: occ.soc, target_title: occ.title,
-      skills: occ.skills.slice(0, 8).map((s) => ({ name: s.name, level: mine.get(s.name.toLowerCase()) ?? 0 })) });
-    saveProfile();
-    start();
-  }
+  return h("div", { class: "occ-search brief-search" }, search, results);
+}
+
+/** Target a job: its top skills at your saved level, or 0 (never used) until you rate them; then the agents run. */
+async function pickJob(o) {
+  const p = S.profile;
+  const occ = await api(`/api/occupations/${o.soc}`);
+  const mine = new Map(p.skills.map((s) => [s.name.toLowerCase(), s.level]));
+  Object.assign(p, { target_role: occ.soc, target_title: occ.title,
+    skills: occ.skills.slice(0, 8).map((s) => ({ name: s.name, level: mine.get(s.name.toLowerCase()) ?? 0 })) });
+  saveProfile();
+  start();
+}
+
+/** An owl message in the thread with a job search: choosing a job continues this same conversation. */
+function askForJob() {
+  const card = h("article", { class: "turn-owl" }, new Owl({ size: 44, state: "idle" }).el,
+    h("div", { class: "body" }, h("div", { class: "who" }, "JobSmart"), h("p", {}, "Which job should I look at?"),
+      jobPicker((o) => { card.remove(); pickJob(o); })));
+  S.threadEl.append(card);
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  card.querySelector("input").focus({ preventScroll: true });
+}
+
+/** Empty chat: the owl asks which job. A saved target job runs in one click. */
+function briefingStarter() {
+  const p = S.profile;
+  const ready = p.target_role && p.skills.length;
   return h("div", { class: "brief-start" }, new Owl({ size: 96, state: "idle" }).el,
-    h("h2", {}, "No briefing yet"),
+    h("h2", {}, "Which job are you aiming for?"),
+    h("p", { class: "muted" }, "Pick a job and the AI agents compare your skills with it, then write a 90-day plan here."),
     ready ? h("button", { type: "button", class: "btn primary brief-go", onclick: () => start() },
-      jobIcon(p.target_role, { size: 28 }), `Write my briefing for ${p.target_title || "my target job"}`) : null,
-    h("p", { class: "muted" }, ready ? "Or brief on a different job:" : "Choose a job and the AI agents write your briefing here."),
-    h("div", { class: "occ-search brief-search" }, search, results));
+      jobIcon(p.target_role, { size: 28 }), `Continue with ${p.target_title || "my target job"}`) : null,
+    jobPicker(pickJob));
+}
+
+function newChat() {
+  if (S.busy) S.busy.abort();
+  S.thread = []; S.lastPlanId = null; S.openId = null;
+  S.threadEl.replaceChildren(briefingStarter());
+  S.composer.hidden = true;
+  if (location.hash !== "#/report") history.replaceState(null, "", "#/report");
+}
+
+/** Reopen a past conversation in the chat, every turn, with the latest plan; typing continues it. */
+async function openConversation(id) {
+  S.openId = id;
+  S.threadEl.replaceChildren(h("p", { class: "muted" }, "Opening your conversation…"));
+  let d;
+  try { d = await api(`/api/plans/${id}`); } catch (e) { S.threadEl.replaceChildren(h("div", { class: "issue error" }, e.message)); return; }
+  const r = d.report || {};
+  const title = r.occupation?.title || d.plan.target_role;
+  // older plans saved no conversation: show their briefing as one turn
+  const turns = r.thread?.length ? r.thread : [{ q: null, a: r.narrative || "" }];
+  if (r.request) {
+    const { query, ...req } = r.request;
+    Object.assign(S.profile, req, { target_title: title });
+    saveProfile();
+  }
+  S.thread = turns.map(() => ({}));
+  S.lastPlanId = id;
+  setSources(r.evidence || []);
+  S.threadEl.replaceChildren(...turns.flatMap((t, i) => {
+    const body = h("div", { class: "body" }, t.a ? staticText(t.a, highlight) : null);
+    if (i === turns.length - 1) {  // the latest turn carries the full analysis and the plan
+      let insights = null;
+      const add = (el, small) => { if (!el) return; if (small) (insights ??= body.appendChild(h("div", { class: "insights" }))).append(el); else body.append(el); };
+      add(r.gaps?.length ? gapsBlock(r.gaps) : null);
+      add(r.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null);
+      add(r.outlook ? outlookBlock(r.outlook) : null, true);
+      add(r.signals ? signalsBlock(r.signals) : null, true);
+      add(r.sdgs?.length ? sdgBlock(r.sdgs) : null, true);
+      add(r.issues?.some((x) => x.severity === "error") ? issuesBlock(r.issues.filter((x) => x.severity === "error")) : null);
+      body.append(planHolder(id, d.plan, r.request?.weekly_learning_hours ?? S.profile.weekly_learning_hours, d.status));
+    }
+    return [h("div", { class: "turn-user" }, h("p", { class: "q" }, t.q || `Plan for ${t.title || title}`)),
+      h("article", { class: "turn-owl" }, new Owl({ size: 44, state: "idle" }).el,
+        h("div", { class: "body" }, h("div", { class: "who" }, "JobSmart", t.at ? h("span", { class: "muted" }, fmtTime(t.at)) : null), body))];
+  }));
+  S.composer.hidden = false;
+  S.threadEl.lastElementChild?.scrollIntoView({ block: "start" });
 }
 
 function rerun(change) {

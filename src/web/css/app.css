@@ -1010,8 +1010,7 @@ body:has(.home) .pub-top .owl-status { display: none; }
 .tab-menu svg { width: 22px; height: 22px; }
 .tab-menu[aria-current="page"] { color: var(--accent); }
 @media (max-width: 899px) {
-  .pub-nav a span, .nav-menu span, .nav-menu svg:last-child { display: none; }
-  .pub-nav a, .nav-menu { padding: 0 12px; }
+  .pub-nav a, .nav-menu { padding: 0 10px; }
 }
 @media (max-width: 699px) {
   .pub-top { top: 8px; margin-top: 8px; width: calc(100% - 16px); height: 56px; padding: 0 8px 0 18px; }
@@ -1457,3 +1456,17 @@ details.more summary::-webkit-details-marker { display: none; }
 
 /* guests have no nav: keep Sign in on the right */
 .pub-top .top-actions { margin-left: auto; }
+
+/* top bar: icon + word, so first-time users can read where each goes */
+.pub-nav a { display: inline-flex; align-items: center; gap: 6px; }
+
+/* HR console: no text below 14px. Body copy 16px, secondary labels 14-15px (readable at arm's length). */
+[data-product="hr"] body { font-size: 16px; }
+[data-product="hr"] :is(.btn.sm, .field > span, .hr-top .seg button, .hr-top .who, .bars .bar-row, .queue-item .l2, .banner,
+  .block .note, .history, .src, .phase h4 span, .crit-echo, .skill-chips li, .cv-skills q, .check-list q, .cand-body q) { font-size: 15px; }
+[data-product="hr"] :is(table.data, table.data th, .stat span, .queue header, .aside header, .act .top b, .sdg, .agent-run,
+  .owl-status .say, .rail a .tip) { font-size: 14px; }
+@media (max-width: 1023px) { .pub-top .owl-status { display: none; } .pub-top .signout { margin-left: auto; } }
+.composer, .composer .quick { min-width: 0; }  /* the chip row scrolls inside the composer instead of widening the page */
+@media (max-width: 819px) { .pub-top { gap: 6px; } .pub-nav { gap: 0; } .pub-nav a { padding: 6px 8px; font-size: 15px; } }
+[data-product="hr"] :is(.tag, span.muted) { font-size: max(14px, 1em); }  /* never below 14px, never smaller than the text around it */
