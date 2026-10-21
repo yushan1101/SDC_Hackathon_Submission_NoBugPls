@@ -9,3 +9,5 @@ data/*.sqlite3
 data/*.local.txt
 checkpoints
 .claude
+data/live_passages.json
+artifacts

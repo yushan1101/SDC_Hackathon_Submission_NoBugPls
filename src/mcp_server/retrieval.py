@@ -17,6 +17,7 @@ LIVE = "aiversepulse_live"
 LIVE_MIN_SCORE = 0.5  # cosine; below this a posting/story is not about the occupation  # today's job postings + HN stories, rebuilt on each daily trend refresh
 _LOCK = threading.RLock()  # model + Chroma client are shared across agent threads; not safe to init/encode concurrently
 READY = threading.Event()  # set once MiniLM is loaded; until then queries use the offline snapshot instead of blocking
+BUILDING = threading.Event()  # set while ensure_index() fills the collection, so nobody searches a half-built index
 META_KEYS = ("source_id", "title", "publisher", "publication_date", "access_date", "url", "category",
              "jurisdiction", "license", "role_id", "skill_id")
 
@@ -81,6 +82,21 @@ def _open(create):
             pass
         return client.create_collection(COLLECTION, metadata={"hnsw:space": "cosine"})
     return client.get_collection(COLLECTION)
+
+
+def ensure_index() -> int:
+    """Build the passage index once if it is missing (fresh volume / first container start); else reuse it."""
+    try:
+        n = _collection().count()
+        if n:
+            return n
+    except Exception:
+        pass
+    BUILDING.set()
+    try:
+        return build_index(offline_passages())
+    finally:
+        BUILDING.clear()
 
 
 def build_index(passages: list[dict]) -> int:
@@ -172,6 +188,8 @@ def search(query: str, where: dict | None = None, top_k: int = 5) -> tuple[list[
         if not READY.is_set():
             warm_in_background()
             raise RuntimeError("encoder still loading")
+        if BUILDING.is_set():
+            raise RuntimeError("index still building")
         col = _collection()
         flt = None
         if where:

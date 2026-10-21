@@ -982,8 +982,9 @@ def _warm():
             role_requirements(soc)
         from agents.matcher import _occ_index, occupation_vectors
         occupation_vectors(), _occ_index()
-        from mcp_server.retrieval import warm
+        from mcp_server.retrieval import ensure_index, warm
         warm()
+        log.info("vector index ready: %s passages", ensure_index())  # one-time build on a fresh volume
     except Exception:
         log.exception("warm-up failed; vector search stays on the offline snapshot")
 
