@@ -69,8 +69,10 @@ async function signIn(next = "start") {
       try {
         const me = await api("/api/login", { method: "POST", body: { username: user.value, password: pass.value } });
         if (me.role !== "employee") { location.replace("enterprise.html"); return; }
-        location.hash = `#/${next}`;
-        location.reload();
+        // switch to the signed-in app in place: a hash change + reload could show the guest page again
+        S.me = me; S.meta = await api("/api/meta");
+        shell();
+        if (location.hash === `#/${next}`) route(); else location.hash = `#/${next}`;
       } catch (ex) { err.textContent = ex.message; owl.set("confused"); btn.disabled = false; pass.select(); }
     } },
       h("a", { class: "signin-back", href: "#/start" }, icon("back"), "Back to home"),
@@ -121,7 +123,7 @@ function shell() {
   });
   const startBtn = (cls) => h("button", { type: "button", class: cls, popovertarget: "core-menu", "data-route": "#/discover", "aria-haspopup": "true" },
     icon("spark"), h("span", {}, "Start"), cls === "nav-menu" ? icon("chevron") : null);
-  app.replaceChildren(
+  app.replaceChildren(...[
     h("button", { class: "sr-only skip-link", type: "button", onclick: () => $("#main")?.focus() }, "Skip to content"),
     h("header", { class: "pub-top" },
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
@@ -135,7 +137,7 @@ function shell() {
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
     guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), startBtn("tab-menu"), tab("#/today", "Today", "pulse"),
       tab("#/plans", "Plans", "plans")),
-    menu, S.sheet);
+    menu, S.sheet].filter(Boolean));  // replaceChildren would print a null as the text "null"
 }
 
 async function signOut() {
