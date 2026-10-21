@@ -180,6 +180,8 @@ export function planBlock({ planId, plan, version, status, weeklyHours, onChange
           return h("span", { class: "sdg-n", style: { "--sdg": SDG_COLORS[n] || "#888" }, title: `UN SDG ${n}`, "aria-label": `UN SDG ${n}` }, n); })) : null), DROP, { delay: i * 60 })) : h("p", { class: "note" }, "No activities in this phase."));
   });
   const planEl = h("div", { class: "plan", "data-tab": "0" }, phases);
+  const sdgGuide = h("p", { class: "note sdg-guide" },
+    "Goal tags on each activity show its connection: SDG 4 for learning, SDG 8 for decent work, and (when mapped) one additional goal matched to that skill. These are evidence-linked suggestions, not official UN classifications.");
   const tabs = h("div", { class: "seg phase-tabs", role: "group", "aria-label": "Plan phase" },
     PHASES.map((p, i) => h("button", { type: "button", "aria-pressed": String(i === 0),
       onclick: (e) => { planEl.dataset.tab = String(i); tabs.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget))); } }, p)));
@@ -222,7 +224,7 @@ export function planBlock({ planId, plan, version, status, weeklyHours, onChange
     plan.deferred_skills?.length ? h("details", { class: "note deferred" },
       h("summary", {}, `${plan.deferred_skills.length} more skills don't fit in ${weeklyHours ? weeklyHours + " h/week" : "the weekly hours"}; the plan covers the highest-priority gaps first.`),
       h("p", {}, plan.deferred_skills.join(", "))) : null,
-    tabs, planEl, errBox, bar);
+    tabs, sdgGuide, planEl, errBox, bar);
 }
 
 export function historyBlock(hist) {
@@ -287,7 +289,15 @@ export function matchesBlock(matches, { onPlan, title = "Roles you could grow in
         h("div", { class: "job-line", title: `ESCO ${m.soc}` }, jobIcon(m.soc, { size: 44, labelled: true }), h("b", {}, m.title), momentum(m)),
         h("span", { class: "gaps" }, m.top_gaps?.length ? [icon("target"), `To learn: ${m.top_gaps.slice(0, 2).join(", ")}`,
           m.top_gaps.length > 2 ? h("span", { class: "more", title: m.top_gaps.slice(2).join(", ") }, ` +${m.top_gaps.length - 2}`) : null] : [icon("check"), "No skill gaps"]),
-        m.sdgs?.length ? h("span", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))) : null),
+        m.sdgs?.length ? [
+          h("span", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))),
+          h("details", { class: "sdg-match-detail" }, h("summary", {}, "How this role connects to the goals"),
+            h("ul", {}, m.sdgs.map((g) => h("li", {},
+              h("b", {}, `SDG ${g.goal} · ${g.short}`),
+              h("span", {}, g.target && g.target_text
+                ? `ESCO role description matched to UN target ${g.target}: ${g.target_text}`
+                : `ESCO role description semantically matched to ${g.short}.`)))))
+        ] : null),
       h("div", { class: "fit" },
         h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
         h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 }))),
@@ -303,7 +313,13 @@ export function sdgBlock(sdgs) {
       note: "Matched by meaning between the ESCO occupation description and the 169 official UN SDG targets (MiniLM similarity). An evidence-linked suggestion, not an official UN classification. Every plan activity also serves SDG 4 and SDG 8." },
     h("div", { class: "sdg-nums" }, sdgs.map((g) => h("a", { class: "sdg-n big", href: `https://sdgs.un.org/goals/goal${g.goal}`, target: "_blank", rel: "noopener noreferrer",
       style: { "--sdg": g.color }, title: `SDG ${g.goal}: ${g.short}. Target ${g.target}: ${g.target_text}`, "aria-label": `UN SDG ${g.goal}: ${g.short}` }, String(g.goal)))),
-    h("p", { class: "bc-line" }, sdgs.map((g) => g.short).slice(0, 3).join(" · ")));
+    h("p", { class: "bc-line" }, "How this career connects to the goals"),
+    h("ul", { class: "sdg-connections" }, sdgs.map((g) => h("li", {},
+      h("b", {}, `SDG ${g.goal} · ${g.short}`),
+      h("span", {}, g.target && g.target_text
+        ? `Role description matched to UN target ${g.target}: ${g.target_text}`
+        : `The role description is semantically matched to ${g.short}.`)))),
+    h("p", { class: "note" }, "Role matches come from comparing the ESCO occupation description with official UN targets. Each learning activity is also tagged to show how building that skill connects to the goals."));
 }
 
 /** Report section: what today's AI-trend board says about this occupation. */

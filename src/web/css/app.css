@@ -540,6 +540,15 @@ dialog.drawer[open] { animation: drawer-in var(--t-slow) var(--ease-out); }
 .sdg-list li { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr); gap: 16px; align-items: start; padding: 12px 0; border-top: 1px solid var(--rule); }
 .sdg-list li span { max-width: 70ch; }
 .sdg-list .sdg { justify-self: start; }
+.sdg-connections { display: grid; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
+.sdg-connections li { display: grid; gap: 3px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface-2, var(--sunken)); border-radius: 0 var(--radius) var(--radius) 0; }
+.sdg-connections li span { color: var(--ink-2); font-size: 13px; line-height: 1.5; }
+.sdg-match-detail { margin-top: 2px; font-size: 12px; }
+.sdg-match-detail summary { width: fit-content; color: var(--accent); cursor: pointer; }
+.sdg-match-detail ul { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.sdg-match-detail li { display: grid; gap: 2px; color: var(--ink-2); line-height: 1.45; }
+.sdg-match-detail li b { color: var(--ink); }
+.sdg-guide { margin: 12px 0; }
 .topic-list li { padding: 8px 0; border-top: 1px solid var(--rule); }
 .role-list { counter-reset: r; border-top: 1px solid var(--ink); }
 .role-list li { counter-increment: r; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
