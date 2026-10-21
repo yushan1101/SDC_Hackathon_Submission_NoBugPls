@@ -177,7 +177,7 @@ function route() {
   else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me, jumpToday: S.jumpToday });
   S.jumpToday = false;
   reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });
-  scrollTo({ top: page === "start" ? homeScrollTop : 0, behavior: "instant" });
+  if (page !== "report") scrollTo({ top: page === "start" ? homeScrollTop : 0, behavior: "instant" });  // the chat manages its own scroll
 }
 
 // ---------------------------------------------------------------- build
@@ -317,6 +317,11 @@ function reportView(main, openId) {
     S.composer = h("form", { class: "composer", onsubmit: (e) => { e.preventDefault(); composerSend(); } },
       S.quick = h("div", { class: "quick", "aria-label": "Suggested next messages" }),
       h("div", { class: "row" }, S.input, S.sendBtn));
+    // follow the answer as it streams, unless the reader scrolled up to read something
+    S.stick = true;
+    addEventListener("scroll", () => { S.stick = innerHeight + scrollY >= document.documentElement.scrollHeight - 160; }, { passive: true });
+    new MutationObserver(() => { if (S.busy && S.stick && S.reportEl.isConnected) scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }); })
+      .observe(S.threadEl, { childList: true, subtree: true, characterData: true });
     S.reportEl = h("div", { class: "report" },
       h("div", { class: "thread-col", style: { display: "grid", gap: "24px", "min-width": 0 } },
         h("div", { style: { display: "flex", "justify-content": "space-between", "align-items": "end", gap: "12px", "flex-wrap": "wrap" } },
@@ -538,7 +543,7 @@ async function runTurn(params) {
     h("div", { class: "body" }, h("div", { class: "who" }, "JobSmart", say), body));
   S.threadEl.querySelector(".empty, .brief-start")?.remove();
   S.threadEl.append(reveal(userTurn, RISE), reveal(turn, RISE, { delay: 120 }));
-  turn.scrollIntoView({ behavior: "smooth", block: "start" });
+  S.stick = true;  // a new message: follow it
 
   S.ctx = {};  // what this answer finds (gaps, outlook) shapes the suggested next messages
   S.quick.replaceChildren();
