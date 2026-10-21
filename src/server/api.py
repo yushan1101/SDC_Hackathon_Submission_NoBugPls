@@ -313,6 +313,8 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
         if mine:
             history = _saved_thread(body.previous_plan_id)
 
+    asked = None if body.query == AnalyzeIn.model_fields["query"].default else body.query  # a typed message, not "make my plan"
+
     def gen():
         t0 = time.perf_counter()
         yield sse({"t": "owl", "state": "thinking", "say": "Reading your request"})
@@ -320,7 +322,8 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
         try:
             # in a conversation (previous plan given) a vague follow-up refers to the plan; if the server lost that
             # run (restart), the briefing is rebuilt with the question instead of the message being rejected
-            for kind, node, upd in (graph.stream_followup(prev, req) if prev else graph.stream(req, conversation=bool(body.previous_plan_id))):
+            for kind, node, upd in (graph.stream_followup(prev, req) if prev else
+                                   graph.stream(req, conversation=bool(body.previous_plan_id), question=asked if body.previous_plan_id else None)):
                 if kind == "plan":
                     ran = set(upd["run"])
                     yield sse({"t": "plan", **upd, "label": f"Changed: {', '.join(upd['changed'])} · running " +
@@ -342,7 +345,7 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
             return
         out = serialise(final)
         # the conversation so far plus this turn; q is None for the default "make my plan" request
-        thread = history + [{"q": None if body.query == AnalyzeIn.model_fields["query"].default else body.query,
+        thread = history + [{"q": asked,
                              "a": out["narrative"] or out["answer"] or "", "target_role": req.target_role,
                              "title": (out["occupation"] or {}).get("title"),
                              "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}]

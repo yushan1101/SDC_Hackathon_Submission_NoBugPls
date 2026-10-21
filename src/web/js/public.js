@@ -314,13 +314,8 @@ function reportView(main, openId) {
     S.threadEl = h("div", { class: "thread", "aria-live": "off" });
     S.input = h("input", { class: "input", placeholder: "Ask for a change, e.g. “I only have 3 hours a week”", maxlength: 500, "aria-label": "Message" });
     S.sendBtn = h("button", { class: "btn primary", type: "submit", "aria-label": "Send" }, icon("send"));
-    const quick = (label, fn) => h("button", { class: "chip", type: "button", onclick: fn }, label);
     S.composer = h("form", { class: "composer", onsubmit: (e) => { e.preventDefault(); composerSend(); } },
-      h("div", { class: "quick" },
-        quick("Compare with agentic AI", () => rerun({ scenario: S.profile.scenario === "agentic" ? "assistive" : "agentic" })),
-        quick("I have more time: 10 h/week", () => rerun({ weekly_learning_hours: 10 })),
-        quick("Edit my skills", () => { location.hash = "#/build"; }),
-        quick("Try a different job", askForJob)),
+      S.quick = h("div", { class: "quick", "aria-label": "Suggested next messages" }),
       h("div", { class: "row" }, S.input, S.sendBtn));
     S.reportEl = h("div", { class: "report" },
       h("div", { class: "thread-col", style: { display: "grid", gap: "24px", "min-width": 0 } },
@@ -433,7 +428,7 @@ async function openConversation(id) {
     Object.assign(S.profile, req, { target_title: title });
     saveProfile();
   }
-  S.thread = turns.map(() => ({}));
+  S.thread = turns.map((t) => ({ query: t.q }));
   S.lastPlanId = id;
   setSources(r.evidence || []);
   S.threadEl.replaceChildren(...turns.flatMap((t, i) => {
@@ -453,13 +448,36 @@ async function openConversation(id) {
       h("article", { class: "turn-owl" }, new Owl({ size: 44, state: "idle" }).el,
         h("div", { class: "body" }, h("div", { class: "who" }, "JobSmart", t.at ? h("span", { class: "muted" }, fmtTime(t.at)) : null), body))];
   }));
+  S.ctx = { gaps: r.gaps, outlook: r.outlook };
+  drawSuggestions();
   S.composer.hidden = false;
   S.threadEl.lastElementChild?.scrollIntoView({ block: "start" });
 }
 
-function rerun(change) {
-  Object.assign(S.profile, change); saveProfile();
-  start();
+/** What this person would most likely ask next, from their latest answer: their biggest gap, a skill in rising
+ * demand, their real weekly hours, the other AI scenario. Each is sent as a normal message, so it stays in the chat. */
+function suggestions({ gaps = [], outlook } = {}) {
+  const p = S.profile;
+  const open = gaps.filter((g) => g.required_level > g.current_level)
+    .sort((a, b) => (b.importance ?? 1) * (b.required_level - b.current_level) - (a.importance ?? 1) * (a.required_level - a.current_level));
+  const asked = new Set(S.thread.map((t) => t.query).filter(Boolean));  // never offer what was already asked
+  const top = open.find((g) => !asked.has(`How do I start with ${g.skill_id}?`));
+  const rising = (outlook?.items || []).concat(open.filter((g) => g.outlook === "rising"))
+    .find((x) => (x.direction ?? "rising") === "rising" && x.skill_id !== top?.skill_id && !asked.has(`Why is ${x.skill_id} rising?`));
+  const hours = p.weekly_learning_hours;
+  const fewer = Math.max(2, Math.round(hours / 2));
+  return [
+    top && `How do I start with ${top.skill_id}?`,
+    rising && `Why is ${rising.skill_id} rising?`,
+    hours >= 6 ? `I only have ${fewer} hours a week` : `I can give ${hours + 4} hours a week`,
+    p.scenario === "agentic" ? "Compare with assistive AI" : "What changes with agentic AI?",
+  ].filter((t) => t && !asked.has(t)).slice(0, 4);
+}
+
+function drawSuggestions() {
+  const chip = (text, onclick) => h("button", { class: "chip", type: "button", onclick }, text);
+  S.quick.replaceChildren(...suggestions(S.ctx).map((t) => chip(t, () => { S.input.value = t; composerSend(); })),
+    chip("Try a different job", askForJob));
 }
 
 function composerSend() {
@@ -522,6 +540,8 @@ async function runTurn(params) {
   S.threadEl.append(reveal(userTurn, RISE), reveal(turn, RISE, { delay: 120 }));
   turn.scrollIntoView({ behavior: "smooth", block: "start" });
 
+  S.ctx = {};  // what this answer finds (gaps, outlook) shapes the suggested next messages
+  S.quick.replaceChildren();
   const st = new StreamText(prose, highlight);
   const ctrl = new AbortController();
   setBusy(ctrl);
@@ -549,6 +569,7 @@ async function runTurn(params) {
       } else if (ev.t === "text") st.push(ev.delta);
       else if (ev.t === "section") {
         const d = ev.data;
+        if (ev.kind === "gaps" || ev.kind === "outlook") S.ctx[ev.kind] = d;
         const el = ev.kind === "changes" ? changesBlock(d) : ev.kind === "gaps" ? gapsBlock(d) : ev.kind === "comparison" ? comparisonBlock(d, p.scenario)
           : ev.kind === "outlook" ? outlookBlock(d) : ev.kind === "signals" ? signalsBlock(d) : ev.kind === "sdgs" ? sdgBlock(d)
           : ev.kind === "issues" ? issuesBlock(d.filter((i) => i.severity === "error"))
@@ -558,6 +579,7 @@ async function runTurn(params) {
           insights.append(el);
         } else if (el) body.append(el);
       } else if (ev.t === "done") {
+        drawSuggestions();
         st.end();
         if (ev.status === "flagged") body.append(h("p", { class: "note" }, "This draft is flagged. Edit the plan and save a new draft before approving."));
       } else if (ev.t === "error") { st.end(); body.append(h("div", { class: "issue error" }, ev.message)); }

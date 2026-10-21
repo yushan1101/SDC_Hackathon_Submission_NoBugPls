@@ -1470,3 +1470,4 @@ details.more summary::-webkit-details-marker { display: none; }
 .composer, .composer .quick { min-width: 0; }  /* the chip row scrolls inside the composer instead of widening the page */
 @media (max-width: 819px) { .pub-top { gap: 6px; } .pub-nav { gap: 0; } .pub-nav a { padding: 6px 8px; font-size: 15px; } }
 [data-product="hr"] :is(.tag, span.muted) { font-size: max(14px, 1em); }  /* never below 14px, never smaller than the text around it */
+.composer .quick { flex-wrap: wrap; overflow: visible; }  /* suggestions wrap; none hidden behind the edge */
