@@ -57,7 +57,9 @@ RESULTS: "OrderedDict[str, dict]" = OrderedDict()  # plan_id -> last run, to re-
 
 with DB_LOCK:
     db.executescript("""CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, username TEXT, role TEXT,
-                        employee_id TEXT, display_name TEXT, expires_utc TEXT);""")
+                        employee_id TEXT, display_name TEXT, expires_utc TEXT);
+                        CREATE TABLE IF NOT EXISTS plan_progress(plan_id TEXT, item TEXT, done_utc TEXT,
+                        PRIMARY KEY(plan_id, item));""")  # activities ticked off as done ("<days>:<skill>")
 
 app = FastAPI(title="AiversePulse", docs_url=None, redoc_url=None, openapi_url=None)
 if cfg.allowed_origins:  # separate frontend deploy: only these origins may call the API with the session cookie
@@ -405,8 +407,27 @@ def plan(pid: str, user: dict = Depends(current_user)):
         audience = db.execute("SELECT audience, subject_id FROM plans WHERE plan_id=?", (pid,)).fetchone()
     with DB_LOCK:
         saved = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
+        done = [r[0] for r in db.execute("SELECT item FROM plan_progress WHERE plan_id=?", (pid,))]
     report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else None
-    return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], **cur, "history": hist, "report": report}
+    return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], **cur, "history": hist, "report": report,
+            "progress": done}
+
+
+class ProgressIn(BaseModel):
+    item: str = Field(min_length=3, max_length=200)  # "<day range>:<skill>"
+    done: bool
+
+
+@app.post("/api/plans/{pid}/progress")
+def plan_progress(pid: str, body: ProgressIn, user: dict = Depends(current_user)):
+    _guard(pid, user)
+    with DB_LOCK, db:
+        if body.done:
+            db.execute("INSERT OR REPLACE INTO plan_progress VALUES(?,?,?)", (pid, body.item, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
+        else:
+            db.execute("DELETE FROM plan_progress WHERE plan_id=? AND item=?", (pid, body.item))
+        done = [r[0] for r in db.execute("SELECT item FROM plan_progress WHERE plan_id=?", (pid,))]
+    return {"progress": done}
 
 
 class EditIn(BaseModel):

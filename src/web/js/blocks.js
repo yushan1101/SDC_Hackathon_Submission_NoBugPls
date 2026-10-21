@@ -157,7 +157,13 @@ export function issuesBlock(issues) {
 }
 
 /** Editable 30/60/90 plan with approval. Talks to /api/plans/:id. Calls onChange(status) after saves. */
-export function planBlock({ planId, plan, version, status, weeklyHours, onChange, approverLabel = "I have reviewed this plan and approve it", title = "Your 90-day plan" }) {
+export function planBlock({ planId, plan, version, status, weeklyHours, onChange, approverLabel = "I have reviewed this plan and approve it", title = "Your 90-day plan",
+  progress = [], evidence = null }) {
+  // progress: activities ticked off as done ("<days>:<skill>", saved on the server); evidence: id -> {title, url} for course links
+  const done = new Set(progress);
+  const key = (a) => `${a.day_range}:${a.skill_id}`;
+  const ev = evidence instanceof Map ? evidence : new Map((evidence || []).map((e) => [e.id, e]));
+  const courses = (a) => (a.evidence_ids || []).map((id) => ev.get(id)).filter((e) => e?.url && e.id.startsWith("learn:")).slice(0, 2);
   const cap = weeklyHours ? Math.round((weeklyHours * 30) / 7 * 10) / 10 : null;
   const acts = plan.activities.map((a) => ({ ...a }));
   const tagEl = h("span", { class: `tag ${status}` }, status);
@@ -177,12 +183,17 @@ export function planBlock({ planId, plan, version, status, weeklyHours, onChange
         const n = String(s).replace(/\D/g, "");
         return h("span", { class: "sdg-n", style: { "--sdg": SDG_COLORS[n] || "#888" }, title: `UN SDG ${n}`, "aria-label": `UN SDG ${n}` }, n);
       });
+      const tick = planId ? h("label", { class: "act-done", title: "Mark this activity as done" },
+        h("input", { type: "checkbox", checked: done.has(key(a)) ? true : null, onchange: (e) => mark(a, e.target.checked, e.target) }), "Done") : null;
+      const links = courses(a);
       const main = h("div", { class: "act-main" },
-        h("div", { class: "top" }, h("b", {}, a.skill_id),
+        h("div", { class: "top" }, h("b", {}, a.skill_id), tick,
           h("label", {}, h("span", { class: "sr-only" }, `Hours for ${a.skill_id}, days ${p}`), input)),
         h("div", { class: "act-description" }, description),
+        links.length ? h("div", { class: "act-links" }, links.map((e) => h("a", { href: e.url, target: "_blank", rel: "noopener noreferrer" },
+          icon("sources"), /esco\.ec\.europa\.eu/.test(e.url) ? "ESCO skill guide" : `Open course: ${e.title}`, h("span", { class: "tag free" }, "free")))) : null,
         goals.length ? h("span", { class: "sdg-nums", "aria-label": "Related Sustainable Development Goals" }, goals) : null);
-      return reveal(h("article", { class: "act" }, main,
+      return reveal(h("article", { class: `act${done.has(key(a)) ? " is-done" : ""}`, "data-key": key(a) }, main,
         h("span", { class: "act-hours" }, icon("clock"), `${a.estimated_hours} h`)), DROP, { delay: i * 60 });
     });
     const heading = h("h4", {},
@@ -201,9 +212,30 @@ export function planBlock({ planId, plan, version, status, weeklyHours, onChange
       h("div", { class: "phase-intro" }, heading, h("p", { class: "phase-summary" }, summary)),
       icon("chevron"));
     const content = h("div", { class: "phase-content" }, budget, activityList);
-    return h("details", { class: "phase" }, phaseSummary, content);
+    return h("details", { class: "phase", "data-phase": p }, phaseSummary, content);
   });
-  const planEl = h("div", { class: "plan" }, phases);
+  const progressEl = h("div", { class: "plan-progress" });
+  function drawProgress() {
+    const total = acts.length, n = acts.filter((a) => done.has(key(a))).length;
+    const hrs = (xs) => Math.round(xs.reduce((s, a) => s + a.estimated_hours, 0) * 10) / 10;
+    const ms = PHASES.map((p, i) => { const xs = acts.filter((a) => a.day_range === p); return [p, ["Foundation", "Practice", "Portfolio"][i], xs.length && xs.every((a) => done.has(key(a)))]; });
+    progressEl.replaceChildren(
+      h("div", { class: "pp-head" }, h("b", {}, `${n} of ${total} activities done`), h("span", { class: "muted" }, `${hrs(acts.filter((a) => done.has(key(a))))} of ${hrs(acts)} hours`)),
+      h("div", { class: "pp-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(total), "aria-valuenow": String(n), "aria-label": "Plan progress" },
+        h("i", { style: { width: `${total ? (100 * n) / total : 0}%` } })),
+      h("ol", { class: "milestones", "aria-label": "Milestones" }, ms.map(([p, name, ok]) =>
+        h("li", { class: ok ? "ok" : null }, icon(ok ? "check" : "target"), h("span", {}, `Day ${p.split("-")[1]}: ${name}`), ok ? h("span", { class: "sr-only" }, " reached") : null))));
+  }
+  async function mark(a, value, box) {
+    value ? done.add(key(a)) : done.delete(key(a));
+    box.closest(".act")?.classList.toggle("is-done", value);
+    drawProgress();
+    try { await api(`/api/plans/${planId}/progress`, { method: "POST", body: { item: key(a), done: value } }); }
+    catch (e) { value ? done.delete(key(a)) : done.add(key(a)); box.checked = !value; box.closest(".act")?.classList.toggle("is-done", !value); drawProgress(); toast(e.message, "err"); }
+  }
+  if (planId) drawProgress();
+  const planEl = h("div", { class: "plan" }, planId ? progressEl : null, phases,
+    h("p", { class: "note plan-cost" }, icon("check"), "Cost: free. Every linked resource is official documentation, vendor training or the ESCO skill page."));
   const sdgGuide = h("details", { class: "note sdg-guide" }, h("summary", {}, "How activities connect to the SDGs"),
     h("p", {}, "Goal tags on each activity show its connection: SDG 4 for learning, SDG 8 for decent work, and (when mapped) one additional goal matched to that skill. These are evidence-linked suggestions, not official UN classifications."));
   const errBox = h("div", { class: "issues" });

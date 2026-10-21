@@ -447,7 +447,7 @@ async function openConversation(id) {
       add(r.signals ? signalsBlock(r.signals) : null, true);
       add(r.sdgs?.length ? sdgBlock(r.sdgs) : null, true);
       add(r.issues?.some((x) => x.severity === "error") ? issuesBlock(r.issues.filter((x) => x.severity === "error")) : null);
-      body.append(planHolder(id, d.plan, r.request?.weekly_learning_hours ?? S.profile.weekly_learning_hours, d.status));
+      body.append(planHolder(id, d.plan, r.request?.weekly_learning_hours ?? S.profile.weekly_learning_hours, d.status, d.progress));
     }
     return [h("div", { class: "turn-user" }, h("p", { class: "q" }, t.q || `Plan for ${t.title || title}`)),
       h("article", { class: "turn-owl" }, new Owl({ size: 44, state: "idle" }).el,
@@ -599,12 +599,12 @@ async function runTurn(params) {
   }
 }
 
-function planHolder(planId, plan, hours, status) {
+function planHolder(planId, plan, hours, status, progress = []) {
   const holder = h("div");
   const render = async (st, version) => {
-    holder.replaceChildren(planBlock({ planId, plan, version, status: st, weeklyHours: hours, onChange: async (next) => {
+    holder.replaceChildren(planBlock({ planId, plan, version, status: st, weeklyHours: hours, progress, evidence: S.evidence, onChange: async (next) => {
       const fresh = await api(`/api/plans/${planId}`);
-      plan = fresh.plan;
+      plan = fresh.plan; progress = fresh.progress || [];
       render(fresh.status, fresh.version);
       if (next === "approved") {
         S.status.set("celebrating", "Plan approved — it's yours");
@@ -654,7 +654,7 @@ async function planDetail(main, id, focusPlan = false) {
         h("h2", {}, "Your learning roadmap")), h("span", { class: `tag ${d.status}` }, d.status)),
       h("p", { class: "plan-hero-copy" }, approved ? "Your approved plan is ready. Follow the phases below to put it into action." : "Your learning plan, organized into three practical phases."),
       h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days"), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`))),
-    planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null,
+    planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence,
       title: approved ? "Your approved 90-day plan" : "Your proposed 90-day plan",
       onChange: () => planDetail(main, id, true) }));
   let expanded = !approved;

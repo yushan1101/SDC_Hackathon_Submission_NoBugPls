@@ -1668,3 +1668,22 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
 .goal-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 14px; }
 .goal-filter .goal-chip[aria-pressed="true"] { background: var(--sdg); color: #fff; border-color: var(--sdg); }
 .goal-filter .chip[aria-pressed="true"] { border-color: var(--accent); }
+
+/* plan: progress, milestones, done activities, course links, cost */
+.plan-progress { display: grid; gap: 10px; padding: 16px 18px; margin-bottom: 14px; border: 1px solid var(--rule); border-radius: 16px; background: var(--surface); }
+.pp-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 16px; }
+.pp-bar { height: 10px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
+.pp-bar i { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width var(--t-fast, .2s) ease; }
+.milestones { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.milestones li { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: var(--sunken); color: var(--ink-2); font-size: 15px; }
+.milestones li svg { width: 16px; height: 16px; }
+.milestones li.ok { background: var(--ok-soft); color: var(--ink); font-weight: 600; }
+.act-done { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; margin-left: auto; margin-right: 10px; cursor: pointer; }
+.act.is-done { opacity: .72; }
+.act.is-done .top b { text-decoration: line-through; }
+.act-links { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; font-size: 15px; }
+.act-links a { display: inline-flex; align-items: center; gap: 6px; }
+.act-links svg { width: 15px; height: 15px; }
+.tag.free { background: var(--ok-soft); }
+.plan-cost { display: flex; align-items: center; gap: 6px; }
+.plan-cost svg { width: 16px; height: 16px; }
