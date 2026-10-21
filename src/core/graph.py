@@ -252,12 +252,17 @@ def run_team(requests: list[Request], max_workers: int = 8) -> dict:
             "flagged": [k for k, v in results.items() if v.get("status") == "flagged"]}
 
 
-def stream(request: Request, conversation: bool = False):
-    """Yield ("update", node, partial_state) as each agent finishes, then ("final", None, state)."""
+def stream(request: Request, conversation: bool = False, question: str | None = None):
+    """Yield ("update", node, partial_state) as each agent finishes, then ("final", None, state).
+    question: a follow-up asked in a conversation whose earlier run is gone (server restart): the full run
+    rebuilds the briefing and the Coach answers the question instead of repeating the summary."""
     global _GRAPH
     _GRAPH = _GRAPH or build_graph()
     final = None
-    for mode, chunk in _GRAPH.stream({"request": request, "conversation": conversation}, stream_mode=["updates", "values"]):
+    start = {"request": request, "conversation": conversation}
+    if question:
+        start["followup"] = {"changed": ["question"], "question": question}
+    for mode, chunk in _GRAPH.stream(start, stream_mode=["updates", "values"]):
         if mode == "updates":
             for node, update in chunk.items():
                 yield "update", node, update or {}

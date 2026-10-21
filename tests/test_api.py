@@ -107,6 +107,21 @@ def test_conversation_is_saved_and_can_be_continued(client):
     assert later[0]["title"]  # each turn names its job, so a reopened chat labels turns correctly
 
 
+def test_question_after_restart_is_answered_not_a_repeat(client, monkeypatch):
+    import server.api as api
+    from agents import coach
+    login(client, "ana")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}
+    first = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))[-1]["plan_id"]
+    api.RESULTS.clear()  # server restarted: the earlier run is only in the database
+    seen = []
+    real = coach.explain
+    monkeypatch.setattr(coach, "explain", lambda *a, **k: (seen.append(k.get("followup")), real(*a, **k))[1])
+    events(client.post("/api/analyze", json={**body, "query": "How do I start with communication?", "previous_plan_id": first},
+                       headers={"X-AP": "1"}))
+    assert seen and seen[-1]["question"] == "How do I start with communication?"
+
+
 def test_team_stream_ticks_and_validation(client):
     login(client, "hr1")
     bad = client.post("/api/team", json={"csv": "employee_id,target_role\nx@y.com,Data Analyst", "scenario": "assistive"},
