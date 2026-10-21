@@ -896,7 +896,6 @@ html { scroll-padding-top: 88px; }
   .pub-top .owl-status { margin-left: auto; }
   .pub-top .signout { display: inline-flex; margin-left: 0; }
   .pub-top .top-actions { margin-left: auto; }
-  .pub-top .top-signin { display: none; }
   .home-actions { flex-direction: column; align-items: stretch; width: 100%; }
   .home-actions .btn { justify-content: center; }
   .way { border-radius: 26px; padding: 26px 22px; }
