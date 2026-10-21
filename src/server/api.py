@@ -630,7 +630,8 @@ def _matches(levels: dict, prefixes: list[str] | None = None, text: str | None =
         r["emerging"] = em_cut is not None and r["emergence"] >= em_cut   # top 10% of today's board
         r["under_pressure"] = pr_cut is not None and r["pressure"] >= pr_cut
         items, _ = role_sdgs(r["soc"])
-        r["sdgs"] = [{"goal": x["goal"], "short": goal_meta(x["goal"])["short"], "color": goal_meta(x["goal"])["color"]}
+        r["sdgs"] = [{"goal": x["goal"], "short": goal_meta(x["goal"])["short"], "color": goal_meta(x["goal"])["color"],
+                      "target": x.get("target"), "target_text": x.get("target_text", "")}
                      for x in items]
         r["drivers"] = (board or {}).get("occupations", {}).get(r["soc"], {}).get("topics", [])
     return rows
