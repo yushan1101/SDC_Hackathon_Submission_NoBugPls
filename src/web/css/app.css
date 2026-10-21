@@ -1454,3 +1454,6 @@ details.more summary::-webkit-details-marker { display: none; }
   [data-product="hr"] .run-actions .seg button { flex: 1; }
   [data-product="hr"] .hr-tabbar a, [data-product="hr"] .hr-tabbar button.hr-more-button { min-height: 60px; font-size: 12px; }
 }
+
+/* guests have no nav: keep Sign in on the right */
+.pub-top .top-actions { margin-left: auto; }

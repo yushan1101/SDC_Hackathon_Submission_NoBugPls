@@ -138,8 +138,7 @@ function needsPanel() {
     h("div", { class: "pad" }, S.needs.length ? h("div", { class: "bars" }, S.needs.slice(0, 10).map((n) => h("div", { class: "bar-row" },
       h("span", {}, n.skill_id), h("div", { class: "track" }, h("div", { class: "fill", style: { transform: `scaleX(${n.employees_with_gap / max})` } })),
       h("span", { class: "num" }, n.employees_with_gap))))
-      : h("div", { class: "empty-state" }, h("span", { class: "stat-ic" }, icon("upload")), h("p", {}, "No team analysed yet."),
-          h("a", { class: "btn primary sm", href: "#/run" }, icon("upload"), "Run analysis"))));
+      : h("div", { class: "empty-state" }, h("span", { class: "stat-ic" }, icon("upload")), h("p", {}, "No team analysed yet. Use Upload team above to start."))));
 }
 
 function rosterTable() {
