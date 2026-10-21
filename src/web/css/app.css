@@ -1642,3 +1642,29 @@ details.more summary::-webkit-details-marker { display: none; }
 .zline polyline { fill: none; stroke: var(--accent); stroke-width: 1.6; }
 .zline .zl-zero { stroke: var(--rule-strong); stroke-dasharray: 2 3; }
 @media (max-width: 760px) { .radar-row { grid-template-columns: 1fr; } }
+
+/* role matches: why-this-score, effort tags, comparison, UN goal filter, scenario switch */
+.matches-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.why-score { margin-top: 6px; font-size: 15px; }
+.why-score > summary { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); cursor: pointer; font-weight: 600; }
+.why-score > summary svg { width: 16px; height: 16px; }
+.why-rows { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.why-rows li { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; border-bottom: 1px solid var(--rule); padding-bottom: 6px; }
+.why-rows small { display: block; color: var(--ink-2); font-size: 13px; }
+.role-about { margin-top: 12px; display: grid; gap: 6px; }
+.role-about h5 { margin: 0; font-size: 15px; }
+.role-about p { margin: 0; line-height: 1.55; }
+.tag.effort.easy { background: var(--ok-soft); }
+.tag.effort.mid { background: var(--sunken); }
+.tag.effort.hard { background: var(--danger-soft); }
+.match-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.compare-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; cursor: pointer; }
+.compare-wrap { overflow-x: auto; margin: 0 0 14px; }
+table.compare { width: 100%; border-collapse: collapse; font-size: 15px; }
+table.compare th, table.compare td { padding: 10px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+table.compare thead th { font-weight: 650; }
+table.compare thead th .job-ic { margin-right: 8px; vertical-align: middle; }
+table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: nowrap; }
+.goal-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 14px; }
+.goal-filter .goal-chip[aria-pressed="true"] { background: var(--sdg); color: #fff; border-color: var(--sdg); }
+.goal-filter .chip[aria-pressed="true"] { border-color: var(--accent); }

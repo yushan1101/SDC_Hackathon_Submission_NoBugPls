@@ -144,14 +144,14 @@ export async function quizView(main, ctx) {
     stage.replaceChildren(h("div", { class: "q" }, h("h2", {}, "Matching you against every occupation…"),
       h("p", { class: "muted" }, "Comparing your answers with ESCO requirements and today's AI-trend board.")));
     try {
-      const r = await api("/api/quiz/score", { method: "POST", body: { answers: st.answers, fields: [...st.fields], zone: st.zone } });
+      const r = await api("/api/quiz/score", { method: "POST", body: { answers: st.answers, fields: [...st.fields], zone: st.zone, scenario: st.scenario || "assistive" } });
       owl.set("celebrating");
       ctx.status?.set("matched", "Matches ready");
       stage.replaceChildren(reveal(h("div", { class: "q result" },
         h("h2", {}, "Your quick match"),
         h("p", { class: "muted" }, "A fast estimate from 13 answers. For an evidence-backed analysis, ", h("a", { href: "#/resume" }, "upload your resume"), "."),
         h("ul", { class: "skill-chips" }, r.skills.sort((a, b) => b.level - a.level).map((s) => h("li", {}, s.name, h("b", { class: "num" }, ` ${s.level}/5`)))),
-        matchesBlock(r.matches, { onPlan: (m) => ctx.planFor(m, r.skills) }),
+        matchesBlock(r.matches, { onPlan: (m) => ctx.planFor(m, r.skills), scenario: st.scenario, onScenario: (k) => { st.scenario = k; finish(); } }),
         h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => { st.answers = {}; go(-1); } }, "Play again"))), RISE));
     } catch (e) {
       owl.set("confused");
@@ -228,12 +228,15 @@ export function resumeView(main, ctx) {
     const lv = (s) => h("div", { class: "seg levels", role: "group", "aria-label": `${s.name} level` },
       [1, 2, 3, 4, 5].map((n) => h("button", { type: "button", "aria-pressed": String(s.level === n), "aria-label": `level ${n}`,
         onclick: (e) => { s.level = n; e.currentTarget.parentElement.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(i + 1 === n))); rematch.disabled = false; } }, n)));
-    const rematch = h("button", { class: "btn", type: "button", disabled: true, onclick: async () => {
-      rematch.disabled = true; owl.set("analyzing");
-      const m = await api("/api/match", { method: "POST", body: { skills: skills.map(({ name, level }) => ({ name, level })), text: r.markdown.slice(0, 20000) } });
+    let scenario = "assistive";
+    const remeasure = async () => {
+      owl.set("analyzing");
+      const m = await api("/api/match", { method: "POST", body: { skills: skills.map(({ name, level }) => ({ name, level })), text: r.markdown.slice(0, 20000), scenario } });
       owl.set("matched"); drawMatches(m.matches);
-    } }, "Re-match with my edits");
-    const drawMatches = (m) => matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))) }));
+    };
+    const rematch = h("button", { class: "btn", type: "button", disabled: true, onclick: () => { rematch.disabled = true; remeasure(); } }, "Re-match with my edits");
+    const drawMatches = (m) => matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))),
+      scenario, onScenario: (k) => { scenario = k; remeasure(); } }));
     const skillsList = skills.length ? h("ul", {}, skills.map((s, i) => reveal(h("li", {},
       h("div", { class: "top" }, h("b", {}, s.name), s.kind === "tool" ? h("span", { class: "tag" }, "tool") : null, lv(s)),
       s.evidence?.[0] ? h("q", {}, s.evidence[0]) : null), DROP, { delay: Math.min(i, 10) * 35 })))

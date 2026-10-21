@@ -328,32 +328,107 @@ function sdgMatchDetails(sdgs) {
 }
 
 /** Ranked future roles. onPlan(match) builds a full plan for one of them. */
-export function matchesBlock(matches, { onPlan, title = "Roles you could grow into", note } = {}) {
+/** Relative effort to move into a role, from how much of it you already cover (and a training level up adds a step). */
+const effort = (m) => { const c = m.coverage - (m.stretch ? 0.15 : 0);
+  return c >= 0.5 ? ["Short step", "easy"] : c >= 0.25 ? ["Medium step", "mid"] : ["Big step", "hard"]; };
+const signed = (x) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(Math.round(x * 100))}%`;
+
+/** Why a role scored what it did: each part of the score, the trend effect, the effort, and the role itself (ESCO). */
+function whyScore(m) {
+  const row = (label, value, hint) => h("li", {}, h("span", {}, label, hint ? h("small", {}, hint) : null), h("b", {}, value));
+  const about = h("div", { class: "role-about" }, h("p", { class: "muted" }, "Loading the role description…"));
+  const d = h("details", { class: "why-score" }, h("summary", {}, icon("info"), "Why this score"),
+    h("ul", { class: "why-rows" },
+      row("Skills you already have", pct(m.coverage), "share of this role's ESCO skills, weighted by importance"),
+      m.alignment != null ? row("Fit with what the role values", pct(m.alignment), "how important your strongest skills are to this role") : null,
+      m.text_fit != null ? row("Your résumé reads like this role", pct(m.text_fit), "meaning-based text similarity") : null,
+      m.tools_matched ? row("Tools you use that it lists", String(m.tools_matched)) : null,
+      m.trend_effect != null ? row(`Today's AI trends (${m.scenario === "agentic" ? "agentic" : "assistive"} AI)`, signed(m.trend_effect),
+        "growth minus automation pressure; reorders roles, never changes the match") : null,
+      row("Effort to switch", effort(m)[0],
+        `from the share of the role you already cover${m.stretch ? "; one training level above yours" : ""}. Your 90-day plan starts with the most important gaps`)),
+    about);
+  d.addEventListener("toggle", async () => {
+    if (!d.open || d.dataset.loaded) return;
+    d.dataset.loaded = "1";
+    try {
+      const o = await api(`/api/occupations/${m.soc}`);
+      about.replaceChildren(h("h5", {}, "About this role"),
+        h("p", {}, o.description.length > 420 ? o.description.slice(0, 420) + "…" : o.description),
+        o.skills?.length ? h("p", { class: "role-skills" }, h("b", {}, "Main skills: "), o.skills.slice(0, 6).map((s) => s.name).join(", ")) : null,
+        h("a", { href: o.url, target: "_blank", rel: "noopener noreferrer" }, "Full ESCO occupation page"));
+    } catch { about.replaceChildren(h("p", { class: "muted" }, "Role description unavailable right now.")); }
+  });
+  return d;
+}
+
+/** Side-by-side comparison of the roles ticked for comparison. */
+function compareTable(rows) {
+  const line = (label, f) => h("tr", {}, h("th", { scope: "row" }, label), rows.map((m) => h("td", {}, f(m))));
+  return h("div", { class: "compare-wrap" }, h("table", { class: "compare" },
+    h("thead", {}, h("tr", {}, h("td"), rows.map((m) => h("th", { scope: "col" }, jobIcon(m.soc, { size: 28 }), m.title)))),
+    h("tbody", {},
+      line("Match", (m) => pct(m.fit)),
+      line("Skills you already have", (m) => pct(m.coverage)),
+      line("AI trend effect", (m) => m.trend_effect != null ? signed(m.trend_effect) : "–"),
+      line("Effort to switch", (m) => effort(m)[0]),
+      line("Top skills to learn", (m) => (m.top_gaps || []).join(", ") || "none"),
+      line("UN goals", (m) => (m.sdgs || []).map((g) => `SDG ${g.goal}`).join(", ") || "–"))));
+}
+
+export function matchesBlock(matches, { onPlan, title = "Roles you could grow into", note, scenario, onScenario } = {}) {
   if (!matches?.length) return block("Role matches", h("h3", {}, title), h("p", { class: "note" }, "No matches yet. Add a few more skills."));
+  const picked = new Set();
+  const compareHost = h("div");
+  const drawCompare = () => compareHost.replaceChildren(picked.size >= 2 ? compareTable(matches.filter((m) => picked.has(m.soc))) :
+    picked.size === 1 ? h("p", { class: "note" }, "Tick one more role to compare.") : "");
+  // filter by UN goal: only goals that appear in these matches
+  const goals = [...new Map(matches.flatMap((m) => m.sdgs || []).map((g) => [g.goal, g])).values()].sort((a, b) => a.goal - b.goal);
+  let goal = null;
+  const list = h("ol", { class: "matches" }, matches.map((m, i) => reveal(h("li", { "data-goals": (m.sdgs || []).map((g) => g.goal).join(" ") },
+    h("span", { class: "rank num" }, i + 1),
+    h("div", { class: "match-content" },
+      h("div", { class: "match-head" },
+        h("div", { class: "who" },
+          h("div", { class: "job-line", title: `ESCO ${m.soc}` },
+            jobIcon(m.soc, { size: 44, labelled: true }), h("b", {}, m.title),
+            h("span", { class: "match-badges" }, momentum(m), h("span", { class: `tag effort ${effort(m)[1]}`, title: "Effort to switch, from the share of this role you already cover" }, effort(m)[0])))),
+        h("div", { class: "fit" },
+          h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
+          h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 })))),
+      h("div", { class: "gaps" }, m.top_gaps?.length
+        ? [icon("target"), h("b", {}, "To learn"), h("span", { class: "gap-chips" }, m.top_gaps.slice(0, 3).map((gap) => h("span", { class: "gap-chip" }, gap))),
+          m.top_gaps.length > 3 ? h("details", { class: "more-gaps" }, h("summary", {}, `+${m.top_gaps.length - 3} more`),
+            h("ul", {}, m.top_gaps.slice(3).map((gap) => h("li", {}, gap)))) : null]
+        : [icon("check"), h("b", {}, "To learn"), h("span", {}, "No skill gaps identified")]),
+      m.sdgs?.length ? h("div", { class: "match-sdgs" },
+        h("div", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))),
+        sdgMatchDetails(m.sdgs)) : null,
+      whyScore(m)),
+    h("div", { class: "match-actions" },
+      onPlan ? h("button", { class: "btn sm primary match-plan", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null,
+      h("label", { class: "compare-pick" }, h("input", { type: "checkbox", onchange: (e) => {
+        if (e.target.checked && picked.size >= 3) { e.target.checked = false; toast("Compare up to 3 roles at a time.", "err"); return; }
+        e.target.checked ? picked.add(m.soc) : picked.delete(m.soc); drawCompare(); } }), "Compare"))),
+    DROP, { delay: Math.min(i, 8) * 45 })));
+  const filterGoal = (g) => {
+    goal = g;
+    goalBar.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.goal || 0) === (g || 0))));
+    list.querySelectorAll(":scope > li").forEach((li) => { li.hidden = !!g && !li.dataset.goals.split(" ").includes(String(g)); });
+  };
+  const goalBar = goals.length > 1 ? h("div", { class: "goal-filter", role: "group", "aria-label": "Show roles serving a UN goal" },
+    h("span", { class: "muted" }, "UN goal:"),
+    h("button", { type: "button", class: "chip", "aria-pressed": "true", onclick: () => filterGoal(null) }, "All"),
+    goals.map((g) => h("button", { type: "button", class: "chip goal-chip", "data-goal": g.goal, "aria-pressed": "false", style: { "--sdg": g.color },
+      title: `SDG ${g.goal}: ${g.short}`, onclick: () => filterGoal(goal === g.goal ? null : g.goal) }, `${g.goal} · ${g.short}`))) : null;
+  const scenSeg = onScenario ? h("div", { class: "seg", role: "group", "aria-label": "AI scenario for the ranking" },
+    [["assistive", "Assistive AI"], ["agentic", "Agentic AI"]].map(([k, l]) => h("button", { type: "button", "aria-pressed": String((scenario || "assistive") === k),
+      title: k === "agentic" ? "AI agents take over routine work: automation pressure and AI-driven growth weigh more" : "AI helps people do today's work",
+      onclick: () => k !== (scenario || "assistive") && onScenario(k) }, l))) : null;
   return block("Role matches",
-    h("h3", {}, title),
-    h("ol", { class: "matches" }, matches.map((m, i) => reveal(h("li", {},
-      h("span", { class: "rank num" }, i + 1),
-      h("div", { class: "match-content" },
-        h("div", { class: "match-head" },
-          h("div", { class: "who" },
-            h("div", { class: "job-line", title: `ESCO ${m.soc}` },
-              jobIcon(m.soc, { size: 44, labelled: true }), h("b", {}, m.title),
-              h("span", { class: "match-badges" }, momentum(m)))),
-          h("div", { class: "fit" },
-            h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
-            h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 })))),
-        h("div", { class: "gaps" }, m.top_gaps?.length
-          ? [icon("target"), h("b", {}, "To learn"), h("span", { class: "gap-chips" }, m.top_gaps.slice(0, 3).map((gap) => h("span", { class: "gap-chip" }, gap))),
-            m.top_gaps.length > 3 ? h("details", { class: "more-gaps" }, h("summary", {}, `+${m.top_gaps.length - 3} more`),
-              h("ul", {}, m.top_gaps.slice(3).map((gap) => h("li", {}, gap)))) : null]
-          : [icon("check"), h("b", {}, "To learn"), h("span", {}, "No skill gaps identified")]),
-        m.sdgs?.length ? h("div", { class: "match-sdgs" },
-          h("div", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))),
-          sdgMatchDetails(m.sdgs)) : null),
-      onPlan ? h("button", { class: "btn sm primary match-plan", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null),
-      DROP, { delay: Math.min(i, 8) * 45 }))),
-    h("p", { class: "note" }, note || "Match = the share of each role's ESCO skills you already have. Trend arrows come from today's AI-trend board; they reorder roles, never change the match."));
+    h("div", { class: "matches-head" }, h("h3", {}, title), scenSeg),
+    goalBar, compareHost, list,
+    h("p", { class: "note" }, note || "Match combines how much of each role's ESCO skills you have, how well your skills fit what it values, and (with a résumé) how closely your experience reads like it. Today's AI trends reorder roles, never change the match. Open \"Why this score\" on any role."));
 }
 
 export function sdgBlock(sdgs) {

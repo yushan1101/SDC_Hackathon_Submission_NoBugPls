@@ -667,10 +667,10 @@ def _daily():  # ponytail: in-process hourly check; use cron / a job queue when 
 
 # --- matching: quiz game + resume deep analysis --------------------------------------------------------------
 def _matches(levels: dict, prefixes: list[str] | None = None, text: str | None = None, k: int = 8,
-             zone: int | None = None) -> list[dict]:
+             zone: int | None = None, scenario: str = "assistive") -> list[dict]:
     board = _board()
     try:
-        rows = matcher.match_roles(levels, k, board, text, prefixes or None, zone)
+        rows = matcher.match_roles(levels, k, board, text, prefixes or None, zone, scenario)
     except ImportError:
         log.exception("Career matching runtime is missing")
         raise HTTPException(503, "Career matching is temporarily unavailable: the server's local AI runtime needs setup. Your quiz answers are kept on this page; try again after setup.") from None
@@ -702,6 +702,7 @@ class QuizIn(BaseModel):
     answers: dict[str, int] = Field(max_length=40)
     fields: list[str] = Field(default=[], max_length=13)
     zone: int | None = Field(default=None, ge=1, le=5)  # ISCO-08 skill level (1-4) from the training question
+    scenario: str = Field(default="assistive", pattern="^(assistive|agentic)$")
 
 
 @app.post("/api/quiz/score")
@@ -709,19 +710,20 @@ def quiz_score(body: QuizIn, user: dict = Depends(current_user)):
     levels, prefixes = quiz.score(body.answers, body.fields)
     if len(levels) < 3:
         raise HTTPException(422, "Answer at least three questions.")
-    return {"skills": [{"name": k, "level": v} for k, v in levels.items()], "matches": _matches(levels, prefixes, quiz.profile_text(body.answers, body.fields) or None, zone=body.zone)}
+    return {"skills": [{"name": k, "level": v} for k, v in levels.items()], "matches": _matches(levels, prefixes, quiz.profile_text(body.answers, body.fields) or None, zone=body.zone, scenario=body.scenario)}
 
 
 class MatchIn(BaseModel):
     skills: list[SkillIn] = Field(max_length=60)
     text: str | None = Field(default=None, max_length=20000)
     fields: list[str] = Field(default=[], max_length=13)
+    scenario: str = Field(default="assistive", pattern="^(assistive|agentic)$")
 
 
 @app.post("/api/match")
 def match(body: MatchIn, user: dict = Depends(current_user)):
     _, prefixes = quiz.score({}, body.fields)
-    return {"matches": _matches({s.name: s.level for s in body.skills}, prefixes, body.text)}
+    return {"matches": _matches({s.name: s.level for s in body.skills}, prefixes, body.text, scenario=body.scenario)}
 
 
 async def _read(file: UploadFile) -> bytes:
