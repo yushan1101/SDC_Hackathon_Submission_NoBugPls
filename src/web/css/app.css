@@ -803,7 +803,7 @@ html { scroll-padding-top: 88px; }
 [data-product="public"] .plan-item .m { font-size: 14px; }
 [data-product="public"] .tabbar a { font-size: 14px; }
 [data-product="public"] .sdg { font-size: 14px; border-radius: 8px; overflow: hidden; }
-[data-product="public"] .matches li { padding: 20px 4px; }
+[data-product="public"] .matches li { padding: 20px clamp(16px, 3vw, 24px); }  /* cards: keep the icon off the border */
 [data-product="public"] .matches .rank { font-size: 15px; }
 [data-product="public"] .matches .who > div b { font-size: 19px; }
 [data-product="public"] .matches .who .mono { font-size: 14px; }
@@ -1159,8 +1159,8 @@ details.hint p { margin-top: 8px; font-size: 15px; color: var(--ink-2); max-widt
 /* matches: gaps as one short line, no floating rank */
 .matches .rank { display: none; }
 .matches li { grid-template-columns: minmax(0, 1fr) 150px auto; }
-.matches .gaps { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 16px; color: var(--ink-2); }
-.matches .gaps svg { width: 16px; height: 16px; color: var(--accent); }
+.matches .gaps { display: block; font-size: 16px; line-height: 1.5; color: var(--ink-2); }  /* inline text, so the icon never wraps onto its own line */
+.matches .gaps svg { width: 16px; height: 16px; margin-right: 6px; vertical-align: -2px; color: var(--accent); }
 .matches .gaps .more { color: var(--accent); cursor: help; }
 @media (max-width: 899px) { .matches li { grid-template-columns: minmax(0, 1fr) 96px; } .matches li > .btn { grid-column: 1 / -1; } }
 
