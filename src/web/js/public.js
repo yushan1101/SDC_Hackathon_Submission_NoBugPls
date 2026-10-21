@@ -107,37 +107,21 @@ function shell() {
   const nav = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), h("span", {}, label));
   const tab = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), label);
   const guest = !S.me;
-  const core = [["#/quiz", "Quick Match", "13 questions · about 2 minutes", "quiz"],
-    ["#/resume", "Upload résumé", "PDF, Word or text", "file"],
-    ["#/build", "Pick a job", "Any ESCO occupation", "target"]];
-  const menu = h("div", { id: "core-menu", popover: "auto", class: "core-menu", "aria-label": "Start" },
-    core.map(([href, label, hint, ic]) => h("a", { href, class: "core-item", onclick: () => menu.hidePopover?.() },
-      h("span", { class: "core-ic" }, icon(ic)), h("span", { class: "core-t" }, h("b", {}, label), h("span", {}, hint)))));
-  menu.addEventListener("toggle", (e) => {  // sit under the Start button that opened it (desktop); mobile keeps the CSS bottom sheet position
-    if (e.newState !== "open") return;
-    const b = [...document.querySelectorAll('[popovertarget="core-menu"]')].find((x) => x.offsetParent && x.className === "nav-menu");
-    if (!b || innerWidth < 700) { menu.style.removeProperty("left"); menu.style.removeProperty("translate"); return; }
-    const r = b.getBoundingClientRect();
-    menu.style.left = `${Math.max(12, Math.min(r.left - 8, innerWidth - menu.offsetWidth - 12))}px`;
-    menu.style.translate = "0 0";
-  });
-  const startBtn = (cls) => h("button", { type: "button", class: cls, popovertarget: "core-menu", "data-route": "#/discover", "aria-haspopup": "true" },
-    icon("spark"), h("span", {}, "Start"), cls === "nav-menu" ? icon("chevron") : null);
   app.replaceChildren(...[
     h("button", { class: "sr-only skip-link", type: "button", onclick: () => $("#main")?.focus() }, "Skip to content"),
     h("header", { class: "pub-top" },
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
       // guests get one page (the home, with today's board on it) and one action: sign in
-      guest ? null : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), startBtn("nav-menu"), nav("#/today", "Today", "pulse"),
+      guest ? null : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/today", "Today", "pulse"),
         nav("#/report", "Report", "report"), nav("#/plans", "My plans", "plans")),
       guest ? null : S.status.el,
       guest
         ? h("div", { class: "top-actions" }, h("a", { class: "btn sm primary top-signin", href: "#/signin" }, icon("user"), "Sign in"))
         : h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out")),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
-    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), startBtn("tab-menu"), tab("#/today", "Today", "pulse"),
+    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/today", "Today", "pulse"),
       tab("#/plans", "Plans", "plans")),
-    menu, S.sheet].filter(Boolean));  // replaceChildren would print a null as the text "null"
+    S.sheet].filter(Boolean));  // replaceChildren would print a null as the text "null"
 }
 
 async function signOut() {
@@ -174,7 +158,7 @@ function route() {
     return;
   }
   if (!$("#main")) shell();
-  const section = ["quiz", "resume", "build"].includes(page) ? "#/discover" : `#/${page}`;
+  const section = ["quiz", "resume", "build"].includes(page) ? "#/start" : `#/${page}`;  // the three starts live on Home
   document.querySelectorAll("[data-route]").forEach((a) => {
     const active = section === a.dataset.route || section.startsWith(a.dataset.route + "/");
     if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
