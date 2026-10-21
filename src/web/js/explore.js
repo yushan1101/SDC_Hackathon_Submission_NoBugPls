@@ -234,6 +234,25 @@ export function resumeView(main, ctx) {
       owl.set("matched"); drawMatches(m.matches);
     } }, "Re-match with my edits");
     const drawMatches = (m) => matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))) }));
+    const skillsList = skills.length ? h("ul", {}, skills.map((s, i) => reveal(h("li", {},
+      h("div", { class: "top" }, h("b", {}, s.name), s.kind === "tool" ? h("span", { class: "tag" }, "tool") : null, lv(s)),
+      s.evidence?.[0] ? h("q", {}, s.evidence[0]) : null), DROP, { delay: Math.min(i, 10) * 35 })))
+      : h("p", { class: "note" }, "No ESCO skills or tools found. Try a resume with a skills or experience section.");
+    const skillsViewport = h("div", { class: "cv-skills-scroll", "aria-hidden": "true", inert: true }, skillsList);
+    const skillsCollapse = h("div", { class: "cv-skills-collapse" }, skillsViewport);
+    const skillsToggle = h("button", { class: "btn sm cv-skills-toggle", type: "button", "aria-expanded": "false",
+      "aria-controls": "cv-extracted-skills", onclick: () => {
+        const expanded = skillsToggle.getAttribute("aria-expanded") !== "true";
+        skillsToggle.setAttribute("aria-expanded", String(expanded));
+        skillsToggle.textContent = expanded ? "Hide Skills" : "View & Edit Skills";
+        skillsCollapse.classList.toggle("is-open", expanded);
+        skillsViewport.setAttribute("aria-hidden", String(!expanded));
+        if (expanded) skillsViewport.removeAttribute("inert"); else skillsViewport.setAttribute("inert", "");
+      } }, "View & Edit Skills");
+    skillsViewport.id = "cv-extracted-skills";
+    const skillsControls = skills.length ? [skillsToggle,
+      h("p", { class: "cv-skills-hint" }, icon("info"), "Want to improve your matches? Expand your skills, adjust your ratings, and click Rematch to discover updated career recommendations."),
+      skillsCollapse] : [skillsList];
     const ins = r.insight;
     const mine = () => skills.map(({ name, level }) => ({ name, level }));
     const insight = ins ? h("section", { class: "cv-insight" },
@@ -261,11 +280,8 @@ export function resumeView(main, ctx) {
           h("pre", { tabindex: "0" }, r.markdown)),
         h("section", { class: "block cv-skills", "aria-label": "Skills found" },
           h("h3", {}, `${skills.length} skills found`, r.years_experience ? h("span", { class: "note" }, ` · about ${r.years_experience} years of experience`) : null),
-          skills.length ? h("ul", {}, skills.map((s, i) => reveal(h("li", {},
-            h("div", { class: "top" }, h("b", {}, s.name), s.kind === "tool" ? h("span", { class: "tag" }, "tool") : null, lv(s)),
-            s.evidence?.[0] ? h("q", {}, s.evidence[0]) : null), DROP, { delay: Math.min(i, 10) * 35 })))
-            : h("p", { class: "note" }, "No ESCO skills or tools found. Try a resume with a skills or experience section."),
-          h("div", { class: "row-actions" }, rematch))),
+          skillsControls,
+          h("div", { class: "row-actions cv-rematch-actions" }, rematch))),
       matchHost);
     drawMatches(r.matches);
   }
