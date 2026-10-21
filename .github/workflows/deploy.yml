@@ -1,7 +1,8 @@
-# Auto-deploy the backend to the AiversePulse server on every push to main (or by hand from the Actions tab).
-# Runs on a self-hosted runner installed on the server itself (src/deploy/setup-runner.sh): the server is on a private
-# network, so GitHub's cloud runners cannot reach it, and the runner only makes outbound connections to GitHub.
-# Only code is synced; the server keeps its own .env, models and state in /opt/aiversepulse (never in the repo).
+# Auto-deploy the backend to the server on every push to main (or by hand from the Actions tab).
+# A GitHub-hosted runner sends the repo as a tar over SSH to deploy@dnns.olgtx.com. That key (secret DEPLOY_SSH_KEY) is
+# locked on the server to one forced command, /opt/aiversepulse/deploy.sh, which swaps the code in, rebuilds with cached
+# layers, waits for /healthz and rolls back if the new version is unhealthy. The server keeps its own .env, models and
+# state; nothing secret comes from the repo, and the server needs no GitHub credentials.
 name: Deploy to server
 
 on:
@@ -18,32 +19,27 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, aiversepulse-server]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      APP_DIR: /opt/aiversepulse
+      HOST: dnns.olgtx.com
+      # pinned host key (ssh-keyscan -t ed25519 dnns.olgtx.com): refuses to deploy anywhere else
+      HOST_KEY: "dnns.olgtx.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHTMqFpBsrS6Zc8tEeO76V03RYxVIXFN4R0Z6Jm7QBhQ"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync code to the server folder
-        run: rsync -a --delete --exclude .git ./ "$APP_DIR/app/"
-
-      - name: "Build and restart (cached layers, so a code-only change rebuilds in seconds)"
-        working-directory: /opt/aiversepulse
-        run: docker compose up -d --build
-
-      - name: Wait until healthy
+      - name: Load deploy key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
-          for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8600/healthz > /dev/null; then echo "healthy after ${i}x5s"; exit 0; fi
-            sleep 5
-          done
-          echo "::error::app did not become healthy within 5 minutes"
-          docker logs --tail 80 aiversepulse-api
-          exit 1
+          test -n "$DEPLOY_SSH_KEY" || { echo "::error::secret DEPLOY_SSH_KEY is not set"; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          echo "$HOST_KEY" > ~/.ssh/known_hosts
 
-      - name: Readiness report
+      - name: Deploy (upload, rebuild, health check, rollback on failure)
+        run: git archive --format=tar HEAD | ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes deploy@"$HOST"
+
+      - name: Forget the key
         if: always()
-        run: |
-          curl -fsS http://127.0.0.1:8600/api/health || true
-          docker ps --filter name=aiversepulse-api --format "{{.Names}} {{.Status}}"
+        run: rm -f ~/.ssh/deploy_key
