@@ -1619,3 +1619,26 @@ details.more summary::-webkit-details-marker { display: none; }
   .phase-toggle > svg { width: 16px; height: 16px; }
   .phase-content { margin: 0 8px 16px 42px; }
 }
+
+/* trends: future skills radar, what changed, filters, 30-day lines */
+.radar-row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 24px; align-items: center; margin: 8px 0 20px; }
+.radar { width: 100%; height: auto; overflow: visible; }
+.radar .rd-ring { fill: none; stroke: var(--rule); }
+.radar .rd-zero { fill: none; stroke: var(--rule-strong); stroke-dasharray: 3 3; }
+.radar .rd-spoke { stroke: var(--rule); }
+.radar .rd-label { font: 500 9.5px var(--font-ui); fill: var(--ink-2); }
+.radar .rd-label.rising { fill: var(--ok, #1a7f4b); font-weight: 650; }
+.radar .rd-label.falling { fill: var(--danger, #b42318); font-weight: 650; }
+.radar .rd-now { fill: color-mix(in oklch, var(--accent) 18%, transparent); stroke: var(--accent); stroke-width: 2; }
+.radar .rd-prev { fill: none; stroke: var(--ink-2); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.radar-key { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; color: var(--ink-2); margin: 6px 0 0; }
+.radar-key .k-now::before, .radar-key .k-prev::before { content: ""; display: inline-block; width: 18px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid var(--accent); }
+.radar-key .k-prev::before { border-top: 1.5px dashed var(--ink-2); }
+.trend-changes h3 { display: flex; align-items: center; gap: 8px; font-size: 18px; margin: 0 0 8px; }
+.trend-changes ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 16px; }
+.board-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; }
+.board-filters .input { max-width: 260px; }
+.tc-history { display: grid; gap: 2px; font-size: 13px; color: var(--ink-2); }
+.zline polyline { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+.zline .zl-zero { stroke: var(--rule-strong); stroke-dasharray: 2 3; }
+@media (max-width: 760px) { .radar-row { grid-template-columns: 1fr; } }

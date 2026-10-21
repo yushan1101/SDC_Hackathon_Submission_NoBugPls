@@ -398,6 +398,40 @@ function spark(values) {
 }
 
 /** The daily AI-trend board (public "Today" and Enterprise "Signals"). */
+const SVG = "http://www.w3.org/2000/svg";
+const svg = (tag, attrs = {}) => { const e = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
+
+/** Future skills radar: one spoke per AI topic, distance = trend strength (z, clipped to ±3); dashed = the previous board. */
+function radar(topics, prev) {
+  const n = topics.length, R = 120, c = 160, r = (z) => R * (Math.max(-3, Math.min(3, z)) + 3) / 6;
+  const pt = (i, z) => { const a = -Math.PI / 2 + (2 * Math.PI * i) / n; return [c + r(z) * Math.cos(a), c + r(z) * Math.sin(a)]; };
+  const s = svg("svg", { viewBox: "-100 0 520 320", class: "radar", role: "img",
+    "aria-label": `Future skills radar: ${topics.filter((t) => t.direction === "rising").map((t) => t.label).join(", ") || "no topic"} rising` });
+  for (const z of [-2, 0, 2]) s.append(svg("circle", { cx: c, cy: c, r: r(z), class: z === 0 ? "rd-zero" : "rd-ring" }));
+  topics.forEach((t, i) => {
+    const [x, y] = pt(i, 3);
+    s.append(svg("line", { x1: c, y1: c, x2: x, y2: y, class: "rd-spoke" }));
+    const lab = svg("text", { x: c + (x - c) * 1.07, y: c + (y - c) * 1.07, class: `rd-label ${t.direction}`,
+      "text-anchor": Math.abs(x - c) < 8 ? "middle" : x > c ? "start" : "end", "dominant-baseline": "middle" });
+    lab.textContent = t.label.length > 18 ? t.label.slice(0, 17) + "…" : t.label;
+    s.append(lab);
+  });
+  const poly = (zs, cls) => svg("polygon", { points: zs.map((z, i) => pt(i, z).join(",")).join(" "), class: cls });
+  if (prev) s.append(poly(topics.map((t) => prev[t.id] ?? 0), "rd-prev"));
+  s.append(poly(topics.map((t) => t.z), "rd-now"));
+  return s;
+}
+
+/** 30-day trend-strength line for one topic (z can be negative). */
+function zLine(values) {
+  const w = 120, ht = 28, lo = Math.min(-2, ...values), hi = Math.max(2, ...values);
+  const y = (v) => ht - ((v - lo) / (hi - lo)) * ht;
+  const s = svg("svg", { viewBox: `0 -1 ${w} ${ht + 2}`, width: w, height: ht, class: "zline", "aria-hidden": "true" });
+  s.append(svg("line", { x1: 0, x2: w, y1: y(0), y2: y(0), class: "zl-zero" }));
+  s.append(svg("polyline", { points: values.map((v, i) => `${(i / Math.max(1, values.length - 1)) * w},${y(v)}`).join(" ") }));
+  return s;
+}
+
 export function boardView(b, { onRefresh } = {}) {
   if (!b?.available) return h("div", { class: "empty" }, h("h2", {}, "No trend board yet"),
     h("p", { class: "muted" }, b?.message || "The board is built once a day from public news, research and job-posting signals."),
@@ -417,7 +451,8 @@ export function boardView(b, { onRefresh } = {}) {
     const hn = t.sources.hn, jobs = t.sources.jobs;
     const growth = hn ? `${hn.weekly_growth_pct > 0 ? "+" : ""}${hn.weekly_growth_pct.toFixed(1)}%` : null;
     const links = t.evidence_ids.filter((id) => evid.has(id)).map((id) => evid.get(id));
-    return reveal(h("article", { class: "topic-card" },
+    return reveal(h("article", { class: "topic-card", "data-topic": t.id, "data-kind": t.kind,
+      "data-text": `${t.label} ${(t.skills || []).join(" ")}`.toLowerCase() },
       h("div", { class: "tc-top" }, h("h4", {}, t.label),
         h("span", { class: `trend ${t.direction}`, title: `Trend strength z = ${t.z.toFixed(1)} (rising at z ≥ 2, falling at z ≤ −2); confidence ${t.confidence}` }, dir(t))),
       h("div", { class: "tc-figure" },
@@ -431,6 +466,47 @@ export function boardView(b, { onRefresh } = {}) {
       DROP, { delay: Math.min(i, 12) * 30 });
   };
   const topics = [...b.topics].sort((a, z) => Math.abs(z.z) - Math.abs(a.z));
+  const grid = h("div", { class: "topic-grid" }, topics.map(card));
+  // filter by type of topic, or by a skill / topic word
+  let kind = "all";
+  const q = h("input", { class: "input sm", type: "search", placeholder: "Filter by skill, e.g. programming, writing", "aria-label": "Filter topics by skill", oninput: filter });
+  const empty = h("p", { class: "muted", hidden: true }, "No topic matches this filter.");
+  function filter() {
+    const term = q.value.trim().toLowerCase();
+    let shown = 0;
+    grid.querySelectorAll(".topic-card").forEach((el) => {
+      const ok = (kind === "all" || el.dataset.kind === kind || (kind === "moving" && !el.querySelector(".trend.stable"))) && (!term || el.dataset.text.includes(term));
+      el.hidden = !ok; shown += ok;
+    });
+    empty.hidden = shown > 0;
+  }
+  const seg = h("div", { class: "seg", role: "group", "aria-label": "Show topics" },
+    [["all", "All"], ["moving", "Rising or falling"], ["capability", "New skills"], ["automation", "Automation"]].map(([k, l]) =>
+      h("button", { type: "button", "aria-pressed": String(k === kind), onclick: (e) => {
+        kind = k; seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === e.currentTarget))); filter(); } }, l)));
+  // radar + what changed since the previous board, once the history has loaded
+  const radarHost = h("div", { class: "radar-host" }, radar(b.topics, null));
+  const changes = h("div", { class: "trend-changes" });
+  api("/api/signals/history").then(({ days }) => {
+    const prev = days.filter((d) => d.day < b.day).at(-1);
+    radarHost.replaceChildren(radar(b.topics, prev?.z), h("p", { class: "radar-key" },
+      h("span", { class: "k-now" }, "Today"), prev ? h("span", { class: "k-prev" }, `Previous board (${prev.day})`) : null,
+      h("span", {}, "Further out = stronger trend; the middle ring is no change.")));
+    if (prev) {
+      const moved = b.topics.map((t) => ({ t, was: prev.direction?.[t.id] ?? (prev.z[t.id] >= 2 ? "rising" : prev.z[t.id] <= -2 ? "falling" : "stable"), dz: t.z - (prev.z[t.id] ?? 0) }));
+      const flips = moved.filter((m) => m.was !== m.t.direction);
+      const big = moved.filter((m) => m.was === m.t.direction && Math.abs(m.dz) >= 1).sort((a, z) => Math.abs(z.dz) - Math.abs(a.dz)).slice(0, 3);
+      changes.replaceChildren(h("h3", {}, icon("history"), `Since ${prev.day}`),
+        flips.length || big.length ? h("ul", {},
+          flips.map((m) => h("li", {}, h("b", {}, m.t.label), ` is now ${m.t.direction} (was ${m.was})`)),
+          big.map((m) => h("li", {}, h("b", {}, m.t.label), ` ${m.dz > 0 ? "strengthened" : "weakened"} by ${Math.abs(m.dz).toFixed(1)}`)))
+          : h("p", { class: "muted" }, "No topic changed direction."));
+    }
+    if (days.length >= 3) grid.querySelectorAll(".topic-card").forEach((el) => {
+      const vals = days.map((d) => d.z[el.dataset.topic]).filter((v) => v != null);
+      if (vals.length >= 3) el.querySelector(".tc-figure").append(h("div", { class: "tc-history", title: `Trend strength over the last ${vals.length} boards` }, zLine(vals), h("span", {}, `${vals.length}-day strength`)));
+    });
+  }).catch(() => { /* history is optional: the board stands on its own */ });
   const roleList = (rows, key, cls) => h("ol", { class: "role-list" }, rows.slice(0, 8).map((r) => h("li", {},
     jobIcon(r.soc, { size: 40, labelled: true }),
     h("span", { class: "rl-t" }, h("b", { title: `ESCO ${r.soc}` }, r.title), h("span", {}, r.drivers.map(label).filter(Boolean).slice(0, 2).join(" · "))),
@@ -440,7 +516,8 @@ export function boardView(b, { onRefresh } = {}) {
       h("div", { class: "board-head" }, h("h2", { id: "bt" }, "AI topics today"),
         h("span", { class: "info", role: "img", title: "Weekly change = growth of Hacker News stories per week over 8 weeks. Trend direction uses the combined trend strength (z) across sources: rising at z ≥ 2, falling at z ≤ −2.",
           "aria-label": "How trends are measured" }, icon("info"))),
-      h("div", { class: "topic-grid" }, topics.map(card))),
+      h("div", { class: "radar-row" }, radarHost, changes),
+      h("div", { class: "board-filters" }, seg, q), empty, grid),
     h("div", { class: "board-roles" },
       h("section", { class: "role-card" }, h("h3", {}, icon("up"), "Roles AI is pulling forward"), roleList(b.emerging_roles, "score", "rising")),
       h("section", { class: "role-card" }, h("h3", {}, icon("down"), "Roles under automation pressure"), roleList(b.declining_roles, "pressure", "falling"))),
