@@ -1,0 +1,1 @@
+- [CPU PyTorch packaging](cpu-pytorch-packaging.md) — prefer an explicit CPU index with manual uv resolution when the package installer rewrites unrelated sources.
