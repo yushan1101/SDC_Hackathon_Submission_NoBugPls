@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     cors_origins: str = ""
     # session cookie SameSite: "strict" (same site), "lax", or "none" (frontend on another site; forces Secure/https)
     cookie_samesite: str = Field("strict", pattern="^(strict|lax|none)$")
+    frame_ancestors: str = "'none'"  # explicit trusted embedding origins for development previews only
 
     @property
     def allowed_origins(self) -> list[str]:

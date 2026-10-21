@@ -1,19 +1,41 @@
-# Replit: Run starts the full web app (public site, HR console /enterprise, API) on Replit's port.
-run = "python src/main.py"
-entrypoint = "src/main.py"
-modules = ["python-3.11"]
-
+modules = ["web", "python-3.11", "nodejs-20", "bash"]
 [nix]
-channel = "stable-24_05"
+channel = "stable-25_05"
+packages = ["freetype", "glibcLocales", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "libxcrypt", "mupdf", "openjpeg", "qpdf", "swig", "xcbuild"]
 
-[env]
-PORT = "8080"
-PYTHONPATH = "src"
+[agent]
+expertMode = true
+
+[userenv]
+
+[userenv.development]
+COOKIE_SAMESITE = "none"
+FRAME_ANCESTORS = "'self' https://replit.com https://*.replit.com https://*.replit.dev"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd src && uv run uvicorn server.api:app --host 0.0.0.0 --port 5000 --proxy-headers --forwarded-allow-ips '*'"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
 
 [[ports]]
-localPort = 8080
+localPort = 5000
 externalPort = 80
-
-[deployment]
-run = ["sh", "-c", "pip install -r requirements.txt && (cd src && python scripts/seed_demo_users.py) && python src/main.py"]
-deploymentTarget = "cloudrun"

@@ -10,6 +10,8 @@ PW = "Correct-Horse9"
 def client(tmp_path_factory):
     os.environ["DATABASE_PATH"] = str(tmp_path_factory.mktemp("db") / "audit.sqlite3")
     os.environ["SIGNALS_DAILY"] = "0"  # no network fetches in tests
+    os.environ["COOKIE_SAMESITE"] = "strict"  # test secure defaults, independent of preview settings
+    os.environ["FRAME_ANCESTORS"] = "'none'"
     os.environ["CORS_ORIGINS"] = "https://app.example.com"  # a separately deployed frontend
     from config.settings import get_settings
     get_settings.cache_clear()
@@ -42,6 +44,16 @@ def test_auth_csrf_and_headers(client):
     assert "httponly" in r.headers["set-cookie"].lower() and "samesite=strict" in r.headers["set-cookie"].lower()
     assert client.get("/api/me").json()["employee_id"] == "E-001"
     assert "frame-ancestors 'none'" in client.get("/").headers["content-security-policy"]
+
+
+def test_preview_embedding_uses_only_configured_origins(client, monkeypatch):
+    import server.api as api
+    monkeypatch.setattr(api.cfg, "frame_ancestors", "'self' https://replit.com https://*.replit.dev")
+    monkeypatch.setattr(api.cfg, "cookie_samesite", "none")
+    policy = client.get("/").headers["content-security-policy"]
+    assert "frame-ancestors 'self' https://replit.com https://*.replit.dev" in policy
+    cookie = login(client, "ana").headers["set-cookie"].lower()
+    assert "samesite=none" in cookie and "secure" in cookie
 
 
 def test_public_stream_and_approval(client):
