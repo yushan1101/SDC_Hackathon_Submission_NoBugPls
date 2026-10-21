@@ -144,7 +144,7 @@ function needsPanel() {
 function rosterTable() {
   const rows = [...S.rows.values()];
   if (!rows.length) return null;
-  return h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Employees in this run"), h("span", { class: "muted num", style: { "font-size": "12px" } }, `${rows.filter((r) => r.status !== "running").length}/${rows.length} done`)),
+  return h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Employees in this run"), h("span", { class: "muted num", style: { "font-size": "14px" } }, `${rows.filter((r) => r.status !== "running").length}/${rows.length} done`)),
     h("div", { class: "table-wrap" }, h("table", { class: "data" },
       h("thead", {}, h("tr", {}, h("th", {}, "Employee"), h("th", {}, "Target role"), h("th", { class: "n hide-sm" }, "h/week"), h("th", {}, "Agents"), h("th", { class: "hide-sm" }, "Top gaps"), h("th", {}, "Status"))),
       h("tbody", {}, rows.map((r) => h("tr", { "data-href": r.plan_id ? `#/review/${r.plan_id}` : null, onclick: () => r.plan_id && (location.hash = `#/review/${r.plan_id}`) },
@@ -183,8 +183,8 @@ function runView(main) {
   const drop = h("label", { class: "drop", ondragover: (e) => { e.preventDefault(); drop.classList.add("over"); },
     ondragleave: () => drop.classList.remove("over"), ondrop: (e) => { e.preventDefault(); drop.classList.remove("over"); load(e.dataTransfer.files[0]); } },
     file, icon("upload"), h("strong", {}, "Drop a team CSV or choose a file"),
-    h("span", { class: "muted mono", style: { "font-size": "12px" } }, "employee_id, target_role, weekly_hours, skill, level"),
-    h("span", { class: "muted", style: { "font-size": "12px" } }, "target_role: any ESCO job title or code · max 5,000 rows · 500 employees · pseudonymous IDs only"));
+    h("span", { class: "muted mono", style: { "font-size": "14px" } }, "employee_id, target_role, weekly_hours, skill, level"),
+    h("span", { class: "muted", style: { "font-size": "14px" } }, "target_role: any ESCO job title or code · max 5,000 rows · 500 employees · pseudonymous IDs only"));
 
   async function load(f) {
     if (!f) return;
@@ -196,7 +196,7 @@ function runView(main) {
     const lines = text.trim().split(/\r?\n/);
     const head = lines[0].split(",").map((s) => s.trim());
     schema.replaceChildren(...["employee_id", "target_role", "weekly_hours", "skill", "level"].map((c) => h("li", { class: head.includes(c) ? "ok" : "bad" }, c)));
-    preview.replaceChildren(h("p", { class: "muted", style: { "font-size": "12px" } }, `${name} · ${lines.length - 1} rows`),
+    preview.replaceChildren(h("p", { class: "muted", style: { "font-size": "14px" } }, `${name} · ${lines.length - 1} rows`),
       h("div", { class: "table-wrap", style: { "max-height": "220px" } }, h("table", { class: "data" },
         h("thead", {}, h("tr", {}, head.map((c) => h("th", {}, c)))),
         h("tbody", {}, lines.slice(1, 9).map((l) => h("tr", {}, l.split(",").map((c) => h("td", { class: "mono" }, c))))))));
@@ -239,7 +239,7 @@ function runView(main) {
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Team file")), h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, drop, preview)),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Checks")),
         h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, schema, errors,
-          runBtn, h("p", { class: "muted", style: { "font-size": "12px" } }, "Each employee runs the full 8-agent pipeline in parallel. Drafts are never approved automatically.")))),
+          runBtn, h("p", { class: "muted", style: { "font-size": "14px" } }, "Each employee runs the full 8-agent pipeline in parallel. Drafts are never approved automatically.")))),
     live));
   if (S.csv) setCsv(S.csv, "current file");
 }

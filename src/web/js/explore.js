@@ -23,7 +23,7 @@ export function startView(main, { name, guest, jumpToday } = {}) {
       h("p", {}, "Discover your strengths, compare job skills and build a 90-day learning plan you control.")),
     h("section", { class: "entry-grid", "aria-label": "Choose how to begin" },
       option("#/quiz", "quiz", "Explore my strengths", "Answer 13 everyday work questions. About 2 minutes.", "Quick Match", true),
-      option("#/build", "target", "I have a target job", "Compare your skills with the requirements for a job you choose.", "Build a plan"),
+      option("#/report", "target", "I have a target job", "Compare your skills with the requirements for a job you choose.", "Build a plan"),
       option("#/resume", "file", "Use my résumé", "Upload PDF, Word or text to find skills supported by evidence.", "Upload résumé"))));  // today's signals are one tap away in the header (Today)
 }
 
@@ -57,7 +57,7 @@ function guestHome(main, { jumpToday } = {}) {
       way("resume", "way-resume", "file", "Let your résumé speak", "PDF, Word or text. Every skill we find quotes the line that proves it.",
         "#/resume", "Upload résumé", resumeDemo),
       way("plan", "way-plan", "target", "Already know where you’re headed?", "Pick any ESCO occupation, see the skills to build, and get a plan that fits your week.",
-        "#/build", "Pick a job", planDemo)),
+        "#/report", "Pick a job", planDemo)),
     h("section", { class: "home-today", "aria-labelledby": "home-today" },
       h("h2", { id: "home-today" }, "The world of work keeps moving."),
       h("p", {}, "Today’s AI topics and the roles they may affect, rebuilt every day."),
