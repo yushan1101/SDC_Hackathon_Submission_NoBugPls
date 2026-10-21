@@ -20,7 +20,7 @@ const S = {
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
 // ---------------------------------------------------------------- boot
-const PUBLIC_PAGES = new Set(["", "start", "today", "signin"]);  // everything else needs an account
+const PUBLIC_PAGES = new Set(["", "start", "signin"]);  // everything else needs an account
 
 async function boot() {
   try {
@@ -157,7 +157,10 @@ function route() {
     location.replace("#/start");
     return;
   }
-  const page = requested;
+  // guests see today's board on the home page, not on a page of its own: show home and jump to the board
+  S.jumpToday = !S.me && requested === "today";
+  if (S.jumpToday) history.replaceState(null, "", "#/start");
+  const page = S.jumpToday ? "start" : requested;
   if (!S.me && !PUBLIC_PAGES.has(page)) {
     location.replace(`#/signin/${hash.slice(2)}`);
     return;
@@ -185,7 +188,8 @@ function route() {
   else if (page === "quiz") quizView(main, { status: S.status, planFor });
   else if (page === "resume") resumeView(main, { status: S.status, planFor });
   else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
-  else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me });
+  else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me, jumpToday: S.jumpToday });
+  S.jumpToday = false;
   reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });
   scrollTo({ top: page === "start" ? homeScrollTop : 0, behavior: "instant" });
 }

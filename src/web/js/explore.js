@@ -7,8 +7,8 @@ import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
 const KEYS = ["A", "B", "C", "D"];
 
 // ---------------------------------------------------------------- start: choose a path
-export function startView(main, { name, guest } = {}) {
-  if (guest) return guestHome(main);
+export function startView(main, { name, guest, jumpToday } = {}) {
+  if (guest) return guestHome(main, { jumpToday });
   // One decision per card. The old hero buttons, repeated giant cards and demo
   // mockups offered the same choices three times and pushed the real actions down.
   const option = (href, ic, title, description, action, featured = false) =>
@@ -28,7 +28,7 @@ export function startView(main, { name, guest } = {}) {
 }
 
 // The full landing page for visitors who are not signed in: the three ways in, each with a live-looking demo.
-function guestHome(main) {
+function guestHome(main, { jumpToday } = {}) {
   const go = (href, label, cls = "btn") => h("a", { class: cls, href }, label, icon("send"));
   const way = (id, cls, ic, heading, text, href, button, demo) =>
     h("section", { class: `way ${cls}`, "aria-labelledby": `way-${id}` },
@@ -62,7 +62,8 @@ function guestHome(main) {
       h("h2", { id: "home-today" }, "The world of work keeps moving."),
       h("p", {}, "Today’s AI topics and the roles they may affect, rebuilt every day."),
       today)));
-  api("/api/signals/today").then((b) => today.replaceWith(boardView(b))).catch(() => today.remove());
+  api("/api/signals/today").then((b) => today.replaceWith(boardView(b))).catch(() => today.remove())
+    .finally(() => jumpToday && document.getElementById("home-today")?.scrollIntoView({ block: "start" }));  // after the board is in, so nothing scrolls over it
 }
 
 // ---------------------------------------------------------------- quiz game
