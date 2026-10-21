@@ -44,9 +44,13 @@ async function boot() {
 // ---------------------------------------------------------------- sign in
 const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build: "the plan builder", report: "your briefing", plans: "your plans" };
 
+function cleanDestination(next) {
+  return ["start", "today", "quiz", "resume", "build", "report", "plans"].includes(next) ||
+    (next.startsWith("plans/") && /^[A-Za-z0-9_-]+$/.test(next.slice(6))) ? next : "start";
+}
 async function signIn(next = "start") {
   // Only internal hash routes can be used as post-login destinations.
-  next = /^(start|today|quiz|resume|build|report|plans(?:\/[A-Za-z0-9_-]+)?)$/.test(next) ? next : "start";
+  next = cleanDestination(next);
   const owl = new Owl({ size: 200, state: "greeting" });
   const err = h("p", { class: "error", role: "alert" });
   const user = h("input", { class: "input", name: "username", autocomplete: "username", required: true, maxlength: 40 });
@@ -160,7 +164,7 @@ function route() {
   }
   if (page === "signin") {
     const next = hash.startsWith("#/signin/") ? hash.slice("#/signin/".length) : "start";
-    if (S.me) { location.replace(`#/${/^(start|today|quiz|resume|build|report|plans(?:\\/[A-Za-z0-9_-]+)?)$/.test(next) ? next : "start"}`); return; }
+    if (S.me) { location.replace(`#/${cleanDestination(next)}`); return; }
     signIn(next);
     return;
   }
@@ -181,7 +185,7 @@ function route() {
   else if (page === "quiz") quizView(main, { status: S.status, planFor });
   else if (page === "resume") resumeView(main, { status: S.status, planFor });
   else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
-  else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\\b)(\\S+)/)?.[1], guest: !S.me });
+  else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me });
   reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });
   scrollTo({ top: page === "start" ? homeScrollTop : 0, behavior: "instant" });
 }

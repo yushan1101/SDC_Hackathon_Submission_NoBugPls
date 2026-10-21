@@ -99,7 +99,7 @@ async function signOut() { await api("/api/logout", { method: "POST" }).catch(()
 
 async function refreshPlans() {
   S.plans = await api("/api/plans").catch(() => []);
-  const open = S.plans.filter((p) => p.status !== "approved").length;
+  const open = S.plans.filter((p) => p.audience === "hr" && p.status !== "approved").length;
   S.badge.hidden = !open; S.badge.textContent = open;
   return S.plans;
 }
@@ -121,6 +121,7 @@ function route() {
   crumb(page);
   S.onScenarioChange = null;
   const main = $("#main");
+  S.routeVersion = (S.routeVersion || 0) + 1;
   main.scrollTop = 0;
   const views = { run: runView, review: () => reviewView(main, id), plans: () => plansView(main, id),
     openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status) };
@@ -180,7 +181,9 @@ function rosterTable() {
 const latestPerEmployee = (plans) => [...plans.reduce((m, p) => (!m.has(p.subject_id) || m.get(p.subject_id).created_utc < p.created_utc ? m.set(p.subject_id, p) : m), new Map()).values()];
 
 async function overview(main) {
+  const version = S.routeVersion;
   await refreshPlans();
+  if (version !== S.routeVersion) return;
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "Overview"), h("a", { class: "btn primary sm", href: "#/run" }, icon("upload"), "Upload team")),
     stats(), h("div", { class: "overview" }, needsPanel(),
@@ -267,7 +270,10 @@ function runView(main) {
 
 // ---------------------------------------------------------------- review queue (three panes)
 async function reviewView(main, id) {
+  const version = S.routeVersion;
+  const request = S.reviewRequest = (S.reviewRequest || 0) + 1;
   await refreshPlans();
+  if (version !== S.routeVersion || request !== S.reviewRequest) return;
   const items = S.plans.filter((p) => p.audience === "hr");
   if (id && !items.some((p) => p.plan_id === id)) { location.replace("#/review"); return; }
   let filter = S.reviewFilter || "open";
@@ -329,7 +335,9 @@ async function loadDetail(id, detail, aside, wrap) {
 
 // ---------------------------------------------------------------- plans register
 async function plansView(main, id) {
+  const version = S.routeVersion;
   await refreshPlans();
+  if (version !== S.routeVersion) return;
   const q = h("input", { class: "input", type: "search", placeholder: "Search employee or role", "aria-label": "Search plans", oninput: draw });
   const st = h("select", { class: "input", "aria-label": "Status", onchange: draw },
     ["all", "draft", "flagged", "approved"].map((s) => h("option", { value: s }, s === "all" ? "All statuses" : s)));
