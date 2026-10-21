@@ -166,7 +166,7 @@ function route() {
     else if (page === "quiz") quizView(main, { status: S.status, planFor });
     else if (page === "resume") resumeView(main, { status: S.status, planFor });
     else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
-    else startView(main, { name: S.me?.display_name?.split(" ")[0], guest: !S.me });
+    else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me });  // demo accounts have no real name: use the plain headline
   };
   go();
   reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });
