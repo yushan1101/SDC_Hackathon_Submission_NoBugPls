@@ -63,9 +63,9 @@ export async function openingsView(main, status) {
   const picker = occPicker((o) => { soc = o.soc; if (!title.value) title.placeholder = o.title; create.disabled = !!crit.parsed?.criteria?.blocked?.length; status.set("listening", o.title); });
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "Openings"),
-      h("span", { class: "muted", style: { "font-size": "13px" } }, "AI agents screen and rank. You decide.")),
+      h("span", { class: "muted", style: { "font-size": "14px" } }, "AI agents screen and rank. You decide.")),
     h("div", { class: "overview" },
-      h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Open roles"), h("span", { class: "muted num", style: { "font-size": "12px" } }, `${list.length}`)),
+      h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Open roles"), h("span", { class: "muted num", style: { "font-size": "14px" } }, `${list.length}`)),
         list.length ? h("div", { class: "table-wrap" }, h("table", { class: "data" },
           h("thead", {}, h("tr", {}, h("th", {}, "Role"), h("th", { class: "n" }, "Applicants"), h("th", { class: "n" }, "Recommended"), h("th", {}, "Status"), h("th", { class: "hide-sm" }, "Created"))),
           h("tbody", {}, list.map((o) => h("tr", { "data-href": "1", tabindex: "0", onclick: () => { location.hash = `#/openings/${o.id}`; },
@@ -166,7 +166,7 @@ export async function openingDetail(main, id, status) {
       h("a", { class: "btn sm", href: d.apply_path, target: "_blank", rel: "noopener" }, icon("ext"), "Open"))),
     h("div", { class: "overview" },
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Candidates"),
-        h("span", { class: "muted", style: { "font-size": "12px" } }, `${d.candidates.length} screened · ${rec.length} recommended by the ranking agent`)),
+        h("span", { class: "muted", style: { "font-size": "14px" } }, `${d.candidates.length} screened · ${rec.length} recommended by the ranking agent`)),
         d.candidates.length ? h("div", { class: "table-wrap" }, h("table", { class: "data" },
           h("thead", {}, h("tr", {}, h("th", { class: "n" }, "Rank"), h("th", {}, "Ref"), h("th", { class: "n" }, "Match"), h("th", {}, "Thresholds"), h("th", { class: "hide-sm" }, "Agent pick"), h("th", {}, "Decision"))),
           tbody))
@@ -175,7 +175,7 @@ export async function openingDetail(main, id, status) {
         h("div", { class: "pad", style: { display: "grid", gap: "12px" } }, crit.el, save,
           h("p", { class: "note" }, "Pipeline per resume: parse to Markdown → extract skills with quotes → document guard (hidden text, prompt injection, fraud signals) → assess fit (ESCO requirements, resume text, today's trend board) → judge each threshold. A ranking agent then recommends the best matches that pass every threshold.")))),
     pane,
-    h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Activity"), h("span", { class: "muted", style: { "font-size": "12px" } }, "append-only · UTC")),
+    h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Activity"), h("span", { class: "muted", style: { "font-size": "14px" } }, "append-only · UTC")),
       h("ol", { class: "history pad" }, d.events.slice().reverse().map((e) => h("li", {},
         h("time", { datetime: e.at_utc }, fmtTime(e.at_utc)),
         h("span", {}, h("b", {}, e.action.replace(/_/g, " ")), ` by ${e.actor}`, e.detail ? h("span", { class: "muted" }, ` · ${e.detail.slice(0, 120)}`) : null)))))));
@@ -195,7 +195,7 @@ export async function signalsView(main, status) {
   const host = h("div");
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "AI-trend signals"),
-      h("span", { class: "muted", style: { "font-size": "13px" } }, "Updated daily · read by the agents through MCP")), host));
+      h("span", { class: "muted", style: { "font-size": "14px" } }, "Updated daily · read by the agents through MCP")), host));
   const draw = async () => host.replaceChildren(boardView(await api("/api/signals/today"), { onRefresh: refresh }));
   async function refresh() {
     const before = (await api("/api/signals/today")).created_utc;

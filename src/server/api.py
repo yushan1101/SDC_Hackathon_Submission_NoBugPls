@@ -218,17 +218,48 @@ def serialise(s: dict) -> dict:
             "plan": p.model_dump() if p else None,
             "issues": [i.model_dump() for i in s.get("validation_issues", [])],
             "retrieval": s.get("retrieval", {}), "usage": summarize(s.get("usage", [])), "followup": s.get("followup"),
-            "revision_count": s.get("revision_count", 0)}
+            "revision_count": s.get("revision_count", 0),
+            "request": _request_dump(s.get("request"))}
+
+
+def _request_dump(r) -> dict | None:
+    if r is None:
+        return None
+    return {"target_role": r.target_role, "scenario": r.scenario, "query": r.query,
+            "weekly_learning_hours": r.profile.weekly_learning_hours, "skills": [x.model_dump() for x in r.profile.skills]}
+
+
+def _saved_thread(pid: str) -> list:
+    """The conversation saved with a plan's report (oldest turn first); [] if none."""
+    with DB_LOCK:
+        row = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
+    if not row:
+        return []
+    r = json.loads(row[0])
+    # reports saved before conversations were kept: their briefing is the first turn
+    return r.get("thread") or ([{"q": None, "a": r.get("narrative") or r.get("answer") or "",
+                                 "target_role": (r.get("occupation") or {}).get("soc"),
+                                 "title": (r.get("occupation") or {}).get("title")}] if r.get("narrative") or r.get("answer") else [])
+
+
+def _save_thread(pid: str, thread: list):
+    """A question that changes no plan still belongs to the conversation: add it to the saved report."""
+    with DB_LOCK, db:
+        row = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
+        if row:
+            db.execute("UPDATE plan_reports SET report=? WHERE plan_id=?",
+                       (json.dumps(json.loads(row[0]) | {"thread": thread}, default=str), pid))
 
 
 def sse(obj: dict) -> str:
     return f"data: {json.dumps(obj, default=str)}\n\n"
 
 
-def remember(pid: str, state: dict):
+def remember(pid: str, state: dict, thread: list | None = None):
+    report = serialise(state) | ({"thread": thread} if thread is not None else {})
     with DB_LOCK, db:
         db.execute("INSERT OR REPLACE INTO plan_reports(plan_id, report) VALUES(?,?)",
-                   (pid, json.dumps(serialise(state), default=str)))
+                   (pid, json.dumps(report, default=str)))
     RESULTS[pid] = state
     RESULTS.move_to_end(pid)
     while len(RESULTS) > 1000:
@@ -273,11 +304,16 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
     except ValidationError as e:
         raise HTTPException(422, str(e).splitlines()[0])
 
-    prev = None
+    prev, history = None, []
     if body.previous_plan_id:  # only the caller's own run; if the server restarted, it falls back to a full run
         with DB_LOCK:
-            if approval.can_act(db, body.previous_plan_id, user):
+            mine = approval.can_act(db, body.previous_plan_id, user)
+            if mine:
                 prev = RESULTS.get(body.previous_plan_id)
+        if mine:
+            history = _saved_thread(body.previous_plan_id)
+
+    asked = None if body.query == AnalyzeIn.model_fields["query"].default else body.query  # a typed message, not "make my plan"
 
     def gen():
         t0 = time.perf_counter()
@@ -286,7 +322,8 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
         try:
             # in a conversation (previous plan given) a vague follow-up refers to the plan; if the server lost that
             # run (restart), the briefing is rebuilt with the question instead of the message being rejected
-            for kind, node, upd in (graph.stream_followup(prev, req) if prev else graph.stream(req, conversation=bool(body.previous_plan_id))):
+            for kind, node, upd in (graph.stream_followup(prev, req) if prev else
+                                   graph.stream(req, conversation=bool(body.previous_plan_id), question=asked if body.previous_plan_id else None)):
                 if kind == "plan":
                     ran = set(upd["run"])
                     yield sse({"t": "plan", **upd, "label": f"Changed: {', '.join(upd['changed'])} · running " +
@@ -307,13 +344,19 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
             yield sse({"t": "error", "message": "The analysis failed. Please try again."})
             return
         out = serialise(final)
+        # the conversation so far plus this turn; q is None for the default "make my plan" request
+        thread = history + [{"q": asked,
+                             "a": out["narrative"] or out["answer"] or "", "target_role": req.target_role,
+                             "title": (out["occupation"] or {}).get("title"),
+                             "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}]
         pid = None
         if ran is not None and ran <= {"coach", "reviewer"}:
             pid = body.previous_plan_id  # a question changes no plan: keep answering about the same one
+            _save_thread(pid, thread)
         elif out["route"] == "complex":
             with DB_LOCK:
                 pid = approval.create(db, out["plan"], user["employee_id"], "individual", out["issues"])
-            remember(pid, final)
+            remember(pid, final, thread)
         yield sse({"t": "meta", "route": out["route"], "status": out["status"], "plan_id": pid,
                    "usage": out["usage"], "retrieval": out["retrieval"], "evidence": out["evidence"],
                    "target_role": req.target_role, "occupation": out["occupation"], "scenario": req.scenario})

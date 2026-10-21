@@ -7,7 +7,28 @@ import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
 const KEYS = ["A", "B", "C", "D"];
 
 // ---------------------------------------------------------------- start: choose a path
-export function startView(main, { name } = {}) {
+export function startView(main, { name, guest, jumpToday } = {}) {
+  if (guest) return guestHome(main, { jumpToday });
+  // One decision per card. The old hero buttons, repeated giant cards and demo
+  // mockups offered the same choices three times and pushed the real actions down.
+  const option = (href, ic, title, description, action, featured = false) =>
+    h("a", { href, class: `entry-card${featured ? " entry-featured" : ""}` },
+      h("span", { class: "entry-icon" }, icon(ic)),
+      h("span", { class: "entry-copy" }, h("strong", {}, title), h("span", {}, description)),
+      h("span", { class: "entry-action" }, action, icon("send")));
+  main.replaceChildren(h("div", { class: "home home-simple" },
+    h("section", { class: "home-hero intro-hero" },
+      new Owl({ size: 112, state: "greeting" }).el,
+      h("h1", {}, name ? `What would you like to do next, ${name}?` : "Find your next career step."),
+      h("p", {}, "Discover your strengths, compare job skills and build a 90-day learning plan you control.")),
+    h("section", { class: "entry-grid", "aria-label": "Choose how to begin" },
+      option("#/quiz", "quiz", "Explore my strengths", "Answer 13 everyday work questions. About 2 minutes.", "Quick Match", true),
+      option("#/report", "target", "I have a target job", "Compare your skills with the requirements for a job you choose.", "Build a plan"),
+      option("#/resume", "file", "Use my résumé", "Upload PDF, Word or text to find skills supported by evidence.", "Upload résumé"))));  // today's signals are one tap away in the header (Today)
+}
+
+// The full landing page for visitors who are not signed in: the three ways in, each with a live-looking demo.
+function guestHome(main, { jumpToday } = {}) {
   const go = (href, label, cls = "btn") => h("a", { class: cls, href }, label, icon("send"));
   const way = (id, cls, ic, heading, text, href, button, demo) =>
     h("section", { class: `way ${cls}`, "aria-labelledby": `way-${id}` },
@@ -25,25 +46,24 @@ export function startView(main, { name } = {}) {
     [["1–30", "Foundations"], ["31–60", "Apply it on real work"], ["61–90", "Show it, get it reviewed"]].map(([d, t]) =>
       h("div", {}, h("b", {}, `Days ${d}`), h("span", {}, t))));  // same phases as agents/pathway.py
   const owl = new Owl({ size: 168, state: "greeting" });
+  const today = h("p", { class: "muted" }, "Loading today’s board…");
   main.replaceChildren(h("div", { class: "home" },
     h("section", { class: "home-hero" }, owl.el,
-      h("h1", {}, name ? `Where next, ${name}?` : "Where could your skills take you?"),
-      h("p", {}, "Find roles you could grow into and get a 90-day plan you approve, every claim cited."),
-      h("div", { class: "home-actions", role: "group", "aria-label": "Start here" },
-        go("#/quiz", "Start Quick Match", "btn primary"),
-        h("a", { class: "btn", href: "#/resume" }, icon("file"), "Upload résumé"),
-        h("a", { class: "btn", href: "#/build" }, icon("target"), "Pick a job"))),
+      h("h1", {}, "Where could your skills take you?"),
+      h("p", {}, "Find roles you could grow into and get a 90-day plan you approve, every claim cited.")),
     h("div", { class: "home-ways" },
       way("quiz", "way-quiz", "quiz", "Discover what you’re good at", "13 everyday work questions, about 2 minutes. We estimate your skills and suggest roles.",
         "#/quiz", "Start Quick Match", quizDemo),
       way("resume", "way-resume", "file", "Let your résumé speak", "PDF, Word or text. Every skill we find quotes the line that proves it.",
         "#/resume", "Upload résumé", resumeDemo),
       way("plan", "way-plan", "target", "Already know where you’re headed?", "Pick any ESCO occupation, see the skills to build, and get a plan that fits your week.",
-        "#/build", "Pick a job", planDemo)),
+        "#/report", "Pick a job", planDemo)),
     h("section", { class: "home-today", "aria-labelledby": "home-today" },
       h("h2", { id: "home-today" }, "The world of work keeps moving."),
       h("p", {}, "Today’s AI topics and the roles they may affect, rebuilt every day."),
-      go("#/today", "See today"))));
+      today)));
+  api("/api/signals/today").then((b) => today.replaceWith(boardView(b))).catch(() => today.remove())
+    .finally(() => jumpToday && document.getElementById("home-today")?.scrollIntoView({ block: "start" }));  // after the board is in, so nothing scrolls over it
 }
 
 // ---------------------------------------------------------------- quiz game
@@ -214,6 +234,25 @@ export function resumeView(main, ctx) {
       owl.set("matched"); drawMatches(m.matches);
     } }, "Re-match with my edits");
     const drawMatches = (m) => matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))) }));
+    const skillsList = skills.length ? h("ul", {}, skills.map((s, i) => reveal(h("li", {},
+      h("div", { class: "top" }, h("b", {}, s.name), s.kind === "tool" ? h("span", { class: "tag" }, "tool") : null, lv(s)),
+      s.evidence?.[0] ? h("q", {}, s.evidence[0]) : null), DROP, { delay: Math.min(i, 10) * 35 })))
+      : h("p", { class: "note" }, "No ESCO skills or tools found. Try a resume with a skills or experience section.");
+    const skillsViewport = h("div", { class: "cv-skills-scroll", "aria-hidden": "true", inert: true }, skillsList);
+    const skillsCollapse = h("div", { class: "cv-skills-collapse" }, skillsViewport);
+    const skillsToggle = h("button", { class: "btn sm cv-skills-toggle", type: "button", "aria-expanded": "false",
+      "aria-controls": "cv-extracted-skills", onclick: () => {
+        const expanded = skillsToggle.getAttribute("aria-expanded") !== "true";
+        skillsToggle.setAttribute("aria-expanded", String(expanded));
+        skillsToggle.textContent = expanded ? "Hide Skills" : "View & Edit Skills";
+        skillsCollapse.classList.toggle("is-open", expanded);
+        skillsViewport.setAttribute("aria-hidden", String(!expanded));
+        if (expanded) skillsViewport.removeAttribute("inert"); else skillsViewport.setAttribute("inert", "");
+      } }, "View & Edit Skills");
+    skillsViewport.id = "cv-extracted-skills";
+    const skillsControls = skills.length ? [skillsToggle,
+      h("p", { class: "cv-skills-hint" }, icon("info"), "Want to improve your matches? Expand your skills, adjust your ratings, and click Rematch to discover updated career recommendations."),
+      skillsCollapse] : [skillsList];
     const ins = r.insight;
     const mine = () => skills.map(({ name, level }) => ({ name, level }));
     const insight = ins ? h("section", { class: "cv-insight" },
@@ -241,11 +280,8 @@ export function resumeView(main, ctx) {
           h("pre", { tabindex: "0" }, r.markdown)),
         h("section", { class: "block cv-skills", "aria-label": "Skills found" },
           h("h3", {}, `${skills.length} skills found`, r.years_experience ? h("span", { class: "note" }, ` · about ${r.years_experience} years of experience`) : null),
-          skills.length ? h("ul", {}, skills.map((s, i) => reveal(h("li", {},
-            h("div", { class: "top" }, h("b", {}, s.name), s.kind === "tool" ? h("span", { class: "tag" }, "tool") : null, lv(s)),
-            s.evidence?.[0] ? h("q", {}, s.evidence[0]) : null), DROP, { delay: Math.min(i, 10) * 35 })))
-            : h("p", { class: "note" }, "No ESCO skills or tools found. Try a resume with a skills or experience section."),
-          h("div", { class: "row-actions" }, rematch))),
+          skillsControls,
+          h("div", { class: "row-actions cv-rematch-actions" }, rematch))),
       matchHost);
     drawMatches(r.matches);
   }
