@@ -12,7 +12,7 @@ const S = { me: null, meta: null, scenario: "assistive", status: null, rows: new
 // ---------------------------------------------------------------- boot / sign in
 async function boot() {
   try { S.me = await api("/api/me"); } catch (e) {
-    if (e instanceof ApiError && e.status === 401) return signIn();
+    if (e instanceof ApiError && e.status === 401) return location.replace("./#/signin");  // one sign-in page for everyone; it sends HR advisors back here
     throw e;
   }
   if (S.me.role === "employee") { location.replace("./"); return; }
@@ -26,29 +26,6 @@ async function boot() {
   route();
 }
 
-function signIn() {
-  const err = h("p", { role: "alert", style: { color: "var(--danger)", "min-height": "1.4em", "font-size": "13px" } });
-  const user = h("input", { class: "input", autocomplete: "username", required: true, maxlength: 40 });
-  const pass = h("input", { class: "input", type: "password", autocomplete: "current-password", required: true, maxlength: 200 });
-  const btn = h("button", { class: "btn primary", type: "submit" }, "Sign in");
-  const owl = new Owl({ size: 72, state: "idle" });
-  app.replaceChildren(h("main", { style: { "min-height": "100dvh", display: "grid", "place-items": "center", padding: "24px", background: "var(--shell)" } },
-    h("form", { class: "panel", style: { width: "min(400px, 100%)", padding: "28px", display: "grid", gap: "16px" }, onsubmit: async (e) => {
-      e.preventDefault(); btn.disabled = true; err.textContent = "";
-      try {
-        const me = await api("/api/login", { method: "POST", body: { username: user.value, password: pass.value } });
-        if (me.role === "employee") location.replace("./"); else location.reload();
-      } catch (ex) { err.textContent = ex.message; owl.set("confused"); btn.disabled = false; }
-    } },
-      h("div", { style: { display: "flex", "align-items": "center", gap: "12px" } }, owl.el,
-        h("div", {}, h("h1", { style: { "font-size": "18px" } }, "AiversePulse Enterprise"), h("p", { class: "muted", style: { "font-size": "13px" } }, "Workforce reskilling console"))),
-      h("label", { class: "field" }, h("span", {}, "Username"), user),
-      h("label", { class: "field" }, h("span", {}, "Password"), pass),
-      err, btn,
-      h("p", { class: "muted", style: { "font-size": "12px" } }, "Decision support only. Use pseudonymous employee IDs; never names or emails."),
-      h("a", { href: "./", style: { "font-size": "13px" } }, "Employee? Open AiversePulse"))));
-  user.focus();
-}
 
 // ---------------------------------------------------------------- shell
 function shell() {
