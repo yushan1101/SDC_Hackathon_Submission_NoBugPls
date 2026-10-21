@@ -44,7 +44,13 @@ async function boot() {
 // ---------------------------------------------------------------- sign in
 const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build: "the plan builder", report: "your briefing", plans: "your plans" };
 
+function cleanDestination(next) {
+  return ["start", "today", "quiz", "resume", "build", "report", "plans"].includes(next) ||
+    (next.startsWith("plans/") && /^[A-Za-z0-9_-]+$/.test(next.slice(6))) ? next : "start";
+}
 async function signIn(next = "start") {
+  // Only internal hash routes can be used as post-login destinations.
+  next = cleanDestination(next);
   const owl = new Owl({ size: 200, state: "greeting" });
   const err = h("p", { class: "error", role: "alert" });
   const user = h("input", { class: "input", name: "username", autocomplete: "username", required: true, maxlength: 40 });
@@ -69,7 +75,7 @@ async function signIn(next = "start") {
     } },
       h("a", { class: "signin-back", href: "#/start" }, icon("back"), "Back to home"),
       h("span", { class: "wordmark" }, "AiversePulse"),
-      FEATURE[next] ? h("p", { class: "signin-next" }, `Sign in to open ${FEATURE[next]}.`) : null,
+      FEATURE[next.split("/")[0]] ? h("p", { class: "signin-next" }, `Sign in to open ${FEATURE[next.split("/")[0]]}.`) : null,
       h("label", { class: "field" }, h("span", {}, "Username"), user),
       h("label", { class: "field" }, h("span", {}, "Password"), pass),
       err, btn,
@@ -116,7 +122,7 @@ function shell() {
   const startBtn = (cls) => h("button", { type: "button", class: cls, popovertarget: "core-menu", "data-route": "#/discover", "aria-haspopup": "true" },
     icon("spark"), h("span", {}, "Start"), cls === "nav-menu" ? icon("chevron") : null);
   app.replaceChildren(
-    h("a", { class: "sr-only", href: "#main" }, "Skip to content"),
+    h("button", { class: "sr-only skip-link", type: "button", onclick: () => $("#main")?.focus() }, "Skip to content"),
     h("header", { class: "pub-top" },
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
       h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), startBtn("nav-menu"), nav("#/today", "Today", "pulse"),
@@ -142,35 +148,46 @@ let homeScrollTop = 0;
 history.scrollRestoration = "manual";
 function route() {
   const hash = location.hash || "#/start";
-  const [, page = "start", id] = hash.split("/");
-  if (!S.me && !PUBLIC_PAGES.has(page)) { location.replace(`#/signin/${page}`); return; }  // features need an account
-  if (page === "signin") {
-    if (S.me) { location.replace(`#/${id || "start"}`); return; }
-    signIn(id);
+  const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
+  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans"]);
+  // Unknown routes and malformed nested routes return home instead of showing
+  // the wrong page. Plans are the only normal route with a detail identifier.
+  if (!allowed.has(requested) || (rest.length && requested !== "signin") ||
+      (id && requested !== "signin" && requested !== "plans")) {
+    location.replace("#/start");
     return;
   }
-  if (!$("#main")) shell();  // coming back from the full-page sign-in
-  const section = ["quiz", "resume", "build"].includes(page) ? "#/discover" : hash;
+  const page = requested;
+  if (!S.me && !PUBLIC_PAGES.has(page)) {
+    location.replace(`#/signin/${hash.slice(2)}`);
+    return;
+  }
+  if (page === "signin") {
+    const next = hash.startsWith("#/signin/") ? hash.slice("#/signin/".length) : "start";
+    if (S.me) { location.replace(`#/${cleanDestination(next)}`); return; }
+    signIn(next);
+    return;
+  }
+  if (!$("#main")) shell();
+  const section = ["quiz", "resume", "build"].includes(page) ? "#/discover" : `#/${page}`;
   document.querySelectorAll("[data-route]").forEach((a) => {
-    if (section.startsWith(a.dataset.route)) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    const active = section === a.dataset.route || section.startsWith(a.dataset.route + "/");
+    if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
   const main = $("#main");
   if (main.classList.contains("home-page")) homeScrollTop = window.scrollY;
   main._homeObserver?.disconnect();
-  main.classList.toggle("home-page", !["report", "plans", "build", "quiz", "resume", "today"].includes(page));
-  const go = () => {
-    if (page === "report") reportView(main);
-    else if (page === "plans" && id) planDetail(main, id);
-    else if (page === "plans") plansView(main);
-    else if (page === "build") buildView(main);
-    else if (page === "quiz") quizView(main, { status: S.status, planFor });
-    else if (page === "resume") resumeView(main, { status: S.status, planFor });
-    else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
-    else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me });  // demo accounts have no real name: use the plain headline
-  };
-  go();
+  main.classList.toggle("home-page", page === "start");
+  if (page === "report") reportView(main);
+  else if (page === "plans" && id) planDetail(main, id);
+  else if (page === "plans") plansView(main);
+  else if (page === "build") buildView(main);
+  else if (page === "quiz") quizView(main, { status: S.status, planFor });
+  else if (page === "resume") resumeView(main, { status: S.status, planFor });
+  else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
+  else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me });
   reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });
-  scrollTo({ top: main.classList.contains("home-page") ? homeScrollTop : 0, behavior: "instant" });
+  scrollTo({ top: page === "start" ? homeScrollTop : 0, behavior: "instant" });
 }
 
 // ---------------------------------------------------------------- build
@@ -297,8 +314,8 @@ function planFor(m, skills) {
 function start(query) {
   if (!S.profile.skills.length) { toast("Add at least one skill first.", "err"); location.hash = "#/build"; return; }
   S.pending = { ...S.profile, skills: S.profile.skills.map((s) => ({ ...s })), query };
-  location.hash = "#/report";
   if (location.hash === "#/report") reportView($("#main"));
+  else location.hash = "#/report";
 }
 
 // ---------------------------------------------------------------- report (chat)
