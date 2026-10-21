@@ -1394,3 +1394,82 @@ details.more summary::-webkit-details-marker { display: none; }
   translate: -100% 0; animation: cv-shimmer 1.4s var(--ease-in-out) infinite; }
 @keyframes cv-shimmer { to { translate: 100% 0; } }
 @media (prefers-reduced-motion: reduce) { .cv-progress .cv-bar::after { animation: none; display: none; } }
+
+/* Résumé skills: compact by default, with a bounded scroll area when opened. */
+.cv-skills { display: grid; gap: 12px; }
+.cv-skills h3 { margin: 0; }
+.cv-skills-toggle { justify-self: start; }
+.cv-skills-hint { display: flex; align-items: flex-start; gap: 8px; margin: -4px 0 0; color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+.cv-skills-hint svg { flex: none; width: 17px; height: 17px; margin-top: 2px; color: var(--accent); }
+.cv-skills-collapse { max-height: 0; overflow: hidden; opacity: 0; transition: max-height 360ms var(--ease-out), opacity 220ms ease; }
+.cv-skills-collapse.is-open { max-height: 440px; opacity: 1; }
+.cv-skills-scroll { max-height: 420px; overflow-y: auto; overscroll-behavior: contain; padding: 6px 14px; border: 1px solid var(--rule-strong); border-radius: 16px;
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface) 55%, oklch(0.97 0.018 290)); scrollbar-gutter: stable; }
+.cv-skills-scroll ul { border: 0; }
+.cv-skills-scroll li:last-child { border-bottom: 0; }
+.cv-rematch-actions { justify-content: flex-end; }
+.cv-rematch-actions .btn { min-height: 42px; }
+
+/* Role recommendations: aligned role/fit header, readable skill gaps, SDGs, and a steady action position. */
+.matches { display: grid; gap: 14px; margin: 0; padding: 0; border: 0; }
+.matches li { grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 14px 18px; padding: 18px 20px; border: 1px solid var(--rule); border-radius: 20px;
+  background: linear-gradient(145deg, oklch(1 0 0), oklch(0.985 0.012 262)); box-shadow: 0 8px 24px -20px oklch(0.25 0.05 262 / 0.4); }
+.matches li .rank { display: none; }
+.match-content { display: grid; gap: 14px; min-width: 0; }
+.match-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(96px, 136px); align-items: start; gap: 18px; min-width: 0; }
+.matches .who { display: grid; gap: 8px; min-width: 0; }
+.matches .who .job-line { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-width: 0; }
+.matches .who .job-line > b { min-width: 0; font-size: 19px; line-height: 1.25; overflow-wrap: anywhere; }
+.match-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.match-badges .trend { margin: 0; }
+.matches .fit { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 4px 8px; min-width: 0; }
+.matches .fit .num { font-size: 24px; line-height: 1.1; font-weight: 650; }
+.matches .fit .fitbar { grid-column: 1 / -1; height: 7px; border-radius: 99px; }
+.matches .fit .fitbar i { border-radius: inherit; }
+.matches .gaps { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; color: var(--ink-2); font-size: 14px; }
+.matches .gaps > svg { flex: none; width: 17px; height: 17px; color: var(--accent); }
+.gap-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.gap-chip { padding: 3px 9px; border: 1px solid var(--rule); border-radius: 99px; background: var(--surface); color: var(--ink); line-height: 1.4; overflow-wrap: anywhere; }
+.more-gaps { position: relative; }
+.more-gaps summary { color: var(--link); cursor: pointer; font-weight: 600; }
+.more-gaps ul { position: absolute; z-index: 2; inset: auto auto auto 0; display: grid; gap: 4px; min-width: 190px; max-width: min(320px, 80vw); max-height: 220px; overflow: auto;
+  margin: 6px 0 0; padding: 10px 14px; list-style: none; border: 1px solid var(--rule-strong); border-radius: 12px; background: var(--surface); box-shadow: var(--card-shadow); }
+.match-sdgs { display: grid; justify-items: start; gap: 6px; min-width: 0; }
+.match-sdgs .sdg-nums { gap: 7px; }
+.match-sdgs .sdg-n { width: 30px; height: 30px; border-radius: 9px; }
+.sdg-match-toggle { display: inline-flex; align-items: center; gap: 7px; padding: 3px 0; border: 0; background: transparent; color: var(--link); font: 600 14px/1.4 var(--font-ui); text-align: left; cursor: pointer; }
+.sdg-match-toggle svg { width: 16px; height: 16px; transition: transform 220ms var(--ease-out); }
+.sdg-match-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.sdg-expand-panel { display: grid; grid-template-rows: 0fr; width: 100%; min-width: 0; opacity: 0; transition: grid-template-rows 320ms var(--ease-out), opacity 220ms ease; }
+.sdg-expand-panel.is-open { grid-template-rows: 1fr; opacity: 1; }
+.sdg-expand-inner { min-height: 0; overflow: hidden; }
+.sdg-connections { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; width: 100%; margin: 8px 0 0; padding: 12px; list-style: none; border: 1px solid var(--rule); border-radius: 16px;
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface) 70%); }
+.sdg-connection-card { display: grid; gap: 6px; min-width: 0; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); overflow-wrap: anywhere; }
+.sdg-connection-head { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.sdg-connection-head .sdg-n { flex: none; }
+.sdg-connection-head b { min-width: 0; line-height: 1.35; }
+.sdg-target, .sdg-connection-copy { margin: 0; color: var(--ink-2); font-size: 14px; line-height: 1.55; }
+.sdg-target b, .sdg-connection-copy b { color: var(--ink); }
+.matches li > .match-plan { grid-column: 2; align-self: end; justify-self: end; white-space: nowrap; }
+
+@media (max-width: 899px) {
+  .matches li { grid-template-columns: minmax(0, 1fr) auto; }
+  .match-head { grid-template-columns: minmax(0, 1fr) 100px; gap: 12px; }
+  .matches .who .job-line { grid-template-columns: 40px minmax(0, 1fr); gap: 10px; }
+  .matches .who .job-line > b { font-size: 17px; }
+  .match-badges { grid-column: 2; }
+  .matches li > .match-plan { grid-column: 2; justify-self: end; }
+}
+@media (max-width: 560px) {
+  .matches li { grid-template-columns: minmax(0, 1fr); padding: 15px; }
+  .match-head { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .matches .fit { grid-template-columns: auto minmax(0, 1fr); max-width: 180px; }
+  .matches li > .match-plan { grid-column: 1; justify-self: stretch; }
+  .matches li > .match-plan { width: 100%; }
+  .cv-skills-collapse.is-open { max-height: 440px; }
+  .cv-skills-scroll { max-height: 420px; padding: 4px 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv-skills-collapse, .sdg-expand-panel, .sdg-match-toggle svg { transition: none; }
+}

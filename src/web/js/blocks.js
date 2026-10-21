@@ -278,6 +278,34 @@ function momentum(m) {
   return out;
 }
 
+function sdgMatchDetails(sdgs) {
+  const connections = sdgs.map((g) => {
+    const heading = h("div", { class: "sdg-connection-head" },
+      h("span", { class: "sdg-n", style: { "--sdg": g.color }, "aria-hidden": "true" }, g.goal),
+      h("b", {}, `SDG ${g.goal} · ${g.short}`));
+    const target = g.target
+      ? h("p", { class: "sdg-target" }, h("b", {}, "Relevant target: "), g.target)
+      : null;
+    const explanation = g.target && g.target_text
+      ? `ESCO role description matched to UN target ${g.target}: ${g.target_text}`
+      : `ESCO role description semantically matched to ${g.short}.`;
+    return h("li", { class: "sdg-connection-card" }, heading, target,
+      h("p", { class: "sdg-connection-copy" }, h("b", {}, "Connection to this career: "), explanation));
+  });
+  const body = h("ul", { class: "sdg-connections" }, connections);
+  const panel = h("div", { class: "sdg-expand-panel", "aria-hidden": "true", inert: true },
+    h("div", { class: "sdg-expand-inner" }, body));
+  const toggle = h("button", { type: "button", class: "sdg-match-toggle", "aria-expanded": "false",
+    onclick: () => {
+      const expanded = toggle.getAttribute("aria-expanded") !== "true";
+      toggle.setAttribute("aria-expanded", String(expanded));
+      panel.classList.toggle("is-open", expanded);
+      panel.setAttribute("aria-hidden", String(!expanded));
+      if (expanded) panel.removeAttribute("inert"); else panel.setAttribute("inert", "");
+    } }, "How this role connects to the goals", icon("chevron"));
+  return [toggle, panel];
+}
+
 /** Ranked future roles. onPlan(match) builds a full plan for one of them. */
 export function matchesBlock(matches, { onPlan, title = "Roles you could grow into", note } = {}) {
   if (!matches?.length) return block("Role matches", h("h3", {}, title), h("p", { class: "note" }, "No matches yet. Add a few more skills."));
@@ -285,23 +313,24 @@ export function matchesBlock(matches, { onPlan, title = "Roles you could grow in
     h("h3", {}, title),
     h("ol", { class: "matches" }, matches.map((m, i) => reveal(h("li", {},
       h("span", { class: "rank num" }, i + 1),
-      h("div", { class: "who" },
-        h("div", { class: "job-line", title: `ESCO ${m.soc}` }, jobIcon(m.soc, { size: 44, labelled: true }), h("b", {}, m.title), momentum(m)),
-        h("span", { class: "gaps" }, m.top_gaps?.length ? [icon("target"), `To learn: ${m.top_gaps.slice(0, 2).join(", ")}`,
-          m.top_gaps.length > 2 ? h("span", { class: "more", title: m.top_gaps.slice(2).join(", ") }, ` +${m.top_gaps.length - 2}`) : null] : [icon("check"), "No skill gaps"]),
-        m.sdgs?.length ? [
-          h("span", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))),
-          h("details", { class: "sdg-match-detail" }, h("summary", {}, "How this role connects to the goals"),
-            h("ul", {}, m.sdgs.map((g) => h("li", {},
-              h("b", {}, `SDG ${g.goal} · ${g.short}`),
-              h("span", {}, g.target && g.target_text
-                ? `ESCO role description matched to UN target ${g.target}: ${g.target_text}`
-                : `ESCO role description semantically matched to ${g.short}.`)))))
-        ] : null),
-      h("div", { class: "fit" },
-        h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
-        h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 }))),
-      onPlan ? h("button", { class: "btn sm", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null),
+      h("div", { class: "match-content" },
+        h("div", { class: "match-head" },
+          h("div", { class: "who" },
+            h("div", { class: "job-line", title: `ESCO ${m.soc}` },
+              jobIcon(m.soc, { size: 44, labelled: true }), h("b", {}, m.title),
+              h("span", { class: "match-badges" }, momentum(m)))),
+          h("div", { class: "fit" },
+            h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
+            h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 })))),
+        h("div", { class: "gaps" }, m.top_gaps?.length
+          ? [icon("target"), h("b", {}, "To learn"), h("span", { class: "gap-chips" }, m.top_gaps.slice(0, 3).map((gap) => h("span", { class: "gap-chip" }, gap))),
+            m.top_gaps.length > 3 ? h("details", { class: "more-gaps" }, h("summary", {}, `+${m.top_gaps.length - 3} more`),
+              h("ul", {}, m.top_gaps.slice(3).map((gap) => h("li", {}, gap)))) : null]
+          : [icon("check"), h("b", {}, "To learn"), h("span", {}, "No skill gaps identified")]),
+        m.sdgs?.length ? h("div", { class: "match-sdgs" },
+          h("div", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))),
+          sdgMatchDetails(m.sdgs)) : null),
+      onPlan ? h("button", { class: "btn sm primary match-plan", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null),
       DROP, { delay: Math.min(i, 8) * 45 }))),
     h("p", { class: "note" }, note || "Match = the share of each role's ESCO skills you already have. Trend arrows come from today's AI-trend board; they reorder roles, never change the match."));
 }
