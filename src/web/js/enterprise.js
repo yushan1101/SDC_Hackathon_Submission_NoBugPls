@@ -1,4 +1,5 @@
 // AiversePulse Enterprise (HR advisors): overview, upload + live team run, review queue, plans register.
+import "./motion.js";  // GSAP animations for whatever the app renders
 import { jobIcon } from "./jobicons.js";
 import { api, stream, h, $, icon, toast, fmtTime, ApiError } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
