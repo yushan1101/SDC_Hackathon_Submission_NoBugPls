@@ -8,12 +8,12 @@
 
 | Field                  | Details                                                        |
 | ---------------------- | -------------------------------------------------------------- |
-| **Team Name**          | _TODO_                                                         |
-| **Team Domain**        | _TODO: Domain 1 / Domain 2_                                    |
+| **Team Name**          |          NoBugPls                                                |
+| **Team Domain**        |        Domain 1                                                |
 | **SDG Track (1–17)**   | SDG 8 — Decent Work and Economic Growth (with SDG 4 — Quality Education) |
-| **Team Leader**        | _TODO_                                                         |
-| **University**         | _TODO_                                                         |
-| **Number of Members**  | _TODO_                                                         |
+| **Team Leader**        | Tang Yu Shan                                                         |
+| **University**         | Universiti Teknologi Malaysia (UTM); Universiti Tunku Abdul Rahman (UTAR)                                                      |
+| **Number of Members**  | **5**                                                        |
 
 ## Links
 
@@ -243,8 +243,10 @@ curl -X POST https://api.runpod.ai/v2/$RUNPOD_ENDPOINT_ID/runsync \
 
 | Name         | Role                | GitHub                                       |
 | ------------ | ------------------- | -------------------------------------------- |
-| Tang Yu Shan | _TODO_              | [@yushan1101](https://github.com/yushan1101) |
-| BOYU         | _TODO_              | _TODO_                                       |
+| Tang Yu Shan | Group Leader            | [@yushan1101](https://github.com/yushan1101) |
+| BOYU         | System developer              | [@OLGTX303](https://github.com/OLGTX303)                                      |
+| _TODO_       | _TODO_              | _TODO_                                       |
+| _TODO_       | _TODO_              | _TODO_                                       |
 | _TODO_       | _TODO_              | _TODO_                                       |
 
 ---
