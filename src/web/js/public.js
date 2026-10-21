@@ -4,7 +4,7 @@ import { api, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP, 
 import { Owl, OwlStatus } from "./owl.js";
 import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
-import { startView, quizView, resumeView, todayView } from "./explore.js";
+import { startView, quizView, resumeView, todayView, sdgsView } from "./explore.js";
 
 const app = $("#app");
 const store = {
@@ -20,7 +20,7 @@ const S = {
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
 // ---------------------------------------------------------------- boot
-const PUBLIC_PAGES = new Set(["", "start", "signin"]);  // everything else needs an account
+const PUBLIC_PAGES = new Set(["", "start", "signin", "sdgs"]);  // everything else needs an account
 
 async function boot() {
   try {
@@ -135,7 +135,7 @@ history.scrollRestoration = "manual";
 function route() {
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans"]);
+  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs"]);
   // Unknown routes and malformed nested routes return home instead of showing
   // the wrong page. Plans are the only normal route with a detail identifier.
   if (!allowed.has(requested) || (rest.length && requested !== "signin") ||
@@ -173,6 +173,7 @@ function route() {
   else if (page === "build") buildView(main);
   else if (page === "quiz") quizView(main, { status: S.status, planFor });
   else if (page === "resume") resumeView(main, { status: S.status, planFor });
+  else if (page === "sdgs") sdgsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me, jumpToday: S.jumpToday });
   S.jumpToday = false;
@@ -407,7 +408,8 @@ function briefingStarter() {
     h("p", { class: "muted" }, "Pick a job and the AI agents compare your skills with it, then write a 90-day plan here."),
     ready ? h("button", { type: "button", class: "btn primary brief-go", onclick: () => start() },
       jobIcon(p.target_role, { size: 28 }), `Continue with ${p.target_title || "my target job"}`) : null,
-    jobPicker(pickJob));
+    jobPicker(pickJob),
+    h("p", { class: "muted" }, "Prefer to enter all your skills yourself? ", h("a", { href: "#/build" }, "Use the skills form")));
 }
 
 function newChat() {
@@ -447,7 +449,7 @@ async function openConversation(id) {
       add(r.signals ? signalsBlock(r.signals) : null, true);
       add(r.sdgs?.length ? sdgBlock(r.sdgs) : null, true);
       add(r.issues?.some((x) => x.severity === "error") ? issuesBlock(r.issues.filter((x) => x.severity === "error")) : null);
-      body.append(planHolder(id, d.plan, r.request?.weekly_learning_hours ?? S.profile.weekly_learning_hours, d.status));
+      body.append(planHolder(id, d.plan, r.request?.weekly_learning_hours ?? S.profile.weekly_learning_hours, d.status, d.progress));
     }
     return [h("div", { class: "turn-user" }, h("p", { class: "q" }, t.q || `Plan for ${t.title || title}`)),
       h("article", { class: "turn-owl" }, new Owl({ size: 44, state: "idle" }).el,
@@ -599,12 +601,12 @@ async function runTurn(params) {
   }
 }
 
-function planHolder(planId, plan, hours, status) {
+function planHolder(planId, plan, hours, status, progress = []) {
   const holder = h("div");
   const render = async (st, version) => {
-    holder.replaceChildren(planBlock({ planId, plan, version, status: st, weeklyHours: hours, onChange: async (next) => {
+    holder.replaceChildren(planBlock({ planId, plan, version, status: st, weeklyHours: hours, progress, evidence: S.evidence, onChange: async (next) => {
       const fresh = await api(`/api/plans/${planId}`);
-      plan = fresh.plan;
+      plan = fresh.plan; progress = fresh.progress || [];
       render(fresh.status, fresh.version);
       if (next === "approved") {
         S.status.set("celebrating", "Plan approved — it's yours");
@@ -654,7 +656,7 @@ async function planDetail(main, id, focusPlan = false) {
         h("h2", {}, "Your learning roadmap")), h("span", { class: `tag ${d.status}` }, d.status)),
       h("p", { class: "plan-hero-copy" }, approved ? "Your approved plan is ready. Follow the phases below to put it into action." : "Your learning plan, organized into three practical phases."),
       h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days"), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`))),
-    planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null,
+    planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence,
       title: approved ? "Your approved 90-day plan" : "Your proposed 90-day plan",
       onChange: () => planDetail(main, id, true) }));
   let expanded = !approved;
@@ -677,7 +679,13 @@ async function planDetail(main, id, focusPlan = false) {
     d.audience === "hr" && d.status === "approved" ? h("div", { class: "approve-bar" }, h("span", {}, "HR approved this plan for you."),
       h("button", { class: "btn primary", onclick: async () => { await api(`/api/plans/${id}/acknowledge`, { method: "POST" }); toast("Acknowledged"); planDetail(main, id); } }, "Acknowledge")) : null,
     h("section", { class: "block" }, h("h3", {}, "History"), historyBlock(d.history)));
-  main.replaceChildren(h("a", { href: "#/plans", class: "btn ghost sm" }, icon("back"), "All plans"),
+  const pdf = h("button", { class: "btn sm no-print", type: "button", onclick: () => {  // the browser's "Save as PDF", every section open
+    main.querySelectorAll("details").forEach((x) => { x.open = true; });
+    main.querySelectorAll(".plan-report-panel").forEach((x) => { x.inert = false; x.removeAttribute("aria-hidden"); });
+    main.querySelector(".plan-report")?.setAttribute("data-expanded", "true");
+    print();
+  } }, icon("file"), "Download PDF");
+  main.replaceChildren(h("div", { class: "plan-top-actions no-print" }, h("a", { href: "#/plans", class: "btn ghost sm" }, icon("back"), "All plans"), pdf),
     h("h1", { class: "page-title", style: { "margin-top": "12px" } }, r?.occupation?.title || d.plan.target_role), blocks);
   if (focusPlan) planFocus.focus({ preventScroll: true });
 }

@@ -1619,3 +1619,97 @@ details.more summary::-webkit-details-marker { display: none; }
   .phase-toggle > svg { width: 16px; height: 16px; }
   .phase-content { margin: 0 8px 16px 42px; }
 }
+
+/* trends: future skills radar, what changed, filters, 30-day lines */
+.radar-row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 24px; align-items: center; margin: 8px 0 20px; }
+.radar { width: 100%; height: auto; overflow: visible; }
+.radar .rd-ring { fill: none; stroke: var(--rule); }
+.radar .rd-zero { fill: none; stroke: var(--rule-strong); stroke-dasharray: 3 3; }
+.radar .rd-spoke { stroke: var(--rule); }
+.radar .rd-label { font: 500 9.5px var(--font-ui); fill: var(--ink-2); }
+.radar .rd-label.rising { fill: var(--ok, #1a7f4b); font-weight: 650; }
+.radar .rd-label.falling { fill: var(--danger, #b42318); font-weight: 650; }
+.radar .rd-now { fill: color-mix(in oklch, var(--accent) 18%, transparent); stroke: var(--accent); stroke-width: 2; }
+.radar .rd-prev { fill: none; stroke: var(--ink-2); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.radar-key { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; color: var(--ink-2); margin: 6px 0 0; }
+.radar-key .k-now::before, .radar-key .k-prev::before { content: ""; display: inline-block; width: 18px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid var(--accent); }
+.radar-key .k-prev::before { border-top: 1.5px dashed var(--ink-2); }
+.trend-changes h3 { display: flex; align-items: center; gap: 8px; font-size: 18px; margin: 0 0 8px; }
+.trend-changes ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 16px; }
+.board-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; }
+.board-filters .input { max-width: 260px; }
+.tc-history { display: grid; gap: 2px; font-size: 13px; color: var(--ink-2); }
+.zline polyline { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+.zline .zl-zero { stroke: var(--rule-strong); stroke-dasharray: 2 3; }
+@media (max-width: 760px) { .radar-row { grid-template-columns: 1fr; } }
+
+/* role matches: why-this-score, effort tags, comparison, UN goal filter, scenario switch */
+.matches-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.why-score { margin-top: 6px; font-size: 15px; }
+.why-score > summary { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); cursor: pointer; font-weight: 600; }
+.why-score > summary svg { width: 16px; height: 16px; }
+.why-rows { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.why-rows li { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; border-bottom: 1px solid var(--rule); padding-bottom: 6px; }
+.why-rows small { display: block; color: var(--ink-2); font-size: 13px; }
+.role-about { margin-top: 12px; display: grid; gap: 6px; }
+.role-about h5 { margin: 0; font-size: 15px; }
+.role-about p { margin: 0; line-height: 1.55; }
+.tag.effort.easy { background: var(--ok-soft); }
+.tag.effort.mid { background: var(--sunken); }
+.tag.effort.hard { background: var(--danger-soft); }
+.match-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.compare-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; cursor: pointer; }
+.compare-wrap { overflow-x: auto; margin: 0 0 14px; }
+table.compare { width: 100%; border-collapse: collapse; font-size: 15px; }
+table.compare th, table.compare td { padding: 10px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+table.compare thead th { font-weight: 650; }
+table.compare thead th .job-ic { margin-right: 8px; vertical-align: middle; }
+table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: nowrap; }
+.goal-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 14px; }
+.goal-filter .goal-chip[aria-pressed="true"] { background: var(--sdg); color: #fff; border-color: var(--sdg); }
+.goal-filter .chip[aria-pressed="true"] { border-color: var(--accent); }
+
+/* plan: progress, milestones, done activities, course links, cost */
+.plan-progress { display: grid; gap: 10px; padding: 16px 18px; margin-bottom: 14px; border: 1px solid var(--rule); border-radius: 16px; background: var(--surface); }
+.pp-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 16px; }
+.pp-bar { height: 10px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
+.pp-bar i { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width var(--t-fast, .2s) ease; }
+.milestones { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.milestones li { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: var(--sunken); color: var(--ink-2); font-size: 15px; }
+.milestones li svg { width: 16px; height: 16px; }
+.milestones li.ok { background: var(--ok-soft); color: var(--ink); font-weight: 600; }
+.act-done { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; margin-left: auto; margin-right: 10px; cursor: pointer; }
+.act.is-done { opacity: .72; }
+.act.is-done .top b { text-decoration: line-through; }
+.act-links { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; font-size: 15px; }
+.act-links a { display: inline-flex; align-items: center; gap: 6px; }
+.act-links svg { width: 15px; height: 15px; }
+.tag.free { background: var(--ok-soft); }
+.plan-cost { display: flex; align-items: center; gap: 6px; }
+.plan-cost svg { width: 16px; height: 16px; }
+
+/* résumé facts, SDG library, PDF/print */
+.cv-facts { margin: 6px 0 12px; }
+.cv-facts h4 { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 16px; }
+.cv-facts h4 svg { width: 16px; height: 16px; }
+.cv-facts ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 15px; }
+.cv-skill-edit .add-skill { display: flex; gap: 8px; margin-top: 10px; }
+.sdg-page { display: grid; gap: 28px; margin-top: 20px; }
+.sdg-bars { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+.sdg-bars li { display: grid; grid-template-columns: auto minmax(120px, 220px) 1fr auto; align-items: center; gap: 10px; font-size: 15px; }
+.sb-track { height: 10px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
+.sb-track i { display: block; height: 100%; border-radius: inherit; }
+.sdg-library { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.sdg-library li { display: grid; grid-template-columns: auto 1fr; gap: 14px; padding: 16px; border: 1px solid var(--rule); border-left: 6px solid var(--sdg); border-radius: 16px; background: var(--surface); }
+.sdg-library .sl-n { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--sdg); color: #fff; font-weight: 700; font-size: 20px; }
+.sdg-library p { margin: 4px 0; font-size: 15px; color: var(--ink-2); line-height: 1.45; }
+.sdg-library .sl-mine { display: flex; gap: 6px; align-items: center; color: var(--ink); font-weight: 600; }
+.sdg-library .sl-mine svg { width: 15px; height: 15px; }
+.plan-top-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+@media print {
+  .pub-top, .tabbar, .no-print, .composer, .sources, .report-toggle, .act-done, .approve-bar, .skip-link, .toast { display: none !important; }
+  body, .pub-main { background: #fff !important; padding: 0 !important; }
+  .phase-content, .plan-report-panel { display: block !important; }
+  .act, .block, .brief-card, .phase { break-inside: avoid; box-shadow: none !important; }
+  a { color: inherit; }
+}

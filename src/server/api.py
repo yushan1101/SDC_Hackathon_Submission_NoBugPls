@@ -57,7 +57,9 @@ RESULTS: "OrderedDict[str, dict]" = OrderedDict()  # plan_id -> last run, to re-
 
 with DB_LOCK:
     db.executescript("""CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, username TEXT, role TEXT,
-                        employee_id TEXT, display_name TEXT, expires_utc TEXT);""")
+                        employee_id TEXT, display_name TEXT, expires_utc TEXT);
+                        CREATE TABLE IF NOT EXISTS plan_progress(plan_id TEXT, item TEXT, done_utc TEXT,
+                        PRIMARY KEY(plan_id, item));""")  # activities ticked off as done ("<days>:<skill>")
 
 app = FastAPI(title="AiversePulse", docs_url=None, redoc_url=None, openapi_url=None)
 if cfg.allowed_origins:  # separate frontend deploy: only these origins may call the API with the session cookie
@@ -397,6 +399,23 @@ def plans(user: dict = Depends(current_user)):
         return approval.list_plans(db, user)
 
 
+@app.get("/api/sdgs")
+def sdgs(request: HttpRequest):
+    """All 17 UN goals (public). Signed in: how often each goal appears across the person's own plans."""
+    goals = [goal_meta(n) for n in range(1, 18)]
+    try:
+        user = current_user(request)
+    except HTTPException:
+        return {"goals": goals, "mine": None}
+    count: dict[int, list[str]] = {}
+    with DB_LOCK:
+        for p in approval.list_plans(db, user):
+            row = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (p["plan_id"],)).fetchone()
+            for g in (json.loads(row[0]).get("sdgs") or []) if row else []:
+                count.setdefault(g["goal"], []).append(p.get("target_title") or p.get("target_role") or p["plan_id"])
+    return {"goals": goals, "mine": {str(k): sorted(set(v)) for k, v in count.items()}}
+
+
 @app.get("/api/plans/{pid}")
 def plan(pid: str, user: dict = Depends(current_user)):
     _guard(pid, user)
@@ -405,8 +424,27 @@ def plan(pid: str, user: dict = Depends(current_user)):
         audience = db.execute("SELECT audience, subject_id FROM plans WHERE plan_id=?", (pid,)).fetchone()
     with DB_LOCK:
         saved = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
+        done = [r[0] for r in db.execute("SELECT item FROM plan_progress WHERE plan_id=?", (pid,))]
     report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else None
-    return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], **cur, "history": hist, "report": report}
+    return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], **cur, "history": hist, "report": report,
+            "progress": done}
+
+
+class ProgressIn(BaseModel):
+    item: str = Field(min_length=3, max_length=200)  # "<day range>:<skill>"
+    done: bool
+
+
+@app.post("/api/plans/{pid}/progress")
+def plan_progress(pid: str, body: ProgressIn, user: dict = Depends(current_user)):
+    _guard(pid, user)
+    with DB_LOCK, db:
+        if body.done:
+            db.execute("INSERT OR REPLACE INTO plan_progress VALUES(?,?,?)", (pid, body.item, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
+        else:
+            db.execute("DELETE FROM plan_progress WHERE plan_id=? AND item=?", (pid, body.item))
+        done = [r[0] for r in db.execute("SELECT item FROM plan_progress WHERE plan_id=?", (pid,))]
+    return {"progress": done}
 
 
 class EditIn(BaseModel):
@@ -619,12 +657,13 @@ def signals_today(day: str | None = None):  # public, read-only: shown on the la
 
 
 @app.get("/api/signals/history")
-def signals_history(user: dict = Depends(current_user)):
+def signals_history():  # public, like today's board: aggregate topic strength, nothing personal
     con = signals.db(cfg.database_path)
     out = []
     for d in reversed(signals.history_days(con, 30)):
         b = signals.latest_board(con, d)
-        out.append({"day": d, "z": {t["id"]: t["z"] for t in b["topics"]}})
+        out.append({"day": d, "z": {t["id"]: t["z"] for t in b["topics"]},
+                    "direction": {t["id"]: t.get("direction", "stable") for t in b["topics"]}})
     return {"days": out, "topics": [{"id": t["id"], "label": t["label"], "kind": t["kind"]} for t in signals.TOPICS]}
 
 
@@ -666,10 +705,10 @@ def _daily():  # ponytail: in-process hourly check; use cron / a job queue when 
 
 # --- matching: quiz game + resume deep analysis --------------------------------------------------------------
 def _matches(levels: dict, prefixes: list[str] | None = None, text: str | None = None, k: int = 8,
-             zone: int | None = None) -> list[dict]:
+             zone: int | None = None, scenario: str = "assistive") -> list[dict]:
     board = _board()
     try:
-        rows = matcher.match_roles(levels, k, board, text, prefixes or None, zone)
+        rows = matcher.match_roles(levels, k, board, text, prefixes or None, zone, scenario)
     except ImportError:
         log.exception("Career matching runtime is missing")
         raise HTTPException(503, "Career matching is temporarily unavailable: the server's local AI runtime needs setup. Your quiz answers are kept on this page; try again after setup.") from None
@@ -701,6 +740,7 @@ class QuizIn(BaseModel):
     answers: dict[str, int] = Field(max_length=40)
     fields: list[str] = Field(default=[], max_length=13)
     zone: int | None = Field(default=None, ge=1, le=5)  # ISCO-08 skill level (1-4) from the training question
+    scenario: str = Field(default="assistive", pattern="^(assistive|agentic)$")
 
 
 @app.post("/api/quiz/score")
@@ -708,19 +748,20 @@ def quiz_score(body: QuizIn, user: dict = Depends(current_user)):
     levels, prefixes = quiz.score(body.answers, body.fields)
     if len(levels) < 3:
         raise HTTPException(422, "Answer at least three questions.")
-    return {"skills": [{"name": k, "level": v} for k, v in levels.items()], "matches": _matches(levels, prefixes, quiz.profile_text(body.answers, body.fields) or None, zone=body.zone)}
+    return {"skills": [{"name": k, "level": v} for k, v in levels.items()], "matches": _matches(levels, prefixes, quiz.profile_text(body.answers, body.fields) or None, zone=body.zone, scenario=body.scenario)}
 
 
 class MatchIn(BaseModel):
     skills: list[SkillIn] = Field(max_length=60)
     text: str | None = Field(default=None, max_length=20000)
     fields: list[str] = Field(default=[], max_length=13)
+    scenario: str = Field(default="assistive", pattern="^(assistive|agentic)$")
 
 
 @app.post("/api/match")
 def match(body: MatchIn, user: dict = Depends(current_user)):
     _, prefixes = quiz.score({}, body.fields)
-    return {"matches": _matches({s.name: s.level for s in body.skills}, prefixes, body.text)}
+    return {"matches": _matches({s.name: s.level for s in body.skills}, prefixes, body.text, scenario=body.scenario)}
 
 
 async def _read(file: UploadFile) -> bytes:
@@ -787,7 +828,7 @@ def _analyze_resume(filename: str, data: bytes, progress=lambda stage: None) -> 
     progress("match")
     matches = _matches(levels, text=resume.redact(md)) if levels else []
     progress("advice")
-    return {"markdown": md, "skills": x["skills"], "years_experience": x["years_experience"], "integrity": integrity,
+    return {"markdown": md, "skills": x["skills"], "years_experience": x["years_experience"], "education": x.get("education", []), "experience": x.get("experience", []), "integrity": integrity,
             "extraction_mode": x["extraction_mode"], "llm_usage": x["llm_usage"], "matches": matches,
             "insight": resume.advise(md, x["skills"], matches, x["years_experience"])}
 

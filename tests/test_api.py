@@ -122,6 +122,51 @@ def test_question_after_restart_is_answered_not_a_repeat(client, monkeypatch):
     assert seen and seen[-1]["question"] == "How do I start with communication?"
 
 
+def test_plan_progress_is_saved_and_private(client):
+    login(client, "ana")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}
+    pid = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))[-1]["plan_id"]
+    assert client.get(f"/api/plans/{pid}").json()["progress"] == []
+    r = client.post(f"/api/plans/{pid}/progress", json={"item": "1-30:communication", "done": True}, headers={"X-AP": "1"})
+    assert r.json()["progress"] == ["1-30:communication"] and client.get(f"/api/plans/{pid}").json()["progress"] == ["1-30:communication"]
+    assert client.post(f"/api/plans/{pid}/progress", json={"item": "1-30:communication", "done": False}, headers={"X-AP": "1"}).json()["progress"] == []
+    login(client, "hr1")  # someone else's private plan: not even its progress
+    assert client.post(f"/api/plans/{pid}/progress", json={"item": "1-30:x", "done": True}, headers={"X-AP": "1"}).status_code == 404
+
+
+def test_matches_explain_their_score_and_follow_the_scenario(client):
+    login(client, "ana")
+    skills = [{"name": "Python", "level": 3}, {"name": "SQL", "level": 3}, {"name": "data analysis", "level": 3}]
+    a = client.post("/api/match", json={"skills": skills}, headers={"X-AP": "1"}).json()["matches"]
+    g = client.post("/api/match", json={"skills": skills, "scenario": "agentic"}, headers={"X-AP": "1"}).json()["matches"]
+    assert {"coverage", "alignment", "skill_fit", "trend_effect", "scenario"} <= set(a[0]) and a[0]["scenario"] == "assistive"
+    assert g[0]["scenario"] == "agentic"
+    assert client.post("/api/match", json={"skills": skills, "scenario": "doom"}, headers={"X-AP": "1"}).status_code == 422
+
+
+def test_sdg_library_is_public_and_personal_when_signed_in(client):
+    client.cookies.clear()
+    r = client.get("/api/sdgs").json()
+    assert len(r["goals"]) == 17 and r["mine"] is None
+    login(client, "ana")
+    assert isinstance(client.get("/api/sdgs").json()["mine"], dict)
+
+
+def test_resume_quotes_education_and_dated_jobs():
+    from agents import resume
+    md = ("- Data Analyst, Acme Sdn Bhd, 2020 - present\n- Intern, Beta Corp, 2019 - 2020\n"
+          "- Bachelor of Science in Statistics, University of Malaya, 2016 - 2020\n- Google Data Analytics Certificate\n")
+    assert resume._quoted_lines(md, resume.EDUCATION, 4) == ["Bachelor of Science in Statistics, University of Malaya, 2016 - 2020",
+                                                              "Google Data Analytics Certificate"]
+    jobs = [x for x in resume._quoted_lines(md, resume.SPAN, 10) if not resume.EDUCATION.search(x)]
+    assert jobs == ["Data Analyst, Acme Sdn Bhd, 2020 - present", "Intern, Beta Corp, 2019 - 2020"]
+
+
+def test_trend_history_is_public(client):
+    client.cookies.clear()
+    assert client.get("/api/signals/history").status_code == 200
+
+
 def test_team_stream_ticks_and_validation(client):
     login(client, "hr1")
     bad = client.post("/api/team", json={"csv": "employee_id,target_role\nx@y.com,Data Analyst", "scenario": "assistive"},
