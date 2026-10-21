@@ -125,16 +125,16 @@ function shell() {
     h("button", { class: "sr-only skip-link", type: "button", onclick: () => $("#main")?.focus() }, "Skip to content"),
     h("header", { class: "pub-top" },
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
-      h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), startBtn("nav-menu"), nav("#/today", "Today", "pulse"),
-        guest ? null : [nav("#/report", "Report", "report"), nav("#/plans", "My plans", "plans")]),
-      S.status.el,
+      // guests get one page (the home, with today's board on it) and one action: sign in
+      guest ? null : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), startBtn("nav-menu"), nav("#/today", "Today", "pulse"),
+        nav("#/report", "Report", "report"), nav("#/plans", "My plans", "plans")),
+      guest ? null : S.status.el,
       guest
-        ? h("div", { class: "top-actions" }, h("a", { class: "btn sm top-signin", href: "#/signin" }, "Sign in"),
-            h("a", { class: "btn sm primary top-start", href: "#/quiz" }, "Get started", icon("send")))
+        ? h("div", { class: "top-actions" }, h("a", { class: "btn sm primary top-signin", href: "#/signin" }, icon("user"), "Sign in"))
         : h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out")),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
-    h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), startBtn("tab-menu"), tab("#/today", "Today", "pulse"),
-      guest ? tab("#/signin", "Sign in", "user") : tab("#/plans", "Plans", "plans")),
+    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), startBtn("tab-menu"), tab("#/today", "Today", "pulse"),
+      tab("#/plans", "Plans", "plans")),
     menu, S.sheet);
 }
 
