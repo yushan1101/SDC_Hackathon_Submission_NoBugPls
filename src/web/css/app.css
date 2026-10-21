@@ -1394,3 +1394,63 @@ details.more summary::-webkit-details-marker { display: none; }
   translate: -100% 0; animation: cv-shimmer 1.4s var(--ease-in-out) infinite; }
 @keyframes cv-shimmer { to { translate: 100% 0; } }
 @media (prefers-reduced-motion: reduce) { .cv-progress .cv-bar::after { animation: none; display: none; } }
+
+
+/* ---------- Focused entry and navigation (2026-10 UX) ---------- */
+/* The primary decision lives in one place; the old oversized demo cards
+   remain unused, rather than interrupting a new user's first task. */
+[data-product="public"] .home-simple {
+  gap: clamp(22px, 4vw, 44px);
+  width: min(980px, 100%);
+  margin-inline: auto;
+  padding-bottom: 48px;
+}
+[data-product="public"] .intro-hero { gap: 12px; padding-top: clamp(12px, 3vw, 36px); }
+[data-product="public"] .intro-hero .owl { filter: none; }
+[data-product="public"] .intro-hero h1 { max-width: 18ch; font-size: clamp(40px, 5.4vw, 68px); }
+[data-product="public"] .intro-hero p { max-width: 55ch; font-size: clamp(16px, 1.5vw, 19px); }
+.entry-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.entry-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 14px;
+  min-width: 0; min-height: 244px; padding: 24px; text-decoration: none;
+  border: 1px solid var(--rule-strong); border-radius: 20px;
+  background: var(--surface); color: var(--ink);
+  transition: border-color var(--t-fast) ease, background var(--t-fast) ease;
+}
+.entry-card:hover, .entry-card:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.entry-featured { border-color: var(--accent); }
+.entry-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: var(--sunken); color: var(--accent); }
+.entry-icon svg { width: 23px; height: 23px; }
+.entry-copy { display: grid; gap: 8px; }
+.entry-copy strong { font-size: 19px; line-height: 1.25; }
+.entry-copy > span { color: var(--ink-2); font-size: 15px; line-height: 1.5; }
+.entry-action { display: inline-flex; align-items: center; gap: 8px; margin-top: auto; color: var(--accent); font-size: 15px; font-weight: 650; }
+.entry-action svg { width: 16px; height: 16px; }
+.home-updates { text-align: center; color: var(--ink-2); font-size: 15px; }
+.home-updates a { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+.home-updates svg { width: 14px; height: 14px; }
+.skip-link:focus-visible { z-index: 100; clip: auto; width: auto; height: auto; top: 8px; left: 8px; padding: 12px 18px; background: var(--surface); color: var(--ink); border: 2px solid var(--accent); }
+
+/* HR: scenario affects a team run, so the control belongs alongside that task. */
+[data-product="hr"] .run-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+[data-product="hr"] .run-actions .seg { display: flex; flex-wrap: nowrap; border: 1px solid var(--rule-strong); border-radius: 12px; overflow: hidden; }
+[data-product="hr"] .run-actions .seg button { min-height: 38px; padding: 0 12px; font-size: 14px; }
+[data-product="hr"] .run-actions .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+[data-product="hr"] .hr-more { position: fixed; inset: auto 12px calc(90px + env(safe-area-inset-bottom)) auto; width: min(260px, calc(100vw - 24px)); margin: 0; padding: 8px; background: var(--surface); border: 1px solid var(--rule-strong); border-radius: 16px; box-shadow: 0 12px 28px oklch(0.3 0.02 260 / 0.15); color: var(--ink); z-index: 60; }
+[data-product="hr"] .hr-more:popover-open { display: grid; }
+[data-product="hr"] .hr-more a, [data-product="hr"] .hr-more button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 0 12px; border: 0; border-radius: 10px; background: none; text-align: left; color: var(--ink); text-decoration: none; cursor: pointer; }
+[data-product="hr"] .hr-more a:hover, [data-product="hr"] .hr-more button:hover { background: var(--sunken); }
+[data-product="hr"] .hr-more svg { width: 20px; height: 20px; }
+[data-product="hr"] .hr-tabbar button.hr-more-button { display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 60px; padding: 8px 0; border: 0; background: transparent; color: var(--ink-2); font-size: 13px; font-weight: 600; cursor: pointer; }
+[data-product="hr"] .hr-tabbar .hr-more-button svg { width: 20px; height: 20px; }
+[data-product="hr"] .hr-tabbar .hr-more-button[aria-current="page"] { color: var(--accent); }
+@media (max-width: 899px) {
+  .entry-grid { grid-template-columns: 1fr; gap: 10px; }
+  .entry-card { min-height: 0; padding: 18px 20px; gap: 12px; }
+}
+@media (max-width: 767px) {
+  [data-product="hr"] .run-actions { width: 100%; }
+  [data-product="hr"] .run-actions .seg { flex: 1; }
+  [data-product="hr"] .run-actions .seg button { flex: 1; }
+  [data-product="hr"] .hr-tabbar a, [data-product="hr"] .hr-tabbar button.hr-more-button { min-height: 60px; font-size: 12px; }
+}
