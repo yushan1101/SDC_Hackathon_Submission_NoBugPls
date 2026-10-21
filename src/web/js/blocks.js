@@ -157,7 +157,13 @@ export function issuesBlock(issues) {
 }
 
 /** Editable 30/60/90 plan with approval. Talks to /api/plans/:id. Calls onChange(status) after saves. */
-export function planBlock({ planId, plan, version, status, weeklyHours, onChange, approverLabel = "I have reviewed this plan and approve it", title = "Your 90-day plan" }) {
+export function planBlock({ planId, plan, version, status, weeklyHours, onChange, approverLabel = "I have reviewed this plan and approve it", title = "Your 90-day plan",
+  progress = [], evidence = null }) {
+  // progress: activities ticked off as done ("<days>:<skill>", saved on the server); evidence: id -> {title, url} for course links
+  const done = new Set(progress);
+  const key = (a) => `${a.day_range}:${a.skill_id}`;
+  const ev = evidence instanceof Map ? evidence : new Map((evidence || []).map((e) => [e.id, e]));
+  const courses = (a) => (a.evidence_ids || []).map((id) => ev.get(id)).filter((e) => e?.url && e.id.startsWith("learn:")).slice(0, 2);
   const cap = weeklyHours ? Math.round((weeklyHours * 30) / 7 * 10) / 10 : null;
   const acts = plan.activities.map((a) => ({ ...a }));
   const tagEl = h("span", { class: `tag ${status}` }, status);
@@ -177,12 +183,17 @@ export function planBlock({ planId, plan, version, status, weeklyHours, onChange
         const n = String(s).replace(/\D/g, "");
         return h("span", { class: "sdg-n", style: { "--sdg": SDG_COLORS[n] || "#888" }, title: `UN SDG ${n}`, "aria-label": `UN SDG ${n}` }, n);
       });
+      const tick = planId ? h("label", { class: "act-done", title: "Mark this activity as done" },
+        h("input", { type: "checkbox", checked: done.has(key(a)) ? true : null, onchange: (e) => mark(a, e.target.checked, e.target) }), "Done") : null;
+      const links = courses(a);
       const main = h("div", { class: "act-main" },
-        h("div", { class: "top" }, h("b", {}, a.skill_id),
+        h("div", { class: "top" }, h("b", {}, a.skill_id), tick,
           h("label", {}, h("span", { class: "sr-only" }, `Hours for ${a.skill_id}, days ${p}`), input)),
         h("div", { class: "act-description" }, description),
+        links.length ? h("div", { class: "act-links" }, links.map((e) => h("a", { href: e.url, target: "_blank", rel: "noopener noreferrer" },
+          icon("sources"), /esco\.ec\.europa\.eu/.test(e.url) ? "ESCO skill guide" : `Open course: ${e.title}`, h("span", { class: "tag free" }, "free")))) : null,
         goals.length ? h("span", { class: "sdg-nums", "aria-label": "Related Sustainable Development Goals" }, goals) : null);
-      return reveal(h("article", { class: "act" }, main,
+      return reveal(h("article", { class: `act${done.has(key(a)) ? " is-done" : ""}`, "data-key": key(a) }, main,
         h("span", { class: "act-hours" }, icon("clock"), `${a.estimated_hours} h`)), DROP, { delay: i * 60 });
     });
     const heading = h("h4", {},
@@ -201,9 +212,30 @@ export function planBlock({ planId, plan, version, status, weeklyHours, onChange
       h("div", { class: "phase-intro" }, heading, h("p", { class: "phase-summary" }, summary)),
       icon("chevron"));
     const content = h("div", { class: "phase-content" }, budget, activityList);
-    return h("details", { class: "phase" }, phaseSummary, content);
+    return h("details", { class: "phase", "data-phase": p }, phaseSummary, content);
   });
-  const planEl = h("div", { class: "plan" }, phases);
+  const progressEl = h("div", { class: "plan-progress" });
+  function drawProgress() {
+    const total = acts.length, n = acts.filter((a) => done.has(key(a))).length;
+    const hrs = (xs) => Math.round(xs.reduce((s, a) => s + a.estimated_hours, 0) * 10) / 10;
+    const ms = PHASES.map((p, i) => { const xs = acts.filter((a) => a.day_range === p); return [p, ["Foundation", "Practice", "Portfolio"][i], xs.length && xs.every((a) => done.has(key(a)))]; });
+    progressEl.replaceChildren(
+      h("div", { class: "pp-head" }, h("b", {}, `${n} of ${total} activities done`), h("span", { class: "muted" }, `${hrs(acts.filter((a) => done.has(key(a))))} of ${hrs(acts)} hours`)),
+      h("div", { class: "pp-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(total), "aria-valuenow": String(n), "aria-label": "Plan progress" },
+        h("i", { style: { width: `${total ? (100 * n) / total : 0}%` } })),
+      h("ol", { class: "milestones", "aria-label": "Milestones" }, ms.map(([p, name, ok]) =>
+        h("li", { class: ok ? "ok" : null }, icon(ok ? "check" : "target"), h("span", {}, `Day ${p.split("-")[1]}: ${name}`), ok ? h("span", { class: "sr-only" }, " reached") : null))));
+  }
+  async function mark(a, value, box) {
+    value ? done.add(key(a)) : done.delete(key(a));
+    box.closest(".act")?.classList.toggle("is-done", value);
+    drawProgress();
+    try { await api(`/api/plans/${planId}/progress`, { method: "POST", body: { item: key(a), done: value } }); }
+    catch (e) { value ? done.delete(key(a)) : done.add(key(a)); box.checked = !value; box.closest(".act")?.classList.toggle("is-done", !value); drawProgress(); toast(e.message, "err"); }
+  }
+  if (planId) drawProgress();
+  const planEl = h("div", { class: "plan" }, planId ? progressEl : null, phases,
+    h("p", { class: "note plan-cost" }, icon("check"), "Cost: free. Every linked resource is official documentation, vendor training or the ESCO skill page."));
   const sdgGuide = h("details", { class: "note sdg-guide" }, h("summary", {}, "How activities connect to the SDGs"),
     h("p", {}, "Goal tags on each activity show its connection: SDG 4 for learning, SDG 8 for decent work, and (when mapped) one additional goal matched to that skill. These are evidence-linked suggestions, not official UN classifications."));
   const errBox = h("div", { class: "issues" });
@@ -328,32 +360,107 @@ function sdgMatchDetails(sdgs) {
 }
 
 /** Ranked future roles. onPlan(match) builds a full plan for one of them. */
-export function matchesBlock(matches, { onPlan, title = "Roles you could grow into", note } = {}) {
+/** Relative effort to move into a role, from how much of it you already cover (and a training level up adds a step). */
+const effort = (m) => { const c = m.coverage - (m.stretch ? 0.15 : 0);
+  return c >= 0.5 ? ["Short step", "easy"] : c >= 0.25 ? ["Medium step", "mid"] : ["Big step", "hard"]; };
+const signed = (x) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(Math.round(x * 100))}%`;
+
+/** Why a role scored what it did: each part of the score, the trend effect, the effort, and the role itself (ESCO). */
+function whyScore(m) {
+  const row = (label, value, hint) => h("li", {}, h("span", {}, label, hint ? h("small", {}, hint) : null), h("b", {}, value));
+  const about = h("div", { class: "role-about" }, h("p", { class: "muted" }, "Loading the role description…"));
+  const d = h("details", { class: "why-score" }, h("summary", {}, icon("info"), "Why this score"),
+    h("ul", { class: "why-rows" },
+      row("Skills you already have", pct(m.coverage), "share of this role's ESCO skills, weighted by importance"),
+      m.alignment != null ? row("Fit with what the role values", pct(m.alignment), "how important your strongest skills are to this role") : null,
+      m.text_fit != null ? row("Your résumé reads like this role", pct(m.text_fit), "meaning-based text similarity") : null,
+      m.tools_matched ? row("Tools you use that it lists", String(m.tools_matched)) : null,
+      m.trend_effect != null ? row(`Today's AI trends (${m.scenario === "agentic" ? "agentic" : "assistive"} AI)`, signed(m.trend_effect),
+        "growth minus automation pressure; reorders roles, never changes the match") : null,
+      row("Effort to switch", effort(m)[0],
+        `from the share of the role you already cover${m.stretch ? "; one training level above yours" : ""}. Your 90-day plan starts with the most important gaps`)),
+    about);
+  d.addEventListener("toggle", async () => {
+    if (!d.open || d.dataset.loaded) return;
+    d.dataset.loaded = "1";
+    try {
+      const o = await api(`/api/occupations/${m.soc}`);
+      about.replaceChildren(h("h5", {}, "About this role"),
+        h("p", {}, o.description.length > 420 ? o.description.slice(0, 420) + "…" : o.description),
+        o.skills?.length ? h("p", { class: "role-skills" }, h("b", {}, "Main skills: "), o.skills.slice(0, 6).map((s) => s.name).join(", ")) : null,
+        h("a", { href: o.url, target: "_blank", rel: "noopener noreferrer" }, "Full ESCO occupation page"));
+    } catch { about.replaceChildren(h("p", { class: "muted" }, "Role description unavailable right now.")); }
+  });
+  return d;
+}
+
+/** Side-by-side comparison of the roles ticked for comparison. */
+function compareTable(rows) {
+  const line = (label, f) => h("tr", {}, h("th", { scope: "row" }, label), rows.map((m) => h("td", {}, f(m))));
+  return h("div", { class: "compare-wrap" }, h("table", { class: "compare" },
+    h("thead", {}, h("tr", {}, h("td"), rows.map((m) => h("th", { scope: "col" }, jobIcon(m.soc, { size: 28 }), m.title)))),
+    h("tbody", {},
+      line("Match", (m) => pct(m.fit)),
+      line("Skills you already have", (m) => pct(m.coverage)),
+      line("AI trend effect", (m) => m.trend_effect != null ? signed(m.trend_effect) : "–"),
+      line("Effort to switch", (m) => effort(m)[0]),
+      line("Top skills to learn", (m) => (m.top_gaps || []).join(", ") || "none"),
+      line("UN goals", (m) => (m.sdgs || []).map((g) => `SDG ${g.goal}`).join(", ") || "–"))));
+}
+
+export function matchesBlock(matches, { onPlan, title = "Roles you could grow into", note, scenario, onScenario } = {}) {
   if (!matches?.length) return block("Role matches", h("h3", {}, title), h("p", { class: "note" }, "No matches yet. Add a few more skills."));
+  const picked = new Set();
+  const compareHost = h("div");
+  const drawCompare = () => compareHost.replaceChildren(picked.size >= 2 ? compareTable(matches.filter((m) => picked.has(m.soc))) :
+    picked.size === 1 ? h("p", { class: "note" }, "Tick one more role to compare.") : "");
+  // filter by UN goal: only goals that appear in these matches
+  const goals = [...new Map(matches.flatMap((m) => m.sdgs || []).map((g) => [g.goal, g])).values()].sort((a, b) => a.goal - b.goal);
+  let goal = null;
+  const list = h("ol", { class: "matches" }, matches.map((m, i) => reveal(h("li", { "data-goals": (m.sdgs || []).map((g) => g.goal).join(" ") },
+    h("span", { class: "rank num" }, i + 1),
+    h("div", { class: "match-content" },
+      h("div", { class: "match-head" },
+        h("div", { class: "who" },
+          h("div", { class: "job-line", title: `ESCO ${m.soc}` },
+            jobIcon(m.soc, { size: 44, labelled: true }), h("b", {}, m.title),
+            h("span", { class: "match-badges" }, momentum(m), h("span", { class: `tag effort ${effort(m)[1]}`, title: "Effort to switch, from the share of this role you already cover" }, effort(m)[0])))),
+        h("div", { class: "fit" },
+          h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
+          h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 })))),
+      h("div", { class: "gaps" }, m.top_gaps?.length
+        ? [icon("target"), h("b", {}, "To learn"), h("span", { class: "gap-chips" }, m.top_gaps.slice(0, 3).map((gap) => h("span", { class: "gap-chip" }, gap))),
+          m.top_gaps.length > 3 ? h("details", { class: "more-gaps" }, h("summary", {}, `+${m.top_gaps.length - 3} more`),
+            h("ul", {}, m.top_gaps.slice(3).map((gap) => h("li", {}, gap)))) : null]
+        : [icon("check"), h("b", {}, "To learn"), h("span", {}, "No skill gaps identified")]),
+      m.sdgs?.length ? h("div", { class: "match-sdgs" },
+        h("div", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))),
+        sdgMatchDetails(m.sdgs)) : null,
+      whyScore(m)),
+    h("div", { class: "match-actions" },
+      onPlan ? h("button", { class: "btn sm primary match-plan", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null,
+      h("label", { class: "compare-pick" }, h("input", { type: "checkbox", onchange: (e) => {
+        if (e.target.checked && picked.size >= 3) { e.target.checked = false; toast("Compare up to 3 roles at a time.", "err"); return; }
+        e.target.checked ? picked.add(m.soc) : picked.delete(m.soc); drawCompare(); } }), "Compare"))),
+    DROP, { delay: Math.min(i, 8) * 45 })));
+  const filterGoal = (g) => {
+    goal = g;
+    goalBar.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.goal || 0) === (g || 0))));
+    list.querySelectorAll(":scope > li").forEach((li) => { li.hidden = !!g && !li.dataset.goals.split(" ").includes(String(g)); });
+  };
+  const goalBar = goals.length > 1 ? h("div", { class: "goal-filter", role: "group", "aria-label": "Show roles serving a UN goal" },
+    h("span", { class: "muted" }, "UN goal:"),
+    h("button", { type: "button", class: "chip", "aria-pressed": "true", onclick: () => filterGoal(null) }, "All"),
+    goals.map((g) => h("button", { type: "button", class: "chip goal-chip", "data-goal": g.goal, "aria-pressed": "false", style: { "--sdg": g.color },
+      title: `SDG ${g.goal}: ${g.short}`, onclick: () => filterGoal(goal === g.goal ? null : g.goal) }, `${g.goal} · ${g.short}`))) : null;
+  const scenSeg = onScenario ? h("div", { class: "seg", role: "group", "aria-label": "AI scenario for the ranking" },
+    [["assistive", "Assistive AI"], ["agentic", "Agentic AI"]].map(([k, l]) => h("button", { type: "button", "aria-pressed": String((scenario || "assistive") === k),
+      title: k === "agentic" ? "AI agents take over routine work: automation pressure and AI-driven growth weigh more" : "AI helps people do today's work",
+      onclick: () => k !== (scenario || "assistive") && onScenario(k) }, l))) : null;
   return block("Role matches",
-    h("h3", {}, title),
-    h("ol", { class: "matches" }, matches.map((m, i) => reveal(h("li", {},
-      h("span", { class: "rank num" }, i + 1),
-      h("div", { class: "match-content" },
-        h("div", { class: "match-head" },
-          h("div", { class: "who" },
-            h("div", { class: "job-line", title: `ESCO ${m.soc}` },
-              jobIcon(m.soc, { size: 44, labelled: true }), h("b", {}, m.title),
-              h("span", { class: "match-badges" }, momentum(m)))),
-          h("div", { class: "fit" },
-            h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
-            h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 })))),
-        h("div", { class: "gaps" }, m.top_gaps?.length
-          ? [icon("target"), h("b", {}, "To learn"), h("span", { class: "gap-chips" }, m.top_gaps.slice(0, 3).map((gap) => h("span", { class: "gap-chip" }, gap))),
-            m.top_gaps.length > 3 ? h("details", { class: "more-gaps" }, h("summary", {}, `+${m.top_gaps.length - 3} more`),
-              h("ul", {}, m.top_gaps.slice(3).map((gap) => h("li", {}, gap)))) : null]
-          : [icon("check"), h("b", {}, "To learn"), h("span", {}, "No skill gaps identified")]),
-        m.sdgs?.length ? h("div", { class: "match-sdgs" },
-          h("div", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))),
-          sdgMatchDetails(m.sdgs)) : null),
-      onPlan ? h("button", { class: "btn sm primary match-plan", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null),
-      DROP, { delay: Math.min(i, 8) * 45 }))),
-    h("p", { class: "note" }, note || "Match = the share of each role's ESCO skills you already have. Trend arrows come from today's AI-trend board; they reorder roles, never change the match."));
+    h("div", { class: "matches-head" }, h("h3", {}, title), scenSeg),
+    goalBar, compareHost, list,
+    h("p", { class: "note" }, note || "Match combines how much of each role's ESCO skills you have, how well your skills fit what it values, and (with a résumé) how closely your experience reads like it. Today's AI trends reorder roles, never change the match. Open \"Why this score\" on any role."));
 }
 
 export function sdgBlock(sdgs) {
@@ -363,7 +470,7 @@ export function sdgBlock(sdgs) {
       note: "Matched by meaning between the ESCO occupation description and the 169 official UN SDG targets (MiniLM similarity). An evidence-linked suggestion, not an official UN classification. Every plan activity also serves SDG 4 and SDG 8." },
     h("div", { class: "sdg-nums" }, sdgs.map((g) => h("a", { class: "sdg-n big", href: `https://sdgs.un.org/goals/goal${g.goal}`, target: "_blank", rel: "noopener noreferrer",
       style: { "--sdg": g.color }, title: `SDG ${g.goal}: ${g.short}. Target ${g.target}: ${g.target_text}`, "aria-label": `UN SDG ${g.goal}: ${g.short}` }, String(g.goal)))),
-    h("p", { class: "bc-line" }, "How this career connects to the goals"),
+    h("p", { class: "bc-line" }, "How this career connects to the goals ", h("a", { href: "#/sdgs" }, "(all 17 goals)")),
     h("ul", { class: "sdg-connections" }, sdgs.map((g) => h("li", {},
       h("b", {}, `SDG ${g.goal} · ${g.short}`),
       h("span", {}, g.target && g.target_text
@@ -398,6 +505,40 @@ function spark(values) {
 }
 
 /** The daily AI-trend board (public "Today" and Enterprise "Signals"). */
+const SVG = "http://www.w3.org/2000/svg";
+const svg = (tag, attrs = {}) => { const e = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
+
+/** Future skills radar: one spoke per AI topic, distance = trend strength (z, clipped to ±3); dashed = the previous board. */
+function radar(topics, prev) {
+  const n = topics.length, R = 120, c = 160, r = (z) => R * (Math.max(-3, Math.min(3, z)) + 3) / 6;
+  const pt = (i, z) => { const a = -Math.PI / 2 + (2 * Math.PI * i) / n; return [c + r(z) * Math.cos(a), c + r(z) * Math.sin(a)]; };
+  const s = svg("svg", { viewBox: "-100 0 520 320", class: "radar", role: "img",
+    "aria-label": `Future skills radar: ${topics.filter((t) => t.direction === "rising").map((t) => t.label).join(", ") || "no topic"} rising` });
+  for (const z of [-2, 0, 2]) s.append(svg("circle", { cx: c, cy: c, r: r(z), class: z === 0 ? "rd-zero" : "rd-ring" }));
+  topics.forEach((t, i) => {
+    const [x, y] = pt(i, 3);
+    s.append(svg("line", { x1: c, y1: c, x2: x, y2: y, class: "rd-spoke" }));
+    const lab = svg("text", { x: c + (x - c) * 1.07, y: c + (y - c) * 1.07, class: `rd-label ${t.direction}`,
+      "text-anchor": Math.abs(x - c) < 8 ? "middle" : x > c ? "start" : "end", "dominant-baseline": "middle" });
+    lab.textContent = t.label.length > 18 ? t.label.slice(0, 17) + "…" : t.label;
+    s.append(lab);
+  });
+  const poly = (zs, cls) => svg("polygon", { points: zs.map((z, i) => pt(i, z).join(",")).join(" "), class: cls });
+  if (prev) s.append(poly(topics.map((t) => prev[t.id] ?? 0), "rd-prev"));
+  s.append(poly(topics.map((t) => t.z), "rd-now"));
+  return s;
+}
+
+/** 30-day trend-strength line for one topic (z can be negative). */
+function zLine(values) {
+  const w = 120, ht = 28, lo = Math.min(-2, ...values), hi = Math.max(2, ...values);
+  const y = (v) => ht - ((v - lo) / (hi - lo)) * ht;
+  const s = svg("svg", { viewBox: `0 -1 ${w} ${ht + 2}`, width: w, height: ht, class: "zline", "aria-hidden": "true" });
+  s.append(svg("line", { x1: 0, x2: w, y1: y(0), y2: y(0), class: "zl-zero" }));
+  s.append(svg("polyline", { points: values.map((v, i) => `${(i / Math.max(1, values.length - 1)) * w},${y(v)}`).join(" ") }));
+  return s;
+}
+
 export function boardView(b, { onRefresh } = {}) {
   if (!b?.available) return h("div", { class: "empty" }, h("h2", {}, "No trend board yet"),
     h("p", { class: "muted" }, b?.message || "The board is built once a day from public news, research and job-posting signals."),
@@ -417,7 +558,8 @@ export function boardView(b, { onRefresh } = {}) {
     const hn = t.sources.hn, jobs = t.sources.jobs;
     const growth = hn ? `${hn.weekly_growth_pct > 0 ? "+" : ""}${hn.weekly_growth_pct.toFixed(1)}%` : null;
     const links = t.evidence_ids.filter((id) => evid.has(id)).map((id) => evid.get(id));
-    return reveal(h("article", { class: "topic-card" },
+    return reveal(h("article", { class: "topic-card", "data-topic": t.id, "data-kind": t.kind,
+      "data-text": `${t.label} ${(t.skills || []).join(" ")}`.toLowerCase() },
       h("div", { class: "tc-top" }, h("h4", {}, t.label),
         h("span", { class: `trend ${t.direction}`, title: `Trend strength z = ${t.z.toFixed(1)} (rising at z ≥ 2, falling at z ≤ −2); confidence ${t.confidence}` }, dir(t))),
       h("div", { class: "tc-figure" },
@@ -431,6 +573,47 @@ export function boardView(b, { onRefresh } = {}) {
       DROP, { delay: Math.min(i, 12) * 30 });
   };
   const topics = [...b.topics].sort((a, z) => Math.abs(z.z) - Math.abs(a.z));
+  const grid = h("div", { class: "topic-grid" }, topics.map(card));
+  // filter by type of topic, or by a skill / topic word
+  let kind = "all";
+  const q = h("input", { class: "input sm", type: "search", placeholder: "Filter by skill, e.g. programming, writing", "aria-label": "Filter topics by skill", oninput: filter });
+  const empty = h("p", { class: "muted", hidden: true }, "No topic matches this filter.");
+  function filter() {
+    const term = q.value.trim().toLowerCase();
+    let shown = 0;
+    grid.querySelectorAll(".topic-card").forEach((el) => {
+      const ok = (kind === "all" || el.dataset.kind === kind || (kind === "moving" && !el.querySelector(".trend.stable"))) && (!term || el.dataset.text.includes(term));
+      el.hidden = !ok; shown += ok;
+    });
+    empty.hidden = shown > 0;
+  }
+  const seg = h("div", { class: "seg", role: "group", "aria-label": "Show topics" },
+    [["all", "All"], ["moving", "Rising or falling"], ["capability", "New skills"], ["automation", "Automation"]].map(([k, l]) =>
+      h("button", { type: "button", "aria-pressed": String(k === kind), onclick: (e) => {
+        kind = k; seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === e.currentTarget))); filter(); } }, l)));
+  // radar + what changed since the previous board, once the history has loaded
+  const radarHost = h("div", { class: "radar-host" }, radar(b.topics, null));
+  const changes = h("div", { class: "trend-changes" });
+  api("/api/signals/history").then(({ days }) => {
+    const prev = days.filter((d) => d.day < b.day).at(-1);
+    radarHost.replaceChildren(radar(b.topics, prev?.z), h("p", { class: "radar-key" },
+      h("span", { class: "k-now" }, "Today"), prev ? h("span", { class: "k-prev" }, `Previous board (${prev.day})`) : null,
+      h("span", {}, "Further out = stronger trend; the middle ring is no change.")));
+    if (prev) {
+      const moved = b.topics.map((t) => ({ t, was: prev.direction?.[t.id] ?? (prev.z[t.id] >= 2 ? "rising" : prev.z[t.id] <= -2 ? "falling" : "stable"), dz: t.z - (prev.z[t.id] ?? 0) }));
+      const flips = moved.filter((m) => m.was !== m.t.direction);
+      const big = moved.filter((m) => m.was === m.t.direction && Math.abs(m.dz) >= 1).sort((a, z) => Math.abs(z.dz) - Math.abs(a.dz)).slice(0, 3);
+      changes.replaceChildren(h("h3", {}, icon("history"), `Since ${prev.day}`),
+        flips.length || big.length ? h("ul", {},
+          flips.map((m) => h("li", {}, h("b", {}, m.t.label), ` is now ${m.t.direction} (was ${m.was})`)),
+          big.map((m) => h("li", {}, h("b", {}, m.t.label), ` ${m.dz > 0 ? "strengthened" : "weakened"} by ${Math.abs(m.dz).toFixed(1)}`)))
+          : h("p", { class: "muted" }, "No topic changed direction."));
+    }
+    if (days.length >= 3) grid.querySelectorAll(".topic-card").forEach((el) => {
+      const vals = days.map((d) => d.z[el.dataset.topic]).filter((v) => v != null);
+      if (vals.length >= 3) el.querySelector(".tc-figure").append(h("div", { class: "tc-history", title: `Trend strength over the last ${vals.length} boards` }, zLine(vals), h("span", {}, `${vals.length}-day strength`)));
+    });
+  }).catch(() => { /* history is optional: the board stands on its own */ });
   const roleList = (rows, key, cls) => h("ol", { class: "role-list" }, rows.slice(0, 8).map((r) => h("li", {},
     jobIcon(r.soc, { size: 40, labelled: true }),
     h("span", { class: "rl-t" }, h("b", { title: `ESCO ${r.soc}` }, r.title), h("span", {}, r.drivers.map(label).filter(Boolean).slice(0, 2).join(" · "))),
@@ -440,7 +623,8 @@ export function boardView(b, { onRefresh } = {}) {
       h("div", { class: "board-head" }, h("h2", { id: "bt" }, "AI topics today"),
         h("span", { class: "info", role: "img", title: "Weekly change = growth of Hacker News stories per week over 8 weeks. Trend direction uses the combined trend strength (z) across sources: rising at z ≥ 2, falling at z ≤ −2.",
           "aria-label": "How trends are measured" }, icon("info"))),
-      h("div", { class: "topic-grid" }, topics.map(card))),
+      h("div", { class: "radar-row" }, radarHost, changes),
+      h("div", { class: "board-filters" }, seg, q), empty, grid),
     h("div", { class: "board-roles" },
       h("section", { class: "role-card" }, h("h3", {}, icon("up"), "Roles AI is pulling forward"), roleList(b.emerging_roles, "score", "rising")),
       h("section", { class: "role-card" }, h("h3", {}, icon("down"), "Roles under automation pressure"), roleList(b.declining_roles, "pressure", "falling"))),

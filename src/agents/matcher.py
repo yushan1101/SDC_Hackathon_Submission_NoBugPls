@@ -18,6 +18,8 @@ from agents.knowledge import snapshot
 from agents.skillmap import MATCH, PARTIAL, vectors, vocabulary
 
 FUTURE_WEIGHT, PRESSURE_WEIGHT, TOOL_BONUS, STRETCH = 0.15, 0.10, 0.06, 0.85
+# scenario -> (growth weight, automation-pressure weight): agentic AI amplifies both, so trends reorder roles more
+SCENARIO_WEIGHTS = {"assistive": (FUTURE_WEIGHT, PRESSURE_WEIGHT), "agentic": (0.25, 0.30)}
 VECS = Path(__file__).resolve().parents[1] / "data" / "snapshots" / "occupation_vectors.npz"
 
 
@@ -88,7 +90,7 @@ def fit_for(levels: dict[str, int], soc: str, text: str | None = None, board: di
 
 
 def match_roles(levels: dict[str, int], top_k: int = 8, board: dict | None = None, text: str | None = None,
-                soc_prefixes: list[str] | None = None, max_zone: int | None = None) -> list[dict]:
+                soc_prefixes: list[str] | None = None, max_zone: int | None = None, scenario: str = "assistive") -> list[dict]:
     """soc_prefixes: ISCO-08 code prefixes (field filter). max_zone: the person's ISCO skill level (1-4);
     roles more than one level above are skipped, one level above are kept as a 'stretch' with a ranking penalty."""
     credit, S, lv = _credit(_prep(levels))
@@ -100,14 +102,15 @@ def match_roles(levels: dict[str, int], top_k: int = 8, board: dict | None = Non
         zone = occ[soc].get("job_zone") or 2
         if (soc_prefixes and not any(soc.startswith(p) for p in soc_prefixes)) or (max_zone and zone > max_zone + 1):
             continue
-        r = _score(soc, credit, S, lv, per_occ, tf)
+        r = _score(soc, credit, S, lv, per_occ, tf, scenario)
         r["stretch"] = bool(max_zone and zone > max_zone)
         r["score"] = round(r["score"] * (STRETCH if r["stretch"] else 1.0), 3)
         out.append(r)
     return sorted(out, key=lambda r: -r["score"])[:top_k]
 
 
-def _score(soc: str, credit: np.ndarray, S: np.ndarray, lv: np.ndarray, per_occ: dict, tf: dict | None) -> dict:
+def _score(soc: str, credit: np.ndarray, S: np.ndarray, lv: np.ndarray, per_occ: dict, tf: dict | None,
+           scenario: str = "assistive") -> dict:
     o = snapshot()["occupations"][soc]
     idx, w, req, is_tool = _occ_index()[soc]
     cur = np.minimum(credit[idx], req)
@@ -123,11 +126,16 @@ def _score(soc: str, credit: np.ndarray, S: np.ndarray, lv: np.ndarray, per_occ:
     fit = 0.55 * skill_fit + 0.45 * tf[soc] if tf else skill_fit
     sig = per_occ.get(soc, {})
     em, pr = float(sig.get("emergence", 0.0)), float(sig.get("pressure", 0.0))
-    score = fit * (1 + FUTURE_WEIGHT * np.clip(em, -1, 2) - PRESSURE_WEIGHT * np.clip(pr, 0, 2))
+    fw, pw = SCENARIO_WEIGHTS.get(scenario, SCENARIO_WEIGHTS["assistive"])
+    trend = fw * float(np.clip(em, -1, 2)) - pw * float(np.clip(pr, 0, 2))
+    score = fit * (1 + trend)
     names = list(o["skills"])
     gap = req - cur
     order = np.argsort(-(gap * w))
     return {"soc": soc, "title": o["title"], "fit": round(fit, 3), "score": round(float(score), 3),
             "coverage": round(coverage, 3), "tools_matched": tool_hit, "emergence": em, "pressure": pr,
+            # the parts of the score, so the UI can explain it
+            "skill_fit": round(float(skill_fit), 3), "alignment": round(alignment, 3),
+            "text_fit": round(float(tf[soc]), 3) if tf else None, "trend_effect": round(trend, 3), "scenario": scenario,
             "job_zone": o.get("job_zone"), "isco": o.get("isco"),
             "top_gaps": [names[i] for i in order[:3] if gap[i] > 0], "gap_levels": int(gap.sum())}

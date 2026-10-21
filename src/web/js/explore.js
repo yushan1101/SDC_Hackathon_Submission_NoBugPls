@@ -144,14 +144,14 @@ export async function quizView(main, ctx) {
     stage.replaceChildren(h("div", { class: "q" }, h("h2", {}, "Matching you against every occupation…"),
       h("p", { class: "muted" }, "Comparing your answers with ESCO requirements and today's AI-trend board.")));
     try {
-      const r = await api("/api/quiz/score", { method: "POST", body: { answers: st.answers, fields: [...st.fields], zone: st.zone } });
+      const r = await api("/api/quiz/score", { method: "POST", body: { answers: st.answers, fields: [...st.fields], zone: st.zone, scenario: st.scenario || "assistive" } });
       owl.set("celebrating");
       ctx.status?.set("matched", "Matches ready");
       stage.replaceChildren(reveal(h("div", { class: "q result" },
         h("h2", {}, "Your quick match"),
         h("p", { class: "muted" }, "A fast estimate from 13 answers. For an evidence-backed analysis, ", h("a", { href: "#/resume" }, "upload your resume"), "."),
         h("ul", { class: "skill-chips" }, r.skills.sort((a, b) => b.level - a.level).map((s) => h("li", {}, s.name, h("b", { class: "num" }, ` ${s.level}/5`)))),
-        matchesBlock(r.matches, { onPlan: (m) => ctx.planFor(m, r.skills) }),
+        matchesBlock(r.matches, { onPlan: (m) => ctx.planFor(m, r.skills), scenario: st.scenario, onScenario: (k) => { st.scenario = k; finish(); } }),
         h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => { st.answers = {}; go(-1); } }, "Play again"))), RISE));
     } catch (e) {
       owl.set("confused");
@@ -228,16 +228,36 @@ export function resumeView(main, ctx) {
     const lv = (s) => h("div", { class: "seg levels", role: "group", "aria-label": `${s.name} level` },
       [1, 2, 3, 4, 5].map((n) => h("button", { type: "button", "aria-pressed": String(s.level === n), "aria-label": `level ${n}`,
         onclick: (e) => { s.level = n; e.currentTarget.parentElement.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(i + 1 === n))); rematch.disabled = false; } }, n)));
-    const rematch = h("button", { class: "btn", type: "button", disabled: true, onclick: async () => {
-      rematch.disabled = true; owl.set("analyzing");
-      const m = await api("/api/match", { method: "POST", body: { skills: skills.map(({ name, level }) => ({ name, level })), text: r.markdown.slice(0, 20000) } });
+    let scenario = "assistive";
+    const remeasure = async () => {
+      owl.set("analyzing");
+      const m = await api("/api/match", { method: "POST", body: { skills: skills.map(({ name, level }) => ({ name, level })), text: r.markdown.slice(0, 20000), scenario } });
       owl.set("matched"); drawMatches(m.matches);
-    } }, "Re-match with my edits");
-    const drawMatches = (m) => matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))) }));
-    const skillsList = skills.length ? h("ul", {}, skills.map((s, i) => reveal(h("li", {},
-      h("div", { class: "top" }, h("b", {}, s.name), s.kind === "tool" ? h("span", { class: "tag" }, "tool") : null, lv(s)),
-      s.evidence?.[0] ? h("q", {}, s.evidence[0]) : null), DROP, { delay: Math.min(i, 10) * 35 })))
-      : h("p", { class: "note" }, "No ESCO skills or tools found. Try a resume with a skills or experience section.");
+    };
+    const rematch = h("button", { class: "btn", type: "button", disabled: true, onclick: () => { rematch.disabled = true; remeasure(); } }, "Re-match with my edits");
+    const drawMatches = (m) => matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))),
+      scenario, onScenario: (k) => { scenario = k; remeasure(); } }));
+    // the person can correct what was found: change levels, remove a wrong skill, add a missing one
+    const skillsUl = h("ul");
+    const countEl = h("span");
+    const drawSkills = () => {
+      countEl.textContent = `${skills.length} skills found`;
+      skillsUl.replaceChildren(...skills.map((s, i) => h("li", {},
+        h("div", { class: "top" }, h("b", {}, s.name), s.kind === "tool" ? h("span", { class: "tag" }, "tool") : null, lv(s),
+          h("button", { class: "btn ghost sm", type: "button", "aria-label": `Remove ${s.name}`, title: "Remove this skill",
+            onclick: () => { skills.splice(i, 1); drawSkills(); rematch.disabled = false; } }, "×")),
+        s.evidence?.[0] ? h("q", {}, s.evidence[0]) : null)));
+    };
+    const addIn = h("input", { class: "input", placeholder: "Add a skill we missed, e.g. Tableau", maxlength: 60, "aria-label": "Add a skill",
+      onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); addSkill(); } } });
+    const addSkill = () => {
+      const name = addIn.value.trim();
+      if (!name || skills.some((x) => x.name.toLowerCase() === name.toLowerCase())) return;
+      skills.unshift({ name, level: 2, kind: "skill", evidence: [] }); addIn.value = ""; drawSkills(); rematch.disabled = false;
+    };
+    drawSkills();
+    const skillsList = h("div", { class: "cv-skill-edit" }, skillsUl,
+      h("div", { class: "add-skill" }, addIn, h("button", { class: "btn sm", type: "button", onclick: addSkill }, "Add")));
     const skillsViewport = h("div", { class: "cv-skills-scroll", "aria-hidden": "true", inert: true }, skillsList);
     const skillsCollapse = h("div", { class: "cv-skills-collapse" }, skillsViewport);
     const skillsToggle = h("button", { class: "btn sm cv-skills-toggle", type: "button", "aria-expanded": "false",
@@ -252,7 +272,7 @@ export function resumeView(main, ctx) {
     skillsViewport.id = "cv-extracted-skills";
     const skillsControls = skills.length ? [skillsToggle,
       h("p", { class: "cv-skills-hint" }, icon("info"), "Want to improve your matches? Expand your skills, adjust your ratings, and click Rematch to discover updated career recommendations."),
-      skillsCollapse] : [skillsList];
+      skillsCollapse] : [skillsList];  // no skills found: the add box is shown straight away
     const ins = r.insight;
     const mine = () => skills.map(({ name, level }) => ({ name, level }));
     const insight = ins ? h("section", { class: "cv-insight" },
@@ -279,7 +299,9 @@ export function resumeView(main, ctx) {
           h("summary", {}, h("b", {}, "Your resume as Markdown"), h("span", { class: "note" }, ` · ${r.markdown.length.toLocaleString()} characters`)),
           h("pre", { tabindex: "0" }, r.markdown)),
         h("section", { class: "block cv-skills", "aria-label": "Skills found" },
-          h("h3", {}, `${skills.length} skills found`, r.years_experience ? h("span", { class: "note" }, ` · about ${r.years_experience} years of experience`) : null),
+          h("h3", {}, countEl, r.years_experience ? h("span", { class: "note" }, ` · about ${r.years_experience} years of experience`) : null),
+          r.education?.length ? h("div", { class: "cv-facts" }, h("h4", {}, icon("file"), "Education"), h("ul", {}, r.education.map((x) => h("li", {}, h("q", {}, x))))) : null,
+          r.experience?.length ? h("div", { class: "cv-facts" }, h("h4", {}, icon("clock"), "Experience"), h("ul", {}, r.experience.map((x) => h("li", {}, h("q", {}, x))))) : null,
           skillsControls,
           h("div", { class: "row-actions cv-rematch-actions" }, rematch))),
       matchHost);
@@ -294,4 +316,29 @@ export async function todayView(main, { onRefresh } = {}) {
     h("p", { class: "muted" }, "Loading…"));
   const b = await api("/api/signals/today");
   main.lastChild.replaceWith(boardView(b, { onRefresh }));
+}
+
+// ---------------------------------------------------------------- the 17 UN goals, and (signed in) how your plans map to them
+export async function sdgsView(main) {
+  main.replaceChildren(h("h1", { class: "page-title" }, "The 17 UN Sustainable Development Goals"),
+    h("p", { class: "lede" }, "Roles and plans here are linked to these goals by meaning: the ESCO job description is matched to the 169 official UN targets. An evidence-linked suggestion, not an official UN classification."),
+    h("p", { class: "muted" }, "Loading…"));
+  const { goals, mine } = await api("/api/sdgs");
+  const used = mine ? goals.filter((g) => mine[g.goal]?.length).sort((a, b) => mine[b.goal].length - mine[a.goal].length) : [];
+  const max = Math.max(1, ...used.map((g) => mine[g.goal].length));
+  const summary = mine ? h("section", { class: "block sdg-mine", "aria-labelledby": "sdg-mine" },
+    h("h2", { id: "sdg-mine" }, "Your plans and the goals"),
+    used.length ? [h("p", { class: "muted" }, `Your ${new Set(used.flatMap((g) => mine[g.goal])).size} planned roles serve ${used.length} of the 17 goals.`),
+      h("ol", { class: "sdg-bars" }, used.map((g) => h("li", {},
+        h("span", { class: "sdg-n", style: { "--sdg": g.color } }, String(g.goal)),
+        h("span", { class: "sb-name" }, g.short),
+        h("span", { class: "sb-track", "aria-hidden": "true" }, h("i", { style: { width: `${(100 * mine[g.goal].length) / max}%`, background: g.color } })),
+        h("span", { class: "sb-n", title: mine[g.goal].join(", ") }, `${mine[g.goal].length} ${mine[g.goal].length === 1 ? "role" : "roles"}`))))]
+      : h("p", { class: "muted" }, "None of your plans is linked to a goal yet. Build a plan and its goals appear here.")) : null;
+  main.lastChild.replaceWith(h("div", { class: "sdg-page" }, summary,
+    h("ol", { class: "sdg-library" }, goals.map((g) => h("li", { style: { "--sdg": g.color } },
+      h("span", { class: "sl-n" }, String(g.goal)),
+      h("div", {}, h("b", {}, g.short), h("p", {}, g.title || ""),
+        mine?.[g.goal]?.length ? h("p", { class: "sl-mine" }, icon("check"), `In your plans: ${mine[g.goal].join(", ")}`) : null,
+        h("a", { href: g.url || `https://sdgs.un.org/goals/goal${g.goal}`, target: "_blank", rel: "noopener noreferrer" }, "UN goal page")))))));
 }

@@ -295,7 +295,7 @@ async function loadDetail(id, detail, aside, wrap) {
     r?.outlook ? outlookBlock(r.outlook) : null,
     r?.signals ? signalsBlock(r.signals) : null,
     r?.sdgs?.length ? sdgBlock(r.sdgs) : null,
-    planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null,
+    planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: d.report?.evidence,
       approverLabel: "I have reviewed this plan", title: "90-day plan", onChange: async (next) => {
         if (next === "approved") S.status.set("celebrating", `${d.subject_id} approved`);
         await refreshPlans();
