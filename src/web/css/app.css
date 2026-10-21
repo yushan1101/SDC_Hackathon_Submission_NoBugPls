@@ -1687,3 +1687,29 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
 .tag.free { background: var(--ok-soft); }
 .plan-cost { display: flex; align-items: center; gap: 6px; }
 .plan-cost svg { width: 16px; height: 16px; }
+
+/* résumé facts, SDG library, PDF/print */
+.cv-facts { margin: 6px 0 12px; }
+.cv-facts h4 { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 16px; }
+.cv-facts h4 svg { width: 16px; height: 16px; }
+.cv-facts ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 15px; }
+.cv-skill-edit .add-skill { display: flex; gap: 8px; margin-top: 10px; }
+.sdg-page { display: grid; gap: 28px; margin-top: 20px; }
+.sdg-bars { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+.sdg-bars li { display: grid; grid-template-columns: auto minmax(120px, 220px) 1fr auto; align-items: center; gap: 10px; font-size: 15px; }
+.sb-track { height: 10px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
+.sb-track i { display: block; height: 100%; border-radius: inherit; }
+.sdg-library { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.sdg-library li { display: grid; grid-template-columns: auto 1fr; gap: 14px; padding: 16px; border: 1px solid var(--rule); border-left: 6px solid var(--sdg); border-radius: 16px; background: var(--surface); }
+.sdg-library .sl-n { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--sdg); color: #fff; font-weight: 700; font-size: 20px; }
+.sdg-library p { margin: 4px 0; font-size: 15px; color: var(--ink-2); line-height: 1.45; }
+.sdg-library .sl-mine { display: flex; gap: 6px; align-items: center; color: var(--ink); font-weight: 600; }
+.sdg-library .sl-mine svg { width: 15px; height: 15px; }
+.plan-top-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+@media print {
+  .pub-top, .tabbar, .no-print, .composer, .sources, .report-toggle, .act-done, .approve-bar, .skip-link, .toast { display: none !important; }
+  body, .pub-main { background: #fff !important; padding: 0 !important; }
+  .phase-content, .plan-report-panel { display: block !important; }
+  .act, .block, .brief-card, .phase { break-inside: avoid; box-shadow: none !important; }
+  a { color: inherit; }
+}

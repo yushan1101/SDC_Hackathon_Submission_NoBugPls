@@ -16,6 +16,19 @@ from validation.document_guard import fingerprint, inspect
 MAX_BYTES = 2_000_000
 SENIOR = re.compile(r"\b(lead|led|senior|principal|head of|architect\w*|expert|manag\w*|owner)\b", re.I)
 YEARS = re.compile(r"(\d{1,2})\+?\s*(?:years?|yrs)", re.I)
+EDUCATION = re.compile(r"\b(bachelor\w*|master\w*|ph\.?d|doctor\w*|diploma|degree|b\.?sc|m\.?sc|b\.?eng|m\.?eng|mba|associate'?s?|"
+                       r"certificat\w*|certified|spm|stpm|a-levels?|high school|secondary school|university|college)\b", re.I)
+SPAN = re.compile(r"\b(?:19|20)\d{2}\s*(?:[-–—]|to)\s*(?:(?:19|20)\d{2}|present|now|current|today)\b", re.I)
+
+
+def _quoted_lines(md: str, pattern: re.Pattern, limit: int) -> list[str]:
+    """Lines of the (already redacted) resume that match: quoted as written, so the person can check them."""
+    out = []
+    for line in md.splitlines():
+        t = line.strip(" -*#•\t|")
+        if 6 <= len(t) <= 220 and pattern.search(t) and t not in out:
+            out.append(t)
+    return out[:limit]
 
 
 # ----------------------------------------------------------------------------------- to markdown
@@ -170,6 +183,8 @@ def extract(md: str, progress=None) -> dict:
     yrs = [int(m.group(1)) for m in YEARS.finditer(md)]
     ranked = sorted(found.values(), key=lambda s: (-s["similarity"], -s["level"], s["name"]))[:MAX_SKILLS]
     return {"skills": sorted(ranked, key=lambda s: (-s["level"], s["name"])), "years_experience": max(yrs) if yrs else None,
+            "education": _quoted_lines(md, EDUCATION, 4),
+            "experience": [x for x in _quoted_lines(md, SPAN, 10) if not EDUCATION.search(x)][:6],  # dated job lines, not studies
             "extraction_mode": mode, "llm_usage": usage}
 
 

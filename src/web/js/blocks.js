@@ -470,7 +470,7 @@ export function sdgBlock(sdgs) {
       note: "Matched by meaning between the ESCO occupation description and the 169 official UN SDG targets (MiniLM similarity). An evidence-linked suggestion, not an official UN classification. Every plan activity also serves SDG 4 and SDG 8." },
     h("div", { class: "sdg-nums" }, sdgs.map((g) => h("a", { class: "sdg-n big", href: `https://sdgs.un.org/goals/goal${g.goal}`, target: "_blank", rel: "noopener noreferrer",
       style: { "--sdg": g.color }, title: `SDG ${g.goal}: ${g.short}. Target ${g.target}: ${g.target_text}`, "aria-label": `UN SDG ${g.goal}: ${g.short}` }, String(g.goal)))),
-    h("p", { class: "bc-line" }, "How this career connects to the goals"),
+    h("p", { class: "bc-line" }, "How this career connects to the goals ", h("a", { href: "#/sdgs" }, "(all 17 goals)")),
     h("ul", { class: "sdg-connections" }, sdgs.map((g) => h("li", {},
       h("b", {}, `SDG ${g.goal} · ${g.short}`),
       h("span", {}, g.target && g.target_text

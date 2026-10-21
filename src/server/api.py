@@ -399,6 +399,23 @@ def plans(user: dict = Depends(current_user)):
         return approval.list_plans(db, user)
 
 
+@app.get("/api/sdgs")
+def sdgs(request: HttpRequest):
+    """All 17 UN goals (public). Signed in: how often each goal appears across the person's own plans."""
+    goals = [goal_meta(n) for n in range(1, 18)]
+    try:
+        user = current_user(request)
+    except HTTPException:
+        return {"goals": goals, "mine": None}
+    count: dict[int, list[str]] = {}
+    with DB_LOCK:
+        for p in approval.list_plans(db, user):
+            row = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (p["plan_id"],)).fetchone()
+            for g in (json.loads(row[0]).get("sdgs") or []) if row else []:
+                count.setdefault(g["goal"], []).append(p.get("target_title") or p.get("target_role") or p["plan_id"])
+    return {"goals": goals, "mine": {str(k): sorted(set(v)) for k, v in count.items()}}
+
+
 @app.get("/api/plans/{pid}")
 def plan(pid: str, user: dict = Depends(current_user)):
     _guard(pid, user)
@@ -811,7 +828,7 @@ def _analyze_resume(filename: str, data: bytes, progress=lambda stage: None) -> 
     progress("match")
     matches = _matches(levels, text=resume.redact(md)) if levels else []
     progress("advice")
-    return {"markdown": md, "skills": x["skills"], "years_experience": x["years_experience"], "integrity": integrity,
+    return {"markdown": md, "skills": x["skills"], "years_experience": x["years_experience"], "education": x.get("education", []), "experience": x.get("experience", []), "integrity": integrity,
             "extraction_mode": x["extraction_mode"], "llm_usage": x["llm_usage"], "matches": matches,
             "insight": resume.advise(md, x["skills"], matches, x["years_experience"])}
 
