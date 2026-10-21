@@ -34,7 +34,7 @@ jobs:
         run: |
           test -n "$DEPLOY_SSH_KEY" || { echo "::error::secret DEPLOY_SSH_KEY is not set"; exit 1; }
           install -d -m 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key   # a key piped through a Windows shell has CRLFs, which ssh can't load && chmod 600 ~/.ssh/deploy_key
           echo "$HOST_KEY" > ~/.ssh/known_hosts
 
       - name: Deploy (upload, rebuild, health check, rollback on failure)
