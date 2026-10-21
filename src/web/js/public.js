@@ -648,7 +648,7 @@ async function planDetail(main, id, focusPlan = false) {
       h("div", { class: "plan-hero-title" }, h("div", {}, h("p", { class: "eyebrow" }, "90-day learning roadmap"),
         h("h2", {}, "Your learning roadmap")), h("span", { class: `tag ${d.status}` }, d.status)),
       h("p", { class: "plan-hero-copy" }, approved ? "Your approved plan is ready. Follow the phases below to put it into action." : "Your learning plan, organized into three practical phases."),
-      h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days"), h("span", {}, icon("plans"), `${totalHours} estimated learning hours`))),
+      h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days"), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`))),
     planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null,
       title: approved ? "Your approved 90-day plan" : "Your proposed 90-day plan",
       onChange: () => planDetail(main, id, true) }));
