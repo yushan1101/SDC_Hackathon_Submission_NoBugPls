@@ -30,7 +30,8 @@ def validate(p: Pathway, gaps: list[Gap], evidence_ids: set[str], weekly_hours: 
                                       message="activities not in 30/60/90 order"))
     if p.deferred_skills:
         issues.append(ValidationIssue(code="deferred", severity="warning", field="deferred_skills",
-                                      message=f"Not fully covered by weekly hours: {', '.join(p.deferred_skills)}"))
+                                      message=f"{len(p.deferred_skills)} skills don't fit your weekly hours yet: {', '.join(p.deferred_skills[:5])}"
+                                              + (f" and {len(p.deferred_skills) - 5} more." if len(p.deferred_skills) > 5 else ".")))
     if p.status == "approved":
         issues.append(ValidationIssue(code="self_approved", severity="error", field="status",
                                       message="generated plan cannot be approved without a human"))

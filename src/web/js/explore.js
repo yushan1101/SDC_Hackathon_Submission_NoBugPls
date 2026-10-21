@@ -1,6 +1,7 @@
 // Public entry paths: quick-match MCQ game, resume deep analysis, and the daily AI-trend board.
-import { api, upload, h, icon, toast, ApiError, reveal, RISE, DROP } from "./lib.js";
+import { api, upload, stream, h, icon, toast, ApiError, reveal, RISE, DROP } from "./lib.js";
 import { Owl } from "./owl.js";
+import { jobIcon } from "./jobicons.js";
 import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
 
 const KEYS = ["A", "B", "C", "D"];
@@ -161,17 +162,42 @@ export function resumeView(main, ctx) {
 
   async function send(file) {
     if (file.size > 2_000_000) { toast("That file is over 2 MB.", "err"); return; }
+    // the drop zone becomes a live progress panel: real server stages, the owl acting each one out
+    const bigOwl = new Owl({ size: 120, state: "searching" });
+    const bar = h("i"), pct = h("b", { class: "num" }, "0%"), label = h("span", {}, "Uploading…");
+    const steps = h("ol", { class: "cv-steps" });
+    const panel = h("div", { class: "cv-progress", role: "status", "aria-live": "polite" }, bigOwl.el,
+      h("div", { class: "cv-prog-body" }, h("p", { class: "cv-prog-file" }, icon("file"), file.name),
+        h("div", { class: "cv-prog-top" }, label, pct),
+        h("div", { class: "cv-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100" }, bar), steps));
+    drop.replaceWith(panel);
+    out.replaceChildren();
+    const setPct = (n) => { bar.style.transform = `scaleX(${n / 100})`; pct.textContent = `${n}%`; panel.querySelector(".cv-bar").setAttribute("aria-valuenow", String(n)); };
+    let current = null;
+    const restore = () => panel.replaceWith(drop);
     owl.set("analyzing"); ctx.status?.set("analyzing", "Reading your resume");
-    out.replaceChildren(h("p", { class: "muted" }, `Reading ${file.name}…`));
     const fd = new FormData(); fd.append("file", file);
     try {
-      const r = await upload("/api/resume/analyze", fd);
-      owl.set(r.skills.length ? "matched" : "confused");
-      ctx.status?.set("matched", `${r.skills.length} skills found`);
-      render(r);
+      let result = null;
+      await stream("/api/resume/analyze/stream", fd, (ev) => {
+        if (ev.t === "stage") {
+          current?.classList.replace("now", "done");
+          current = h("li", { class: "now" }, icon("check"), ev.label);
+          steps.append(current);
+          label.textContent = ev.label; setPct(ev.pct); bigOwl.set(ev.owl); ctx.status?.set(ev.owl, ev.label);
+        } else if (ev.t === "result") { current?.classList.replace("now", "done"); setPct(100); result = ev.data; }
+        else if (ev.t === "error") throw new ApiError(422, ev.message);
+      });
+      if (!result) throw new Error("The analysis stopped before it finished. Please try again.");
+      bigOwl.set(result.skills.length ? "celebrating" : "confused");
+      owl.set(result.skills.length ? "matched" : "confused");
+      ctx.status?.set("matched", `${result.skills.length} skills found`);
+      label.textContent = `Done · ${result.skills.length} skills found`;
+      setTimeout(() => { panel.classList.add("done"); render(result); }, 600);
     } catch (e) {
       owl.set("confused");
-      if (e instanceof ApiError && e.status === 401) { location.replace("#/signin/resume"); location.reload(); }
+      if (e instanceof ApiError && e.status === 401) { location.replace("#/signin/resume"); location.reload(); return; }
+      restore();
       out.replaceChildren(h("div", { class: "issue error" }, e.message));
     }
   }
@@ -188,7 +214,26 @@ export function resumeView(main, ctx) {
       owl.set("matched"); drawMatches(m.matches);
     } }, "Re-match with my edits");
     const drawMatches = (m) => matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))) }));
+    const ins = r.insight;
+    const mine = () => skills.map(({ name, level }) => ({ name, level }));
+    const insight = ins ? h("section", { class: "cv-insight" },
+      h("div", { class: "brief-card cv-profile" },
+        h("header", { class: "bc-head" }, h("span", { class: "bc-ic" }, icon("user")), h("h3", {}, "Your profile"),
+          h("span", { class: "tag", title: ins.mode === "rules+llm" ? "Read by the résumé AI agent; every quote and role checked against your résumé" : "Rule-based reading" },
+            ins.mode === "rules+llm" ? "AI-read" : "rules")),
+        h("p", { class: "cv-headline" }, ins.headline),
+        ins.strengths?.length ? h("ul", { class: "cv-strengths" }, ins.strengths.map((s) =>
+          h("li", {}, icon("check"), h("span", {}, h("b", {}, s.skill), h("q", {}, s.quote))))) : null),
+      ins.advice?.length ? h("div", { class: "cv-advice" }, ins.advice.map((a, i) => {
+        const m = r.matches.find((x) => x.title === a.role);
+        return h("article", { class: "brief-card advice-card" },
+          h("header", { class: "bc-head" }, a.soc ? jobIcon(a.soc, { size: 40, labelled: true }) : h("span", { class: "bc-ic" }, icon("target")),
+            h("span", { class: "adv-n" }, `Step ${i + 1}`)),
+          h("h4", {}, a.action), a.why ? h("p", { class: "bc-line" }, a.why) : null,
+          m ? h("button", { class: "btn sm primary", type: "button", onclick: () => ctx.planFor(m, mine()) }, icon("spark"), "Plan for this role") : null);
+      })) : null) : null;
     out.replaceChildren(
+      insight,
       integrityBlock(r.integrity, "self"),
       h("div", { class: "cv-grid" },
         h("details", { class: "cv-md", open: matchMedia("(min-width: 900px)").matches || null },

@@ -9,9 +9,12 @@ import threading
 from functools import lru_cache
 
 from mcp_server.ingest import PASSAGES
+LIVE_FILE = PASSAGES.with_name("live_passages.json")
 
 log = logging.getLogger(__name__)
 COLLECTION = "aiversepulse_passages"
+LIVE = "aiversepulse_live"
+LIVE_MIN_SCORE = 0.5  # cosine; below this a posting/story is not about the occupation  # today's job postings + HN stories, rebuilt on each daily trend refresh
 _LOCK = threading.RLock()  # model + Chroma client are shared across agent threads; not safe to init/encode concurrently
 READY = threading.Event()  # set once MiniLM is loaded; until then queries use the offline snapshot instead of blocking
 META_KEYS = ("source_id", "title", "publisher", "publication_date", "access_date", "url", "category",
@@ -88,6 +91,53 @@ def build_index(passages: list[dict]) -> int:
                 embeddings=_embed(p["title"] + ". " + p["text"] for p in part),
                 metadatas=[{k: p.get(k, "") for k in META_KEYS} for p in part])
     return col.count()
+
+
+def index_live(passages: list[dict]) -> int:
+    """Replace the live collection with today's passages (and keep a JSON copy for the offline fallback)."""
+    LIVE_FILE.write_text(json.dumps(passages), encoding="utf-8")
+    live_offline.cache_clear()
+    with _LOCK:
+        client = _client()
+        try:
+            client.delete_collection(LIVE)
+        except Exception:
+            pass
+        col = client.create_collection(LIVE, metadata={"hnsw:space": "cosine"})
+    for i in range(0, len(passages), 256):
+        part = passages[i:i + 256]
+        emb = _embed(p["title"] + ". " + p["text"] for p in part)
+        with _LOCK:
+            col.add(ids=[p["id"] for p in part], documents=[p["text"] for p in part], embeddings=emb,
+                    metadatas=[{k: p.get(k, "") for k in META_KEYS} for p in part])
+    return len(passages)
+
+
+@lru_cache
+def live_offline() -> list[dict]:
+    return json.loads(LIVE_FILE.read_text(encoding="utf-8")) if LIVE_FILE.exists() else []
+
+
+def search_live(query: str, top_k: int = 3) -> tuple[list[dict], str]:
+    """Today's postings/stories most similar to the query: vector search, else keyword match on the saved copy."""
+    try:
+        if not READY.is_set():
+            warm_in_background()
+            raise RuntimeError("encoder still loading")
+        with _LOCK:
+            col = _client().get_collection(LIVE)
+        emb = _embed([query])
+        with _LOCK:
+            r = col.query(query_embeddings=emb, n_results=max(1, min(top_k, 10)))
+        hits = [m | {"id": i, "text": d, "score": round(1 - dist, 4)}
+                for i, d, m, dist in zip(r["ids"][0], r["documents"][0], r["metadatas"][0], r["distances"][0])]
+        return [h for h in hits if h["score"] >= LIVE_MIN_SCORE], "vector"  # weak matches would mislead as evidence
+    except Exception as e:
+        log.info("live vector search unavailable (%s); keyword match on today's copy", type(e).__name__)
+        words = set(re.findall(r"[a-z0-9]+", query.lower()))
+        overlap = lambda p: len(words & set(re.findall(r"[a-z0-9]+", (p["title"] + " " + p["text"]).lower())))
+        scored = sorted((p for p in live_offline() if overlap(p) >= 2), key=lambda p: -overlap(p))
+        return [p | {"score": None} for p in scored[:top_k]], "offline"
 
 
 @lru_cache

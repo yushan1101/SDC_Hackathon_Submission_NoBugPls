@@ -80,8 +80,10 @@ def search_labor_trends(role_id: str, scenario: str = "assistive", as_of_date: s
     related, mode = retrieval.search(f"{o['title'] if o else role_id}: {SCENARIO_QUERY.get(scenario, '')}",
                                      {"category": "occupation"}, top_k + 1)
     related = [p for p in related if p.get("role_id") != role_id][:top_k]
-    ev = [_evidence(p) for p in own + related if _published_by(p, as_of_date)]
-    return {"evidence": ev, "retrieval_mode": mode, "stale": mode == "offline"}
+    # real-time: today's job postings and HN stories most related to this occupation (daily live index)
+    live, live_mode = retrieval.search_live(f"{o['title'] if o else role_id} {SCENARIO_QUERY.get(scenario, '')}", top_k=3)
+    ev = [_evidence(p) for p in own + related + live if _published_by(p, as_of_date)]
+    return {"evidence": ev, "retrieval_mode": mode, "live_mode": live_mode, "live": len(live), "stale": mode == "offline"}
 
 
 OUTLOOK = Path(__file__).resolve().parents[1] / "data" / "snapshots" / "esco_outlook.json"  # exported model output (ESCO-keyed)

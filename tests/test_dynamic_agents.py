@@ -57,3 +57,15 @@ def test_in_conversation_question_goes_to_the_coach():
     assert ran == ["coach", "reviewer"] and s["followup"]["question"] == "what is critical thinking"
     ran, _, s = run_followup(first, req(query="write a poem"))  # off-topic: rejected by the router, no analysis agent runs
     assert s["route"] == "unsupported" and not set(ran) & set(graph.ORDER)
+
+
+def test_vague_followups_in_a_conversation_are_not_rejected():
+    first = graph.run(req())
+    for msg in ("how can i improve it more quick", "it still reject it", "can I finish faster?"):
+        ran, _, s = run_followup(first, req(query=msg))
+        assert s["route"] == "complex" and ran == ["coach", "reviewer"], msg
+    assert run_followup(first, req(query="tell me a joke"))[2]["route"] == "unsupported"
+    # previous run lost (server restart) but still in a conversation: rebuild the briefing, don't reject
+    final = list(graph.stream(req(query="how can i improve it more quick"), conversation=True))[-1][2]
+    assert final["route"] == "complex" and final.get("draft_pathway") is not None
+    assert list(graph.stream(req(query="how can i improve it more quick")))[-1][2]["route"] == "unsupported"  # first message, no context

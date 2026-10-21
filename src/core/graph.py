@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated, Any, TypedDict
 
 from agents import coach, gap_analyst, knowledge, pathway, profiler
-from core.router import route_with_reason
+from core.router import off_topic, route_with_reason
 from core.state import Request, ValidationIssue
 from core.usage import record
 from validation.forecast_checks import check_outlook
@@ -30,6 +30,7 @@ TREND_WEIGHT = 0.25  # ranking only: rising skills x1.25, falling x0.75; require
 
 class State(TypedDict, total=False):
     request: Request
+    conversation: bool  # a follow-up inside a briefing chat: vague messages ("make it faster") refer to the plan
     occupation: dict
     route: str
     route_reason: str
@@ -80,7 +81,11 @@ def _soc(s):
 
 
 def n_supervisor(s):
-    route, why = route_with_reason(s["request"].query)
+    q = s["request"].query
+    if s.get("conversation"):  # in a chat the context decides instantly: no keyword gate, no router LLM call
+        route, why = ("unsupported", "off-topic") if off_topic(q) else ("complex", "follow-up about this briefing")
+    else:
+        route, why = route_with_reason(q)
     soc = _soc(s)
     occ = knowledge.occupation(soc) if soc else None
     return {"route": route, "route_reason": why, "occupation": {"soc": soc, "title": occ["title"]} if occ else {}}
@@ -98,7 +103,9 @@ def n_simple(s):
 
 def n_profiler(s):
     soc = _soc(s)
-    targets = list((knowledge.occupation(soc) or {}).get("skills", {})) if soc else []
+    occ = (knowledge.occupation(soc) or {}) if soc else {}
+    # skills AND tools: the Gap analyst scores both, so a listed tool (e.g. JavaScript) must be able to count
+    targets = list(occ.get("skills", {})) + [t["name"] for t in occ.get("tech", [])]
     levels, sources, issues = profiler.profile_skills(s["request"].profile, targets)
     return {"levels": levels, "level_sources": sources, "validation_issues": issues}
 
@@ -245,12 +252,12 @@ def run_team(requests: list[Request], max_workers: int = 8) -> dict:
             "flagged": [k for k, v in results.items() if v.get("status") == "flagged"]}
 
 
-def stream(request: Request):
+def stream(request: Request, conversation: bool = False):
     """Yield ("update", node, partial_state) as each agent finishes, then ("final", None, state)."""
     global _GRAPH
     _GRAPH = _GRAPH or build_graph()
     final = None
-    for mode, chunk in _GRAPH.stream({"request": request}, stream_mode=["updates", "values"]):
+    for mode, chunk in _GRAPH.stream({"request": request, "conversation": conversation}, stream_mode=["updates", "values"]):
         if mode == "updates":
             for node, update in chunk.items():
                 yield "update", node, update or {}
@@ -314,12 +321,13 @@ def stream_followup(prev_state: State | None, request: Request):
     Inside a conversation an in-domain question goes to the Coach (with the briefing as context) instead of a
     generic lookup; off-topic stays rejected. Yields ("plan", None, {...}), ("update"|"reused", node, partial),
     then ("final", None, state)."""
-    route, why = route_with_reason(request.query)
-    if prev_state and route == "simple":
-        route, why = "complex", "follow-up question about this briefing"
+    if prev_state:  # context decides instantly: no keyword gate, no router LLM call
+        route, why = ("unsupported", "off-topic") if off_topic(request.query) else ("complex", "follow-up about this briefing")
+    else:
+        route, why = route_with_reason(request.query)
     need, changed = plan_rerun(prev_state["request"], request) if prev_state and route == "complex" else (None, [])
     if need is None:
-        yield from stream(request)
+        yield from stream(request, conversation=prev_state is not None)
         return
     s: dict = {k: v for k, v in prev_state.items() if k not in ("validation_issues", "usage")}
     s.update(request=request, route=route, route_reason=why)

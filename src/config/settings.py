@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     llm_fast_model: str = ""  # e.g. a Gemini Flash-class id; empty = LLM agents disabled (deterministic)
     llm_complex_model: str = ""
+    # OpenAI-compatible endpoint shared by every "openai:<model>" agent (e.g. GPT-5.6-Luna and Grok-4.7 on one gateway)
+    llm_base_url: str = ""
+    llm_api_key: SecretStr | None = None
+    # per-agent model, "openai:<model>" or "gemini:<model>"; empty = LLM_FAST_MODEL on Gemini, else deterministic
+    router_model: str = ""
+    coach_model: str = ""
+    resume_model: str = ""
     llm_resume: bool = False  # opt-in: send the REDACTED resume to the LLM to propose extra skills (quotes verified)
     llm_usd_per_1m_input: float = 0.0   # set from the provider's current price sheet; 0 = cost not estimated
     llm_usd_per_1m_output: float = 0.0
@@ -49,7 +56,8 @@ class Settings(BaseSettings):
 
     @property
     def llm_enabled(self) -> bool:
-        return bool(self.gemini_api_key and self.gemini_api_key.get_secret_value() and self.llm_fast_model)
+        from agents.llm import model_for
+        return any(model_for(a) for a in ("router", "coach", "resume"))
 
 
 @lru_cache

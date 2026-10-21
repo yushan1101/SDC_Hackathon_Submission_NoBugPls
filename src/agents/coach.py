@@ -88,7 +88,7 @@ def explain(audience, subject, role, scenario, gaps, pathway, evidence, outlook=
         task = f"Explain to the person what changed in their plan (DATA.changes) in 2 short sentences, then one next step.\nFACTS: {base}"
     else:
         task = f"Rewrite this summary for a {'learner' if audience == 'individual' else 'HR advisor'}, keeping its citations.\nSUMMARY: {base}"
-    text, usage = llm.generate(f"{task}\n<DATA>\n{json.dumps(data)}\n</DATA>", SYSTEM)
+    text, usage = llm.generate(f"{task}\n<DATA>\n{json.dumps(data)}\n</DATA>", SYSTEM, agent="coach")
     return (normalize(text), usage, "llm") if text else (base, usage, "template")
 
 

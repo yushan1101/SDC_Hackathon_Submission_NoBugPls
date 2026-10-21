@@ -11,6 +11,12 @@ COMPLEX = {"plan", "gap", "gaps", "analyze", "analyse", "compare", "forecast", "
 OFF_TOPIC = {"poem", "joke", "recipe", "lyrics", "football", "horoscope", "weather", "story"}
 
 
+def off_topic(query: str) -> bool:
+    """Clearly outside workforce/reskilling (or empty). Used to keep follow-ups in a conversation from being rejected."""
+    q = (query or "").strip().lower()
+    return not q or bool(set(re.findall(r"[a-z0-9\-]+", q)) & OFF_TOPIC)
+
+
 def route_query(query: str) -> str:
     return route_with_reason(query)[0]
 

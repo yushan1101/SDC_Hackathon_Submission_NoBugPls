@@ -161,7 +161,7 @@ def meta(user: dict = Depends(current_user)):
     from agents.knowledge import snapshot
     return {"occupations": len(snapshot()["occupations"]), "scenarios": SCENARIO_NOTES,
             "outlook": _outlook_meta(),
-            "llm": cfg.llm_fast_model if cfg.llm_enabled else None}
+            "llm": (__import__("agents.llm", fromlist=["model_for"]).model_for("coach") or None) if cfg.llm_enabled else None}
 
 
 # --- serialisation ----------------------------------------------------------------------------------
@@ -284,7 +284,9 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
         yield sse({"t": "owl", "state": "thinking", "say": "Reading your request"})
         final, ran = None, None  # ran = agents that ran on a follow-up (None = full briefing)
         try:
-            for kind, node, upd in (graph.stream_followup(prev, req) if prev else graph.stream(req)):
+            # in a conversation (previous plan given) a vague follow-up refers to the plan; if the server lost that
+            # run (restart), the briefing is rebuilt with the question instead of the message being rejected
+            for kind, node, upd in (graph.stream_followup(prev, req) if prev else graph.stream(req, conversation=bool(body.previous_plan_id))):
                 if kind == "plan":
                     ran = set(upd["run"])
                     yield sse({"t": "plan", **upd, "label": f"Changed: {', '.join(upd['changed'])} · running " +
@@ -679,6 +681,31 @@ async def _read(file: UploadFile) -> bytes:
     return data
 
 
+@app.post("/api/resume/analyze/stream")
+async def resume_analyze_stream(file: UploadFile = File(...), user: dict = Depends(current_user)):
+    """Same analysis as /api/resume/analyze, streamed: a progress event as each real stage starts, then the result."""
+    data = await _read(file)
+    name = file.filename or "resume.txt"
+    events: queue.Queue = queue.Queue()
+
+    def work():
+        stage = lambda s: events.put({"t": "stage", "stage": s, "pct": RESUME_STAGES[s][0], "owl": RESUME_STAGES[s][1], "label": RESUME_STAGES[s][2]})
+        try:
+            events.put({"t": "result", "pct": 100, "data": _analyze_resume(name, data, stage)})
+        except HTTPException as e:
+            events.put({"t": "error", "message": e.detail})
+        except Exception:
+            log.exception("resume analysis failed")
+            events.put({"t": "error", "message": "The analysis failed. Please try again."})
+        events.put(None)
+
+    def gen():
+        threading.Thread(target=work, daemon=True).start()
+        while (ev := events.get()) is not None:
+            yield sse(ev)
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @app.post("/api/resume/analyze")
 async def resume_analyze(file: UploadFile = File(...), user: dict = Depends(current_user)):
     """Resume -> Markdown -> evidence-backed skills -> future-role matches. Nothing is stored."""
@@ -686,19 +713,34 @@ async def resume_analyze(file: UploadFile = File(...), user: dict = Depends(curr
     return await run_in_threadpool(_analyze_resume, file.filename or "resume.txt", data)
 
 
-def _analyze_resume(filename: str, data: bytes) -> dict:
+RESUME_STAGES = {  # stage -> (% done when it starts, owl state, label); fixed per step, not a time estimate
+    "read": (10, "searching", "Reading your file"), "guard": (22, "analyzing", "Checking for hidden text and injected instructions"),
+    "skills": (40, "analyzing", "Finding skills (MiniLM semantic match)"), "llm": (58, "thinking", "AI agent reading your résumé"),
+    "verify": (72, "analyzing", "Verifying every quote and checking fraud signals"), "match": (82, "searching", "Matching you to ESCO jobs"),
+    "advice": (92, "thinking", "Writing your profile and advice"),
+}
+
+
+def _analyze_resume(filename: str, data: bytes, progress=lambda stage: None) -> dict:
+    progress("read")
     try:
         md, integrity = resume.convert(filename, data)
     except ValueError as e:
         raise HTTPException(422, str(e))
-    x = resume.extract(md)
+    progress("guard")
+    progress("skills")
+    x = resume.extract(md, progress=progress if cfg.llm_resume else None)
+    progress("verify")
     x["skills"] = resume.verify(md, x["skills"])
     integrity["findings"] += fraud_signals(md, x["years_experience"], n_skills=len(x["skills"]))
     integrity["risk"] = doc_risk(integrity["findings"])
     levels = {s["name"]: s["level"] for s in x["skills"]}
+    progress("match")
+    matches = _matches(levels, text=resume.redact(md)) if levels else []
+    progress("advice")
     return {"markdown": md, "skills": x["skills"], "years_experience": x["years_experience"], "integrity": integrity,
-            "extraction_mode": x["extraction_mode"], "llm_usage": x["llm_usage"],
-            "matches": _matches(levels, text=resume.redact(md)) if levels else []}
+            "extraction_mode": x["extraction_mode"], "llm_usage": x["llm_usage"], "matches": matches,
+            "insight": resume.advise(md, x["skills"], matches, x["years_experience"])}
 
 
 # --- HR recruiting: openings with NL thresholds, AI screening agents, human decisions ------------------------
@@ -916,7 +958,9 @@ def readiness():
     ck, hist, man = paths()
     model = {"ok": all(p.exists() for p in (ck, hist, man)),
              "mode": "live_cpu_inference" if all(p.exists() for p in (ck, hist, man)) else "precomputed_asset"}
-    llm = {"enabled": cfg.llm_enabled, "model": cfg.llm_fast_model or None, "resume": cfg.llm_resume}
+    from agents.llm import model_for
+    llm = {"enabled": cfg.llm_enabled, "resume": cfg.llm_resume,
+           "agents": {a: model_for(a) or None for a in ("router", "coach", "resume")}}  # model names only, never keys
     mcp = mcp_status()
     return {"ok": dbs["ok"] and mcp["ok"], "db": dbs, "mcp": mcp, "model": model, "llm": llm}
 

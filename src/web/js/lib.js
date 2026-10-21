@@ -34,10 +34,11 @@ export async function upload(path, form, signal) {
 
 /** POST a JSON body and call onEvent(obj) for every `data:` line the server streams. */
 export async function stream(path, body, onEvent, signal) {
+  const form = body instanceof FormData;  // file uploads stream too (resume progress)
   const res = await fetch(apiUrl(path), {
     method: "POST", signal, credentials: CREDS,
-    headers: { "X-AP": "1", "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify(body),
+    headers: { "X-AP": "1", Accept: "text/event-stream", ...(form ? {} : { "Content-Type": "application/json" }) },
+    body: form ? body : JSON.stringify(body),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => null);

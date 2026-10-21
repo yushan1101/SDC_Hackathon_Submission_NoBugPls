@@ -37,7 +37,8 @@ def profile_skills(profile: Profile, targets: list[str]) -> tuple[dict[str, int]
         mine[k] = max(mine.get(k, 0), s.level)
     hit = align(mine, targets)
     used = {src for _, src, _ in hit.values()}
-    issues = [ValidationIssue(code="unknown_skill", severity="warning", field="profile.skills",
-                              message=f"'{k}' did not match any skill this occupation needs; kept but not scored.")
-              for k, v in mine.items() if v > 0 and k not in used]
+    unmatched = [k for k, v in mine.items() if v > 0 and k not in used]
+    issues = [ValidationIssue(code="unknown_skill", severity="warning", field="profile.skills",  # one note, not one per skill
+              message=f"{len(unmatched)} of your skills aren't among this job's ESCO requirements, so they're kept but not scored: "
+                      + ", ".join(unmatched[:6]) + (f" and {len(unmatched) - 6} more." if len(unmatched) > 6 else "."))] if unmatched else []
     return {t: lv for t, (lv, _, _) in hit.items()}, {t: src for t, (_, src, _) in hit.items()}, issues

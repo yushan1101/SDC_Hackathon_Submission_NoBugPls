@@ -139,7 +139,21 @@ export function changesBlock(f) {
 
 export function issuesBlock(issues) {
   if (!issues.length) return null;
-  return h("div", { class: "issues", role: "note" }, issues.map((i) => h("div", { class: `issue ${i.severity}` }, i.message)));
+  // one line per kind of finding: older saved plans carry one warning per unmatched skill
+  const unknown = issues.filter((i) => i.code === "unknown_skill");
+  const names = unknown.flatMap((i) => [...i.message.matchAll(/'([^']+)'/g)].map((m) => m[1]));
+  const grouped = names.length > 1 ? [{ severity: "warning", message: `${names.length} of your skills aren't among this job's ESCO requirements, so they're kept but not scored: ${names.slice(0, 6).join(", ")}${names.length > 6 ? ` and ${names.length - 6} more` : ""}.` }]
+    : unknown;
+  const short = (i) => {  // older saved plans list every deferred skill in one sentence
+    const m = i.code === "deferred" && i.message.match(/^Not fully covered by weekly hours: (.*)$/);
+    if (!m) return i;
+    const all = m[1].split(", ");
+    return { ...i, message: `${all.length} skills don't fit your weekly hours yet: ${all.slice(0, 5).join(", ")}${all.length > 5 ? ` and ${all.length - 5} more` : ""}.` };
+  };
+  const rest = issues.filter((i) => i.code !== "unknown_skill").map(short);
+  const list = [...rest.filter((i) => i.severity === "error"), ...grouped, ...rest.filter((i) => i.severity !== "error")];
+  return h("div", { class: "issues", role: "note" }, list.map((i) => h("div", { class: `issue ${i.severity}` },
+    icon(i.severity === "error" ? "flag" : "info"), h("span", {}, i.message))));
 }
 
 /** Editable 30/60/90 plan with approval. Talks to /api/plans/:id. Calls onChange(status) after saves. */

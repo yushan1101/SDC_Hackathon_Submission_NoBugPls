@@ -117,6 +117,45 @@ def fetch_hn(today: date, weeks: int = 8) -> dict[str, list[int]]:
     return out
 
 
+def fetch_hn_stories(today: date, per_topic: int = 5) -> list[dict]:
+    """This week's most-discussed HN stories per topic (title + link), for the live retrieval index."""
+    end = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+    out = []
+    for t in TOPICS:
+        try:
+            j = _get("https://hn.algolia.com/api/v1/search", {
+                "query": t["q"], "tags": "story", "hitsPerPage": per_topic,
+                "numericFilters": f"created_at_i>={int((end - timedelta(days=7)).timestamp())},points>=5"}).json()
+        except Exception as e:
+            log.warning("HN stories unavailable (%s)", type(e).__name__)
+            return out
+        for h in j.get("hits", []):
+            out.append({"title": h.get("title") or "", "url": h.get("url") or f"https://news.ycombinator.com/item?id={h.get('objectID')}",
+                        "date": (h.get("created_at") or "")[:10], "points": h.get("points", 0), "topic": t["id"], "source": "hn"})
+        time.sleep(0.15)
+    return out
+
+
+def live_passages(day: str, stories: list[dict], posts: list[dict]) -> list[dict]:
+    """Today's stories and job postings as dated, linked passages for retrieval (titles + tags only)."""
+    seen, out = set(), []
+    for s in stories:
+        if s["title"] and s["url"] not in seen:
+            seen.add(s["url"])
+            out.append({"id": f"live:{day}:hn:{len(out)}", "category": "signal", "title": s["title"],
+                        "text": f"Hacker News story ({s['points']} points) on {s['topic'].replace('-', ' ')}: {s['title']}",
+                        "publisher": "Hacker News", "publication_date": s["date"] or day, "access_date": day, "url": s["url"],
+                        "license": "link + title only", "source_id": "hn"})
+    for p in posts:
+        if p["title"] and p.get("url") and p["url"] not in seen:
+            seen.add(p["url"])
+            out.append({"id": f"live:{day}:job:{len(out)}", "category": "signal", "title": p["title"],
+                        "text": f"Job posting{' at ' + p['company'] if p.get('company') else ''}: {p['text']}",
+                        "publisher": p["source"].capitalize(), "publication_date": p["date"] or day, "access_date": day,
+                        "url": p["url"], "license": "link + title only", "source_id": p["source"]})
+    return out
+
+
 def fetch_arxiv(today: date) -> dict[str, tuple[int, int]]:
     """(papers in last 14 days, papers in the 42 days before) per topic. Empty dict if arXiv is unavailable."""
     out = {}
@@ -151,7 +190,7 @@ def fetch_jobs(max_pages: int = 4) -> tuple[list[dict], list[str]]:
             for d in j.get("data", []):
                 posts.append({"title": d.get("title", ""), "text": " ".join([d.get("title", ""), " ".join(d.get("tags", []))]),
                               "date": datetime.fromtimestamp(d.get("created_at", 0), timezone.utc).date().isoformat(),
-                              "source": "arbeitnow"})
+                              "source": "arbeitnow", "url": d.get("url", ""), "company": d.get("company_name", "")})
             url = (j.get("links") or {}).get("next")
             if not url:
                 break
@@ -162,7 +201,8 @@ def fetch_jobs(max_pages: int = 4) -> tuple[list[dict], list[str]]:
     try:  # Remotive asks for attribution and at most a few calls a day
         for d in _get("https://remotive.com/api/remote-jobs").json().get("jobs", []):
             posts.append({"title": d.get("title", ""), "text": " ".join([d.get("title", ""), d.get("category", ""), " ".join(d.get("tags", []))]),
-                          "date": (d.get("publication_date") or "")[:10], "source": "remotive"})
+                          "date": (d.get("publication_date") or "")[:10], "source": "remotive", "url": d.get("url", ""),
+                          "company": d.get("company_name", "")})
         ok.append("remotive")
     except Exception as e:
         log.warning("Remotive unavailable (%s)", type(e).__name__)
@@ -291,6 +331,7 @@ def refresh(today: date | None = None, con=None, sources=("hn", "arxiv", "jobs")
     hn = fetch_hn(today) if "hn" in sources else {}
     arxiv = fetch_arxiv(today) if "arxiv" in sources else {}
     jobs, job_sources = fetch_jobs() if "jobs" in sources else ([], [])
+    stories = fetch_hn_stories(today) if "hn" in sources else []
     day = today.isoformat()
     with con:
         for tid, counts in hn.items():
@@ -312,6 +353,11 @@ def refresh(today: date | None = None, con=None, sources=("hn", "arxiv", "jobs")
                             (day, "jobs", tp["id"], "day", tp["sources"]["jobs"]["share"], tp["sources"]["jobs"]["mentions"],
                              "https://www.arbeitnow.com", now))
         con.execute("INSERT OR REPLACE INTO signal_boards VALUES(?,?,?)", (day, json.dumps(board), now))
+    try:  # real-time RAG: today's postings and stories replace yesterday's in the live vector collection
+        from mcp_server import retrieval
+        board["live_indexed"] = retrieval.index_live(live_passages(day, stories, jobs))
+    except Exception as e:
+        log.warning("live index not updated (%s)", type(e).__name__)
     return board
 
 
