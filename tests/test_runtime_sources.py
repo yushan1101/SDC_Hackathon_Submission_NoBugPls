@@ -47,7 +47,15 @@ def test_live_snapshot_is_esco():
     assert "esco" in SNAPSHOT.name and "esco" in OUTLOOK.name
 
 
-def test_agents_never_read_training_data(no_training_reads):
+@pytest.fixture
+def forecaster_loaded():
+    """Production loads the forecaster's lookup data (ESCO->series map, model) once at start-up, before any agent run;
+    do the same here, so the guard below checks what agents read while they run."""
+    from mcp_server.server import _forecast
+    _forecast("2221.2")
+
+
+def test_agents_never_read_training_data(forecaster_loaded, no_training_reads):  # order matters: load, then guard
     from agents.knowledge import resolve_occupation
     from agents.matcher import match_roles
     from core.graph import run
@@ -56,6 +64,6 @@ def test_agents_never_read_training_data(no_training_reads):
     soc = resolve_occupation("nurse responsible for general care")
     s = run(Request(request_id="t", target_role=soc, scenario="agentic", query="Analyze my skill gaps and create a plan",
                     profile=Profile(weekly_learning_hours=6, skills=[Skill(name="listen actively", level=3)])))
-    assert s["skill_gaps"] and all(e.id.split(":")[0] in ("esco", "learn", "stfkan", "signal", "sdg") for e in s["evidence"])
+    assert s["skill_gaps"] and all(e.id.split(":")[0] in ("esco", "learn", "stfkan", "signal", "sdg", "live") for e in s["evidence"])
     assert match_roles({"administer medication": 3, "listen actively": 3}, 3)
     screen("cv.md", b"# Sam\n\nNurse. Administered medication and monitored patients.", soc, {})

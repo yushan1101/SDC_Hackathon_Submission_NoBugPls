@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     login_lock_minutes: int = 5
     log_level: str = "INFO"
     signals_daily: bool = True  # refresh the AI-trend board (HN, arXiv, job boards) once per UTC day
+    # load MiniLM and build/open the vector index in the background at start-up. CI sets WARM_ON_START=false: no index
+    # there, and a model still loading in a thread when the test run exits aborts Python (exit 134)
+    warm_on_start: bool = True
     # separate frontend deploy: comma-separated origins allowed to call the API with credentials, e.g.
     # "https://app.example.com,http://localhost:5173". Empty = same-origin only (frontend served by this API).
     cors_origins: str = ""
