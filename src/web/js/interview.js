@@ -170,10 +170,17 @@ function renderRoom(main, detail, initial = null) {
   let deviceEnumeration = 0;
   let interviewerSpeaking = false, currentUtterance = null, paused = false;
   let officeDisposer = null;
+  const updateAvatarPresentation = () => {
+    const micState = voicePanel.dataset.state;
+    const state = interviewerSpeaking ? "speaking"
+      : ["ready", "listening", "speaking", "captured"].includes(micState) ? "listening" : "idle";
+    window.dispatchEvent(new CustomEvent("aiversepulse:interview-avatar-state", { detail: { state } }));
+  };
   const setMicState = (state, message) => {
     voicePanel.dataset.state = state;
     status.className = `interview-status is-${state}`;
     status.textContent = message;
+    updateAvatarPresentation();
   };
   const updateControls = () => {
     startBtn.disabled = recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking;
@@ -542,6 +549,7 @@ function renderRoom(main, detail, initial = null) {
       if (discarded || !officeHost.isConnected) { unmount(); return; }
       officeDisposer = unmount;
       room.classList.remove("interview-room-office-pending"); room.classList.add("interview-room-virtual");
+      updateAvatarPresentation();
     }).catch(fallbackOffice);
   }
 }
