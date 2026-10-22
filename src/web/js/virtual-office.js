@@ -3,6 +3,9 @@
 import * as THREE from "../vendor/three.module.js";
 
 const makeMaterial = (color, roughness = 0.82, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, ...extra });
+const makeClayMaterial = (color, roughness) => new THREE.MeshPhysicalMaterial({
+  color, roughness, metalness: 0, clearcoat: 0.1, clearcoatRoughness: 0.72,
+});
 
 export function mountVirtualOffice(host, { onFailure } = {}) {
   const width = host.clientWidth;
@@ -34,8 +37,11 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     metal: makeMaterial("#9aa9bc", 0.3, { metalness: 0.58 }), glass: makeMaterial("#b5d5e9", 0.22, { metalness: 0.08 }),
     leaf: makeMaterial("#66856e"), leafLight: makeMaterial("#83a080"), pot: makeMaterial("#c18d73"),
     paper: makeMaterial("#fffdf8"), screen: makeMaterial("#27344e", 0.26), accent: makeMaterial("#5b7de0", 0.32),
-    skin: makeMaterial("#e9b895"), hair: makeMaterial("#342d3b"), blazer: makeMaterial("#45587f"), shirt: makeMaterial("#f7f4ef"),
-    eyes: makeMaterial("#fffdf8"), iris: makeMaterial("#46536a"), mouth: makeMaterial("#573b3c"),
+    skin: makeClayMaterial("#e9b895", 0.62), hair: makeClayMaterial("#342d3b", 0.8),
+    hairLight: makeClayMaterial("#3d3542", 0.82),
+    blazer: makeMaterial("#45587f", 0.88), shirt: makeMaterial("#f7f4ef", 0.86),
+    eyes: new THREE.MeshPhysicalMaterial({ color: "#fffdf8", roughness: 0.28, metalness: 0, clearcoat: 0.24, clearcoatRoughness: 0.3 }),
+    iris: makeMaterial("#46536a", 0.4), mouth: makeMaterial("#573b3c", 0.58),
   };
   const addMesh = (geometry, material, parent = scene, { position = [0, 0, 0], rotation = [0, 0, 0], cast = true, receive = true } = {}) => {
     const mesh = new THREE.Mesh(geometry, material);
@@ -192,7 +198,8 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     [0.015, 0.268, 0.112, 0.118], [0.13, 0.24, 0.11, 0.112], [0.225, 0.18, 0.09, 0.105],
   ];
   crownLocks.forEach(([x, y, width, height], index) => {
-    const lock = ellipsoid(materials.hair, [width, height, 0.125], [x, y, 0.095], head);
+    const lock = ellipsoid(index === 1 || index === 3 ? materials.hairLight : materials.hair,
+      [width, height, 0.125], [x, y, 0.095], head);
     lock.rotation.z = (index - 2) * -0.1;
   });
   for (const side of [-1, 1]) {
@@ -332,17 +339,20 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
   box([0.56, 0.4, 0.035], materials.accent, [2.55, 2.45, -2.46]);
   sphere(0.1, materials.paper, [2.55, 2.45, -2.42], [1.35, 1, 0.18]);
 
-  const hemisphere = new THREE.HemisphereLight("#fbfdff", "#8f806f", 2.45);
+  const hemisphere = new THREE.HemisphereLight("#fbfdff", "#8f806f", 1.85);
   scene.add(hemisphere);
-  const key = new THREE.DirectionalLight("#fff5e7", 1.25);
+  const key = new THREE.DirectionalLight("#fff2df", 1.65);
   key.position.set(-3.8, 7.2, 4.5); key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
   key.shadow.camera.left = -7; key.shadow.camera.right = 7;
   key.shadow.camera.top = 7; key.shadow.camera.bottom = -5;
   key.shadow.bias = -0.00035; key.shadow.radius = 4;
   scene.add(key);
-  const fill = new THREE.DirectionalLight("#e6edff", 0.75);
+  const fill = new THREE.DirectionalLight("#e6edff", 0.65);
   fill.position.set(4.5, 4.2, 2.8); scene.add(fill);
+  // A low-power warm bounce light keeps the face readable without changing the office setup.
+  const faceBounce = new THREE.PointLight("#ffe5cf", 0.38, 3.8, 2);
+  faceBounce.position.set(0.15, 2.3, 1.15); scene.add(faceBounce);
 
   let disposed = false;
   let resizeObserver;
