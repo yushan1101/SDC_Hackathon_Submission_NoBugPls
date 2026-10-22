@@ -30,22 +30,24 @@ function shell() {
       h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Admin home" }, new Owl({ size: 32, state: "idle" }).el, h("span", { class: "lbl wordmark" }, "Admin")),
       link("#/overview", "Overview", "grid"), link("#/accounts", "Accounts", "people"), link("#/usage", "Token use", "pulse"),
       link("#/fraud", "Fraud monitoring", "flag"), link("#/payments", "Payments", "file"),
+      link("#/models", "AI models", "model"), link("#/sites", "Frontend sites", "globe"),
       h("div", { style: { flex: 1 } }),
       h("a", { href: "#", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "lbl" }, "Sign out"))),
     h("header", { class: "hr-top" }, S.crumb = h("div", { class: "crumb" }),
       h("div", { class: "who" }, h("div", {}, S.me.display_name || S.me.username), h("div", { class: "muted" }, "Administrator"))),
     h("main", { id: "main", class: "hr-main", tabindex: "-1" }),
     h("nav", { class: "hr-tabbar", "aria-label": "Primary" }, tab("#/overview", "Overview", "grid"), tab("#/accounts", "Accounts", "people"),
-      tab("#/usage", "Tokens", "pulse"), tab("#/fraud", "Fraud", "flag"), tab("#/payments", "Payments", "file"))));
+      tab("#/usage", "Tokens", "pulse"), tab("#/fraud", "Fraud", "flag"), tab("#/payments", "Payments", "file"),
+      tab("#/models", "Models", "model"), tab("#/sites", "Sites", "globe"))));
 }
 
 async function signOut() { await api("/api/logout", { method: "POST" }).catch(() => {}); location.replace("./"); }
 
 function route() {
   const page = (location.hash.slice(2) || "overview").split("/")[0];
-  const views = { overview, accounts, usage, fraud, payments };
+  const views = { overview, accounts, usage, fraud, payments, models, sites };
   if (!views[page]) { location.replace("#/overview"); return; }
-  const names = { overview: "Overview", accounts: "Accounts", usage: "Token use", fraud: "Fraud monitoring", payments: "Payments" };
+  const names = { overview: "Overview", accounts: "Accounts", usage: "Token use", fraud: "Fraud monitoring", payments: "Payments", models: "AI models", sites: "Frontend sites" };
   S.crumb.textContent = names[page];
   document.querySelectorAll("[data-route]").forEach((a) => a.toggleAttribute("aria-current", a.dataset.route === `#/${page}`));
   const main = $("#main");
@@ -182,6 +184,57 @@ async function payments(main) {
       h("td", {}, h("span", { class: `tag ${tone(p.status)}`, title: p.failure || "" }, p.status === "succeeded" ? "paid" : p.status.replaceAll("_", " "))),
       h("td", { class: "mono muted" }, p.intent_id), h("td", {}, p.receipt_url ? h("a", { href: p.receipt_url, target: "_blank", rel: "noopener noreferrer" }, "Receipt") : "–"))),
       "No payments yet.")));
+}
+
+async function models(main) {
+  const d = await api("/api/admin/models");
+  const spec = h("input", { class: "input", required: true, maxlength: 90, placeholder: "gemini:gemini-3.1-flash  or  openai:gpt-5.6-luna" });  // checked on the server
+  const label = h("input", { class: "input", maxlength: 60, placeholder: "Name HR advisors see, e.g. Gemini Flash (fast)" });
+  main.replaceChildren(view("AI models",
+    h("p", { class: "muted" }, "HR advisors can choose any of these for each task. Providers set up: ",
+      Object.entries(d.providers).map(([k, v], i) => [i ? ", " : "", `${k === "openai" ? "OpenAI-compatible gateway" : "Gemini"} ${v ? "✓" : "(no key)"}`]), "."),
+    table(["Model", "Shown as", "Ready", ""], d.catalog.map((m) => h("tr", {}, h("td", { class: "mono" }, m.spec), h("td", {}, m.label),
+      h("td", {}, m.ready ? h("span", { class: "tag approved" }, "ready") : h("span", { class: "tag flagged", title: "Its provider has no API key" }, "no key")),
+      h("td", {}, h("button", { class: "btn sm ghost", type: "button", onclick: async () => {
+        await api(`/api/admin/models?spec=${encodeURIComponent(m.spec)}`, { method: "DELETE" }); toast("Removed"); models(main);
+      } }, "Remove")))), "No extra models yet: everyone uses the defaults below."),
+    h("form", { class: "inline-form", onsubmit: async (e) => {
+      e.preventDefault();
+      try { await api("/api/admin/models", { method: "POST", body: { spec: spec.value.trim(), label: label.value.trim() } }); toast("Added"); models(main); }
+      catch (ex) { toast(ex.message, "err"); }
+    } }, spec, label, h("button", { class: "btn primary", type: "submit" }, "Add model")),
+    h("h2", {}, "Defaults (from .env)"),
+    table(["Task", "Default model"], Object.entries(d.tasks).map(([t, what]) => h("tr", {}, h("td", {}, what), h("td", { class: "mono" }, d.defaults[t] || "none (rule-based)")))),
+    h("p", { class: "muted" }, "Voice input: ", h("span", { class: "mono" }, d.speech || "browser only (no speech model set up)"))));
+}
+
+async function sites(main) {
+  const d = await api("/api/admin/sites");
+  const origin = h("input", { class: "input", required: true, type: "url", maxlength: 200, placeholder: "https://jobs.example.com" });
+  const label = h("input", { class: "input", maxlength: 60, placeholder: "Name, e.g. Careers site" });
+  main.replaceChildren(view("Frontend sites",
+    h("p", { class: "muted" }, "Websites allowed to use this backend. Each one serves the same web app with config.js pointing at ",
+      h("code", {}, d.backend), ". Sign-in, emails and plugins work from every site."),
+    table(["Site", "Name", "Added", ""], [
+      ...d.from_env.map((o) => h("tr", {}, h("td", { class: "mono" }, o), h("td", {}, "from .env"), h("td", {}, "–"), h("td", {}))),
+      ...d.sites.map((x) => h("tr", {}, h("td", { class: "mono" }, x.origin), h("td", {}, x.label), h("td", {}, fmtTime(x.created_utc)),
+        h("td", {}, h("button", { class: "btn sm ghost", type: "button", onclick: async () => {
+          if (!confirm(`Stop ${x.origin} from using this backend?`)) return;
+          await api(`/api/admin/sites?origin=${encodeURIComponent(x.origin)}`, { method: "DELETE" }); toast("Removed"); sites(main);
+        } }, "Remove"))))], "Only this backend's own address can use it."),
+    h("form", { class: "inline-form", onsubmit: async (e) => {
+      e.preventDefault();
+      try { await api("/api/admin/sites", { method: "POST", body: { origin: origin.value.trim(), label: label.value.trim() } }); toast("Site added"); sites(main); }
+      catch (ex) { toast(ex.message, "err"); }
+    } }, origin, label, h("button", { class: "btn primary", type: "submit" }, "Add site")),
+    h("h2", {}, "Hiring plugin apps"),
+    h("p", { class: "muted" }, "Create an app on each platform's developer site, register its redirect URL below, then put its keys in .env (see .env.example)."),
+    table(["Platform", "Redirect URL", "Keys"], Object.entries(d.plugin_redirects).map(([p, url]) => h("tr", {}, h("td", {}, { linkedin: "LinkedIn", facebook: "Facebook", x: "X" }[p]),
+      h("td", { class: "mono" }, url), h("td", {}, d.plugins_ready[p] ? h("span", { class: "tag approved" }, "set") : h("span", { class: "tag draft" }, "not set"))))),
+    h("h2", {}, "Deploy a site"),
+    h("pre", { class: "md" }, `# any static host (nginx, Cloudflare Pages, Netlify, S3...)
+sh src/deploy/build-frontend.sh ${d.backend} dist-web
+# upload dist-web/, then add the site's address above`)));
 }
 
 boot().catch((e) => app.replaceChildren(h("main", { class: "view" }, h("div", { class: "issue error" }, `Could not start: ${e.message}`))));

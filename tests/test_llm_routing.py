@@ -78,3 +78,27 @@ def test_llm_advice_cannot_invent_roles_skills_or_quotes(monkeypatch):
     assert [s["quote"] for s in ins["strengths"]] == ["Automated reporting with Python scripts"]
     assert [a["action"] for a in ins["advice"]] == ["Learn SQL databases"] and ins["advice"][0]["soc"] == "2511.2"
     get_settings.cache_clear()
+
+
+def test_voice_goes_to_the_audio_chat_model_as_input_audio(gateway, monkeypatch):
+    """mimo-v2.6-flash hears audio through /chat/completions; this gateway returns its answer in reasoning_content."""
+    import httpx
+    monkeypatch.setenv("STT_MODEL", "openai:mimo-v2.6-flash")
+    get_settings.cache_clear()
+    sent = {}
+
+    class Resp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"choices": [{"message": {"content": "", "reasoning_content": "six hours a week"}}],
+                                "usage": {"prompt_tokens": 54, "completion_tokens": 19}}
+
+    def post(url, json=None, headers=None, timeout=None, **k):
+        sent.update(url=url, body=json)
+        return Resp()
+    monkeypatch.setattr(httpx, "post", post)
+    text, usage = llm.transcribe(b"RIFF....WAVE", "audio/wav", "en")
+    assert text == "six hours a week" and usage["model"] == "mimo-v2.6-flash"
+    part = sent["body"]["messages"][0]["content"][1]
+    assert sent["url"].endswith("/chat/completions") and part["type"] == "input_audio" and part["input_audio"]["format"] == "wav"
+    assert llm.transcribe(b"webm", "audio/webm", "en")[0] is None  # not a format the model takes: the browser sends WAV
