@@ -1,7 +1,7 @@
 // AiversePulse (public users): sign-in, plan builder, chat-style streaming report, plans.
 import "./motion.js";  // GSAP animations for whatever the app renders
 import { jobIcon } from "./jobicons.js";
-import { api, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP } from "./lib.js";
+import { api, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP, SCENARIO_HELP } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
 import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
@@ -314,8 +314,8 @@ function buildView(main) {
   const hoursIn = h("input", { type: "number", min: "0.5", max: "80", step: "0.5", value: p.weekly_learning_hours, "aria-label": "Hours per week",
     onchange: () => { p.weekly_learning_hours = Math.min(80, Math.max(0.5, Number(hoursIn.value) || 6)); hoursIn.value = p.weekly_learning_hours; saveProfile(); steps[2].dataset.done = "true"; } });
   const bump = (d) => { hoursIn.value = Math.min(80, Math.max(0.5, Number(hoursIn.value) + d)); hoursIn.dispatchEvent(new Event("change")); };
-  const scen = (key, title, note) => h("label", {},
-    h("input", { type: "radio", name: "scenario", value: key, checked: p.scenario === key ? true : null, onchange: () => { p.scenario = key; saveProfile(); steps[3].dataset.done = "true"; } }),
+  const scen = (key, title, note) => h("label", { title: SCENARIO_HELP[key] },
+    h("input", { type: "radio", name: "scenario", value: key, "aria-description": SCENARIO_HELP[key], checked: p.scenario === key ? true : null, onchange: () => { p.scenario = key; saveProfile(); steps[3].dataset.done = "true"; } }),
     h("b", {}, title), h("span", { class: "muted" }, note));
 
   main.replaceChildren(
@@ -335,8 +335,8 @@ function buildView(main) {
             h("button", { type: "button", "aria-label": "More hours", onclick: () => bump(1) }, "+")), h("span", { class: "muted" }, "hours / week"))),
         h("section", { class: "form-section" }, h("h2", {}, "How will AI change this job?"),
           h("div", { class: "scenario" },
-            scen("assistive", "Assistive AI", "AI helps with today's work. Required levels are estimates."),
-            scen("agentic", "Agentic AI", "AI agents handle routine work, so judgement and oversight skills matter more. Based on our assumptions."))),
+            scen("assistive", "Assistive AI", "You do the work. AI helps you."),
+            scen("agentic", "Agentic AI", "AI handles routine tasks. You guide it and check the results. Assumed future scenario."))),
         h("div", { class: "build-actions" }, h("button", { class: "btn primary", type: "submit" }, "Analyse my skills", icon("send"))))));
   drawRows();
   if (p.target_role) choose(p.target_role).catch(() => {});

@@ -1,7 +1,7 @@
 // AiversePulse Enterprise (HR advisors): overview, upload + live team run, review queue, plans register.
 import "./motion.js";  // GSAP animations for whatever the app renders
 import { jobIcon } from "./jobicons.js";
-import { api, stream, h, $, icon, toast, fmtTime, ApiError } from "./lib.js";
+import { api, stream, h, $, icon, toast, fmtTime, ApiError, SCENARIO_HELP } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
 import { gapsBlock, comparisonBlock, outlookBlock, planBlock, historyBlock, sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { openingsView, openingDetail, signalsView } from "./recruit.js";
@@ -39,6 +39,7 @@ function shell() {
   S.badge = h("span", { class: "badge", hidden: true });
   S.seg = h("div", { class: "seg scenario-switch", role: "group", "aria-label": "AI scenario" },
     ["assistive", "agentic"].map((k) => h("button", { type: "button", "aria-pressed": String(S.scenario === k),
+      title: SCENARIO_HELP[k], "aria-description": SCENARIO_HELP[k],
       onclick: (e) => { S.scenario = k; S.seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget))); S.onScenarioChange?.(); } },
       k === "assistive" ? "Assistive" : "Agentic")));
   S.crumb = h("div", { class: "crumb" });
