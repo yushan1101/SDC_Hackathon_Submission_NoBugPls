@@ -97,20 +97,20 @@ def report(con, interview_id):
 def history(con, employee_id, limit=30):
     rows = con.execute("""SELECT s.interview_id, s.role_id, s.role_title, s.difficulty, s.status, s.stage_index,
         s.created_utc, s.completed_utc, r.report_json, s.assessment_source,
-        (SELECT count(*) FROM interview_responses x JOIN interview_questions q USING(question_id)
-            WHERE q.interview_id=s.interview_id) AS answered_count FROM interview_sessions s
+        (SELECT parent_question_id FROM interview_questions WHERE question_id=s.active_question_id)
+            AS active_parent_question_id FROM interview_sessions s
         LEFT JOIN interview_reports r USING(interview_id) WHERE s.employee_id=?
         ORDER BY s.created_utc DESC LIMIT ?""", (employee_id, limit)).fetchall()
     out = []
     for row in rows:
-        item = dict(zip(("interview_id", "role_id", "role_title", "difficulty", "status", "stage_index", "created_utc", "completed_utc", "report_json", "assessment_source", "answered_count"), row))
+        item = dict(zip(("interview_id", "role_id", "role_title", "difficulty", "status", "stage_index", "created_utc", "completed_utc", "report_json", "assessment_source", "active_parent_question_id"), row))
         result = json.loads(item.pop("report_json")) if item.get("report_json") else None
         item["interview_type"] = "AI mock interview"
         item["performance"] = result.get("performance") if result else None
         item["readiness"] = result.get("readiness") if result else None
         item["competitiveness"] = result.get("competitiveness") if result else None
-        item["question_number"] = item.pop("answered_count") + 1
-        item["total_stages"] = 5
+        item["is_follow_up"] = bool(item.pop("active_parent_question_id"))
+        item["question_number"] = item["stage_index"] + 1
         out.append(item)
     return out
 

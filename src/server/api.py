@@ -967,7 +967,12 @@ def interview_recommendation(recommendation_id: str, user: dict = Depends(need("
 @app.get("/api/interviews")
 def interview_history(user: dict = Depends(need("employee"))):
     with DB_LOCK:
-        return {"interviews": interview_store.history(db, user["employee_id"])}
+        interviews = interview_store.history(db, user["employee_id"])
+    total_stages = len(interview_service.STAGES)
+    for item in interviews:
+        item["question_number"] = min(total_stages, max(1, item["question_number"]))
+        item["total_stages"] = total_stages
+    return {"interviews": interviews}
 
 
 @app.get("/api/interviews/{interview_id}")
@@ -978,13 +983,13 @@ def interview_detail(interview_id: str, user: dict = Depends(need("employee"))):
             raise HTTPException(404, "Interview not found.")
         active = interview_store.question(db, sess["active_question_id"]) if sess["active_question_id"] else None
         report = interview_store.report(db, interview_id)
-        answered = db.execute("""SELECT count(*) FROM interview_responses r JOIN interview_questions q USING(question_id)
-            WHERE q.interview_id=?""", (interview_id,)).fetchone()[0]
     return {"interview_id": interview_id, "role_id": sess["role_id"], "role_title": sess["role_title"],
             "difficulty": sess["difficulty"], "status": sess["status"], "stage_index": sess["stage_index"],
             "question": active, "report": report, "profile": sess["profile"], "plan_id": sess["plan_id"],
             "source": sess["context"]["source"], "assessment_source": sess.get("assessment_source"),
-            "created_utc": sess["created_utc"], "question_number": answered + 1,
+            "created_utc": sess["created_utc"],
+            "question_number": min(len(interview_service.STAGES), max(1, sess["stage_index"] + 1)),
+            "is_follow_up": bool(active and active["parent_question_id"]),
             "total_stages": len(interview_service.STAGES), "draft_answer": sess.get("draft_answer", "")}
 
 

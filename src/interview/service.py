@@ -12,7 +12,9 @@ STAGES = ["behavioral", "technical", "situational", "problem_solving", "workplac
 TYPE_LABELS = {"behavioral": "HR / behavioral", "technical": "technical", "situational": "situational",
                "problem_solving": "problem-solving", "workplace_scenario": "workplace scenario"}
 DIMENSIONS = list(scoring.WEIGHTS)
-MAX_QUESTIONS = 10
+# Each planned stage can have its main question and at most one follow-up.
+# evaluate_and_choose prevents follow-ups to follow-ups, so this is a hard cap.
+MAX_QUESTIONS = len(STAGES) * 2
 
 
 class InterviewError(Exception):
@@ -269,12 +271,13 @@ def persist_answer(con, sess, current, text, prepared):
             WHERE q.interview_id=? ORDER BY q.sequence""", (sess["interview_id"],)).fetchall()
         result = scoring.aggregate([json.loads(r[0]) for r in rows], sess["context"]["profile_coverage"], sess["context"]["requirements"])
         qrows = con.execute("""SELECT q.question_text, q.stage, q.question_type, q.target_skills_json,
-            q.source_refs_json, r.answer_text, r.evaluation_json FROM interview_questions q
+            q.source_refs_json, r.answer_text, r.evaluation_json, q.parent_question_id FROM interview_questions q
             JOIN interview_responses r USING(question_id) WHERE q.interview_id=? ORDER BY q.sequence""",
             (sess["interview_id"],)).fetchall()
         result["question_feedback"] = [{"question": row[0], "stage": row[1], "type": row[2],
             "target_skills": json.loads(row[3]), "source_refs": json.loads(row[4]), "answer": row[5],
-            "evaluation": json.loads(row[6])} for row in qrows]
+            "evaluation": json.loads(row[6]), "question_number": STAGES.index(row[1]) + 1 if row[1] in STAGES else 1,
+            "is_follow_up": bool(row[7])} for row in qrows]
         result.update({"interview_id": sess["interview_id"], "role_id": sess["role_id"], "role_title": sess["role_title"],
                        "difficulty": sess["difficulty"], "created_utc": sess["created_utc"], "completed_utc": store.now(),
                        "plan_id": sess["plan_id"], "source": sess["context"]["source"], "profile": sess["profile"],
@@ -290,7 +293,8 @@ def persist_answer(con, sess, current, text, prepared):
     con.execute("UPDATE interview_sessions SET stage_index=?, active_question_id=?, draft_answer='' WHERE interview_id=?",
                 (stage_index, next_q["question_id"], sess["interview_id"]))
     return {"status": "in_progress", "evaluation": evaluation, "question": next_q, "source": sess["context"]["source"],
-            "question_number": answer_count + 1, "stage_index": stage_index, "total_stages": len(STAGES)}
+            "question_number": stage_index + 1, "is_follow_up": bool(next_q["is_follow_up"]),
+            "stage_index": stage_index, "total_stages": len(STAGES)}
 
 
 def finish_without_answer(con, sess):

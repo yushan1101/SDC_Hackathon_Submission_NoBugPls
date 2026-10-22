@@ -416,9 +416,25 @@ def test_interview_access_requires_owner_owned_assessment_recommendation(client,
     assert paused.status_code == 200 and paused.json()["status"] == "paused"
     detail = client.get(f"/api/interviews/{interview_id}").json()
     assert detail["status"] == "paused" and detail["draft_answer"] == "A saved draft"
-    assert detail["question_number"] == 1 and detail["total_stages"] == 5
+    assert detail["question_number"] == 1 and detail["total_stages"] == 5 and not detail["is_follow_up"]
     paused_item = next(x for x in client.get("/api/interviews").json()["interviews"] if x["interview_id"] == interview_id)
     assert paused_item["status"] == "paused" and paused_item["question_number"] == 1
+
+    # Follow-ups retain the parent main-question number instead of incrementing past the denominator.
+    follow_up_id = "mock-follow-up-id"
+    with api.DB_LOCK, api.db:
+        api.db.execute("""INSERT INTO interview_questions VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (follow_up_id, interview_id, 2, "behavioral", "behavioral", "foundational", "[]", "[]", "[]",
+             "Can you give one more detail about that example?", "mock-question-id", api.interview_store.now()))
+        api.db.execute("UPDATE interview_sessions SET stage_index=2, active_question_id=? WHERE interview_id=?",
+                       (follow_up_id, interview_id))
+    follow_up_detail = client.get(f"/api/interviews/{interview_id}").json()
+    assert follow_up_detail["question_number"] == 3 and follow_up_detail["is_follow_up"]
+    follow_up_item = next(x for x in client.get("/api/interviews").json()["interviews"] if x["interview_id"] == interview_id)
+    assert follow_up_item["question_number"] == 3 and follow_up_item["is_follow_up"] and follow_up_item["total_stages"] == 5
+    with api.DB_LOCK, api.db:
+        api.db.execute("UPDATE interview_sessions SET stage_index=0, active_question_id=? WHERE interview_id=?",
+                       ("mock-question-id", interview_id))
 
     login(client, "bob")
     assert client.post(f"/api/interviews/{interview_id}/resume", headers=H).status_code == 404
