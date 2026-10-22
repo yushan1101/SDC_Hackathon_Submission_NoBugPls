@@ -554,3 +554,142 @@ def test_resume_stream_reports_real_stages_then_result(client):
     assert res["t"] == "result" and res["data"]["skills"] and res["data"]["insight"]["advice"] is not None
     bad = events(client.post("/api/resume/analyze/stream", files={"file": ("x.exe", b"MZ", "application/octet-stream")}, headers={"X-AP": "1"}))
     assert bad[-1]["t"] == "error" and bad[-1]["message"]
+
+
+# ---------------------------------------------------------------- accounts, Sift-style risk, plans, billing, admin
+HUMAN = {"device_id": "dev-test-1", "fill_ms": 8000, "keys": 30, "pastes": 0, "webdriver": False}
+
+
+def _admin(c):
+    from governance import accounts
+    import server.api as api
+    if not accounts.account(api.db, "root1"):
+        accounts.create_user(api.db, "root1", PW, "admin")
+    login(c, "root1")
+
+
+def _register(c, **over):
+    body = {"username": "newbie1", "email": "newbie1@example.com", "password": PW, "account_type": "individual"} | over
+    body.setdefault("risk", HUMAN | {"device_id": f"dev-{body['username']}"})  # each test person on their own device
+    return c.post("/api/register", json=body, headers={"X-AP": "1"})
+
+
+def test_register_individual_starts_free_and_signed_in(client):
+    client.cookies.clear()
+    r = _register(client)
+    assert r.status_code == 200 and r.json()["status"] == "active"
+    me = client.get("/api/me").json()
+    assert me["username"] == "newbie1" and me["effective_plan"] == "free" and me["employee_id"].startswith("U-")
+    assert _register(client, email="other@example.com").status_code == 422  # same username taken
+
+
+def test_hr_signup_waits_for_admin_and_admin_approves(client):
+    from governance import accounts
+    import server.api as api
+    client.cookies.clear()
+    assert _register(client, username="hrnew1", email="hrnew1@example.com", account_type="hr").json()["status"] == "pending_approval"
+    r = client.post("/api/login", json={"username": "hrnew1", "password": PW, "risk": HUMAN}, headers={"X-AP": "1"})
+    assert r.status_code == 401 and "approve" in r.json()["detail"]
+    _admin(client)
+    assert any(u["username"] == "hrnew1" for u in client.get("/api/admin/users?status=pending_approval").json())
+    assert client.post("/api/admin/users/hrnew1/status", json={"status": "active"}, headers={"X-AP": "1"}).status_code == 200
+    client.cookies.clear()
+    assert client.post("/api/login", json={"username": "hrnew1", "password": PW, "risk": HUMAN}, headers={"X-AP": "1"}).status_code == 200
+    login(client, "ana")
+    assert client.get("/api/admin/summary").status_code == 403  # admin only
+
+
+def test_disabling_an_account_signs_it_out(client):
+    from governance import accounts
+    import server.api as api
+    client.cookies.clear()
+    _register(client, username="tobeoff", email="tobeoff@example.com")
+    assert client.get("/api/me").status_code == 200
+    accounts.set_status(api.db, "tobeoff", "active")  # no-op, account exists
+    other = client.cookies.get("ap_session")
+    _admin(client)
+    client.post("/api/admin/users/tobeoff/status", json={"status": "disabled"}, headers={"X-AP": "1"})
+    client.cookies.clear(); client.cookies.set("ap_session", other)
+    assert client.get("/api/me").status_code == 401  # the old session is gone
+    r = client.post("/api/login", json={"username": "tobeoff", "password": PW, "risk": HUMAN}, headers={"X-AP": "1"})
+    assert r.status_code == 401 and "disabled" in r.json()["detail"]
+
+
+def test_bot_signup_is_blocked_and_logged_for_admins(client):
+    client.cookies.clear()
+    bot = {"device_id": "bot-dev", "fill_ms": 200, "webdriver": True, "pastes": 1}
+    r = _register(client, username="botty1", email="botty1@mailinator.com", risk=bot)
+    assert r.status_code == 403
+    _admin(client)
+    events = client.get("/api/admin/risk?decision=block").json()
+    assert any(e["username"] == "botty1" and "automated browser (webdriver)" in e["reasons"] for e in events)
+
+
+def test_free_plan_has_a_monthly_briefing_limit_and_no_resume(client):
+    import server.api as api
+    client.cookies.clear()
+    _register(client, username="freeuser1", email="freeuser1@example.com")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}
+    for _ in range(api.cfg.free_monthly_briefings):
+        assert client.post("/api/analyze", json=body, headers={"X-AP": "1"}).status_code == 200
+    r = client.post("/api/analyze", json=body, headers={"X-AP": "1"})
+    assert r.status_code == 402 and "Pro" in r.json()["detail"]
+    r = client.post("/api/resume/analyze", files={"file": ("cv.txt", b"Python developer", "text/plain")}, headers={"X-AP": "1"})
+    assert r.status_code == 402
+
+
+def test_payments_switched_off_without_keys(client):
+    login(client, "ana")
+    assert client.get("/api/billing/plans").json()["enabled"] is False
+    assert client.post("/api/billing/intent", json={"plan": "pro", "risk": HUMAN}, headers={"X-AP": "1"}).status_code == 503
+
+
+def test_paid_plan_activates_only_from_stripes_own_record(client, monkeypatch):
+    from governance import billing
+    import server.api as api
+    client.cookies.clear()
+    _register(client, username="payer1", email="payer1@example.com")
+    pi = {"id": "pi_test_123", "object": "payment_intent", "status": "succeeded", "amount": api.cfg.price_pro_cents,
+          "amount_received": api.cfg.price_pro_cents, "currency": api.cfg.currency,
+          "metadata": {"username": "payer1", "plan": "pro"}, "latest_charge": {"receipt_url": "https://pay.stripe.com/receipts/x"}}
+    monkeypatch.setattr(billing, "_stripe", lambda cfg, method, path, data=None: pi)
+    r = client.post("/api/billing/confirm", json={"intent_id": "pi_test_123"}, headers={"X-AP": "1"})
+    assert r.status_code == 200 and r.json()["activated"] and r.json()["me"]["effective_plan"] == "pro"
+    assert client.get("/api/billing/payments").json()[0]["receipt_url"].startswith("https://pay.stripe.com/")
+    pi2 = pi | {"id": "pi_test_456", "amount_received": 100}  # paid less than the price: no plan
+    monkeypatch.setattr(billing, "_stripe", lambda cfg, method, path, data=None: pi2)
+    assert client.post("/api/billing/confirm", json={"intent_id": "pi_test_456"}, headers={"X-AP": "1"}).json()["activated"] is False
+    login(client, "ana")  # someone else's payment
+    assert client.post("/api/billing/confirm", json={"intent_id": "pi_test_123"}, headers={"X-AP": "1"}).status_code == 400
+
+
+def test_webhook_needs_a_valid_stripe_signature():
+    import hashlib, hmac, time
+    from governance.billing import verify_webhook
+    body, secret, t = b'{"type":"x"}', "whsec_test", str(int(time.time()))
+    sig = hmac.new(secret.encode(), f"{t}.".encode() + body, hashlib.sha256).hexdigest()
+    assert verify_webhook(body, f"t={t},v1={sig}", secret)
+    assert not verify_webhook(body + b" ", f"t={t},v1={sig}", secret)            # tampered
+    assert not verify_webhook(body, f"t={int(t) - 3600},v1={sig}", secret)        # stale
+    assert not verify_webhook(body, None, secret)
+
+
+def test_admin_sees_token_use(client):
+    import server.api as api
+    api._record_usage("ana", "briefing", [{"node": "coach", "model": "gemini:x", "llm_calls": 1, "input_tokens": 120, "output_tokens": 30, "est_usd": 0.001}])
+    _admin(client)
+    u = client.get("/api/admin/usage?days=7").json()
+    assert any(r["key"] == "ana" and r["input_tokens"] >= 120 for r in u["by_user"])
+    assert any(r["key"] == "coach" for r in u["by_agent"])
+
+
+def test_risk_flags_account_farms_and_spares_normal_people():
+    import sqlite3
+    from governance import accounts, risk
+    con = sqlite3.connect(":memory:"); accounts.init(con); risk.init(con)
+    person = {"device_id": "phone-1", "fill_ms": 12000, "keys": 30}
+    assert risk.assess(con, "signup", "maya", "10.0.0.1", person, "maya@gmail.com")["decision"] == "allow"
+    for i in range(3):
+        risk.assess(con, "signup", f"farm{i}", "10.0.0.9", {"device_id": "farm-dev", "fill_ms": 6000}, f"farm{i}@gmail.com")
+    v = risk.assess(con, "signup", "farm3", "10.0.0.9", {"device_id": "farm-dev", "fill_ms": 6000}, "farm3@gmail.com")
+    assert v["decision"] == "review" and any("this device" in r for r in v["reasons"])

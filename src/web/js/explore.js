@@ -219,7 +219,8 @@ export function resumeView(main, ctx) {
       owl.set("confused");
       if (e instanceof ApiError && e.status === 401) { location.replace("#/signin/resume"); location.reload(); return; }
       restore();
-      out.replaceChildren(h("div", { class: "issue error" }, e.message));
+      out.replaceChildren(h("div", { class: `issue ${e.status === 402 ? "upsell" : "error"}` }, e.message,
+        e.status === 402 ? [" ", h("a", { class: "btn sm primary", href: "#/pricing" }, "See plans")] : null));
     }
   }
 
