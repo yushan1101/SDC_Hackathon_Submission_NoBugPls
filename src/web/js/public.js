@@ -91,7 +91,7 @@ async function signIn(next = "start") {
       h("a", { class: "signin-back", href: "#/start" }, icon("back"), "Back to home"),
       h("span", { class: "wordmark" }, "AiversePulse"),
       FEATURE[next.split("/")[0]] ? h("p", { class: "signin-next" }, `Sign in to open ${FEATURE[next.split("/")[0]]}.`) : null,
-      h("label", { class: "field" }, h("span", {}, "Username"), user),
+      h("label", { class: "field" }, h("span", {}, "Username or email"), user),
       h("label", { class: "field" }, h("span", {}, "Password"), pass),
       err, btn,
       h("p", { class: "fine" }, "Accounts are issued by your administrator. Decision support only: plans stay drafts until you approve them."),
