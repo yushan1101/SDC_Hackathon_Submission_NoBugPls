@@ -293,7 +293,8 @@ async function reviewView(main, id) {
       return h("div", { class: "review-entry" }, box, h("button", { class: "queue-item", "aria-current": String(p.plan_id === id),
       onclick: () => { location.hash = `#/review/${p.plan_id}`; } },
       h("span", { class: "l1" }, h("span", { class: "id" }, p.review.candidate_name || p.subject_id), reviewBadge(p.review)),
-      h("span", { class: "l2" }, `${p.subject_id} · ${p.target_role} · v${p.version}`)),
+      h("span", { class: "l2" }, `${p.subject_id} · ${p.target_role} · v${p.version}`),
+      h("span", { class: "l2 mono" }, `Plan ID: ${p.plan_reference || p.plan_id}`)),
       reviewMenu(main, p.plan_id, p.review, () => editReview(main, p.plan_id, p.review, navigate), navigate)); })
       : h("div", { class: "empty" }, h("p", { class: "muted" }, "No reviews match this search and status.")));
   const detail = h("section", { class: "detail", "aria-label": "Plan detail" });
@@ -421,7 +422,7 @@ async function loadDetail(id, detail, aside, wrap) {
     r?.outlook ? outlookBlock(r.outlook) : null,
     r?.signals ? signalsBlock(r.signals) : null,
     r?.sdgs?.length ? sdgBlock(r.sdgs) : null,
-    planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: d.report?.evidence,
+    planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: d.report?.evidence,
       approverLabel: "I have reviewed this plan", title: "90-day plan", onChange: async (next) => {
         if (next === "approved") S.status.set("celebrating", `${d.subject_id} approved`);
         await reviewView($("#main"), id);
@@ -443,7 +444,7 @@ async function plansView(main, id) {
   const version = S.routeVersion;
   await refreshPlans();
   if (version !== S.routeVersion) return;
-  const q = h("input", { class: "input", type: "search", placeholder: "Search employee or role", "aria-label": "Search plans", oninput: draw });
+  const q = h("input", { class: "input", type: "search", placeholder: "Search plan ID, employee or role", "aria-label": "Search plans by plan ID, employee or role", oninput: draw });
   const st = h("select", { class: "input", "aria-label": "Status", onchange: draw },
     ["all", "draft", "flagged", "approved"].map((s) => h("option", { value: s }, s === "all" ? "All statuses" : s)));
   const tbody = h("tbody");
@@ -451,9 +452,9 @@ async function plansView(main, id) {
   function draw() {
     const term = q.value.trim().toLowerCase();
     const rows = S.plans.filter((p) => p.audience === "hr" && (st.value === "all" || p.status === st.value)
-      && (!term || `${p.subject_id} ${p.target_role}`.toLowerCase().includes(term)));
+      && (!term || `${p.plan_reference || ""} ${p.plan_id} ${p.subject_id} ${p.target_role}`.toLowerCase().includes(term)));
     tbody.replaceChildren(...rows.map((p) => h("tr", { "data-href": "1", tabindex: "0", onclick: () => { location.hash = `#/plans/${p.plan_id}`; }, onkeydown: (e) => e.key === "Enter" && (location.hash = `#/plans/${p.plan_id}`) },
-      h("td", { class: "mono" }, p.plan_id), h("td", { class: "mono" }, p.subject_id), h("td", {}, p.target_role), h("td", { class: "hide-sm" }, p.scenario),
+      h("td", { class: "mono" }, p.plan_reference || p.plan_id), h("td", { class: "mono" }, p.subject_id), h("td", {}, p.target_role), h("td", { class: "hide-sm" }, p.scenario),
       h("td", { class: "n" }, `v${p.version}`), h("td", {}, h("div", { class: "plan-status-control" },
         h("span", { class: `tag ${p.status}` }, p.status), planStatusControl(main, p, async () => { await refreshPlans(); if (main.contains(tbody)) draw(); }))),
       h("td", { class: "mono hide-sm" }, fmtTime(p.created_utc)))));
@@ -464,6 +465,7 @@ async function plansView(main, id) {
     drawer.replaceChildren(h("div", { class: "panel", style: { border: 0, height: "100%", display: "grid", "grid-template-rows": "auto 1fr" } },
       h("header", {}, h("h2", {}, h("span", { class: "mono" }, d.subject_id), ` · ${d.plan.target_role}`), h("button", { class: "btn sm", onclick: () => drawer.close() }, "Close")),
       h("div", { class: "pad", style: { overflow: "auto", display: "grid", gap: "16px", "align-content": "start" } },
+        h("p", { class: "mono" }, `Plan ID: ${d.plan_reference || d.plan_id}`),
         h("p", { class: "muted" }, "Past versions can't be changed. Editing an approved plan creates a new draft."),
         historyBlock(d.history),
         h("a", { class: "btn primary", href: `#/review/${p.plan_id}`, onclick: () => drawer.close() }, "Open in review"))));
@@ -472,7 +474,7 @@ async function plansView(main, id) {
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "Plans register"), h("div", { class: "filters" }, q, st)),
     h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "data" },
-      h("thead", {}, h("tr", {}, h("th", {}, "Plan"), h("th", {}, "Employee"), h("th", {}, "Role"), h("th", { class: "hide-sm" }, "Scenario"),
+      h("thead", {}, h("tr", {}, h("th", {}, "Plan ID"), h("th", {}, "Employee"), h("th", {}, "Role"), h("th", { class: "hide-sm" }, "Scenario"),
         h("th", { class: "n" }, "Version"), h("th", {}, "Plan status"), h("th", { class: "hide-sm" }, "Created"))), tbody))),
     drawer));
   drawer.addEventListener("close", () => {

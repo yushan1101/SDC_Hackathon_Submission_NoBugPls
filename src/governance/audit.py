@@ -7,6 +7,11 @@ from datetime import datetime, timezone
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS plans(plan_id TEXT PRIMARY KEY, subject_id TEXT, audience TEXT, created_utc TEXT);
+CREATE TABLE IF NOT EXISTS plan_references(number INTEGER PRIMARY KEY AUTOINCREMENT, plan_id TEXT NOT NULL UNIQUE);
+INSERT INTO plan_references(plan_id)
+    SELECT p.plan_id FROM plans p WHERE NOT EXISTS
+        (SELECT 1 FROM plan_references r WHERE r.plan_id=p.plan_id)
+    ORDER BY p.created_utc, p.rowid;
 CREATE TABLE IF NOT EXISTS plan_reports(plan_id TEXT PRIMARY KEY, report TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS hr_reviews(plan_id TEXT PRIMARY KEY, candidate_name TEXT NOT NULL DEFAULT '',
     candidate_email TEXT NOT NULL DEFAULT '', candidate_phone TEXT NOT NULL DEFAULT '',
