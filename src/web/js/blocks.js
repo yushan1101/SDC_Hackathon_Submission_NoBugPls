@@ -561,18 +561,25 @@ export function boardView(b, { onRefresh } = {}) {
     const links = t.evidence_ids.filter((id) => evid.has(id)).map((id) => evid.get(id));
     const charts = h("div", { class: "tc-charts", "aria-hidden": "true" }, hn
       ? h("div", { class: "tc-chart-item" }, spark(hn.weekly), h("span", { class: "tc-chart-caption" }, "8-week HN trend")) : null);
-    return reveal(h("article", { class: "topic-card", "data-topic": t.id, "data-kind": t.kind,
+    const lead = i === 0;  // the biggest mover today leads the board
+    // one photograph per topic (img/topics, generated to one style); a topic without one simply has no picture
+    const media = h("div", { class: "tc-media" }, h("img", { src: `img/topics/${t.id}${lead ? "" : "-sm"}.jpg`, alt: "", loading: lead ? "eager" : "lazy",
+      decoding: "async", width: lead ? 1200 : 600, height: lead ? 800 : 400, onerror: (e) => e.currentTarget.parentElement.remove() }));
+    return reveal(h("article", { class: `topic-card${lead ? " lead" : ""}`, "data-topic": t.id, "data-kind": t.kind,
       "data-text": `${t.label} ${(t.skills || []).join(" ")}`.toLowerCase() },
+      media,
       h("div", { class: "tc-top" }, h("h4", {}, t.label),
         h("span", { class: `trend ${t.direction}`, title: `Trend strength z = ${t.z.toFixed(1)} (rising at z ≥ 2, falling at z ≤ −2); confidence ${t.confidence}` }, dir(t))),
       h("div", { class: "tc-figure" },
         growth ? h("div", { class: "tc-growth", title: "Weekly growth of Hacker News stories on this topic over 8 weeks" }, h("b", {}, growth), h("span", {}, "per week on HN"))
           : h("div", { class: "tc-growth" }, h("b", {}, t.z > 0 ? `+${t.z.toFixed(1)}` : t.z.toFixed(1)), h("span", {}, "trend strength")),
         charts),
+      lead && t.skills?.length ? h("div", { class: "tc-skills" }, h("span", {}, "Skills it touches"),
+        h("ul", {}, t.skills.map((k) => h("li", {}, k)))) : null,
       h("div", { class: "tc-foot" },
         jobs ? h("span", { class: "tc-jobs", title: `${jobs.mentions} of ${jobs.postings} live postings` }, icon("search"), `${jobs.mentions} job posts`) : h("span"),
         t.kind === "automation" ? h("span", { class: "tc-kind", title: "Automation topic: adds pressure to the roles it touches" }, icon("flag"), "automation") : null,
-        links.length ? h("details", { class: "tc-src" }, h("summary", {}, icon("sources"), `${links.length} sources`),
+        links.length ? h("details", { class: "tc-src", open: lead || null }, h("summary", {}, icon("sources"), `${links.length} sources`),
           h("ul", {}, links.map((e) => h("li", {}, h("a", { href: e.url, target: "_blank", rel: "noopener noreferrer" }, e.title))))) : null)),
       DROP, { delay: Math.min(i, 12) * 30 });
   };

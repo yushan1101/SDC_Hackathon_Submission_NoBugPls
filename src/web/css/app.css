@@ -2180,3 +2180,32 @@ dialog.slider-dialog::backdrop { background: oklch(0.15 0.03 262 / 0.6); }
   .t-ask, .t-post { grid-column: 1 / -1; }
   .lp-close { border-radius: 26px; }
 }
+
+/* ---------- AI-trend board: a photograph per topic, the biggest mover leads ---------- */
+.topic-grid { grid-auto-rows: auto; grid-auto-flow: row dense; }
+.topic-card { grid-template-rows: auto auto 1fr auto; padding: 0 0 20px; overflow: hidden; }
+.topic-card > :not(.tc-media) { margin-inline: 22px; }
+.tc-media { position: relative; aspect-ratio: 3 / 2; margin: 0 0 4px; overflow: hidden; background: var(--sunken); }
+.tc-media img { display: block; width: 100%; height: 100%; object-fit: cover; transition: scale 900ms var(--ease-out); }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) { .topic-card:hover .tc-media img { scale: 1.04; } }
+.topic-card .tc-top { min-height: 0; }
+
+@media (min-width: 980px) {
+  .topic-card.lead { grid-column: span 2; grid-row: span 2; }
+  .topic-card.lead .tc-media { aspect-ratio: 4 / 3; }
+  .topic-card.lead .tc-top h4 { font: 500 clamp(30px, 2.6vw, 40px)/1.1 var(--font-display); letter-spacing: -0.01em; }
+  .topic-card.lead .tc-figure b { font-size: clamp(44px, 4vw, 60px); }
+  .topic-card.lead .tc-charts svg { height: 40px; }
+}
+@media (min-width: 680px) and (max-width: 979px) {
+  .topic-card.lead { grid-column: 1 / -1; }
+  .topic-card.lead .tc-media { aspect-ratio: 21 / 9; }
+}
+.home-today .board { text-align: left; }  /* the section's centred heading must not centre the board */
+.tc-skills { display: grid; gap: 10px; align-content: start; }
+.tc-skills > span { font-size: 14px; color: var(--ink-2); }
+.tc-skills ul { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.tc-skills li { padding: 6px 12px; border-radius: var(--pill); background: var(--accent-soft); color: var(--ink); font-size: 15px; }
+.topic-card.lead { grid-template-rows: auto auto auto 1fr auto; }
+.topic-card.lead .tc-src { flex-basis: 100%; margin-left: 0; }
+.topic-card.lead .tc-src a { font-size: 15px; }
