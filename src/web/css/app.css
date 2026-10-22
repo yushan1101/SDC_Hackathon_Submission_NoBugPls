@@ -1745,6 +1745,26 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
 .interviewer-meta { display: grid; gap: 3px; }
 .interview-room-actions { display: flex; align-items: center; justify-content: end; gap: 8px; flex-wrap: wrap; }
 .interview-status { padding: 5px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--link); font-size: 14px; }
+.interview-status.is-off, .interview-status.is-ready { background: var(--sunken); color: var(--ink-2); }
+.interview-status.is-listening { background: var(--accent-soft); color: var(--link); }
+.interview-status.is-speaking, .interview-status.is-captured { background: var(--ok-soft); color: var(--ok); }
+.interview-status.is-processing { background: var(--warn-soft); color: var(--warn); }
+.interview-status.is-error { background: var(--danger-soft); color: var(--danger); }
+.interview-voice-panel { display: grid; gap: 12px; min-width: 0; padding: 14px; border: 1px solid var(--rule); border-radius: 14px; background: var(--sunken); }
+.interview-voice-summary { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.interview-mic-meter { display: flex; flex: 0 0 48px; align-items: center; justify-content: center; gap: 3px; width: 48px; height: 42px; padding: 6px; border-radius: 12px; color: var(--link); background: var(--surface); transition: box-shadow var(--t-fast, .16s) ease, color var(--t-fast, .16s) ease; }
+.interview-mic-meter i { display: block; flex: 0 0 3px; height: 5px; border-radius: 999px; background: currentColor; transition: height 65ms linear; }
+.interview-voice-panel[data-state="listening"] .interview-mic-meter { box-shadow: 0 0 0 3px var(--accent-soft); }
+.interview-voice-panel[data-state="speaking"] .interview-mic-meter { color: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.interview-voice-panel[data-state="processing"] .interview-mic-meter { color: var(--warn); }
+.interview-voice-panel[data-state="error"] .interview-mic-meter { color: var(--danger); }
+.interview-voice-copy { display: grid; gap: 3px; min-width: 0; }
+.interview-voice-field { display: grid; gap: 2px; min-width: 0; color: var(--ink-2); font-size: 12px; }
+.interview-mic-select { width: min(100%, 260px); min-height: 32px; padding: 4px 8px; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--surface); font-size: 13px; }
+.interview-recording-time { margin-left: auto; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.interview-voice-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.interview-live-preview { margin: 0; padding: 10px 12px; border-left: 3px solid var(--accent); border-radius: 6px; background: var(--sunken); color: var(--ink-2); font-size: 14px; }
+.interview-submit-row { justify-content: end; }
 .question-panel { grid-column: 1 / -1; padding: clamp(18px, 4vw, 30px); border-radius: 14px; background: var(--sunken); }
 .interview-question { max-width: 760px; margin: 0 0 16px; font: 500 clamp(24px, 4vw, 34px)/1.2 var(--font-display); }
 .interview-answer-form { grid-column: 1 / -1; display: grid; gap: 12px; }
@@ -1797,6 +1817,8 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
   .interview-heading { align-items: start; }
   .interview-room { grid-template-columns: 52px 1fr; }
   .interview-room-actions { grid-column: 1 / -1; justify-content: start; }
+  .interview-voice-controls .btn { flex: 1 1 140px; }
+  .interview-submit-row .btn { width: 100%; }
   .interview-history .interview-history-item { grid-template-columns: 1fr auto; }
   .interview-history-role { grid-column: 1 / -1; }
   .interview-history-scores { grid-column: 1; }
