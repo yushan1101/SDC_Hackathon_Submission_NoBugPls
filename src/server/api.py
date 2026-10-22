@@ -38,7 +38,7 @@ from core import graph, screening
 from core.state import Pathway, Profile, Request, Skill
 from core.team_import import parse_team
 from core.usage import summarize
-from governance import accounts, approval, recruiting
+from governance import accounts, approval, recruiting, reviews
 from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
@@ -535,7 +535,62 @@ def _guard(pid: str, user: dict):
 @app.get("/api/plans")
 def plans(user: dict = Depends(current_user)):
     with DB_LOCK:
-        return approval.list_plans(db, user)
+        rows = approval.list_plans(db, user)
+        return [p | {"review": reviews.get(db, p["plan_id"])} for p in rows] if user["role"] == "hr_advisor" else rows
+
+
+@app.get("/api/reviews")
+def review_list(q: str = "", status: str = "active", user: dict = Depends(need("hr_advisor"))):
+    if status not in {"active", "all", "pending", "approved", "rejected", "archived"}:
+        raise HTTPException(422, "Invalid review status")
+    term = q.strip().casefold()
+    with DB_LOCK:
+        rows = [p | {"review": reviews.get(db, p["plan_id"])} for p in approval.list_plans(db, user)]
+    return [p for p in rows if (status == "all" or (p["review"]["archived"] if status == "archived" else
+            not p["review"]["archived"] and (status == "active" or p["review"]["review_status"] == status)))
+            and (not term or term in " ".join(str(x or "") for x in (
+                p["subject_id"], p["target_role"], p["review"]["candidate_name"],
+                p["review"]["candidate_email"], p["review"]["candidate_phone"])).casefold())]
+
+
+class ReviewEditIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    candidate_name: str = Field(default="", max_length=120)
+    candidate_email: str = Field(default="", max_length=254)
+    candidate_phone: str = Field(default="", max_length=50)
+    reviewer_notes: str = Field(default="", max_length=10000)
+    review_status: str = Field(pattern="^(pending|approved|rejected)$")
+    revision: int = Field(ge=0)
+
+
+@app.post("/api/reviews/{pid}/edit")
+def review_edit(pid: str, body: ReviewEditIn, user: dict = Depends(need("hr_advisor"))):
+    _guard(pid, user)
+    try:
+        with DB_LOCK:
+            return reviews.edit(db, pid, user, body.model_dump(exclude={"revision"}), body.revision)
+    except approval.TransitionError as e:
+        raise HTTPException(409, str(e))
+
+
+class ReviewBulkIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    plan_ids: list[str] = Field(min_length=1, max_length=50)
+    action: str = Field(pattern="^(archive|restore|delete)$")
+    confirmed: bool = False
+
+
+@app.post("/api/reviews/bulk")
+def review_bulk(body: ReviewBulkIn, user: dict = Depends(need("hr_advisor"))):
+    try:
+        with DB_LOCK:
+            ids = reviews.bulk(db, body.plan_ids, user, body.action, body.confirmed)
+            if body.action == "delete":
+                for pid in ids:
+                    RESULTS.pop(pid, None)
+        return {"action": body.action, "count": len(ids)}
+    except approval.TransitionError as e:
+        raise HTTPException(409, str(e))
 
 
 class DeletePlansIn(BaseModel):
@@ -580,9 +635,10 @@ def plan(pid: str, user: dict = Depends(current_user)):
     with DB_LOCK:
         saved = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
         done = [r[0] for r in db.execute("SELECT item FROM plan_progress WHERE plan_id=?", (pid,))]
+        review = {"review": reviews.get(db, pid), "review_history": reviews.history(db, pid)} if user["role"] == "hr_advisor" else {}
     report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else None
     return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], **cur, "history": hist, "report": report,
-            "progress": done}
+            "progress": done, **review}
 
 
 class ProgressIn(BaseModel):
@@ -629,6 +685,22 @@ def edit(pid: str, body: EditIn, user: dict = Depends(current_user)):
 class ApproveIn(BaseModel):
     version: int
     confirmed: bool
+
+
+class PlanStatusIn(ApproveIn):
+    model_config = {"extra": "forbid"}
+    status: str = Field(pattern="^(draft|flagged|approved)$")
+
+
+@app.post("/api/plans/{pid}/status")
+def change_plan_status(pid: str, body: PlanStatusIn, user: dict = Depends(need("hr_advisor"))):
+    _guard(pid, user)
+    try:
+        with DB_LOCK:
+            v = approval.change_status(db, pid, user, body.status, body.version, body.confirmed)
+        return {"version": v, "status": body.status}
+    except approval.TransitionError as e:
+        raise HTTPException(409, str(e))
 
 
 @app.post("/api/plans/{pid}/approve")

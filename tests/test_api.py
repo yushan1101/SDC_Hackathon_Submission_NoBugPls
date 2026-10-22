@@ -32,6 +32,61 @@ def login(c, user):
     return r
 
 
+def test_hr_review_management(client):
+    import server.api as api
+    from governance import approval
+    from governance.audit import connect
+    hr_plan = {"target_role": "Review test role", "activities": [], "status": "draft"}
+    with api.DB_LOCK:
+        pid = approval.create(api.db, hr_plan, "REVIEW-001", "hr")
+        private = approval.create(api.db, hr_plan, "E-001", "individual")
+        with api.db:
+            api.db.execute("INSERT INTO plan_reports VALUES(?,?)", (pid, json.dumps({"narrative": "Unchanged original", "evidence": []})))
+    client.cookies.clear()
+    assert client.get("/api/reviews").status_code == 401
+    login(client, "ana")
+    assert client.get("/api/reviews").status_code == 403
+    assert client.post("/api/reviews/bulk", json={"plan_ids": [pid], "action": "delete", "confirmed": True}, headers={"X-AP": "1"}).status_code == 403
+    assert "review" not in client.get(f"/api/plans/{pid}").json()  # HR notes are private
+    login(client, "hr1")
+    original = client.get(f"/api/plans/{pid}").json()
+    edit = {"candidate_name": "Queue Candidate", "candidate_email": "queue@example.org", "candidate_phone": "+6012",
+            "reviewer_notes": "Reviewed by HR", "review_status": "rejected", "revision": 0}
+    assert client.post(f"/api/reviews/{pid}/edit", json=edit).status_code == 403  # CSRF
+    assert client.post(f"/api/reviews/{private}/edit", json=edit, headers={"X-AP": "1"}).status_code == 404
+    assert client.post(f"/api/reviews/{pid}/edit", json=edit | {"report": {}}, headers={"X-AP": "1"}).status_code == 422
+    assert client.post(f"/api/reviews/{pid}/edit", json=edit, headers={"X-AP": "1"}).status_code == 200
+    assert client.post(f"/api/reviews/{pid}/edit", json=edit, headers={"X-AP": "1"}).status_code == 409
+    assert client.post(f"/api/reviews/{pid}/edit", json=edit | {"reviewer_notes": "x" * 10001}, headers={"X-AP": "1"}).status_code == 422
+    assert [p["plan_id"] for p in client.get("/api/reviews?q=QUEUE%40example.org&status=rejected").json()] == [pid]
+    assert client.get("/api/reviews?status=invalid").status_code == 422
+    def bulk(action, ids=None, confirmed=False):
+        return client.post("/api/reviews/bulk", json={"plan_ids": ids or [pid], "action": action, "confirmed": confirmed}, headers={"X-AP": "1"})
+    assert bulk("archive", [pid, private]).status_code == 409
+    assert not client.get(f"/api/plans/{pid}").json()["review"]["archived"]
+    assert bulk("archive").status_code == 200
+    assert client.get("/api/reviews?q=REVIEW-001").json() == []
+    assert [p["plan_id"] for p in client.get("/api/reviews?q=REVIEW-001&status=archived").json()] == [pid]
+    assert bulk("restore").status_code == 200
+    api.RESULTS.clear()
+    reopened = client.get(f"/api/plans/{pid}").json()
+    assert reopened["review"]["review_status"] == "rejected"
+    assert reopened["report"] == original["report"] and reopened["plan"] == original["plan"]
+    assert reopened["history"] == original["history"]
+    assert len(reopened["review_history"]) == 3
+    assert bulk("delete").status_code == 409
+    assert bulk("delete", confirmed=True).status_code == 200
+    assert client.get(f"/api/plans/{pid}").status_code == 404
+    assert client.post(f"/api/plans/{pid}/approve", json={"version": 1, "confirmed": True}, headers={"X-AP": "1"}).status_code == 404
+    assert client.get("/api/reviews?q=REVIEW-001&status=all").json() == []
+    with api.DB_LOCK:
+        fresh = connect(api.cfg.database_path)
+        assert fresh.execute("SELECT count(*) FROM hr_review_events WHERE plan_id=?", (pid,)).fetchone()[0] == 4
+        assert fresh.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
+        fresh.close()
+    client.cookies.clear()
+
+
 def events(resp):
     return [json.loads(line[6:]) for line in resp.text.splitlines() if line.startswith("data: ")]
 
@@ -44,6 +99,47 @@ def test_auth_csrf_and_headers(client):
     assert "httponly" in r.headers["set-cookie"].lower() and "samesite=strict" in r.headers["set-cookie"].lower()
     assert client.get("/api/me").json()["employee_id"] == "E-001"
     assert "frame-ancestors 'none'" in client.get("/").headers["content-security-policy"]
+
+
+def test_plan_register_status_confirmation_and_history(client):
+    import server.api as api
+    from governance import approval
+    from governance.audit import connect
+    with api.DB_LOCK:
+        pid = approval.create(api.db, {"target_role": "Analyst", "activities": [], "status": "draft"}, "E-001", "hr")
+        private = approval.create(api.db, {"status": "draft"}, "E-001", "individual")
+        with api.db:
+            api.db.execute("INSERT INTO plan_reports VALUES(?,?)", (pid, '{"narrative":"Original AI"}'))
+    login(client, "ana")
+    body = {"status": "approved", "version": 1, "confirmed": True}
+    assert client.post(f"/api/plans/{pid}/status", json=body, headers={"X-AP": "1"}).status_code == 403
+    login(client, "hr1")
+    original = client.get(f"/api/plans/{pid}").json()
+    def change(status, version, confirmed=True):
+        return client.post(f"/api/plans/{pid}/status", json={"status": status, "version": version, "confirmed": confirmed}, headers={"X-AP": "1"})
+    assert client.post(f"/api/plans/{pid}/status", json=body).status_code == 403
+    assert client.post(f"/api/plans/{private}/status", json=body, headers={"X-AP": "1"}).status_code == 404
+    assert change("approved", 1, False).status_code == 409
+    assert change("rejected", 1).status_code == 422
+    assert change("approved", 1).json() == {"status": "approved", "version": 2}
+    assert change("draft", 1).status_code == 409
+    assert change("draft", 2).json()["version"] == 3
+    assert change("flagged", 3).json()["version"] == 4
+    assert change("approved", 4).status_code == 409  # retain flagged-plan approval guard
+    assert change("draft", 4).json()["version"] == 5
+    assert change("draft", 5).status_code == 409  # no redundant versions
+    reopened = client.get(f"/api/plans/{pid}").json()
+    assert reopened["report"] == original["report"]
+    assert reopened["plan"] == original["plan"]
+    assert len(reopened["history"]) == 5
+    assert reopened["history"][1]["action"] == "approved"
+    assert reopened["history"][-1]["actor"] == "hr1"
+    with api.DB_LOCK:
+        fresh = connect(api.cfg.database_path)
+        assert approval.latest(fresh, pid)["version"] == 5
+        assert fresh.execute("SELECT snapshot FROM plan_versions WHERE plan_id=? AND version=1", (pid,)).fetchone()
+        fresh.close()
+    client.cookies.clear()
 
 
 def test_preview_embedding_uses_only_configured_origins(client, monkeypatch):

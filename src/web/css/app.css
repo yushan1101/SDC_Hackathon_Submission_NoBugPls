@@ -1829,3 +1829,22 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
   .act, .block, .brief-card, .phase { break-inside: avoid; box-shadow: none !important; }
   a { color: inherit; }
 }
+/* HR queue management */
+.review-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--rule); }
+.review-tools .input { min-width: 0; width: 100%; }
+.review-entry { display: flex; align-items: center; gap: 6px; padding-left: 10px; border-bottom: 1px solid var(--rule); }
+.review-entry > .queue-item { flex: 1; min-width: 0; border-bottom: 0; }
+.review-entry .l1 { flex-wrap: wrap; }
+.review-menu { position: relative; flex-shrink: 0; margin-right: 8px; }
+.review-menu > summary { cursor: pointer; list-style: none; font-size: 24px; padding: 4px 8px; border-radius: 8px; }
+.review-menu > summary::-webkit-details-marker { display: none; }
+.review-menu-items { position: absolute; right: 0; top: 100%; z-index: 20; display: grid; gap: 6px; padding: 8px; min-width: 150px; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 8px 24px #0002; }
+.review-dialog { width: min(540px, calc(100vw - 28px)); max-height: 90dvh; overflow: auto; padding: 24px; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 20px; }
+.review-dialog::backdrop { background: #0006; }
+.review-form { display: grid; gap: 16px; }
+.review-notes { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.tag.pending { background: var(--accent-soft); color: var(--accent); }
+.tag.rejected { background: var(--danger-soft); color: var(--danger); }
+.tag.archived { background: var(--sunken); color: var(--ink-2); }
+.plan-status-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.plan-status-control .input { width: auto; min-width: 112px; }

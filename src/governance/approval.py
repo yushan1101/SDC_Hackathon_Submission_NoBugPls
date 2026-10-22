@@ -77,6 +77,28 @@ def status(con, plan_id: str) -> str:
     return _latest(con, plan_id)[1]
 
 
+def change_status(con, plan_id: str, user: dict, target: str, version: int, confirmed: bool):
+    """Explicit HR transition; retain previous snapshots and the original AI report."""
+    if user.get("role") != "hr_advisor":
+        raise TransitionError("HR authorization required")
+    require(con, plan_id, user)
+    if confirmed is not True:
+        raise TransitionError("status changes require explicit confirmation")
+    if target not in {"draft", "flagged", "approved"}:
+        raise TransitionError("invalid plan status")
+    v, previous, snap = _latest(con, plan_id)
+    if version != v:
+        raise TransitionError("Plan changed. Reload before changing its status.")
+    if target == previous:
+        raise TransitionError("plan already has this status")
+    if target == "approved":
+        return approve(con, plan_id, version, user["username"], "hr_advisor", confirmed)
+    with con:
+        _add_version(con, plan_id, v + 1, target, json.loads(snap))
+        _event(con, plan_id, v + 1, user["username"], "hr_advisor", "status_changed", previous, target)
+    return v + 1
+
+
 def history(con, plan_id: str) -> list[dict]:
     cols = ["version", "actor", "actor_role", "action", "prev_status", "new_status", "at_utc"]
     rows = con.execute(f"SELECT {','.join(cols)} FROM approval_events WHERE plan_id=? ORDER BY id", (plan_id,))
@@ -92,7 +114,9 @@ def _check_actor(actor, role):
 def can_act(con, plan_id: str, user: dict) -> bool:
     """employee: only plans about their own employee_id; hr_advisor: only HR-created plans
     (an employee's private self-service plans are never visible to HR)."""
-    row = con.execute("SELECT subject_id, audience FROM plans WHERE plan_id=?", (plan_id,)).fetchone()
+    row = con.execute("SELECT subject_id, audience FROM plans WHERE plan_id=? AND NOT EXISTS "
+                      "(SELECT 1 FROM hr_reviews r WHERE r.plan_id=plans.plan_id AND r.deleted_utc IS NOT NULL)",
+                      (plan_id,)).fetchone()
     if not row:
         return False
     subject, audience = row
@@ -116,7 +140,9 @@ def list_plans(con, user: dict) -> list[dict]:
     rows = con.execute(f"""SELECT p.plan_id, p.subject_id, p.audience, p.created_utc, v.version, v.status,
                                json_extract(v.snapshot,'$.target_role'), json_extract(v.snapshot,'$.scenario')
                            FROM plans p JOIN plan_versions v ON v.plan_id=p.plan_id
-                           WHERE {q} AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)
+                           WHERE {q} AND NOT EXISTS (SELECT 1 FROM hr_reviews r WHERE r.plan_id=p.plan_id
+                               AND r.deleted_utc IS NOT NULL)
+                           AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)
                            ORDER BY p.created_utc DESC""", (arg,))
     cols = ["plan_id", "subject_id", "audience", "created_utc", "version", "status", "target_role", "scenario"]
     return [dict(zip(cols, r)) for r in rows]

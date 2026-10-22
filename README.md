@@ -233,6 +233,46 @@ curl -X POST https://api.runpod.ai/v2/$RUNPOD_ENDPOINT_ID/runsync \
 - **Humans stay in charge.** The AI agents recommend and explain. Plans and hiring decisions always need a
   named person, and protected characteristics are refused in hiring criteria.
 
+## HR Review Queue management
+
+HR advisors can search candidates by name, contact details, employee ID, or target role, and filter
+the Review Queue by Pending, Approved, Rejected, or Archived. The three-dot menu edits candidate
+details and reviewer notes, archives/restores reviews, or deletes them after confirmation. Checkboxes
+support the same actions for up to 50 reviews per request. Archive preserves the prior review status.
+HR review status is separate from the existing plan approval workflow; editing it does not approve,
+reject, or modify the AI-generated plan. Existing approved plans initially show Approved; other plans
+initially show Pending. Candidate details and notes are visible only to HR, and editing them never
+changes the employee ID used by access controls.
+
+The Plans register also has an editable **Plan status** column (Draft, Flagged, Approved). Selecting a
+different status opens a confirmation dialog before saving. Cancel leaves the status unchanged.
+Confirmed changes create a new immutable plan version and audit event, retaining the AI report.
+Approval still requires a Draft plan; return a Flagged plan to Draft after resolving its issues.
+Stale versions are rejected. This control uses `POST /api/plans/{plan_id}/status` and requires an HR
+session, the current version, and explicit confirmation. No additional database migration is needed.
+
+Database migration is automatic on application startup through `governance.audit.connect()`.
+It adds `hr_reviews`, `hr_review_events`, an event index, and triggers protecting review events, using
+`CREATE ... IF NOT EXISTS`. Existing plans, AI reports, and approval/validation history are unchanged;
+no manual SQL or backfill is required. Back up the configured `DATABASE_PATH` SQLite file before
+upgrading and restart the server normally. Keep this database on persistent storage across deployments.
+
+Delete is a soft deletion: reviews disappear from normal lists and direct plan access, while AI reports,
+plan versions, and the append-only HR audit trail remain in the database. Deleted reviews cannot be
+restored through the queue; use Archive for records you may need again. Bulk requests authorize the
+entire selection and commit changes and audit events together. Edits include a revision number to
+reject stale saves. HR can manage only HR-created plans, following the existing access policy.
+
+Management APIs (existing authenticated session and `X-AP` CSRF header required for writes):
+
+- `GET /api/reviews?q=...&status=active|all|pending|approved|rejected|archived`
+- `POST /api/reviews/{plan_id}/edit` with candidate fields, reviewer notes, review status, and revision
+- `POST /api/reviews/bulk` with `plan_ids`, `action` (`archive`, `restore`, `delete`), and `confirmed: true` for deletion
+
+Regression checks: `python -m pytest tests/test_hr_reviews.py tests/test_api.py tests/test_approval.py tests/test_recruiting.py tests/test_document_guard.py tests/test_team_and_mcp.py -q`.
+
+Frontend interaction checks (Node.js, no packages required): `node --test tests/review_queue_ui.test.cjs`.
+
 ## Future Improvements
 
 - [ ] OCR for image-only résumés, and detection of text hidden behind shapes
