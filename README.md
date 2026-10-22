@@ -287,8 +287,8 @@ Frontend interaction checks (Node.js, no packages required): `node --test tests/
 | ------------ | ------------------- | -------------------------------------------- |
 | Tang Yu Shan | Group Leader            | [@yushan1101](https://github.com/yushan1101) |
 | BOYU         | System developer              | [@OLGTX303](https://github.com/OLGTX303)                                      |
-| _TODO_       | _TODO_              | _TODO_                                       |
-| _TODO_       | _TODO_              | _TODO_                                       |
+| Yuan Man     | Developer (HR review queue)   | [@yuanman1021](https://github.com/yuanman1021)  |
+| zy           | Developer (UI scroll animation) | [@zhengyang316](https://github.com/zhengyang316) |
 | _TODO_       | _TODO_              | _TODO_                                       |
 
 ---
