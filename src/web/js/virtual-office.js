@@ -160,33 +160,78 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     });
   };
   const torso = new THREE.Group(); torso.position.set(0, 1.1, 0); person.add(torso);
-  ellipsoid(materials.blazer, [0.68, 0.42, 0.31], [0, 0.28, 0.02], torso);
-  ellipsoid(materials.blazer, [0.43, 0.62, 0.3], [0, -0.05, 0.02], torso);
-  ellipsoid(materials.shirt, [0.21, 0.39, 0.035], [0, 0.2, 0.302], torso);
-  ellipsoid(materials.accent, [0.055, 0.23, 0.035], [0, 0.12, 0.345], torso);
-  ellipsoid(materials.shirt, [0.105, 0.105, 0.055], [-0.105, 0.43, 0.27], torso);
-  ellipsoid(materials.shirt, [0.105, 0.105, 0.055], [0.105, 0.43, 0.27], torso);
-  // Layered lapels add a clearer professional silhouette while reusing the existing palette.
+  // A single softly bevelled silhouette gives the blazer shoulders and waist a tailored shape.
+  const blazerShape = new THREE.Shape();
+  blazerShape.moveTo(-0.32, -0.54); blazerShape.lineTo(0.32, -0.54);
+  blazerShape.quadraticCurveTo(0.4, -0.54, 0.4, -0.43); blazerShape.lineTo(0.37, -0.12);
+  blazerShape.quadraticCurveTo(0.38, 0.02, 0.43, 0.16); blazerShape.lineTo(0.51, 0.34);
+  blazerShape.quadraticCurveTo(0.53, 0.43, 0.4, 0.47); blazerShape.lineTo(0.19, 0.51);
+  blazerShape.lineTo(0.13, 0.35); blazerShape.lineTo(-0.13, 0.35); blazerShape.lineTo(-0.19, 0.51);
+  blazerShape.lineTo(-0.4, 0.47); blazerShape.quadraticCurveTo(-0.53, 0.43, -0.51, 0.34);
+  blazerShape.lineTo(-0.43, 0.16); blazerShape.quadraticCurveTo(-0.38, 0.02, -0.37, -0.12);
+  blazerShape.lineTo(-0.4, -0.43); blazerShape.quadraticCurveTo(-0.4, -0.54, -0.32, -0.54);
+  addMesh(new THREE.ExtrudeGeometry(blazerShape, {
+    depth: 0.38, bevelEnabled: true, bevelSegments: 4, bevelSize: 0.045,
+    bevelThickness: 0.045, curveSegments: 10,
+  }), materials.blazer, torso, { position: [0, 0, -0.19] });
+  // The shirt panel and collar are separate, softly rounded layers beneath the lapels.
+  const shirtPanel = new THREE.Shape();
+  shirtPanel.moveTo(-0.13, -0.42); shirtPanel.lineTo(0.13, -0.42);
+  shirtPanel.lineTo(0.12, 0.33); shirtPanel.lineTo(-0.12, 0.33); shirtPanel.closePath();
+  addMesh(new THREE.ExtrudeGeometry(shirtPanel, {
+    depth: 0.025, bevelEnabled: true, bevelSegments: 3, bevelSize: 0.025,
+    bevelThickness: 0.018, curveSegments: 8,
+  }), materials.shirt, torso, { position: [0, 0, 0.205], cast: false });
+  const collarPoint = (side) => {
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0.4); shape.lineTo(side * 0.16, 0.35);
+    shape.lineTo(side * 0.055, 0.17); shape.lineTo(0, 0.25); shape.closePath();
+    addMesh(new THREE.ExtrudeGeometry(shape, {
+      depth: 0.035, bevelEnabled: true, bevelSegments: 2, bevelSize: 0.012,
+      bevelThickness: 0.012, curveSegments: 6,
+    }), materials.shirt, torso, { position: [0, 0, 0.26], cast: false });
+  };
+  collarPoint(-1); collarPoint(1);
+  ellipsoid(materials.accent, [0.035, 0.2, 0.018], [0, 0.02, 0.25], torso);
+  // Layered lapels keep the navy blazer structured without widening its silhouette.
   const lapel = (side) => {
     const shape = new THREE.Shape();
-    shape.moveTo(0, 0.44); shape.lineTo(side * 0.2, 0.42); shape.lineTo(side * 0.07, 0.04);
-    shape.lineTo(side * 0.015, 0.17); shape.closePath();
-    const mesh = addMesh(new THREE.ExtrudeGeometry(shape, { depth: 0.018, bevelEnabled: true, bevelSegments: 2, bevelSize: 0.008, bevelThickness: 0.006 }),
-      materials.blazer, torso, { position: [0, 0, 0.325] });
+    shape.moveTo(0, 0.45); shape.lineTo(side * 0.18, 0.4); shape.lineTo(side * 0.075, -0.03);
+    shape.lineTo(side * 0.015, 0.12); shape.closePath();
+    const mesh = addMesh(new THREE.ExtrudeGeometry(shape, { depth: 0.024, bevelEnabled: true, bevelSegments: 3, bevelSize: 0.012, bevelThickness: 0.009 }),
+      materials.blazer, torso, { position: [0, 0, 0.278] });
     mesh.castShadow = false;
   };
   lapel(-1); lapel(1);
-  cylinder(0.085, 0.085, 0.2, materials.skin, [0, 1.66, 0.13], 16);
+  for (const y of [-0.14, -0.32]) {
+    ellipsoid(materials.darkWood, [0.016, 0.016, 0.009], [0.2, y, 0.287], torso);
+  }
+  // The neck sits just below the jaw, inside the shirt collar.
+  cylinder(0.078, 0.078, 0.21, materials.skin, [0, 1.36, 0.13], 20);
 
-  // Bent sleeves and hands rest near the far edge of the desk.
+  // Seated sleeves bend onto the desktop; the wrists, palms and fingers remain visible above it.
   const arms = [];
   for (const side of [-1, 1]) {
-    const shoulder = new THREE.Group(); shoulder.position.set(side * 0.52, 1.38, 0.05); person.add(shoulder);
-    ellipsoid(materials.blazer, [0.17, 0.29, 0.18], [side * 0.02, -0.13, 0.08], shoulder);
-    const forearm = new THREE.Group(); forearm.position.set(side * 0.015, -0.31, 0.19); shoulder.add(forearm);
-    ellipsoid(materials.blazer, [0.145, 0.15, 0.25], [0, -0.025, 0.17], forearm);
-    ellipsoid(materials.shirt, [0.115, 0.11, 0.055], [0, -0.035, 0.36], forearm);
-    ellipsoid(materials.skin, [0.12, 0.07, 0.15], [0, -0.055, 0.46], forearm);
+    const shoulder = new THREE.Group(); shoulder.position.set(side * 0.43, 1.48, 0.045); person.add(shoulder);
+    const upperArm = ellipsoid(materials.blazer, [0.145, 0.22, 0.17], [side * 0.025, -0.085, 0.105], shoulder);
+    upperArm.rotation.z = side * -0.12;
+    ellipsoid(materials.blazer, [0.125, 0.12, 0.13], [side * 0.045, -0.19, 0.22], shoulder);
+    const forearm = new THREE.Group(); forearm.position.set(side * 0.055, -0.115, 0.245); shoulder.add(forearm);
+    const sleeve = ellipsoid(materials.blazer, [0.105, 0.09, 0.31], [0, -0.035, 0.29], forearm);
+    sleeve.rotation.x = -0.015;
+    // A small shirt cuff separates the hand from the sleeve.
+    const cuff = ellipsoid(materials.shirt, [0.108, 0.088, 0.045], [0, -0.04, 0.555], forearm);
+    cuff.rotation.x = -0.04;
+    const hand = new THREE.Group(); hand.position.set(-side * 0.16, -0.09, 0.62); forearm.add(hand);
+    ellipsoid(materials.skin, [0.09, 0.043, 0.092], [0, 0, 0], hand);
+    for (const fingerX of [-0.052, -0.018, 0.018, 0.052]) {
+      const finger = addMesh(new THREE.CapsuleGeometry(0.017, 0.055, 4, 8), materials.skin, hand,
+        { position: [fingerX, -0.002, 0.082], rotation: [Math.PI / 2, 0, 0] });
+      finger.scale.x = 0.92;
+    }
+    const thumb = addMesh(new THREE.CapsuleGeometry(0.02, 0.045, 4, 8), materials.skin, hand,
+      { position: [side * 0.09, -0.002, 0.005], rotation: [Math.PI / 2, 0, side * 0.72] });
+    thumb.scale.set(0.92, 1, 1);
     arms.push({ shoulder, forearm, side });
   }
 
@@ -300,7 +345,9 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     const thinking = listening ? thoughtPulse * quiet : 0;
     const nod = listening && time % 4.8 > 0.25 && time % 4.8 < 0.58
       ? Math.sin((time % 4.8 - 0.25) / 0.33 * Math.PI) * 0.045 : 0;
-    torso.scale.y = 1 + Math.sin(time * 1.3) * 0.007 + (listening ? microphoneLevel * 0.012 : 0);
+    const breathing = Math.sin(time * 1.3);
+    torso.scale.y = 1 + breathing * 0.007 + (listening ? microphoneLevel * 0.012 : 0);
+    torso.rotation.x = ease(torso.rotation.x, -0.025 + breathing * 0.004, 2.4);
     head.rotation.x = ease(head.rotation.x, (listening ? -0.035 : 0) + nod + thinking * 0.026
       + (speaking ? Math.sin(time * 3.2) * 0.014 : 0), 5);
     head.rotation.y = ease(head.rotation.y, Math.sin(time * (speaking ? 1.8 : 0.55)) * (listening ? 0.018 : 0.024)
@@ -335,9 +382,10 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
       mesh.rotation.z = ease(mesh.rotation.z, side * (0.08 + thinking * 0.045), 6);
     });
     arms.forEach(({ shoulder, forearm, side }) => {
-      const gesture = speaking ? Math.max(0, Math.sin(time * 1.9 + (side > 0 ? 0 : Math.PI))) * 0.045 : 0;
+      const gesture = speaking ? Math.max(0, Math.sin(time * 1.35 + (side > 0 ? 0 : Math.PI))) * 0.06 : 0;
+      shoulder.position.y = ease(shoulder.position.y, 1.48 + breathing * 0.004, 2.2);
       shoulder.rotation.z = ease(shoulder.rotation.z, side * gesture + (listening ? Math.sin(time * 1.1 + side) * 0.006 : 0), 4);
-      forearm.rotation.x = ease(forearm.rotation.x, speaking ? Math.sin(time * 1.9) * 0.025
+      forearm.rotation.x = ease(forearm.rotation.x, speaking ? Math.sin(time * 1.35) * 0.045
         : listening ? Math.sin(time * 0.85 + side) * 0.008 : 0, 4);
     });
   };
