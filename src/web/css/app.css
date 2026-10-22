@@ -306,8 +306,19 @@ table.data tbody tr { }
 .issue.warning { color: var(--warn); background: var(--warn-soft); }
 .issue.error { color: var(--danger); background: var(--danger-soft); }
 .history { list-style: none; margin: 0; padding: 0; display: grid; font-size: 13px; }
-.history li { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; padding: 6px 0; border-top: 1px solid var(--rule); }
-.history time { font-family: var(--font-mono); color: var(--ink-2); }
+.history li {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 24px;
+  padding: 6px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.history time {
+  font-family: var(--font-mono);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
 
 /* sources rail / sheet */
 .sources { position: sticky; top: 92px; align-self: start; max-height: calc(100dvh - 120px); overflow: auto; display: grid; gap: 4px; padding-left: 20px; border-left: 1px solid var(--rule); }
@@ -1585,7 +1596,8 @@ details.more summary::-webkit-details-marker { display: none; }
 }
 
 /* Saved plan header and 90-day roadmap. */
-.plan-hero { display: grid; gap: 14px; padding: clamp(20px, 3vw, 32px); border: 1px solid var(--rule); border-radius: 24px; background: linear-gradient(120deg, var(--surface), oklch(0.975 0.018 270)); box-shadow: var(--card-shadow); }
+.plan-hero {display: grid; gap: 14px; padding: 0 0 24px; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+}
 .plan-hero-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .plan-hero-title h2 { margin: 4px 0 0; font: 500 clamp(28px, 4vw, 42px)/1.12 var(--font-display); }
 .plan-hero .eyebrow { margin: 0; color: var(--ink-2); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
@@ -1599,7 +1611,7 @@ details.more summary::-webkit-details-marker { display: none; }
 .phase, [data-product="public"] .phase, [data-product="public"] .phase + .phase { position: relative; grid-template-columns: 42px minmax(0, 1fr); gap: 0 18px; padding: 22px; border: 1px solid var(--rule); border-radius: 22px; background: var(--surface); box-shadow: var(--card-shadow); }
 .phase + .phase { border-left: 1px solid var(--rule); }
 .phase-step { position: relative; z-index: 1; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid color-mix(in oklch, var(--accent), white 50%); border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
-.phase:not(:last-child) .phase-step::after { content: ""; position: absolute; z-index: -1; top: 34px; left: 50%; width: 1px; height: calc(100% + 31px); background: var(--rule-strong); }
+.phase:not([data-phase="61-90"]) .phase-step::after { content: ""; position: absolute; z-index: -1; top: 34px; left: 50%; width: 1px; height: calc(100% + 31px); background: var(--rule-strong); }
 .phase-content { display: grid; gap: 12px; min-width: 0; }
 .phase h4, [data-product="public"] .phase h4 { display: flex; justify-content: space-between; gap: 12px; padding: 0 0 12px; border-bottom: 1px solid var(--rule); font-size: 20px; }
 .phase h4 .phase-title { font: inherit; white-space: normal; }
@@ -1634,7 +1646,7 @@ details.more summary::-webkit-details-marker { display: none; }
 .phase-toggle > svg { width: 18px; height: 18px; color: var(--ink-2); transition: transform 180ms var(--ease-out); }
 .phase[open] .phase-toggle > svg { transform: rotate(180deg); }
 .phase-step { align-self: start; margin-top: 2px; }
-.phase:not(:last-child) .phase-step::after { height: calc(100% + 31px); }
+.phase:not([data-phase="61-90"]) .phase-step::after { height: calc(100% + 31px); }
 .phase-intro { min-width: 0; }
 .phase h4, [data-product="public"] .phase h4 { margin: 0; padding: 0; border: 0; }
 .phase-summary { margin: 6px 0 0; }
@@ -1646,7 +1658,7 @@ details.more summary::-webkit-details-marker { display: none; }
   .plan { padding: 2px 8px; }
   .phase, [data-product="public"] .phase, [data-product="public"] .phase + .phase { grid-template-columns: 30px minmax(0, 1fr); gap: 0 12px; padding: 16px 12px; }
   .phase-step { width: 28px; height: 28px; }
-  .phase:not(:last-child) .phase-step::after { top: 28px; }
+  .phase:not([data-phase="61-90"]) .phase-step::after { top: 28px; }
   .phase h4, [data-product="public"] .phase h4 { display: grid; gap: 5px; justify-content: start; font-size: 17px; }
   .phase .act { grid-template-columns: minmax(0, 1fr); }
   .act-hours { grid-row: 1; justify-self: start; }
@@ -2438,3 +2450,100 @@ body {
 .lp :is(h1, h2) .w { display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: 0.14em; margin-bottom: -0.14em; }
 .lp :is(h1, h2) .wi { display: inline-block; }
 .lp-step-ui .demo-line mark { background: linear-gradient(var(--accent-soft), var(--accent-soft)) 0 0 / 100% 100% no-repeat; }
+
+/* ================================
+   SAVED PLAN DETAIL POLISH
+   ================================ */
+
+.plan-detail-body {
+  width: min(100%, 1040px);
+  max-width: none;
+  margin: 0 auto;
+}
+
+/* Analysis report container */
+.plan-report {
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 24px;
+  background: var(--sunken);
+}
+
+.plan-report-heading {
+  padding: 20px 24px;
+}
+
+.plan-report-heading h2 {
+  font-size: 24px;
+}
+
+/* Main written summary */
+.plan-report-content > .prose {
+  max-width: 76ch;
+  margin-top: 4px;
+  margin-bottom: 20px;
+  font-size: 17px;
+  line-height: 1.7;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+/* Cards inside report */
+.plan-report-content > .brief-card {
+  margin-top: 18px;
+  margin-bottom: 18px;
+}
+
+/* Skill gap card slightly cleaner */
+.plan-report .brief-card {
+  border: 1px solid var(--rule);
+  box-shadow: 0 8px 28px rgba(22, 42, 75, 0.06);
+}
+
+/* Give skill names a little more room */
+.plan-report .gap-row {
+  grid-template-columns:
+    minmax(240px, 1fr)
+    minmax(140px, 220px)
+    64px;
+}
+
+/* Smaller screens */
+@media (max-width: 900px) {
+  .plan-detail-body {
+    width: 100%;
+  }
+
+  .plan-report .gap-row {
+    grid-template-columns: minmax(0, 1fr) 56px;
+  }
+
+  .plan-report .gr-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+.plan-detail-title {
+  margin-left: 28px;
+}
+
+/* =========================================
+   SAVED 90-DAY PLAN — SEPARATE FULL CARD
+   ========================================= */
+
+.plan-focus {
+  width: 100%;
+  box-sizing: border-box;
+
+  margin: 0;
+
+  border: 1px solid var(--rule-strong, #d8dee8);
+  border-radius: 24px;
+
+  background: var(--surface, #fff);
+
+  padding: 28px 32px 24px;
+
+  overflow: hidden;
+}

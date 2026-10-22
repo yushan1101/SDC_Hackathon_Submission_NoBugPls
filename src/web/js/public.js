@@ -769,7 +769,7 @@ async function planDetail(main, id, focusPlan = false) {
     } }, expanded ? "Hide report" : "View report");
   const disclosure = h("section", { class: "plan-report", "data-expanded": String(expanded), "aria-label": "Analysis report" },
     h("div", { class: "plan-report-heading" }, h("h2", {}, "Analysis report"), toggle), panel);
-  const blocks = h("div", { class: "body", style: { "max-width": "760px" } },
+  const blocks = h("div", { class: "body plan-detail-body" },
     ...(approved ? [planFocus, disclosure] : [disclosure, planFocus]),
     d.audience === "hr" && d.status === "approved" ? h("div", { class: "approve-bar" }, h("span", {}, "Your HR advisor approved this plan."),
       h("button", { class: "btn primary", onclick: async () => { await api(`/api/plans/${id}/acknowledge`, { method: "POST" }); toast("Acknowledged"); planDetail(main, id); } }, "Acknowledge")) : null,
@@ -781,7 +781,7 @@ async function planDetail(main, id, focusPlan = false) {
     print();
   } }, icon("file"), "Download PDF");
   main.replaceChildren(h("div", { class: "plan-top-actions no-print" }, h("a", { href: "#/plans", class: "btn ghost sm" }, icon("back"), "All plans"), pdf),
-    h("h1", { class: "page-title", style: { "margin-top": "12px" } }, r?.occupation?.title || d.plan.target_role), blocks);
+    h("h1", { class: "page-title plan-detail-title", style: { "margin-top": "12px" } }, r?.occupation?.title || d.plan.target_role), blocks);
   if (focusPlan) planFocus.focus({ preventScroll: true });
 }
 

@@ -164,7 +164,14 @@ export function toast(msg, kind = "") {
 export const fmtTime = (iso) => {
   if (!iso) return "";
   const d = new Date(iso);
-  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+  return d.toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 };
 
 export const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
