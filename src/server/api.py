@@ -39,7 +39,7 @@ from core import graph, screening
 from core.state import Pathway, Profile, Request, Skill
 from core.team_import import parse_team
 from core.usage import summarize
-from governance import accounts, approval, billing, otp, recruiting, reviews, risk
+from governance import accounts, approval, billing, challenge, otp, recruiting, reviews, risk
 from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
@@ -52,7 +52,7 @@ log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 cfg = get_settings()
-db = otp.init(billing.init(risk.init(recruiting.init(accounts.init(connect(cfg.database_path))))))
+db = challenge.init(otp.init(billing.init(risk.init(recruiting.init(accounts.init(connect(cfg.database_path)))))))
 db.executescript("""CREATE TABLE IF NOT EXISTS llm_usage(id INTEGER PRIMARY KEY, at_utc TEXT, username TEXT, feature TEXT, node TEXT,
                         model TEXT, calls INTEGER, input_tokens INTEGER, output_tokens INTEGER, est_usd REAL);
                     CREATE INDEX IF NOT EXISTS llm_usage_at ON llm_usage(at_utc);
@@ -212,7 +212,39 @@ def me(user: dict = Depends(current_user)):
     return user | {k: a.get(k) for k in ("email", "status", "plan", "plan_until", "effective_plan", "account_type")}
 
 
+@app.post("/api/challenge")
+def challenge_new():
+    """A slider puzzle for sign-up (the gap's position is only in the image)."""
+    with DB_LOCK:
+        return challenge.issue(db)
+
+
+class SolveIn(BaseModel):
+    x: float = Field(ge=0, le=challenge.W)
+    trail: list[list[float]] = Field(max_length=400)
+    keyboard: bool = False
+    device_id: str = Field(default="", max_length=64)
+
+
+@app.post("/api/challenge/{cid}/verify")
+def challenge_verify(cid: str, body: SolveIn):
+    try:
+        with DB_LOCK:
+            return {"ok": True, "token": challenge.verify(db, cid[:40], body.x, body.trail, body.device_id, body.keyboard)}
+    except challenge.ChallengeError as e:
+        raise HTTPException(422, "Not quite. Drag the piece into the gap." if str(e) == "retry" else "Expired. Here's a new puzzle.")
+
+
+def _base_url(request: HttpRequest) -> str:
+    """Where links in emails point: PUBLIC_URL if set, else this request's address (https behind Cloudflare)."""
+    if cfg.public_url:
+        return cfg.public_url
+    base = str(request.base_url).rstrip("/")
+    return base.replace("http://", "https://", 1) if '"https"' in request.headers.get("cf-visitor", "") else base
+
+
 class RegisterIn(BaseModel):
+    challenge_token: str = Field(default="", max_length=80)  # the slider pass; required
     username: str = Field(min_length=3, max_length=40)
     email: str = Field(min_length=5, max_length=254)
     password: str = Field(min_length=10, max_length=200)
@@ -226,7 +258,9 @@ def register(body: RegisterIn, request: HttpRequest, response: Response):
     """Sign-up, scored like Sift: block -> refused; review -> an admin approves it first. With SMTP set up, the email is
     verified with a one-time code before the account can be used."""
     name = body.username.strip().lower()
-    with DB_LOCK:
+    with DB_LOCK:  # the slider check cannot be skipped: no valid, unused pass from this device, no account
+        if not challenge.consume(db, body.challenge_token, str((body.risk or {}).get("device_id") or "")):
+            raise HTTPException(422, "Complete the slider check first.")
         verdict = risk.assess(db, "signup", name, _ip(request), body.risk, body.email)
     if verdict["decision"] == "block":
         raise HTTPException(403, "We couldn't create this account. If you think this is a mistake, contact support.")
@@ -241,8 +275,9 @@ def register(body: RegisterIn, request: HttpRequest, response: Response):
         raise HTTPException(422, str(e))
     if r["status"] == "pending_email":
         with DB_LOCK:
-            otp.issue(db, cfg, r["username"], body.email.strip().lower())
-        return {"status": "pending_email", "username": r["username"]}
+            otp.issue(db, cfg, r["username"], body.email.strip().lower(), _base_url(request))
+            wait = otp.new_wait(db, r["username"])
+        return {"status": "pending_email", "username": r["username"], "wait_token": wait}
     if r["status"] == "active":
         with DB_LOCK:
             user = accounts.account(db, r["username"])
@@ -274,13 +309,100 @@ class ResendIn(BaseModel):
 
 
 @app.post("/api/register/resend")
-def register_resend(body: ResendIn):
+def register_resend(body: ResendIn, request: HttpRequest):
     name = body.username.strip().lower()
     with DB_LOCK:
         a = accounts.account(db, name)
         if a and a["status"] == "pending_email":
-            otp.issue(db, cfg, name, a["email"])
+            otp.issue(db, cfg, name, a["email"], _base_url(request))
     return {"ok": True}  # same answer either way: no account enumeration
+
+
+class PollIn(BaseModel):
+    username: str = Field(max_length=40)
+    wait_token: str = Field(min_length=20, max_length=80)
+
+
+@app.post("/api/register/poll")
+def register_poll(body: PollIn, request: HttpRequest, response: Response):
+    """The "check your email" screen asks every few seconds. Once the email is verified (code or link, any device),
+    the browser that holds the wait token is signed in - once."""
+    name = body.username.strip().lower()
+    with DB_LOCK:
+        if not otp.wait_valid(db, name, body.wait_token):
+            raise HTTPException(404, "nothing to wait for")
+        a = accounts.account(db, name) or {}
+        if a.get("status") == "pending_email":
+            return {"status": "pending_email"}
+        otp.claim_wait(db, name, body.wait_token)
+    if a.get("status") == "active":
+        return {"status": "active", **_start_session(a, request, response)}
+    return {"status": a.get("status")}
+
+
+# ---------------------------------------------------------------- forgotten password (email link or code)
+class ForgotIn(BaseModel):
+    login: str = Field(min_length=3, max_length=254)   # username or email
+    challenge_token: str = Field(default="", max_length=80)
+    risk: dict | None = None
+
+
+@app.post("/api/password/forgot")
+def password_forgot(body: ForgotIn, request: HttpRequest):
+    """Sends a reset link and code if the account exists. Same answer either way (no account enumeration); the
+    slider pass is required so this cannot be used to flood inboxes."""
+    with DB_LOCK:
+        if not challenge.consume(db, body.challenge_token, str((body.risk or {}).get("device_id") or "")):
+            raise HTTPException(422, "Complete the slider check first.")
+        a = accounts.find_login(db, body.login)
+        verdict = risk.assess(db, "password_reset", a["username"] if a else None, _ip(request), body.risk)
+        if a and a.get("email") and a["status"] != "disabled" and verdict["decision"] != "block":
+            otp.issue(db, cfg, a["username"], a["email"], _base_url(request), purpose="reset")
+    return {"ok": True}
+
+
+class ResetIn(BaseModel):
+    login: str = Field(default="", max_length=254)      # with a code: what the person typed (username or email)
+    username: str = Field(default="", max_length=40)    # with a link: from the link
+    code: str = Field(default="", max_length=6)
+    token: str = Field(default="", max_length=80)
+    password: str = Field(min_length=10, max_length=200)
+
+
+@app.post("/api/password/reset")
+def password_reset(body: ResetIn):
+    with DB_LOCK:
+        a = accounts.find_login(db, body.username or body.login)
+        ok = bool(a) and (otp.check_link(db, a["username"], body.token, "reset") if body.token
+                          else otp.check(db, a["username"], body.code, "reset"))
+        if not ok:
+            raise HTTPException(422, "That code or link is wrong or expired. Ask for a new one.")
+        try:
+            accounts.set_password(db, a["username"], body.password)
+        except accounts.AuthError as e:
+            raise HTTPException(422, str(e))
+        db.execute("DELETE FROM sessions WHERE username=?", (a["username"],))  # signed out everywhere
+        db.commit()
+    return {"ok": True}
+
+
+class VerifyLinkIn(BaseModel):
+    username: str = Field(max_length=40)
+    token: str = Field(min_length=20, max_length=80)
+
+
+@app.post("/api/register/verify-link")
+def register_verify_link(body: VerifyLinkIn, request: HttpRequest, response: Response):
+    """The "Verify and sign in" link from the email (like Claude's): same effect as typing the code."""
+    name = body.username.strip().lower()
+    with DB_LOCK:
+        if not otp.check_link(db, name, body.token):
+            raise HTTPException(422, "This link is used or expired. Sign in, or ask for a new code.")
+        status = accounts.email_verified(db, name)
+        user = accounts.account(db, name)
+    if status == "active":
+        return {"status": "active", **_start_session(user, request, response)}
+    return {"status": status, "username": name}
 
 
 # ---------------------------------------------------------------- plans and payments (Stripe Elements, test mode)

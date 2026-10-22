@@ -2,11 +2,133 @@
 // with payment history. Card details go from the browser straight to Stripe; the server only sees Stripe's ids.
 import { api, h, icon, toast, fmtTime } from "./lib.js";
 import { Owl } from "./owl.js";
-import { watchForm, pageSignals } from "./risk.js";
+import { watchForm, pageSignals, deviceId } from "./risk.js";
 
 const money = (cents, cur) => new Intl.NumberFormat(undefined, { style: "currency", currency: (cur || "myr").toUpperCase() }).format(cents / 100);
 const PLAN_NAME = { free: "Free", pro: "Pro", team: "Team", org: "Organisation" };
 export const planName = (p) => PLAN_NAME[p] || p;
+
+// ---------------------------------------------------------------- slider check (server-verified, single use)
+/** Drag the piece into the gap. Calls onPass(token) once the server accepts the drag; onReset() when it is undone. */
+function sliderCheck(onPass, onReset) {
+  const stage = h("div", { class: "sc-stage" });
+  const knob = h("button", { class: "sc-knob", type: "button", role: "slider", "aria-label": "Slide the piece into the gap",
+    "aria-valuemin": "0", "aria-valuenow": "0" }, icon("send"));
+  const label = h("span", { class: "sc-label" }, "Slide to fit the piece");
+  const rail = h("div", { class: "sc-rail" }, h("i", { class: "sc-fill" }), knob, label);
+  const note = h("p", { class: "sc-note", role: "status", "aria-live": "polite" });
+  const again = h("button", { class: "btn ghost sm sc-new", type: "button", onclick: () => load() }, icon("history"), "New puzzle");
+  const box = h("div", { class: "slider-check" }, stage, rail, h("div", { class: "sc-foot" }, note, again));
+  let ch = null, piece = null, x = 0, max = 0, trail = [], t0 = 0, busy = false, done = false;
+
+  const place = (nx) => {
+    x = Math.max(0, Math.min(max, nx));
+    piece.style.transform = `translateX(${x}px)`;
+    const k = (x / max) * (rail.clientWidth - knob.offsetWidth);
+    knob.style.transform = `translateX(${k}px)`;
+    rail.querySelector(".sc-fill").style.width = `${k + knob.offsetWidth / 2}px`;
+    knob.setAttribute("aria-valuenow", String(Math.round(x)));
+  };
+  async function load() {
+    done = false; busy = false; onReset?.();
+    box.classList.remove("ok", "bad");
+    note.textContent = ""; label.textContent = "Slide to fit the piece";
+    stage.replaceChildren(h("p", { class: "muted" }, "Loading the puzzle…"));
+    ch = await api("/api/challenge", { method: "POST" });
+    max = ch.width - ch.piece_size;
+    piece = h("img", { class: "sc-piece", src: ch.piece, alt: "", style: { top: `${ch.piece_y}px` } });
+    stage.style.width = `${ch.width}px`; stage.style.height = `${ch.height}px`;
+    stage.replaceChildren(h("img", { class: "sc-track", src: ch.track, alt: "Puzzle: a picture with a gap" }), piece);
+    knob.setAttribute("aria-valuemax", String(max));
+    trail = []; place(0);
+  }
+  async function submit(keyboard) {
+    if (busy || done || !trail.length) return;
+    busy = true;
+    try {
+      const r = await api(`/api/challenge/${ch.id}/verify`, { method: "POST", body: { x, trail: trail.slice(-400), keyboard, device_id: deviceId() } });
+      done = true; box.classList.add("ok"); label.textContent = "Verified"; note.textContent = "";
+      onPass(r.token);
+    } catch (e) {
+      box.classList.add("bad"); note.textContent = e.message;
+      setTimeout(() => { box.classList.remove("bad"); if (/Expired/.test(e.message)) load(); else { trail = []; place(0); } busy = false; }, 700);
+    }
+  }
+  // pointer: mouse, pen or finger
+  let startX = 0, startPos = 0;
+  knob.addEventListener("pointerdown", (e) => {
+    if (done || busy || !ch) return;
+    knob.setPointerCapture(e.pointerId); startX = e.clientX; startPos = x; t0 = performance.now(); trail = [[0, x, e.clientY]];
+  });
+  knob.addEventListener("pointermove", (e) => {
+    if (!knob.hasPointerCapture(e.pointerId)) return;
+    const scale = max / (rail.clientWidth - knob.offsetWidth);  // the rail may be narrower or wider than the picture
+    place(startPos + (e.clientX - startX) * scale);
+    trail.push([Math.round(performance.now() - t0), Math.round(x * 10) / 10, e.clientY]);
+  });
+  knob.addEventListener("pointerup", (e) => { if (knob.hasPointerCapture(e.pointerId)) { knob.releasePointerCapture(e.pointerId); submit(false); } });
+  // keyboard: arrows move it (Shift = bigger steps), Enter checks it
+  knob.addEventListener("keydown", (e) => {
+    if (done || !ch) return;
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (step) { e.preventDefault(); if (!trail.length) t0 = performance.now(); place(x + step * (e.shiftKey ? 10 : 2)); trail.push([Math.round(performance.now() - t0), x]); }
+    if (e.key === "Enter") { e.preventDefault(); submit(true); }
+  });
+  load().catch((e) => { stage.replaceChildren(h("p", { class: "error" }, e.message)); });
+  return { el: box, reset: load };
+}
+
+/** The slider in a pop-up: resolves with the server's pass, rejects if the person closes it. */
+function sliderDialog(title = "Quick check") {
+  return new Promise((resolve, reject) => {
+    let passed = false;
+    const dlg = h("dialog", { class: "slider-dialog", "aria-label": title });
+    const check = sliderCheck((token) => { passed = true; setTimeout(() => { dlg.close(); resolve(token); }, 450); });
+    dlg.append(h("div", { class: "sd-head" }, h("h2", {}, title), h("button", { class: "btn ghost sm", type: "button", "aria-label": "Close", onclick: () => dlg.close() }, "✕")),
+      h("p", { class: "muted" }, "Drag the piece into the gap (or use the arrow keys, then Enter)."), check.el);
+    dlg.addEventListener("close", () => { dlg.remove(); if (!passed) reject(new Error("Complete the quick check to continue.")); });
+    document.body.append(dlg); dlg.showModal();
+    dlg.querySelector(".sc-knob")?.focus();
+  });
+}
+
+/** Six one-digit boxes: typing moves on, Backspace goes back, a pasted or autofilled code fills all of them. */
+function otpBoxes(onComplete) {
+  // no maxlength: phone code autofill and paste put the whole code in one box at once; the input handler spreads it
+  const boxes = Array.from({ length: 6 }, (_, i) => h("input", { class: "otp-box", inputmode: "numeric", pattern: "\\d",
+    autocomplete: i === 0 ? "one-time-code" : "off", "aria-label": `Digit ${i + 1} of 6` }));
+  const value = () => boxes.map((b) => b.value).join("");
+  const fill = (digits, from = 0) => {
+    digits.split("").forEach((d, k) => { if (boxes[from + k]) boxes[from + k].value = d; });
+    boxes[Math.min(5, from + digits.length)].focus();
+    if (value().length === 6) onComplete(value());
+  };
+  boxes.forEach((b, i) => {
+    b.addEventListener("input", () => {
+      const digits = b.value.replace(/\D/g, "");
+      b.value = "";
+      if (digits) fill(digits.slice(0, 6 - i), i);
+    });
+    b.addEventListener("keydown", (e) => {
+      if (e.key === "Backspace" && !b.value && i > 0) { boxes[i - 1].value = ""; boxes[i - 1].focus(); e.preventDefault(); }
+      if (e.key === "ArrowLeft" && i > 0) boxes[i - 1].focus();
+      if (e.key === "ArrowRight" && i < 5) boxes[i + 1].focus();
+    });
+    b.addEventListener("paste", (e) => { e.preventDefault(); fill((e.clipboardData.getData("text") || "").replace(/\D/g, "").slice(0, 6), 0); });
+  });
+  return { el: h("div", { class: "otp-boxes", role: "group", "aria-label": "6-digit code" }, boxes), value,
+    clear: () => { boxes.forEach((b) => { b.value = ""; }); boxes[0].focus(); }, focus: () => boxes[0].focus() };
+}
+
+/** Webmail for an address, so the person can jump straight to the email with the code. */
+function inboxLink(email) {
+  const d = (email.split("@")[1] || "").toLowerCase();
+  if (/^(gmail|googlemail)\.com$/.test(d)) return ["Open Gmail", "https://mail.google.com/mail/u/0/#search/AiversePulse"];
+  if (/^(outlook|hotmail|live|msn)\.[a-z.]+$/.test(d)) return ["Open Outlook", "https://outlook.live.com/mail/0/"];
+  if (/^yahoo\.[a-z.]+$/.test(d) || d === "ymail.com") return ["Open Yahoo Mail", "https://mail.yahoo.com/"];
+  if (/^(icloud|me|mac)\.com$/.test(d)) return ["Open iCloud Mail", "https://www.icloud.com/mail"];
+  return null;
+}
 
 // ---------------------------------------------------------------- sign up
 export function registerView(app, { onSignedIn }) {
@@ -20,13 +142,14 @@ export function registerView(app, { onSignedIn }) {
   const hint = h("p", { class: "signin-next" });
   const user = h("input", { class: "input", name: "username", autocomplete: "username", required: true, minlength: 3, maxlength: 40, pattern: "[a-zA-Z0-9_.\\-]{3,40}" });
   const email = h("input", { class: "input", name: "email", type: "email", autocomplete: "email", required: true, maxlength: 254 });
-  const pass = h("input", { class: "input", name: "password", type: "password", autocomplete: "new-password", required: true, minlength: 10, maxlength: 200 });
+  const pwd = h("input", { class: "input", name: "password", type: "password", autocomplete: "new-password", required: true, minlength: 10, maxlength: 200 });
   const btn = h("button", { class: "btn primary", type: "submit" }, "Create account");
   const form = h("form", { class: "signin-form", onsubmit: async (e) => {
     e.preventDefault();
     btn.disabled = true; err.textContent = "";
     try {
-      const r = await api("/api/register", { method: "POST", body: { username: user.value, email: email.value, password: pass.value, account_type: type, risk: signals() } });
+      const pass = await sliderDialog();  // pops up now; the server requires its single-use pass
+      const r = await api("/api/register", { method: "POST", body: { username: user.value, email: email.value, password: pwd.value, account_type: type, risk: signals(), challenge_token: pass } });
       after(r);
     } catch (ex) { err.textContent = ex.message; owl.set("confused"); btn.disabled = false; }
   } },
@@ -35,7 +158,7 @@ export function registerView(app, { onSignedIn }) {
     seg, hint,
     h("label", { class: "field" }, h("span", {}, "Username"), user),
     h("label", { class: "field" }, h("span", {}, "Email"), email),
-    h("label", { class: "field" }, h("span", {}, "Password"), pass, h("small", { class: "field-hint" }, "10+ characters with a capital letter and a digit")),
+    h("label", { class: "field" }, h("span", {}, "Password"), pwd, h("small", { class: "field-hint" }, "10+ characters with a capital letter and a digit")),
     err, btn,
     h("p", { class: "signin-switch" }, "Already have an account? ", h("a", { href: "#/signin" }, "Sign in")));
   const signals = watchForm(form);
@@ -47,7 +170,7 @@ export function registerView(app, { onSignedIn }) {
   // the next step depends on what the server decided (email code, admin approval, or signed in)
   function after(r) {
     if (r.status === "active") { onSignedIn(); return; }
-    if (r.status === "pending_email") { codeStep(r.username); return; }
+    if (r.status === "pending_email") { codeStep(r.username, r.wait_token); return; }
     const hr = type === "hr";
     owl.set("idle");
     panel.replaceChildren(h("div", { class: "signin-form" },
@@ -57,21 +180,41 @@ export function registerView(app, { onSignedIn }) {
         : "For your account's safety, an administrator will review this sign-up. You can sign in once it's approved."),
       h("a", { class: "btn", href: "#/signin" }, "Go to sign in")));
   }
-  function codeStep(username) {
-    const code = h("input", { class: "input code-input", inputmode: "numeric", autocomplete: "one-time-code", maxlength: 6, pattern: "\\d{6}", required: true });
+  function codeStep(username, waitToken) {
     const e2 = h("p", { class: "error", role: "alert" });
-    const go = h("button", { class: "btn primary", type: "submit" }, "Verify");
-    panel.replaceChildren(h("form", { class: "signin-form", onsubmit: async (ev) => {
-      ev.preventDefault(); go.disabled = true; e2.textContent = "";
-      try { after(await api("/api/register/verify", { method: "POST", body: { username, code: code.value } })); }
-      catch (ex) { e2.textContent = ex.message; go.disabled = false; code.select(); }
-    } },
+    const state = h("p", { class: "verify-state", role: "status", "aria-live": "polite" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Waiting for you to verify…");
+    let stop = false;
+    const boxes = otpBoxes(async (code) => {
+      e2.textContent = "";
+      try { finished(await api("/api/register/verify", { method: "POST", body: { username, code } })); }
+      catch (ex) { e2.textContent = ex.message; boxes.clear(); }
+    });
+    const inbox = inboxLink(email.value);
+    panel.replaceChildren(h("div", { class: "signin-form" },
       h("a", { class: "signin-back", href: "#/start" }, icon("back"), "Back to home"),
       h("span", { class: "wordmark" }, "Check your email"),
-      h("p", { class: "signin-next" }, `We sent a 6-digit code to ${email.value}. It expires in 10 minutes.`),
-      h("label", { class: "field" }, h("span", {}, "Code"), code), e2, go,
-      h("button", { class: "btn ghost sm", type: "button", onclick: async () => { await api("/api/register/resend", { method: "POST", body: { username } }); toast("A new code is on its way"); } }, "Send a new code")));
-    code.focus();
+      h("p", { class: "signin-next" }, `We sent a link and a 6-digit code to ${email.value}. Click the link in the email (on any device), or type the code below.`),
+      inbox ? h("a", { class: "btn inbox-btn", href: inbox[1], target: "_blank", rel: "noopener noreferrer" }, icon("ext"), inbox[0]) : null,
+      h("div", { class: "field" }, h("span", {}, "Code"), boxes.el), e2, state,
+      h("button", { class: "btn ghost sm", type: "button", onclick: async () => { await api("/api/register/resend", { method: "POST", body: { username } }); toast("A new email is on its way"); } }, "Send a new email")));
+    boxes.focus();
+    // the link may be opened anywhere (a phone, another tab): keep asking, and finish here as soon as it is
+    (async function poll() {
+      while (!stop) {
+        await new Promise((r) => setTimeout(r, 3000));
+        if (stop || !document.body.contains(state)) return;
+        try { const r = await api("/api/register/poll", { method: "POST", body: { username, wait_token: waitToken } }); if (r.status !== "pending_email") finished(r); }
+        catch { /* offline for a moment: try again */ }
+      }
+    })();
+    function finished(r) {
+      if (stop) return;
+      stop = true;
+      owl.set("celebrating");
+      state.replaceChildren(icon("check"), "Email verified");
+      state.classList.add("ok");
+      setTimeout(() => after(r), 900);  // show the confirmation, then continue
+    }
   }
 }
 
@@ -172,4 +315,96 @@ export async function accountView(main, { refreshMe }) {
             p.status === "succeeded" ? "paid" : p.status.replaceAll("_", " "))),
           h("td", {}, p.receipt_url ? h("a", { href: p.receipt_url, target: "_blank", rel: "noopener noreferrer" }, "Receipt") : "–")))))
         : h("p", { class: "muted" }, "No payments yet.")));
+}
+
+// ---------------------------------------------------------------- the "Verify and sign in" link from the email
+export async function verifyLinkView(app, { username, token, onSignedIn }) {
+  const owl = new Owl({ size: 160, state: "searching" });
+  const msg = h("p", { class: "signin-next" }, "Verifying your email…");
+  app.replaceChildren(h("main", { class: "signin" }, h("section", { class: "signin-story" }, owl.el, h("h1", {}, "One moment.")),
+    h("div", { class: "signin-form" }, h("span", { class: "wordmark" }, "AiversePulse"), msg)));
+  try {
+    const r = await api("/api/register/verify-link", { method: "POST", body: { username, token } });
+    if (r.status === "active") { onSignedIn(); return; }
+    owl.set("idle");
+    msg.textContent = "Email verified. An administrator reviews new HR accounts; you can sign in once yours is approved.";
+  } catch (e) {
+    owl.set("confused");
+    msg.replaceChildren(e.message, " ", h("a", { href: "#/signin" }, "Go to sign in"));
+  }
+}
+
+// ---------------------------------------------------------------- forgot password
+export function forgotView(app) {
+  const owl = new Owl({ size: 200, state: "idle" });
+  const err = h("p", { class: "error", role: "alert" });
+  const login = h("input", { class: "input", name: "username", autocomplete: "username", required: true, maxlength: 254 });
+  const btn = h("button", { class: "btn primary", type: "submit" }, "Send reset email");
+  const form = h("form", { class: "signin-form", onsubmit: async (e) => {
+    e.preventDefault(); btn.disabled = true; err.textContent = "";
+    try {
+      const pass = await sliderDialog();
+      await api("/api/password/forgot", { method: "POST", body: { login: login.value, challenge_token: pass, risk: signals() } });
+      step2();
+    } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+  } },
+    h("a", { class: "signin-back", href: "#/signin" }, icon("back"), "Back to sign in"),
+    h("span", { class: "wordmark" }, "Forgot your password?"),
+    h("p", { class: "signin-next" }, "Enter your username or email. If there's an account, we'll email a reset link and code."),
+    h("label", { class: "field" }, h("span", {}, "Username or email"), login), err, btn);
+  const signals = watchForm(form);
+  const panel = h("div", { class: "signin-form-host" }, form);
+  app.replaceChildren(h("main", { class: "signin" }, h("section", { class: "signin-story" }, owl.el, h("h1", {}, "It happens. Let's get you back in.")), panel));
+  login.focus();
+
+  function step2() {
+    const e2 = h("p", { class: "error", role: "alert" });
+    const pwd = h("input", { class: "input", type: "password", autocomplete: "new-password", required: true, minlength: 10, maxlength: 200 });
+    const save = h("button", { class: "btn primary", type: "submit" }, "Set new password");
+    const boxes = otpBoxes(() => pwd.focus());
+    const inbox = login.value.includes("@") ? inboxLink(login.value) : null;
+    panel.replaceChildren(h("form", { class: "signin-form", onsubmit: async (e) => {
+      e.preventDefault(); e2.textContent = "";
+      if (boxes.value().length !== 6) { e2.textContent = "Enter the 6-digit code from the email."; return; }
+      save.disabled = true;
+      try { await api("/api/password/reset", { method: "POST", body: { login: login.value, code: boxes.value(), password: pwd.value } }); done(panel); }
+      catch (ex) { e2.textContent = ex.message; save.disabled = false; }
+    } },
+      h("a", { class: "signin-back", href: "#/signin" }, icon("back"), "Back to sign in"),
+      h("span", { class: "wordmark" }, "Check your email"),
+      h("p", { class: "signin-next" }, "If that account exists, we sent a reset link and a 6-digit code. Click the link, or enter the code and a new password here."),
+      inbox ? h("a", { class: "btn inbox-btn", href: inbox[1], target: "_blank", rel: "noopener noreferrer" }, icon("ext"), inbox[0]) : null,
+      h("div", { class: "field" }, h("span", {}, "Code"), boxes.el),
+      h("label", { class: "field" }, h("span", {}, "New password"), pwd, h("small", { class: "field-hint" }, "10+ characters with a capital letter and a digit")),
+      e2, save));
+    boxes.focus();
+  }
+}
+
+/** Shown after a successful reset (code or link). */
+function done(panel) {
+  panel.replaceChildren(h("div", { class: "signin-form" },
+    h("span", { class: "wordmark" }, "Password changed"),
+    h("p", { class: "verify-state ok" }, icon("check"), "You've been signed out everywhere. Sign in with your new password."),
+    h("a", { class: "btn primary", href: "#/signin" }, "Sign in")));
+}
+
+/** The "Choose a new password" link from the reset email. */
+export function resetLinkView(app, { username, token }) {
+  const owl = new Owl({ size: 200, state: "idle" });
+  const err = h("p", { class: "error", role: "alert" });
+  const pwd = h("input", { class: "input", type: "password", autocomplete: "new-password", required: true, minlength: 10, maxlength: 200 });
+  const btn = h("button", { class: "btn primary", type: "submit" }, "Set new password");
+  const panel = h("div", { class: "signin-form-host" });
+  panel.append(h("form", { class: "signin-form", onsubmit: async (e) => {
+    e.preventDefault(); btn.disabled = true; err.textContent = "";
+    try { await api("/api/password/reset", { method: "POST", body: { username, token, password: pwd.value } }); done(panel); }
+    catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+  } },
+    h("a", { class: "signin-back", href: "#/signin" }, icon("back"), "Back to sign in"),
+    h("span", { class: "wordmark" }, "Choose a new password"),
+    h("label", { class: "field" }, h("span", {}, "New password"), pwd, h("small", { class: "field-hint" }, "10+ characters with a capital letter and a digit")),
+    err, btn));
+  app.replaceChildren(h("main", { class: "signin" }, h("section", { class: "signin-story" }, owl.el, h("h1", {}, "Almost done.")), panel));
+  pwd.focus();
 }
