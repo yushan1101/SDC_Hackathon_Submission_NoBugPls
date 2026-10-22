@@ -1850,15 +1850,5 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
 .plan-status-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .plan-status-control .input { width: auto; min-width: 112px; }
 
-/* login: one card, a clear way back home */
-.login { min-height: 100dvh; display: grid; place-items: center; padding: 72px 16px 32px; position: relative; }
-.login-back { position: absolute; top: 16px; left: 16px; z-index: 2; font-size: 16px; padding: 10px 16px; gap: 8px; box-shadow: 0 6px 18px -10px oklch(0.25 0.05 262 / 0.35); }
-.login-back svg { width: 18px; height: 18px; }
-.login-card { width: min(400px, 100%); display: grid; gap: 16px; justify-items: stretch; padding: 32px 28px; border: 1px solid var(--rule); border-radius: 24px;
-  background: var(--surface); box-shadow: 0 24px 60px -32px oklch(0.25 0.06 262 / 0.45); }
-.login-card .owl { justify-self: center; }
-.login-card h1 { margin: 0; text-align: center; font-size: 34px; }
-.login-next { margin: -8px 0 0; text-align: center; color: var(--ink-2); font-size: 16px; }
-.login-card .error { margin: 0; min-height: 1.4em; color: var(--danger); font-size: 15px; }
-.login-card .btn.primary { justify-content: center; min-height: 48px; font-size: 17px; }
-.login-fine { margin: 0; text-align: center; color: var(--ink-2); font-size: 15px; }
+/* sign-in on desktop: no small print (fine print under the button, caption under the skills table) */
+@media (min-width: 900px) { .signin-form .fine, .signin-note { display: none; } }

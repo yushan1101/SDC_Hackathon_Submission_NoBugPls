@@ -1,7 +1,7 @@
 // AiversePulse (public users): sign-in, plan builder, chat-style streaming report, plans.
 import "./motion.js";  // GSAP animations for whatever the app renders
 import { jobIcon } from "./jobicons.js";
-import { api, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP } from "./lib.js";
+import { api, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP, GROW } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
 import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
@@ -54,15 +54,19 @@ function cleanDestination(next) {
 async function signIn(next = "start") {
   // Only internal hash routes can be used as post-login destinations.
   next = cleanDestination(next);
-  const owl = new Owl({ size: 96, state: "greeting" });
+  const owl = new Owl({ size: 200, state: "greeting" });
   const err = h("p", { class: "error", role: "alert" });
   const user = h("input", { class: "input", name: "username", autocomplete: "username", required: true, maxlength: 40 });
   const pass = h("input", { class: "input", name: "password", type: "password", autocomplete: "current-password", required: true, maxlength: 200 });
   const btn = h("button", { class: "btn primary", type: "submit" }, "Sign in");
-  const feature = FEATURE[next.split("/")[0]];
-  app.replaceChildren(h("main", { class: "login" },
-    h("a", { class: "btn login-back", href: "#/start" }, icon("back"), "Back to home"),
-    h("form", { class: "login-card", onsubmit: async (e) => {
+  const specimen = h("table", { class: "specimen", "aria-label": "Most important skills for an example occupation (ESCO)" });
+  app.replaceChildren(h("main", { class: "signin" },
+    h("section", { class: "signin-story" },
+      owl.el,
+      h("h1", {}, "Know which skills the job market actually asks for."),
+      h("p", { class: "lede" }, "Free, evidence-based 90-day learning plans for any job. Every claim links to its public source, starting with ESCO, the European Commission's skills and occupations classification."),
+      specimen),
+    h("form", { class: "signin-form", onsubmit: async (e) => {
       e.preventDefault();
       btn.disabled = true; err.textContent = "";
       try {
@@ -74,14 +78,24 @@ async function signIn(next = "start") {
         if (location.hash === `#/${next}`) route(); else location.hash = `#/${next}`;
       } catch (ex) { err.textContent = ex.message; owl.set("confused"); btn.disabled = false; pass.select(); }
     } },
-      owl.el,
-      h("h1", {}, "Sign in"),
-      feature ? h("p", { class: "login-next" }, `to open ${feature}`) : null,
+      h("a", { class: "signin-back", href: "#/start" }, icon("back"), "Back to home"),
+      h("span", { class: "wordmark" }, "AiversePulse"),
+      FEATURE[next.split("/")[0]] ? h("p", { class: "signin-next" }, `Sign in to open ${FEATURE[next.split("/")[0]]}.`) : null,
       h("label", { class: "field" }, h("span", {}, "Username"), user),
       h("label", { class: "field" }, h("span", {}, "Password"), pass),
       err, btn,
-      h("p", { class: "login-fine" }, "Your organisation gives you an account. HR advisors sign in here too."))));
+      h("p", { class: "fine" }, "Accounts are issued by your administrator. Decision support only: plans stay drafts until you approve them."),
+      h("p", { class: "fine" }, "Employees and HR advisors both sign in here; HR advisors go straight to the Enterprise console."))));
   user.focus();
+  try {
+    const sp = await api("/api/public/specimen");
+    const max = 5;
+    specimen.append(h("caption", { class: "sr-only" }, sp.source),
+      h("tbody", {}, sp.skills.map(([k, v], i) => h("tr", {},
+        h("td", {}, k), h("td", { class: "num" }, `${v.toFixed(2)}`),
+        h("td", { style: { width: "55%" } }, reveal(h("div", { class: "bar", style: { width: `${(v / max) * 100}%`, "transform-origin": "left" } }), GROW, { duration: 900, delay: i * 90 }))))));
+    specimen.after(h("p", { class: "muted signin-note", style: { "font-size": "13px" } }, `Most important skills for ${sp.role} (ESCO), predicted importance out of 5. Works the same for any of ~3,000 occupations.`));
+  } catch { /* specimen is decorative context; the form works without it */ }
 }
 
 // ---------------------------------------------------------------- shell
