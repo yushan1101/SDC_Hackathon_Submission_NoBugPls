@@ -1850,5 +1850,14 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
 .plan-status-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .plan-status-control .input { width: auto; min-width: 112px; }
 
-/* sign-in on desktop: no small print (fine print under the button, caption under the skills table) */
-@media (min-width: 900px) { .signin-form .fine, .signin-note { display: none; } }
+
+/* sign-in: no small print on desktop; a clear Back to home button; phones show only the form */
+@media (min-width: 900px) { .signin-form .fine { display: none; } }
+.signin-back { padding: 10px 18px; border: 1px solid oklch(1 0 0 / 0.35); border-radius: 999px; color: var(--shell-ink); font-size: 16px; font-weight: 600; }
+.signin-back:hover, .signin-back:focus-visible { background: oklch(1 0 0 / 0.1); color: var(--shell-ink); }
+.signin-back svg { width: 18px; height: 18px; }
+@media (max-width: 899px) {
+  .signin { grid-template-columns: 1fr; }
+  .signin-story { display: none; }
+  .signin-form { min-height: 100dvh; align-content: start; padding-top: 20px; }
+}
