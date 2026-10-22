@@ -855,3 +855,14 @@ def test_account_deletion_removes_personal_data_and_keeps_anonymised_records(cli
     assert pay.startswith("deleted-")  # kept for accounting, no longer linked to the person
     assert not db.execute("SELECT 1 FROM risk_events WHERE username='leaver1'").fetchone()
     assert client.post("/api/login", json={"username": "leaver1", "password": PW, "risk": HUMAN}, headers={"X-AP": "1"}).status_code == 401
+
+
+def test_sign_in_with_email_as_well_as_username(client):
+    client.cookies.clear()
+    _register(client, username="byemail1", email="ByEmail1@Example.com")
+    client.cookies.clear()
+    r = client.post("/api/login", json={"username": "byemail1@example.com", "password": PW, "risk": HUMAN}, headers={"X-AP": "1"})
+    assert r.status_code == 200 and r.json()["username"] == "byemail1"
+    client.cookies.clear()
+    bad = client.post("/api/login", json={"username": "nobody-at-all@example.com", "password": PW, "risk": HUMAN}, headers={"X-AP": "1"})
+    assert bad.status_code == 401 and bad.json()["detail"] == "invalid username or password"
