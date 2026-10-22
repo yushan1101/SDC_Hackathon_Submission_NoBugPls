@@ -224,7 +224,7 @@ function route() {
   else if (page === "pricing") pricingView(main, { me: S.me }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "account") accountView(main, { refreshMe }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "sdgs") sdgsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
-  else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
+  else if (page === "today") todayView(main, { guest: !S.me }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else startView(main, { name: S.me?.display_name?.split(" ")[0], guest: !S.me });
   reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });
   if (page !== "report") scrollTo({ top: page === "start" ? homeScrollTop : 0, behavior: "instant" });  // the chat manages its own scroll

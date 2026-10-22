@@ -2242,3 +2242,14 @@ dialog.slider-dialog::backdrop { background: oklch(0.15 0.03 262 / 0.6); }
 .lp-more { min-height: 50px; padding: 0 24px; text-decoration: none; color: var(--ink); }
 .lp-more svg { width: 18px; height: 18px; transition: translate var(--t-slow) var(--ease-out); }
 .lp-more:hover svg { translate: 4px 0; }
+
+/* AI trends for guests: one open row, one blurred row under a sign-in prompt; radar, filters and roles need an account */
+.board-gated :is(.radar-row, .board-filters, .board-roles, .board-method) { display: none; }
+.board-gated .topic-card.gated { filter: blur(6px) saturate(0.85); opacity: 0.75; user-select: none; }
+.board-gate { position: relative; z-index: 1; display: grid; justify-items: center; gap: 14px; text-align: center;
+  margin-top: clamp(-320px, -24vw, -200px); padding: clamp(72px, 9vw, 120px) 24px 24px;
+  background: linear-gradient(transparent, var(--bg, #fff) 42%); }
+.board-gate h2 { font-size: clamp(32px, 3.6vw, 46px); max-width: 18ch; text-wrap: balance; }
+.board-gate p { max-width: 52ch; font-size: 17px; line-height: 1.55; color: var(--ink-2); }
+.board-gate-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 6px; }
+.board-gate-actions .btn { min-height: 50px; padding: 0 24px; text-decoration: none; }

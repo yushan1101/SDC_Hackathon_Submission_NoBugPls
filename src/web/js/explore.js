@@ -396,12 +396,29 @@ export function resumeView(main, ctx) {
 }
 
 // ---------------------------------------------------------------- today: daily AI-trend board
-export async function todayView(main, { onRefresh } = {}) {
+export async function todayView(main, { onRefresh, guest = false } = {}) {
   main.replaceChildren(h("h1", { class: "page-title today-title" }, "AI trends"),
     h("p", { class: "lede today-lede" }, "Which AI topics are moving, and which jobs they pull forward or put under pressure. Rebuilt every day."),
     h("p", { class: "muted" }, "Loading…"));
   const b = await api("/api/signals/today");
-  main.lastChild.replaceWith(boardView(b, { onRefresh }));
+  const board = boardView(b, { onRefresh });
+  main.lastChild.replaceWith(board);
+  if (guest && b?.available) gate(board, b.topics.length);
+}
+
+/** Guests see the first row of topics; the next row shows blurred under a sign-in prompt, the rest waits for an account. */
+function gate(board, total) {
+  board.classList.add("board-gated");
+  const open = matchMedia("(min-width: 1360px)").matches ? 5 : 3;  // lead + the cards beside it: one full row
+  const grid = board.querySelector(".topic-grid");
+  const cols = getComputedStyle(grid).gridTemplateColumns.split(" ").length;  // blur exactly one row's worth
+  [...grid.querySelectorAll(".topic-card")].slice(open).forEach((c, i) => { if (i < cols) { c.inert = true; c.classList.add("gated"); } else c.remove(); });
+  grid.after(h("div", { class: "board-gate" },
+    h("h2", {}, `Sign in to see all ${total} AI trends`),
+    h("p", {}, "Plus the topic radar, what changed since yesterday, and the roles each trend pulls forward or puts under pressure. Free."),
+    h("div", { class: "board-gate-actions" },
+      h("a", { class: "btn primary", href: "#/signin/today" }, "Sign in"),
+      h("a", { class: "btn", href: "#/register" }, "Create a free account"))));
 }
 
 // ---------------------------------------------------------------- the 17 UN goals, and (signed in) how your plans map to them
