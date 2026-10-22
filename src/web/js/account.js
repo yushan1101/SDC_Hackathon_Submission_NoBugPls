@@ -8,6 +8,15 @@ const money = (cents, cur) => new Intl.NumberFormat(undefined, { style: "currenc
 const PLAN_NAME = { free: "Free", pro: "Pro", team: "Team", org: "Organisation" };
 export const planName = (p) => PLAN_NAME[p] || p;
 
+// The browser that starts a sign-up or password reset keeps a token. When the email link is opened here (any tab),
+// the server sees it and carries on in this browser; opened anywhere else, it shows a code to type here instead.
+const flow = {
+  key: (purpose) => `ap.flow.${purpose}`,
+  set(purpose, token) { try { localStorage.setItem(this.key(purpose), token); } catch { /* private mode: the code path still works */ } },
+  get(purpose) { try { return localStorage.getItem(this.key(purpose)) || ""; } catch { return ""; } },
+  clear(purpose) { try { localStorage.removeItem(this.key(purpose)); } catch { /* nothing kept */ } },
+};
+
 // ---------------------------------------------------------------- slider check (server-verified, single use)
 /** Drag the piece into the gap. Calls onPass(token) once the server accepts the drag; onReset() when it is undone. */
 function sliderCheck(onPass, onReset) {
@@ -132,6 +141,8 @@ function inboxLink(email) {
 
 // ---------------------------------------------------------------- check your email: code boxes, inbox button, live "Email verified"
 function codePanel(panel, owl, { username, email, waitToken }, after) {
+  flow.set("signup", waitToken);
+  owl.set("update");
   const e2 = h("p", { class: "error", role: "alert" });
   const state = h("p", { class: "verify-state", role: "status", "aria-live": "polite" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Waiting for you to verify…");
   let stop = false;
@@ -144,7 +155,7 @@ function codePanel(panel, owl, { username, email, waitToken }, after) {
   panel.replaceChildren(h("div", { class: "signin-form" },
     h("a", { class: "signin-back", href: "#/start" }, icon("back"), "Back to home"),
     h("span", { class: "wordmark" }, "Check your email"),
-    h("p", { class: "signin-next" }, `We sent a link and a 6-digit code to ${email}. Click the link in the email (on any device), or type the code below.`),
+    h("p", { class: "signin-next" }, `We sent a link to ${email}. Open it in this browser and you're in. Opened on another device, it shows a 6-digit code: type it below.`),
     inbox ? h("a", { class: "btn inbox-btn", href: inbox[1], target: "_blank", rel: "noopener noreferrer" }, icon("ext"), inbox[0]) : null,
     h("div", { class: "field" }, h("span", {}, "Code"), boxes.el), e2, state,
     h("button", { class: "btn ghost sm", type: "button", onclick: async () => { await api("/api/register/resend", { method: "POST", body: { username } }); toast("A new email is on its way"); } }, "Send a new email")));
@@ -161,6 +172,7 @@ function codePanel(panel, owl, { username, email, waitToken }, after) {
   function finished(r) {
     if (stop) return;
     stop = true;
+    flow.clear("signup");
     owl.set("celebrating");
     state.replaceChildren(icon("check"), "Email verified");
     state.classList.add("ok");
@@ -211,7 +223,7 @@ export function registerView(app, { onSignedIn }) {
     seg, hint,
     h("label", { class: "field" }, h("span", {}, "Username"), user),
     h("label", { class: "field" }, h("span", {}, "Email"), email),
-    h("label", { class: "field" }, h("span", {}, "Password"), pwd, h("small", { class: "field-hint" }, "10+ characters with a capital letter and a digit")),
+    h("label", { class: "field" }, h("span", {}, "Password"), pwd, h("small", { class: "field-hint" }, "At least 10 characters, including a capital letter and a number")),
     h("label", { class: "agree" }, agree, h("span", {}, "I agree to the ",
       h("a", { href: "#/terms", target: "_blank", rel: "noopener" }, "Terms of Use"), " and the ",
       h("a", { href: "#/privacy", target: "_blank", rel: "noopener" }, "Privacy Policy"), ", including how my data is used.")),
@@ -231,7 +243,7 @@ export function registerView(app, { onSignedIn }) {
     owl.set("idle");
     panel.replaceChildren(h("div", { class: "signin-form" },
       h("a", { class: "signin-back", href: "#/start" }, icon("back"), "Back to home"),
-      h("span", { class: "wordmark" }, hr ? "Thanks — almost there" : "We need to check a few details"),
+      h("span", { class: "wordmark" }, hr ? "Thanks, almost there" : "We need to check a few details"),
       h("p", { class: "signin-next" }, hr ? "An administrator reviews new HR accounts. You can sign in as soon as yours is approved."
         : "For your account's safety, an administrator will review this sign-up. You can sign in once it's approved."),
       h("a", { class: "btn", href: "#/signin" }, "Go to sign in")));
@@ -249,7 +261,7 @@ const loadStripe = () => (stripeLoader ??= new Promise((ok, no) => {
 
 export async function pricingView(main, { me }) {
   main.replaceChildren(h("h1", { class: "page-title" }, "Plans"), h("p", { class: "muted" }, "Loading…"));
-  const { plans, enabled } = await api("/api/billing/plans");
+  const { plans, enabled, publishable_key: pk } = await api("/api/billing/plans");
   const mine = me?.effective_plan;
   const hr = me?.role === "hr_advisor";
   const shown = plans.filter((p) => (me ? (hr ? p.for === "hr" || p.id === "free" : p.for === "individual") : true));
@@ -258,18 +270,18 @@ export async function pricingView(main, { me }) {
     if (mine === p.id || (mine === "org")) return h("span", { class: "tag approved" }, mine === "org" ? "Included with your organisation" : "Your plan");
     if (p.id === "free") return null;
     return h("button", { class: "btn primary", type: "button", disabled: enabled ? null : true, onclick: () => checkout(p, me) },
-      enabled ? `Upgrade — ${money(p.price_cents, p.currency)}` : "Payments not set up yet");
+      enabled ? `Upgrade for ${money(p.price_cents, p.currency)}` : "Unavailable");
   };
   main.replaceChildren(
     h("h1", { class: "page-title" }, "Plans"),
     h("p", { class: "lede" }, "Start free. Paid plans last 30 days and don't renew on their own."),
-    enabled ? null : h("div", { class: "banner" }, icon("info"), "Payments are not set up on this server yet."),
+    enabled ? null : h("div", { class: "banner" }, icon("info"), "Upgrades are temporarily unavailable."),
     h("div", { class: "plan-grid" }, shown.map((p) => h("article", { class: `plan-card${p.id === "pro" ? " plan-featured" : ""}${mine === p.id ? " plan-current" : ""}` },
       h("h2", {}, p.name),
       h("p", { class: "plan-price" }, p.price_cents ? [h("b", {}, money(p.price_cents, p.currency)), h("span", {}, ` / ${p.days} days`)] : h("b", {}, "Free")),
       h("ul", {}, p.features.map((f) => h("li", {}, icon("check"), f))),
       action(p)))),
-    h("p", { class: "muted plan-fine" }, "Test mode: use Stripe's test card 4242 4242 4242 4242, any future date and any CVC."));
+    pk?.startsWith("pk_test_") ? h("p", { class: "muted plan-fine" }, "Test mode: use Stripe's test card 4242 4242 4242 4242, any future date and any CVC.") : null);
 }
 
 async function checkout(plan, me) {
@@ -366,21 +378,44 @@ function deleteDialog() {
   document.body.append(dlg); dlg.showModal(); pwd.focus();
 }
 
-// ---------------------------------------------------------------- the "Verify and sign in" link from the email
+// ---------------------------------------------------------------- the links from the emails
+/** Opened on a device that didn't start the flow: show the code to type in the browser that did. */
+function showCode(panel, owl, code, where) {
+  owl.set("update");
+  panel.replaceChildren(h("div", { class: "signin-form" },
+    h("span", { class: "wordmark" }, "Your code"),
+    h("p", { class: "signin-next" }, `This browser didn't start ${where}. Type this code in the browser where you did:`),
+    h("p", { class: "code-show num", "aria-label": `Code ${code.split("").join(" ")}` }, code),
+    h("p", { class: "signin-next" }, "It works once and expires in 10 minutes. Nothing was signed in on this device."),
+    h("a", { class: "btn ghost sm", href: "#/start" }, icon("back"), "Back to home")));
+}
+
+function linkPage(app, owlState, title) {
+  const owl = new Owl({ size: 200, state: owlState });
+  const panel = h("div", { class: "signin-form-host" }, h("div", { class: "signin-form" }, h("span", { class: "wordmark" }, "AiversePulse"),
+    h("p", { class: "signin-next" }, "One moment…")));
+  app.replaceChildren(h("main", { class: "signin" }, h("section", { class: "signin-story" }, owl.el, h("h1", {}, title)), panel));
+  return { owl, panel };
+}
+
+function linkFailed(panel, owl, message) {
+  owl.set("confused");
+  panel.replaceChildren(h("div", { class: "signin-form" }, h("span", { class: "wordmark" }, "Link not valid"),
+    h("p", { class: "error", role: "alert" }, message), h("a", { class: "btn", href: "#/signin" }, "Go to sign in")));
+}
+
 export async function verifyLinkView(app, { username, token, onSignedIn }) {
-  const owl = new Owl({ size: 160, state: "searching" });
-  const msg = h("p", { class: "signin-next" }, "Verifying your email…");
-  app.replaceChildren(h("main", { class: "signin" }, h("section", { class: "signin-story" }, owl.el, h("h1", {}, "One moment.")),
-    h("div", { class: "signin-form" }, h("span", { class: "wordmark" }, "AiversePulse"), msg)));
+  const { owl, panel } = linkPage(app, "searching", "Checking your email link.");
   try {
-    const r = await api("/api/register/verify-link", { method: "POST", body: { username, token } });
+    const r = await api("/api/email/open", { method: "POST", body: { purpose: "signup", username, token, wait_token: flow.get("signup") } });
+    if (!r.same_browser) { showCode(panel, owl, r.code, "this sign-up"); return; }
+    flow.clear("signup");
+    owl.set("celebrating");
     if (r.status === "active") { onSignedIn(); return; }
-    owl.set("idle");
-    msg.textContent = "Email verified. An administrator reviews new HR accounts; you can sign in once yours is approved.";
-  } catch (e) {
-    owl.set("confused");
-    msg.replaceChildren(e.message, " ", h("a", { href: "#/signin" }, "Go to sign in"));
-  }
+    panel.replaceChildren(h("div", { class: "signin-form" }, h("span", { class: "wordmark" }, "Email verified"),
+      h("p", { class: "signin-next" }, "An administrator reviews new HR accounts. You can sign in once yours is approved."),
+      h("a", { class: "btn", href: "#/signin" }, "Go to sign in")));
+  } catch (e) { linkFailed(panel, owl, e.message); }
 }
 
 // ---------------------------------------------------------------- forgot password
@@ -393,13 +428,15 @@ export function forgotView(app) {
     e.preventDefault(); btn.disabled = true; err.textContent = "";
     try {
       const pass = await sliderDialog();
-      await api("/api/password/forgot", { method: "POST", body: { login: login.value, challenge_token: pass, risk: signals() } });
+      const r = await api("/api/password/forgot", { method: "POST", body: { login: login.value, challenge_token: pass, risk: signals() } });
+      flow.set("reset", r.wait_token);
+      owl.set("reminder");
       step2();
     } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
   } },
     h("a", { class: "signin-back", href: "#/signin" }, icon("back"), "Back to sign in"),
     h("span", { class: "wordmark" }, "Forgot your password?"),
-    h("p", { class: "signin-next" }, "Enter your username or email. If there's an account, we'll email a reset link and code."),
+    h("p", { class: "signin-next" }, "Enter your username or email. If there's an account, we'll email you a reset link."),
     h("label", { class: "field" }, h("span", {}, "Username or email"), login), err, btn);
   const signals = watchForm(form);
   const panel = h("div", { class: "signin-form-host" }, form);
@@ -416,15 +453,15 @@ export function forgotView(app) {
       e.preventDefault(); e2.textContent = "";
       if (boxes.value().length !== 6) { e2.textContent = "Enter the 6-digit code from the email."; return; }
       save.disabled = true;
-      try { await api("/api/password/reset", { method: "POST", body: { login: login.value, code: boxes.value(), password: pwd.value } }); done(panel); }
+      try { await api("/api/password/reset", { method: "POST", body: { login: login.value, code: boxes.value(), password: pwd.value } }); flow.clear("reset"); owl.set("celebrating"); done(panel); }
       catch (ex) { e2.textContent = ex.message; save.disabled = false; }
     } },
       h("a", { class: "signin-back", href: "#/signin" }, icon("back"), "Back to sign in"),
       h("span", { class: "wordmark" }, "Check your email"),
-      h("p", { class: "signin-next" }, "If that account exists, we sent a reset link and a 6-digit code. Click the link, or enter the code and a new password here."),
+      h("p", { class: "signin-next" }, "If that account exists, we sent a reset link. Open it in this browser to choose a new password. Opened on another device, it shows a 6-digit code: type it here with a new password."),
       inbox ? h("a", { class: "btn inbox-btn", href: inbox[1], target: "_blank", rel: "noopener noreferrer" }, icon("ext"), inbox[0]) : null,
       h("div", { class: "field" }, h("span", {}, "Code"), boxes.el),
-      h("label", { class: "field" }, h("span", {}, "New password"), pwd, h("small", { class: "field-hint" }, "10+ characters with a capital letter and a digit")),
+      h("label", { class: "field" }, h("span", {}, "New password"), pwd, h("small", { class: "field-hint" }, "At least 10 characters, including a capital letter and a number")),
       e2, save));
     boxes.focus();
   }
@@ -438,22 +475,56 @@ function done(panel) {
     h("a", { class: "btn primary", href: "#/signin" }, "Sign in")));
 }
 
-/** The "Choose a new password" link from the reset email. */
-export function resetLinkView(app, { username, token }) {
-  const owl = new Owl({ size: 200, state: "idle" });
+/** The "Reset password" link from the email. */
+export async function resetLinkView(app, { username, token }) {
+  const { owl, panel } = linkPage(app, "reminder", "Almost done.");
+  const wait = flow.get("reset");
+  try {
+    const r = await api("/api/email/open", { method: "POST", body: { purpose: "reset", username, token, wait_token: wait } });
+    if (!r.same_browser) { showCode(panel, owl, r.code, "this password reset"); return; }
+  } catch (e) { linkFailed(panel, owl, e.message); return; }
+  owl.set("idle");
   const err = h("p", { class: "error", role: "alert" });
   const pwd = h("input", { class: "input", type: "password", autocomplete: "new-password", required: true, minlength: 10, maxlength: 200 });
   const btn = h("button", { class: "btn primary", type: "submit" }, "Set new password");
-  const panel = h("div", { class: "signin-form-host" });
-  panel.append(h("form", { class: "signin-form", onsubmit: async (e) => {
+  panel.replaceChildren(h("form", { class: "signin-form", onsubmit: async (e) => {
     e.preventDefault(); btn.disabled = true; err.textContent = "";
-    try { await api("/api/password/reset", { method: "POST", body: { username, token, password: pwd.value } }); done(panel); }
-    catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+    try {
+      await api("/api/password/reset", { method: "POST", body: { username, token, wait_token: wait, password: pwd.value } });
+      flow.clear("reset"); owl.set("celebrating"); done(panel);
+    } catch (ex) { err.textContent = ex.message; owl.set("confused"); btn.disabled = false; }
   } },
     h("a", { class: "signin-back", href: "#/signin" }, icon("back"), "Back to sign in"),
     h("span", { class: "wordmark" }, "Choose a new password"),
-    h("label", { class: "field" }, h("span", {}, "New password"), pwd, h("small", { class: "field-hint" }, "10+ characters with a capital letter and a digit")),
+    h("label", { class: "field" }, h("span", {}, "New password"), pwd, h("small", { class: "field-hint" }, "At least 10 characters, including a capital letter and a number")),
     err, btn));
-  app.replaceChildren(h("main", { class: "signin" }, h("section", { class: "signin-story" }, owl.el, h("h1", {}, "Almost done.")), panel));
+  pwd.focus();
+}
+
+// ---------------------------------------------------------------- invite from an HR advisor (no sign-up page)
+export async function inviteView(app, { username, token, onSignedIn }) {
+  const { owl, panel } = linkPage(app, "greeting", "Welcome to the team.");
+  let inv;
+  try { inv = await api("/api/invite/check", { method: "POST", body: { username, token } }); }
+  catch (e) { linkFailed(panel, owl, e.message); return; }
+  const err = h("p", { class: "error", role: "alert" });
+  const pwd = h("input", { class: "input", type: "password", autocomplete: "new-password", required: true, minlength: 10, maxlength: 200 });
+  const agree = h("input", { type: "checkbox", required: true, "aria-label": "I agree to the Terms of Use and the Privacy Policy" });
+  const btn = h("button", { class: "btn primary", type: "submit" }, "Join and sign in");
+  panel.replaceChildren(h("form", { class: "signin-form", onsubmit: async (e) => {
+    e.preventDefault(); btn.disabled = true; err.textContent = "";
+    try {
+      await api("/api/invite/accept", { method: "POST", body: { username, token, password: pwd.value, accept_terms: agree.checked } });
+      owl.set("celebrating"); onSignedIn();
+    } catch (ex) { err.textContent = ex.message; owl.set("confused"); btn.disabled = false; }
+  } },
+    h("span", { class: "wordmark" }, "Accept your invite"),
+    h("p", { class: "signin-next" }, `${inv.invited_by} invited ${inv.email}. Choose a password to finish.`),
+    h("label", { class: "field" }, h("span", {}, "Username"), h("input", { class: "input", value: inv.username, readonly: true, autocomplete: "username" })),
+    h("label", { class: "field" }, h("span", {}, "Password"), pwd, h("small", { class: "field-hint" }, "At least 10 characters, including a capital letter and a number")),
+    h("label", { class: "agree" }, agree, h("span", {}, "I agree to the ",
+      h("a", { href: "#/terms", target: "_blank", rel: "noopener" }, "Terms of Use"), " and the ",
+      h("a", { href: "#/privacy", target: "_blank", rel: "noopener" }, "Privacy Policy"), ".")),
+    err, btn));
   pwd.focus();
 }

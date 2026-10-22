@@ -40,18 +40,18 @@ export async function interviewView(main, interviewId, recommendationId = null) 
 function renderHistory(main, history) {
   const empty = h("section", { class: "interview-empty interview-card" },
     h("div", { class: "interview-empty-icon", "aria-hidden": "true" }, icon("spark")),
-    h("div", {}, h("h2", {}, "Your interview journey starts here!"),
+    h("div", {}, h("h2", {}, "No practice interviews yet"),
       h("p", {}, "Discover your career matches by uploading your resume or completing our career game. Once you've found your recommended roles, you can unlock personalized AI mock interviews to prepare for your future career.")),
     h("div", { class: "interview-report-actions" },
-      h("a", { class: "btn primary", href: "#/resume" }, "Upload Resume"),
-      h("a", { class: "btn", href: "#/quiz" }, "Play Career Game")));
+      h("a", { class: "btn primary", href: "#/resume" }, "Upload resume"),
+      h("a", { class: "btn", href: "#/quiz" }, "Take Quick Match")));
   const list = h("section", { class: "interview-card" },
     h("div", { class: "section-head" }, h("h2", {}, "Interview history"),
       h("span", { class: "muted" }, `${history.length} ${history.length === 1 ? "session" : "sessions"}`)),
     h("ul", { class: "interview-history" }, history.map((item) => {
       const completed = item.status === "completed";
       const source = item.assessment_source === "resume" ? "Resume recommendation"
-        : item.assessment_source === "questionnaire" ? "Career game recommendation" : "Earlier session";
+        : item.assessment_source === "questionnaire" ? "Quick Match" : "Earlier session";
       return h("li", { class: "interview-history-item" },
         h("div", { class: "interview-history-role" }, h("b", {}, item.role_title),
           h("span", {}, `${item.interview_type || "AI mock interview"} · ${source} · ${fmtTime(item.created_utc)} · ${item.difficulty}`)),
@@ -60,7 +60,7 @@ function renderHistory(main, history) {
           h("span", {}, h("small", {}, "Job readiness"), h("b", { class: "num" }, item.readiness == null ? "—" : pct(item.readiness)))),
         h("span", { class: `tag interview-history-status ${completed ? "" : "pending"}` }, item.status.replaceAll("_", " ")),
         h("div", { class: "interview-history-actions" },
-          h("a", { class: "btn ghost sm", href: `#/interview/${item.interview_id}` }, completed ? "View Report" : "Resume"),
+          h("a", { class: "btn ghost sm", href: `#/interview/${item.interview_id}` }, completed ? "View report" : "Resume"),
           h("button", { class: "btn ghost sm", type: "button", "aria-label": `Delete attempt for ${item.role_title}`,
             onclick: async () => { if (!confirm("Delete this interview and its saved transcript?")) return;
               try { await api(`/api/interviews/${item.interview_id}`, { method: "DELETE" }); location.reload(); }
@@ -68,7 +68,7 @@ function renderHistory(main, history) {
     })));
   main.replaceChildren(
     h("div", { class: "interview-page" },
-      h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "PRACTICE · REFLECT · IMPROVE"),
+      h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "MOCK INTERVIEWS"),
         h("h1", { class: "page-title" }, "Interview history"),
         h("p", { class: "lede" }, "Review your practice sessions and track your preparation for recommended roles."))),
       history.length ? list : empty));
@@ -101,14 +101,14 @@ function renderLaunch(main, recommendation, plans) {
       h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "RECOMMENDED ROLE · PRACTICE"),
         h("h1", { class: "page-title" }, recommendation.role_title),
         h("p", { class: "lede" }, recommendation.source === "resume"
-          ? "This role came from your completed resume analysis." : "This role came from your completed career game."))),
+          ? "This role came from your completed resume analysis." : "This role came from your Quick Match results."))),
       h("section", { class: "interview-card" }, h("h2", {}, "Prepare for your interview"),
         h("p", { class: "muted" }, `Recommended role · ESCO ${recommendation.role_id}`),
         h("div", { class: "interview-skills" }, skills.map((s) => h("span", { class: "chip-static" }, `${s.name} · ${s.level}/5`))),
         h("label", { class: "field" }, h("span", {}, "Difficulty"), difficulty),
-        h("label", { class: "field" }, h("span", {}, "Connect a reskilling plan (optional)"), plan),
+        h("label", { class: "field" }, h("span", {}, "Link a learning plan (optional)"), plan),
         h("div", { class: "interview-consent" }, h("label", {}, consent,
-          h("span", {}, "I agree to save my answer transcripts and send them to AiversePulse’s configured AI provider for interview feedback. No audio is stored.")),
+          h("span", {}, "I agree to save my answer transcripts and have them processed by AI for interview feedback. No audio is stored.")),
         h("p", { class: "fine" }, "Voice input uses your browser’s speech recognition when available. Browser speech services may process audio; text entry is always available.")),
         error, start),
       h("a", { class: "btn ghost", href: "#/interview" }, "Back to interview history")));
@@ -121,17 +121,17 @@ function renderRoom(main, detail, initial = null) {
   let number = initial?.question_number || 1;
   let stageIndex = initial?.stage_index ?? detail.stage_index ?? 0;
   const total = initial?.total_stages || 5;
-  const status = h("span", { class: "interview-status is-off", role: "status", "aria-live": "polite" }, "Microphone off · Start Answer to record");
+  const status = h("span", { class: "interview-status is-off", role: "status", "aria-live": "polite" }, "Microphone off");
   const qText = h("p", { class: "interview-question" });
   const skillChips = h("div", { class: "chips" });
   const transcript = h("textarea", { class: "input interview-answer", rows: 5, maxlength: 4000,
     placeholder: "Type your answer here, or record an answer and review the transcript.", "aria-label": "Your answer" });
   const responseFeedback = h("div", { class: "interview-answer-feedback", hidden: true });
-  const answerBtn = h("button", { class: "btn primary", type: "submit" }, "Confirm & Send Answer");
-  const startBtn = h("button", { class: "btn primary", type: "button" }, "Start Answer");
-  const stopBtn = h("button", { class: "btn", type: "button", disabled: true }, "Stop Recording");
-  const retryBtn = h("button", { class: "btn sm", type: "button", disabled: true }, "Retry Recording");
-  const muteBtn = h("button", { class: "btn sm", type: "button", disabled: true }, "Mute Microphone");
+  const answerBtn = h("button", { class: "btn primary", type: "submit" }, "Submit answer");
+  const startBtn = h("button", { class: "btn primary", type: "button" }, "Start recording");
+  const stopBtn = h("button", { class: "btn", type: "button", disabled: true }, "Stop recording");
+  const retryBtn = h("button", { class: "btn sm", type: "button", disabled: true }, "Record again");
+  const muteBtn = h("button", { class: "btn sm", type: "button", disabled: true }, "Mute");
   const duration = h("span", { class: "interview-recording-time num", "aria-label": "Recording duration" }, "00:00");
   const deviceSelect = h("select", { class: "interview-mic-select", "aria-label": "Microphone device" },
     h("option", { value: "" }, "System default microphone"));
@@ -212,7 +212,7 @@ function renderRoom(main, detail, initial = null) {
     micStream?.getTracks().forEach((track) => { track.onended = null; track.stop(); });
     micStream = null; audioContext?.close().catch(() => {}); audioContext = null;
     micBars.forEach((bar) => { bar.style.height = "5px"; });
-    muteBtn.textContent = "Mute Microphone";
+    muteBtn.textContent = "Mute";
   };
   const watchAudio = () => {
     if (!analyser) return;
@@ -278,7 +278,7 @@ function renderRoom(main, detail, initial = null) {
       recognitionRequested = false;
       if (discarded || (event.error === "aborted" && intentionalStop)) return;
       const messages = {
-        "not-allowed": "Speech recognition permission denied. Allow microphone access for localhost, then retry.",
+        "not-allowed": "Microphone access is blocked. Allow it in your browser settings, then try again.",
         "service-not-allowed": "The browser speech service is unavailable. Type your answer instead.",
         "audio-capture": "No microphone input was detected. Check the selected microphone and retry.",
         "no-speech": "No speech detected. Retry recording or type your answer.",
@@ -324,7 +324,7 @@ function renderRoom(main, detail, initial = null) {
     speechError = null;
     recordingAttempted = true; updateControls(); setMicState("processing", "Requesting microphone access…");
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-      starting = false; setMicState("error", "Microphone capture requires HTTPS or localhost in a supported browser."); updateControls(); return;
+      starting = false; setMicState("error", "Voice answers aren't available in this browser. Type your answer instead."); updateControls(); return;
     }
     try {
       const selectedDevice = deviceSelect.value;
@@ -363,7 +363,7 @@ function renderRoom(main, detail, initial = null) {
         analyser = audioContext.createAnalyser(); analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.75;
         audioSource = audioContext.createMediaStreamSource(micStream); audioSource.connect(analyser); watchAudio();
       }
-      starting = false; recording = true; muted = false; muteBtn.textContent = "Mute Microphone"; startDuration(); updateControls();
+      starting = false; recording = true; muted = false; muteBtn.textContent = "Mute"; startDuration(); updateControls();
       if (recognizer) {
         if (speechError) setMicState("error", speechError);
         else if (recognitionActive) setMicState("listening", "Listening · speak your answer");
@@ -376,10 +376,10 @@ function renderRoom(main, detail, initial = null) {
       }
       starting = false; recording = false; pauseDuration(); releaseAudio(); updateControls();
       const messages = {
-        NotAllowedError: "Microphone permission denied. Allow microphone access for localhost, then retry.",
+        NotAllowedError: "Microphone access is blocked. Allow it in your browser settings, then try again.",
         NotFoundError: "No microphone was found. Connect a microphone and retry.",
         NotReadableError: "The microphone is busy in another app. Close that app or choose another input.",
-        SecurityError: "Microphone capture requires HTTPS or localhost.",
+        SecurityError: "Voice answers aren't available in this browser. Type your answer instead.",
       };
       setMicState("error", messages[error.name] || error.message || "Could not start microphone capture. Retry or type your answer.");
     }
@@ -397,10 +397,10 @@ function renderRoom(main, detail, initial = null) {
     if (!micStream) return;
     muted = !muted; micStream.getAudioTracks().forEach((track) => { track.enabled = !muted; });
     if (muted) {
-      pauseDuration(); await stopRecognition(); muteBtn.textContent = "Unmute Microphone";
+      pauseDuration(); await stopRecognition(); muteBtn.textContent = "Unmute";
       setMicState("off", "Microphone muted · unmute to continue recording");
     } else {
-      muteBtn.textContent = "Mute Microphone"; startDuration();
+      muteBtn.textContent = "Mute"; startDuration();
       if (recognizer && recording) {
         try { recognitionRequested = true; recognizer.start(); setMicState("listening", "Listening · speak your answer"); }
         catch { recognitionRequested = false; setMicState("error", "Could not resume speech recognition. Stop and retry, or type your answer."); }
@@ -450,7 +450,7 @@ function renderRoom(main, detail, initial = null) {
     const step = Math.min(total, stageIndex + 1);
     progress.setAttribute("aria-valuenow", String(step));
     progress.querySelector("i").style.width = `${Math.min(100, step / total * 100)}%`;
-    setMicState("off", "Microphone off · Start Answer to record");
+    setMicState("off", "Microphone off");
     if (qText.textContent) void playQuestion();
   };
   const form = h("form", { class: "interview-answer-form", onsubmit: async (e) => {
@@ -471,7 +471,7 @@ function renderRoom(main, detail, initial = null) {
     answerBtn.disabled = false; pause.disabled = false; updateControls();
   } }, h("label", { class: "field" }, h("span", {}, "Your answer"), transcript),
     voicePanel, livePreview, h("div", { class: "row-actions interview-submit-row" }, answerBtn));
-  const repeat = h("button", { class: "btn sm", type: "button", onclick: () => { void playQuestion(); } }, "Replay Interviewer Question");
+  const repeat = h("button", { class: "btn sm", type: "button", onclick: () => { void playQuestion(); } }, "Replay question");
   const pause = h("button", { class: "btn sm", type: "button", onclick: () => {
     paused = !paused;
     if (paused) {
@@ -480,7 +480,7 @@ function renderRoom(main, detail, initial = null) {
       if (!interviewerSpeaking) setMicState("off", "Paused · microphone off");
     } else {
       window.speechSynthesis?.resume();
-      if (!interviewerSpeaking) setMicState("off", "Microphone off · Start Answer to record");
+      if (!interviewerSpeaking) setMicState("off", "Microphone off");
     }
     pause.textContent = paused ? "Resume" : "Pause";
     answerBtn.disabled = paused; updateControls();
@@ -572,11 +572,11 @@ async function renderReport(main, report) {
           h("span", { class: "num" }, value == null ? "Not assessed" : `${value}/4`)))))))) : null;
   let planPanel = h("p", { class: "muted" }, "No plan was linked to this interview.");
   if (report.plan_id) {
-    planPanel = h("a", { class: "btn sm", href: `#/plans/${report.plan_id}` }, "Open your reskilling plan");
+    planPanel = h("a", { class: "btn sm", href: `#/plans/${report.plan_id}` }, "Open your learning plan");
     try {
       const plan = await api(`/api/plans/${report.plan_id}`);
       const activities = (plan.plan?.activities || []).filter((a) => (report.gaps || []).some((g) => g.name.toLowerCase() === String(a.skill_id).toLowerCase()));
-      if (activities.length) planPanel = h("div", {}, h("a", { class: "btn sm", href: `#/plans/${report.plan_id}` }, "Open your reskilling plan"),
+      if (activities.length) planPanel = h("div", {}, h("a", { class: "btn sm", href: `#/plans/${report.plan_id}` }, "Open your learning plan"),
         h("p", { class: "muted" }, `Related plan activities: ${activities.map((a) => `${a.skill_id} (${a.day_range})`).join(" · ")}`));
     } catch { /* preserve the link if the saved plan is temporarily unavailable */ }
   }
@@ -609,8 +609,8 @@ async function renderReport(main, report) {
     h("section", { class: "interview-card" }, h("h2", {}, "Recommended next steps"), recommendations, planPanel),
     compare,
     h("div", { class: "interview-report-actions" },
-      h("a", { class: "btn primary", href: "#/quiz" }, "Play Career Game for a new recommendation"),
-      h("a", { class: "btn", href: "#/resume" }, "Upload Resume"),
+      h("a", { class: "btn primary", href: "#/quiz" }, "Retake Quick Match"),
+      h("a", { class: "btn", href: "#/resume" }, "Upload resume"),
       h("a", { class: "btn ghost", href: "#/interview" }, "Interview history")), sources));
 }
 
@@ -618,7 +618,7 @@ function renderEnded(main) {
   main.replaceChildren(h("div", { class: "interview-page" }, h("h1", { class: "page-title" }, "Interview ended"),
     h("p", { class: "lede" }, "There were not enough completed answers to create an assessment. Find a recommended role from your career results to practice again."),
     h("div", { class: "interview-report-actions" },
-      h("a", { class: "btn primary", href: "#/quiz" }, "Play Career Game"),
-      h("a", { class: "btn", href: "#/resume" }, "Upload Resume"),
+      h("a", { class: "btn primary", href: "#/quiz" }, "Take Quick Match"),
+      h("a", { class: "btn", href: "#/resume" }, "Upload resume"),
       h("a", { class: "btn ghost", href: "#/interview" }, "Interview history"))));
 }

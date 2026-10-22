@@ -60,6 +60,10 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 - **UN SDG mapping (all 17).** Every role and plan activity links to official SDG targets.
 - **HR hiring.** Thresholds written in plain English, a public apply link, AI screening agents, blind ranked review, and human shortlist/hold/decline with an audit log.
 - **Document guard.** Strips hidden PDF/Word text and prompt-injection lines, and flags fraud signals. Risky résumés are held for a human, never auto-rejected.
+- **Hiring plugins.** HR connects LinkedIn, Facebook, X, Telegram, Discord or Slack once; a posting agent writes a post for each platform and shares every new opening.
+- **Team members by invite.** HR invites people by email (no sign-up page); they set a password from the link, and HR can disable or remove them.
+- **Voice and plain language.** Voice input in every browser (paid plans), read aloud, "ask about your team" for HR, and job openings drafted from a spoken description.
+- **AI model per task.** The admin lists allowed models; each HR advisor picks one for coaching, resume screening and job posts.
 
 ### Tech Stack
 
@@ -176,6 +180,18 @@ python src/main.py              # http://localhost:8600  ·  HR: http://localhos
 Optional (after `pip install -r requirements.txt`): `python -m mcp_server.ingest --index-only` builds the Chroma vector index. Without it, retrieval
 falls back to the committed offline snapshot. `python -m mcp_server.signals --refresh` builds today's
 AI-trend board immediately; it otherwise refreshes once a day.
+
+### More frontend sites, one backend
+
+Every site serves the same web app and calls one backend (e.g. `https://sdc.olgtx.com`):
+
+```bash
+sh src/deploy/build-frontend.sh https://sdc.olgtx.com dist-web
+```
+
+Upload `dist-web/` to any static host (nginx, Cloudflare Pages, Netlify), then add the site's address under
+**Admin → Frontend sites**. Sign-in works across domains (a Bearer token where browsers block third-party cookies),
+and email links and plugin sign-ins return to the site the person used.
 
 ### Run Tests
 

@@ -5,27 +5,47 @@
 "openai:<model>" calls any OpenAI-compatible /chat/completions endpoint at LLM_BASE_URL with LLM_API_KEY;
 "gemini:<model>" (or a bare model id) uses Google's client with GEMINI_API_KEY. Unset or failing -> None, and every
 caller falls back to its deterministic path. Returns provider-reported token counts (measured), never estimates.
+
+An HR advisor can choose the model per task for their organisation (from the admin's allowed list). The API sets
+ORG_MODELS for each request ({task: spec}); model_for() prefers that choice when its provider is configured.
 """
+import contextvars
 import logging
 import time
 
 log = logging.getLogger(__name__)
 _gemini = None
+ORG_MODELS: contextvars.ContextVar = contextvars.ContextVar("org_models", default=None)
+# tasks an HR advisor can choose a model for -> what they cover
+TASKS = {"coach": "Career coach chat and interview feedback", "resume": "Reading and screening resumes",
+         "recruiter": "Job posts, team questions and voice job drafts"}
 
 
-def model_for(agent: str) -> str:
-    """'provider:model' for an agent, or '' when no usable model is configured."""
+def providers() -> dict:
     from config.settings import get_settings
     s = get_settings()
-    gateway = bool(s.llm_base_url and s.llm_api_key and s.llm_api_key.get_secret_value())
-    gemini = bool(s.gemini_api_key and s.gemini_api_key.get_secret_value())
-    fallback = f"gemini:{s.llm_fast_model}" if s.llm_fast_model and gemini else ""
+    return {"openai": bool(s.llm_base_url and s.llm_api_key and s.llm_api_key.get_secret_value()),
+            "gemini": bool(s.gemini_api_key and s.gemini_api_key.get_secret_value())}
+
+
+def usable(spec: str) -> bool:
+    return bool(spec) and providers()["openai" if spec.startswith("openai:") else "gemini"]
+
+
+def model_for(agent: str, org: bool = True) -> str:
+    """'provider:model' for an agent, or '' when no usable model is configured. org=False: ignore the organisation's
+    choice (the admin default)."""
+    from config.settings import get_settings
+    s = get_settings()
+    chosen = (ORG_MODELS.get() or {}).get(agent) if org else None
+    if chosen and usable(chosen):
+        return chosen
+    fallback = f"gemini:{s.llm_fast_model}" if s.llm_fast_model and providers()["gemini"] else ""
     spec = getattr(s, f"{agent}_model", "")
     if not spec:
         return fallback
     spec = spec if ":" in spec else f"gemini:{spec}"
-    usable = gateway if spec.startswith("openai:") else gemini
-    return spec if usable else fallback  # gateway not set up yet -> keep working on Gemini, else deterministic
+    return spec if usable(spec) else fallback  # gateway not set up yet -> keep working on Gemini, else deterministic
 
 
 def api_base(url: str) -> str:
@@ -87,3 +107,49 @@ def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None 
     except Exception as e:
         log.warning("LLM call failed (%s %s): %s", provider, name, type(e).__name__)
         return None, record("llm", 1000 * (time.perf_counter() - t), name, error=type(e).__name__)
+
+
+def stt_model() -> str:
+    """Speech-to-text model: STT_MODEL if its provider is set up, else the fast Gemini model (it hears audio), else ''."""
+    from config.settings import get_settings
+    s = get_settings()
+    spec = s.stt_model if ":" in s.stt_model or not s.stt_model else f"gemini:{s.stt_model}"
+    if usable(spec):
+        return spec
+    return f"gemini:{s.llm_fast_model}" if s.llm_fast_model and providers()["gemini"] else ""
+
+
+def transcribe(audio: bytes, mime: str, lang: str = ""):
+    """-> (text | None, usage). Words only, no commentary; None when no model is set up or the call failed."""
+    from config.settings import get_settings
+    from core.usage import record
+    s, spec = get_settings(), stt_model()
+    if not spec:
+        return None, None
+    provider, name = spec.split(":", 1)
+    t = time.perf_counter()
+    try:
+        if provider == "openai":
+            import httpx
+            r = httpx.post(api_base(s.llm_base_url) + "/audio/transcriptions", timeout=max(s.llm_timeout_s, 60),
+                           headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"},
+                           data={"model": name, **({"language": lang[:2]} if lang else {})},
+                           files={"file": ("speech." + (mime.split("/")[-1].split(";")[0] or "webm"), audio, mime)})
+            r.raise_for_status()
+            text, tin, tout = r.json().get("text", ""), 0, 0
+        else:
+            global _gemini
+            from google import genai
+            from google.genai import types
+            _gemini = _gemini or genai.Client(api_key=s.gemini_api_key.get_secret_value(),
+                                              http_options=types.HttpOptions(timeout=int(s.llm_timeout_s * 1000)))
+            r = _gemini.models.generate_content(model=name, contents=[
+                types.Part.from_bytes(data=audio, mime_type=mime.split(";")[0]),
+                "Transcribe this speech exactly, in the language spoken. Return only the words said, no notes."],
+                config=types.GenerateContentConfig(temperature=0, max_output_tokens=1200))
+            um = r.usage_metadata
+            text, tin, tout = r.text or "", um.prompt_token_count or 0, um.candidates_token_count or 0
+        return text.strip(), record("stt", 1000 * (time.perf_counter() - t), name, tin, tout, measured=True)
+    except Exception as e:
+        log.warning("speech-to-text failed (%s %s): %s", provider, name, type(e).__name__)
+        return None, record("stt", 1000 * (time.perf_counter() - t), name, error=type(e).__name__)

@@ -21,11 +21,12 @@ CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY, username TEXT, plan 
     intent_id TEXT UNIQUE, status TEXT, receipt_url TEXT, failure TEXT, created_utc TEXT, updated_utc TEXT);
 """
 PLANS = {  # what each plan unlocks; prices come from settings so they can change without code
-    "free": {"name": "Free", "for": "individual", "features": ["Quick Match", "AI trends", "3 new briefings a month"]},
-    "pro": {"name": "Pro", "for": "individual", "features": ["Unlimited briefings", "Résumé analysis", "AI mock interviews",
-                                                           "PDF reports"]},
-    "team": {"name": "Team", "for": "hr", "features": ["Team uploads and live runs", "Review queue", "Hiring screens",
-                                                     "Everything in Pro"]},
+    "free": {"name": "Free", "for": "individual", "features": ["Quick Match", "AI trends", "3 new plans a month", "Read aloud"]},
+    "pro": {"name": "Pro", "for": "individual", "features": ["Unlimited plans and chat", "Resume analysis", "AI mock interviews",
+                                                           "Voice input in every browser", "PDF reports"]},
+    "team": {"name": "Team", "for": "hr", "features": ["Team analysis and review queue", "Hiring with ranked screening",
+                                                     "Auto-post jobs to LinkedIn, Facebook, X and more", "Ask your team data by voice or text",
+                                                     "Choose the AI model per task", "Invite and manage your team"]},
 }
 PAID = {"pro", "team"}
 FULL = {"pro", "team", "org"}  # plans with every individual feature

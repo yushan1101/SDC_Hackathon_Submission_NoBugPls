@@ -9,8 +9,8 @@ const CITE = /\[([^\[\]]{3,120})\]/g;
 export function citeLabel(id) {
   const p = id.split(":");
   if (p[0] === "esco") return p[2] === "skill" || p[2] === "tool" ? `ESCO · ${p.slice(3).join(":")}` : `ESCO · ${p[2] || p[1]}`;
-  if (p[0] === "stfkan") return `STF-KAN · ${p.slice(2).join(":")}`;
-  if (p[0] === "learn") return `learn · ${p.slice(1).join(":")}`;
+  if (p[0] === "stfkan") return `Forecast · ${p.slice(2).join(":")}`;
+  if (p[0] === "learn") return `Course · ${p.slice(1).join(":")}`;
   if (p[0] === "signal") return `Signal · ${p[2]} (${p[3]}, ${p[1]})`;
   if (p[0] === "sdg") return `UN SDG · goal ${p[2]}`;
   return `${p[0]} · ${p[p.length - 1]}`;
@@ -77,7 +77,7 @@ export function gapsBlock(gaps) {
   const top = rows.slice(0, 5), rest = rows.slice(5);
   return card("Skill gaps", "target", "Skill gaps",
     { figure: open.length, unit: open.length === 1 ? "skill to build" : "skills to build",
-      note: "Bars: dark = your level, blue = level this job needs (0-5). Arrows: STF-KAN outlook. Skills are this job's ESCO skills; needed levels are predicted by a model trained on O*NET ratings, not ESCO ratings. Hover a skill for its importance." },
+      note: "Dark bar: your level. Blue bar: the level this job needs (0–5). Arrows show the demand forecast. Required levels are estimates. Hover a skill to see how important it is." },
     h("ol", { class: "gap-list" }, top.map(row)),
     rest.length ? h("details", { class: "more" }, h("summary", {}, `Show ${rest.length} more`), h("ol", { class: "gap-list" }, rest.map(row))) : null);
 }
@@ -94,7 +94,7 @@ export function comparisonBlock(cmp, scenario) {
   };
   return card("Assistive versus agentic AI", "spark", "Assistive vs agentic AI",
     { figure: changed.length, unit: changed.length === 1 ? "skill changes" : "skills change",
-      note: "The agentic levels are a stated team assumption, not evidence. Assistive = predicted levels as they are." },
+      note: "Agentic levels are our assumption, not measured data. Assistive levels are the model's estimates." },
     h("div", { class: "cmp-sides" },
       side("Assistive AI", "assistive_required", "AI helps you do today's work."),
       side("Agentic AI", "agentic_required", "AI agents take over routine tool work.")));
@@ -103,12 +103,12 @@ export function comparisonBlock(cmp, scenario) {
 export function outlookBlock(o) {
   if (!o) return null;
   const m = o.model;
-  if (!m) return card("Skill outlook", "up", "Rising skills", {}, h("p", { class: "bc-line" }, "No outlook model installed."));
+  if (!m) return card("Skill outlook", "up", "Rising skills", {}, h("p", { class: "bc-line" }, "Skill forecast unavailable."));
   const rf = m.rising_flag || {};
   const rising = o.items.filter((x) => x.direction === "rising");
   return card("Skill outlook", "up", "Rising skills",
     { figure: rising.length || "None", unit: rising.length ? "likely to grow" : "flagged; requirements look stable",
-      note: `Flagged when STF-KAN ranks a skill in the top ${rf.top_percent}% of forecast increases; on held-out releases these flags were ${Number(rf.test_lift).toFixed(2)}x more likely than average to rise (base rate ${(rf.test_base_rate * 100).toFixed(1)}%). Raises priority in your plan, never the required level. ${m.name}, trained on the ${m.trained_on}. ${forecastMode(o.forecast)}Falling-skill and tool flags are off.` },
+      note: `Flagged when our forecast model ranks a skill in the top ${rf.top_percent}% of forecast increases; on held-out releases these flags were ${Number(rf.test_lift).toFixed(2)}x more likely than average to rise (base rate ${(rf.test_base_rate * 100).toFixed(1)}%). Raises priority in your plan, never the required level. ${m.name}, trained on the ${m.trained_on}. ${forecastMode(o.forecast)}Falling-skill and tool flags are off.` },
     rising.length ? h("div", { class: "chips" }, rising.slice(0, 6).map((x) => h("span", { class: "chip-static" }, icon("up"), x.skill_id))) : null);
 }
 
@@ -306,7 +306,7 @@ export function integrityBlock(rep, audience = "hr") {
   return block("Document integrity",
     h("h3", {}, "Document integrity ", h("span", { class: `tag ${level === "CLEAN" ? "approved" : SEV[level] || "draft"}` }, level.toLowerCase())),
     h("p", { class: "note" }, audience === "hr"
-      ? (rep.risk?.hold ? "Held from AI recommendation until you review it. Hidden content was removed before screening; the agents only saw visible text." :
+      ? (rep.risk?.hold ? "Held for your review before it can be recommended. Hidden content was removed before screening." :
         "Signals for your judgement. Hidden content was removed before screening; the agents only saw visible text.")
       : "We only analyse what a person can see. These items were removed or flagged before the analysis:"),
     h("ul", { class: "check-list" }, f.map((x) => h("li", { class: x.severity === "CRITICAL" || x.severity === "HIGH" ? "bad" : "" },
@@ -439,7 +439,7 @@ export function matchesBlock(matches, { onPlan, onInterview, title = "Roles you 
       whyScore(m)),
     h("div", { class: "match-actions" },
       onPlan ? h("button", { class: "btn sm primary match-plan", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null,
-      onInterview && m.recommendation_id ? h("button", { class: "btn sm", type: "button", onclick: () => onInterview(m) }, "Practice Interview") : null,
+      onInterview && m.recommendation_id ? h("button", { class: "btn sm", type: "button", onclick: () => onInterview(m) }, "Practice interview") : null,
       h("label", { class: "compare-pick" }, h("input", { type: "checkbox", onchange: (e) => {
         if (e.target.checked && picked.size >= 3) { e.target.checked = false; toast("Compare up to 3 roles at a time.", "err"); return; }
         e.target.checked ? picked.add(m.soc) : picked.delete(m.soc); drawCompare(); } }), "Compare"))),
@@ -468,7 +468,7 @@ export function sdgBlock(sdgs) {
   if (!sdgs?.length) return null;
   return card("UN Sustainable Development Goals", "target", "UN goals served",
     { figure: sdgs.length, unit: sdgs.length === 1 ? "goal" : "goals",
-      note: "Matched by meaning between the ESCO occupation description and the 169 official UN SDG targets (MiniLM similarity). An evidence-linked suggestion, not an official UN classification. Every plan activity also serves SDG 4 and SDG 8." },
+      note: "Matched by comparing the job description with the 169 official UN SDG targets. A suggestion, not an official UN classification. Every plan activity also supports SDG 4 and SDG 8." },
     h("div", { class: "sdg-nums" }, sdgs.map((g) => h("a", { class: "sdg-n big", href: `https://sdgs.un.org/goals/goal${g.goal}`, target: "_blank", rel: "noopener noreferrer",
       style: { "--sdg": g.color }, title: `SDG ${g.goal}: ${g.short}. Target ${g.target}: ${g.target_text}`, "aria-label": `UN SDG ${g.goal}: ${g.short}` }, String(g.goal)))),
     h("p", { class: "bc-line" }, "How this career connects to the goals ", h("a", { href: "#/sdgs" }, "(all 17 goals)")),
@@ -634,5 +634,5 @@ export function boardView(b, { onRefresh } = {}) {
       h("section", { class: "role-card" }, h("h3", {}, icon("up"), "Roles AI is pulling forward"), roleList(b.emerging_roles, "score", "rising")),
       h("section", { class: "role-card" }, h("h3", {}, icon("down"), "Roles under automation pressure"), roleList(b.declining_roles, "pressure", "falling"))),
     h("details", { class: "hint board-method" }, h("summary", {}, icon("info"), "How this board is built"),
-      h("p", {}, b.method, " The AI agents read it through the trend_signals MCP tool; it reorders role matches and adds dated evidence to every report.")));
+      h("p", {}, b.method, " It reorders role matches and adds dated sources to every plan.")));
 }

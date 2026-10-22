@@ -24,7 +24,7 @@ export function startView(main, { name, guest, jumpToday } = {}) {
     h("section", { class: "entry-grid", "aria-label": "Choose how to begin" },
       option("#/quiz", "quiz", "Explore my strengths", "Answer 13 everyday work questions. About 2 minutes.", "Quick Match", true),
       option("#/report", "target", "I have a target job", "Compare your skills with the requirements for a job you choose.", "Build a plan"),
-      option("#/resume", "file", "Use my résumé", "Upload PDF, Word or text to find skills supported by evidence.", "Upload résumé"))));  // today's signals are one tap away in the header (Today)
+      option("#/resume", "file", "Use my resume", "Upload PDF, Word or text to find skills supported by evidence.", "Upload resume"))));  // today's signals are one tap away in the header (Today)
 }
 
 // The full landing page for visitors who are not signed in: the three ways in, each with a live-looking demo.
@@ -50,13 +50,13 @@ function guestHome(main, { jumpToday } = {}) {
   main.replaceChildren(h("div", { class: "home" },
     h("section", { class: "home-hero" }, owl.el,
       h("h1", {}, "Where could your skills take you?"),
-      h("p", {}, "Find roles you could grow into and get a 90-day plan you approve, every claim cited.")),
+      h("p", {}, "Find roles you could grow into and get a 90-day learning plan, with a source for every recommendation.")),
     h("div", { class: "home-ways" },
       way("quiz", "way-quiz", "quiz", "Discover what you’re good at", "13 everyday work questions, about 2 minutes. We estimate your skills and suggest roles.",
         "#/quiz", "Start Quick Match", quizDemo),
-      way("resume", "way-resume", "file", "Let your résumé speak", "PDF, Word or text. Every skill we find quotes the line that proves it.",
-        "#/resume", "Upload résumé", resumeDemo),
-      way("plan", "way-plan", "target", "Already know where you’re headed?", "Pick any ESCO occupation, see the skills to build, and get a plan that fits your week.",
+      way("resume", "way-resume", "file", "Start from your resume", "PDF, Word or text. Every skill we find quotes the line that proves it.",
+        "#/resume", "Upload resume", resumeDemo),
+      way("plan", "way-plan", "target", "Already know where you’re headed?", "Pick any job, see the skills to build, and get a plan that fits your schedule.",
         "#/report", "Pick a job", planDemo)),
     h("section", { class: "home-today", "aria-labelledby": "home-today" },
       h("h2", { id: "home-today" }, "The world of work keeps moving."),
@@ -129,13 +129,13 @@ export async function quizView(main, ctx) {
         e.currentTarget.setAttribute("aria-pressed", String(st.fields.has(f.id))); owl.set("listening"); } }, f.label));
     stage.replaceChildren(reveal(h("div", { class: "q" },
       h("h2", {}, "Which kinds of work interest you?"),
-      h("p", { class: "muted" }, "Pick any. We only rank roles in these fields; skip to search every ESCO occupation."),
+      h("p", { class: "muted" }, "Pick any that apply, or skip to see all roles."),
       h("div", { class: "field-chips" }, chips),
       h("h2", { class: "sub" }, "How much training or education do you have?"),
       h("div", { class: "field-chips" }, q.training.map((t) => h("button", { class: "chip", type: "button", "aria-pressed": String(st.zone === t.zone),
         onclick: (e) => { st.zone = st.zone === t.zone ? null : t.zone;
           e.currentTarget.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget && st.zone !== null))); } }, t.label))),
-      h("p", { class: "note" }, "Used to suggest roles within reach: at most one ISCO-08 skill level above yours, shown as a stretch."),
+      h("p", { class: "note" }, "We use this to suggest roles within reach, including a few one step up."),
       h("div", { class: "row-actions" },
         h("button", { class: "btn primary", type: "button", onclick: () => go(0) }, "Start the game", icon("send")),
         h("button", { class: "btn ghost", type: "button", onclick: () => { st.fields.clear(); go(0); } }, "Skip, search everything"))), RISE));
@@ -143,8 +143,8 @@ export async function quizView(main, ctx) {
 
   async function finish() {
     owl.set("analyzing");
-    stage.replaceChildren(h("div", { class: "q" }, h("h2", {}, "Matching you against every occupation…"),
-      h("p", { class: "muted" }, "Comparing your answers with ESCO requirements and today's AI-trend board.")));
+    stage.replaceChildren(h("div", { class: "q" }, h("h2", {}, "Finding your matches…"),
+      h("p", { class: "muted" }, "Comparing your answers with job requirements and today's AI trends.")));
     try {
       const r = await api("/api/quiz/score", { method: "POST", body: { answers: st.answers, fields: [...st.fields], zone: st.zone, scenario: st.scenario || "assistive" } });
       owl.set("celebrating");
@@ -179,8 +179,8 @@ export function resumeView(main, ctx) {
   const out = h("div", { class: "cv-out" });
   main.replaceChildren(
     h("div", { class: "start-head" }, h("div", {},
-      h("h1", { class: "page-title" }, "Deep analysis from your resume"),
-      h("p", { class: "lede" }, "Read in memory, never stored. Every skill quotes the line that proves it, and you can edit any of them.")), owl.el),
+      h("h1", { class: "page-title" }, "Analyse your resume"),
+      h("p", { class: "lede" }, "We don't store your file. Each skill shows the line it came from, and you can edit any of them.")), owl.el),
     drop, out);
 
   async function send(file) {
@@ -243,7 +243,7 @@ export function resumeView(main, ctx) {
       r.assessment_id = m.assessment_id || r.assessment_id;
       owl.set("matched"); drawMatches(m.matches);
     };
-    const rematch = h("button", { class: "btn", type: "button", disabled: true, onclick: () => { rematch.disabled = true; remeasure(); } }, "Re-match with my edits");
+    const rematch = h("button", { class: "btn", type: "button", disabled: true, onclick: () => { rematch.disabled = true; remeasure(); } }, "Update matches");
     const drawMatches = (m) => matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))),
       onInterview: ctx.onInterview ? (x) => ctx.onInterview(x, skills.map(({ name, level }) => ({ name, level }))) : null,
       scenario, onScenario: (k) => { scenario = k; remeasure(); } }));
@@ -276,14 +276,14 @@ export function resumeView(main, ctx) {
       "aria-controls": "cv-extracted-skills", onclick: () => {
         const expanded = skillsToggle.getAttribute("aria-expanded") !== "true";
         skillsToggle.setAttribute("aria-expanded", String(expanded));
-        skillsToggle.textContent = expanded ? "Hide Skills" : "View & Edit Skills";
+        skillsToggle.textContent = expanded ? "Hide skills" : "View and edit skills";
         skillsCollapse.classList.toggle("is-open", expanded);
         skillsViewport.setAttribute("aria-hidden", String(!expanded));
         if (expanded) skillsViewport.removeAttribute("inert"); else skillsViewport.setAttribute("inert", "");
-      } }, "View & Edit Skills");
+      } }, "View and edit skills");
     skillsViewport.id = "cv-extracted-skills";
     const skillsControls = skills.length ? [skillsToggle,
-      h("p", { class: "cv-skills-hint" }, icon("info"), "Want to improve your matches? Expand your skills, adjust your ratings, and click Rematch to discover updated career recommendations."),
+      h("p", { class: "cv-skills-hint" }, icon("info"), "Adjust your skills or ratings, then select Update matches."),
       skillsCollapse] : [skillsList, addSkillRow];  // no skills found: the add box is shown straight away
     const ins = r.insight;
     const mine = () => skills.map(({ name, level }) => ({ name, level }));
@@ -291,7 +291,7 @@ export function resumeView(main, ctx) {
       h("div", { class: "brief-card cv-profile" },
         h("header", { class: "bc-head" }, h("span", { class: "bc-ic" }, icon("user")), h("h3", {}, "Your profile"),
           h("span", { class: "tag", title: ins.mode === "rules+llm" ? "Read by the résumé AI agent; every quote and role checked against your résumé" : "Rule-based reading" },
-            ins.mode === "rules+llm" ? "AI-read" : "rules")),
+            ins.mode === "rules+llm" ? "AI-assisted" : "Basic")),
         h("p", { class: "cv-headline" }, ins.headline),
         ins.strengths?.length ? h("ul", { class: "cv-strengths" }, ins.strengths.map((s) =>
           h("li", {}, icon("check"), h("span", {}, h("b", {}, s.skill), h("q", {}, s.quote))))) : null),
@@ -308,7 +308,7 @@ export function resumeView(main, ctx) {
       integrityBlock(r.integrity, "self"),
       h("div", { class: "cv-grid" },
         h("details", { class: "cv-md", open: matchMedia("(min-width: 900px)").matches || null },
-          h("summary", {}, h("b", {}, "Your resume as Markdown"), h("span", { class: "note" }, ` · ${markdown.length.toLocaleString()} characters`)),
+          h("summary", {}, h("b", {}, "Extracted text"), h("span", { class: "note" }, ` · ${markdown.length.toLocaleString()} characters`)),
           h("pre", { tabindex: "0" }, markdown)),
         h("section", { class: "block cv-skills", "aria-label": "Skills found" },
           h("h3", {}, countEl, years ? h("span", { class: "note" }, ` · about ${years} years of experience`) : null),
@@ -323,7 +323,7 @@ export function resumeView(main, ctx) {
 
 // ---------------------------------------------------------------- today: daily AI-trend board
 export async function todayView(main, { onRefresh } = {}) {
-  main.replaceChildren(h("h1", { class: "page-title today-title" }, "Today in AI"),
+  main.replaceChildren(h("h1", { class: "page-title today-title" }, "AI trends"),
     h("p", { class: "lede today-lede" }, "Which AI topics are moving, and which jobs they pull forward or put under pressure. Rebuilt every day."),
     h("p", { class: "muted" }, "Loading…"));
   const b = await api("/api/signals/today");

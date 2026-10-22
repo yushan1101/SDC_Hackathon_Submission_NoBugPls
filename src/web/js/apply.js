@@ -35,7 +35,7 @@ async function boot() {
       owl.set("celebrating");
       form.replaceWith(reveal(h("div", { class: "apply-done", role: "status" },
         h("h2", {}, r.message), h("p", {}, "Reference ", h("b", { class: "mono" }, r.reference),
-          ". A person on the hiring team reviews every recommendation and will contact you by email if you are shortlisted.")), RISE));
+          ". The hiring team will review your application and email you if you're shortlisted.")), RISE));
     } catch (ex) { err.textContent = ex.message; owl.set("confused"); btn.disabled = false; }
   } },
     h("label", { class: "field" }, h("span", {}, "Full name"), name),
@@ -49,7 +49,7 @@ async function boot() {
     h("div", { class: "start-head" }, h("div", {},
       h("p", { class: "wordmark-sm" }, "AiversePulse · application"),
       h("h1", { class: "page-title" }, info.title),
-      info.occupation && info.occupation !== info.title ? h("p", { class: "muted" }, `ESCO occupation: ${info.occupation}`) : null),
+      info.occupation && info.occupation !== info.title ? h("p", { class: "muted" }, `Role type: ${info.occupation}`) : null),
       owl.el),
     h("div", { class: "apply-grid" }, form,
       h("aside", { class: "apply-aside" },
