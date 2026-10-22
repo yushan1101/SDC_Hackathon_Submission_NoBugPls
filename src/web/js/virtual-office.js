@@ -114,14 +114,61 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     const mesh = addMesh(new THREE.SphereGeometry(1, 20, 14), material, parent, { position });
     mesh.scale.set(...scale); return mesh;
   };
+  const taperedFaceGeometry = () => {
+    const geometry = new THREE.SphereGeometry(1, 32, 24);
+    const positions = geometry.attributes.position;
+    for (let i = 0; i < positions.count; i++) {
+      const y = positions.getY(i);
+      const jaw = THREE.MathUtils.clamp((0.12 - y) / 0.78, 0, 1);
+      positions.setX(i, positions.getX(i) * (1 - jaw * 0.16));
+      positions.setZ(i, positions.getZ(i) * (1 - jaw * 0.08));
+    }
+    positions.needsUpdate = true;
+    geometry.computeVertexNormals();
+    return geometry;
+  };
+  const roundedFrameGeometry = (width, height, radius, innerWidth, innerHeight, innerRadius) => {
+    const traceRoundRect = (path, w, h, r, reverse = false) => {
+      const x = w / 2, y = h / 2;
+      if (!reverse) {
+        path.moveTo(-x + r, -y); path.lineTo(x - r, -y); path.quadraticCurveTo(x, -y, x, -y + r);
+        path.lineTo(x, y - r); path.quadraticCurveTo(x, y, x - r, y); path.lineTo(-x + r, y);
+        path.quadraticCurveTo(-x, y, -x, y - r); path.lineTo(-x, -y + r); path.quadraticCurveTo(-x, -y, -x + r, -y);
+      } else {
+        path.moveTo(-x + r, -y); path.quadraticCurveTo(-x, -y, -x, -y + r);
+        path.lineTo(-x, y - r); path.quadraticCurveTo(-x, y, -x + r, y); path.lineTo(x - r, y);
+        path.quadraticCurveTo(x, y, x, y - r); path.lineTo(x, -y + r); path.quadraticCurveTo(x, -y, x - r, -y);
+        path.lineTo(-x + r, -y);
+      }
+    };
+    const shape = new THREE.Shape();
+    traceRoundRect(shape, width, height, radius);
+    const opening = new THREE.Path();
+    traceRoundRect(opening, innerWidth, innerHeight, innerRadius, true);
+    shape.holes.push(opening);
+    return new THREE.ExtrudeGeometry(shape, {
+      depth: 0.012, bevelEnabled: true, bevelSegments: 2, steps: 1,
+      bevelSize: 0.002, bevelThickness: 0.002, curveSegments: 8,
+    });
+  };
   const torso = new THREE.Group(); torso.position.set(0, 1.1, 0); person.add(torso);
   ellipsoid(materials.blazer, [0.68, 0.42, 0.31], [0, 0.28, 0.02], torso);
   ellipsoid(materials.blazer, [0.43, 0.62, 0.3], [0, -0.05, 0.02], torso);
   ellipsoid(materials.shirt, [0.21, 0.39, 0.035], [0, 0.2, 0.302], torso);
   ellipsoid(materials.accent, [0.055, 0.23, 0.035], [0, 0.12, 0.345], torso);
-  ellipsoid(materials.shirt, [0.11, 0.09, 0.045], [-0.11, 0.43, 0.26], torso);
-  ellipsoid(materials.shirt, [0.11, 0.09, 0.045], [0.11, 0.43, 0.26], torso);
-  cylinder(0.095, 0.095, 0.22, materials.skin, [0, 1.66, 0.13], 16);
+  ellipsoid(materials.shirt, [0.105, 0.105, 0.055], [-0.105, 0.43, 0.27], torso);
+  ellipsoid(materials.shirt, [0.105, 0.105, 0.055], [0.105, 0.43, 0.27], torso);
+  // Layered lapels add a clearer professional silhouette while reusing the existing palette.
+  const lapel = (side) => {
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0.44); shape.lineTo(side * 0.2, 0.42); shape.lineTo(side * 0.07, 0.04);
+    shape.lineTo(side * 0.015, 0.17); shape.closePath();
+    const mesh = addMesh(new THREE.ExtrudeGeometry(shape, { depth: 0.018, bevelEnabled: true, bevelSegments: 2, bevelSize: 0.008, bevelThickness: 0.006 }),
+      materials.blazer, torso, { position: [0, 0, 0.325] });
+    mesh.castShadow = false;
+  };
+  lapel(-1); lapel(1);
+  cylinder(0.085, 0.085, 0.2, materials.skin, [0, 1.66, 0.13], 16);
 
   // Bent sleeves and hands rest near the far edge of the desk.
   const arms = [];
@@ -136,25 +183,71 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
   }
 
   const head = new THREE.Group(); head.position.set(0, 1.9, 0.14); person.add(head);
-  ellipsoid(materials.hair, [0.31, 0.38, 0.24], [0, 0, 0], head);
-  ellipsoid(materials.skin, [0.265, 0.32, 0.205], [0, 0.01, 0.18], head);
-  ellipsoid(materials.hair, [0.29, 0.17, 0.23], [0, 0.22, 0.08], head);
-  ellipsoid(materials.hair, [0.075, 0.25, 0.11], [-0.245, 0.03, 0.06], head);
-  ellipsoid(materials.hair, [0.075, 0.25, 0.11], [0.245, 0.03, 0.06], head);
+  // The rear hair volume stays behind the face; overlapping locks replace the helmet-like cap.
+  ellipsoid(materials.hair, [0.31, 0.37, 0.235], [0, -0.005, 0], head);
+  const face = addMesh(taperedFaceGeometry(), materials.skin, head, { position: [0, 0.01, 0.18] });
+  face.scale.set(0.265, 0.32, 0.205);
+  const crownLocks = [
+    [-0.21, 0.205, 0.095, 0.105], [-0.105, 0.255, 0.11, 0.115],
+    [0.015, 0.268, 0.112, 0.118], [0.13, 0.24, 0.11, 0.112], [0.225, 0.18, 0.09, 0.105],
+  ];
+  crownLocks.forEach(([x, y, width, height], index) => {
+    const lock = ellipsoid(materials.hair, [width, height, 0.125], [x, y, 0.095], head);
+    lock.rotation.z = (index - 2) * -0.1;
+  });
+  for (const side of [-1, 1]) {
+    const sideLock = ellipsoid(materials.hair, [0.075, 0.22, 0.13], [side * 0.245, -0.035, 0.075], head);
+    sideLock.rotation.z = side * -0.1;
+    ellipsoid(materials.skin, [0.052, 0.075, 0.042], [side * 0.251, -0.015, 0.17], head);
+    ellipsoid(materials.skin, [0.018, 0.034, 0.012], [side * 0.269, -0.015, 0.205], head);
+  }
   const eyes = [];
   for (const x of [-0.09, 0.09]) {
     const eye = new THREE.Group(); eye.position.set(x, 0.05, 0.365); head.add(eye);
-    ellipsoid(materials.eyes, [0.045, 0.052, 0.021], [0, 0, 0], eye);
-    ellipsoid(materials.iris, [0.019, 0.025, 0.013], [0, -0.002, 0.019], eye);
-    ellipsoid(materials.eyes, [0.007, 0.01, 0.006], [0, -0.002, 0.03], eye);
-    ellipsoid(materials.hair, [0.047, 0.012, 0.017], [0, 0.067, 0.005], eye);
+    ellipsoid(materials.eyes, [0.041, 0.044, 0.022], [0, 0, 0], eye);
+    ellipsoid(materials.iris, [0.018, 0.022, 0.014], [0, -0.002, 0.019], eye);
+    ellipsoid(materials.eyes, [0.007, 0.01, 0.006], [-0.006, 0.006, 0.03], eye);
+    const upperLid = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.041, 0.006, 0.015), new THREE.Vector3(-0.03, 0.034, 0.021),
+      new THREE.Vector3(0, 0.044, 0.024), new THREE.Vector3(0.03, 0.034, 0.021),
+      new THREE.Vector3(0.041, 0.006, 0.015),
+    ]);
+    const lowerLid = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.039, -0.006, 0.016), new THREE.Vector3(-0.026, -0.032, 0.022),
+      new THREE.Vector3(0, -0.04, 0.024), new THREE.Vector3(0.026, -0.032, 0.022),
+      new THREE.Vector3(0.039, -0.006, 0.016),
+    ]);
+    addMesh(new THREE.TubeGeometry(upperLid, 12, 0.006, 6, false), materials.skin, eye);
+    addMesh(new THREE.TubeGeometry(lowerLid, 12, 0.004, 6, false), materials.skin, eye);
     eyes.push(eye);
   }
-  ellipsoid(materials.skin, [0.028, 0.045, 0.025], [0, -0.03, 0.365], head);
-  const mouth = ellipsoid(materials.mouth, [0.073, 0.018, 0.014], [0, -0.115, 0.365], head);
+  // Soft brows stay separate from the blinking eye groups so their proportions remain steady.
+  for (const x of [-0.09, 0.09]) {
+    const brow = ellipsoid(materials.hair, [0.047, 0.011, 0.014], [x, 0.112, 0.366], head);
+    brow.rotation.z = x < 0 ? -0.08 : 0.08;
+  }
+  ellipsoid(materials.skin, [0.026, 0.064, 0.028], [0, -0.005, 0.372], head);
+  ellipsoid(materials.skin, [0.038, 0.045, 0.041], [0, -0.064, 0.392], head);
+  const mouth = ellipsoid(materials.mouth, [0.069, 0.014, 0.014], [0, -0.145, 0.37], head);
   mouth.visible = false;
-  const smile = addMesh(new THREE.TorusGeometry(0.075, 0.01, 6, 16, Math.PI), materials.mouth, head,
-    { position: [0, -0.115, 0.36], rotation: [0, 0, Math.PI] });
+  const smile = addMesh(new THREE.TorusGeometry(0.069, 0.009, 8, 24, Math.PI), materials.mouth, head,
+    { position: [0, -0.14, 0.369], rotation: [0, 0, Math.PI] });
+
+  // Rounded, softly beveled frames borrow the reference's defining glasses silhouette.
+  for (const x of [-0.09, 0.09]) {
+    addMesh(roundedFrameGeometry(0.16, 0.145, 0.046, 0.124, 0.108, 0.034), materials.darkWood, head,
+      { position: [x, 0.05, 0.382] });
+  }
+  const glassesBridge = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-0.015, 0.05, 0.389), new THREE.Vector3(0, 0.035, 0.405), new THREE.Vector3(0.015, 0.05, 0.389),
+  ]);
+  addMesh(new THREE.TubeGeometry(glassesBridge, 10, 0.012, 8, false), materials.darkWood, head);
+  for (const side of [-1, 1]) {
+    const temple = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 0.166, 0.07, 0.378), new THREE.Vector3(side * 0.215, 0.065, 0.34), new THREE.Vector3(side * 0.245, 0.04, 0.28),
+    ]);
+    addMesh(new THREE.TubeGeometry(temple, 10, 0.009, 6, false), materials.darkWood, head);
+  }
 
   let avatarState = "idle";
   let microphoneLevel = 0;
