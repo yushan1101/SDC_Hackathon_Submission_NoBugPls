@@ -247,12 +247,15 @@ function runView(main) {
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "Analyse your team"),
       h("div", { class: "run-actions" }, S.seg,
-        h("button", { class: "btn sm", type: "button", onclick: async () => setCsv((await api("/api/sample-team")).csv, "sample_team.csv (fictional)") }, "Use sample CSV"))),
+        h("button", { class: "btn sm", type: "button", onclick: async () => {
+          const sample = await api("/api/sample-team");
+          setCsv(sample.csv, "sample_team.csv (fictional — fresh employee IDs on each run)");
+        } }, "Use sample CSV"))),
     h("div", { class: "overview" },
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Team file")), h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, drop, preview)),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Checks")),
         h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, schema, errors,
-          runBtn, h("p", { class: "muted", style: { "font-size": "14px" } }, "Employees are analysed in parallel. Plans stay drafts until you approve them.")))),
+          runBtn, h("p", { class: "muted", style: { "font-size": "14px" } }, "Each run assigns new employee IDs. You can change them later under Edit review. Plans stay drafts until you approve them.")))),
     live));
   if (S.csv) setCsv(S.csv, "current file");
 }
@@ -295,7 +298,7 @@ async function reviewView(main, id) {
       h("span", { class: "l1" }, h("span", { class: "id" }, p.review.candidate_name || p.subject_id), reviewBadge(p.review)),
       h("span", { class: "l2" }, `${p.subject_id} · ${p.target_role} · v${p.version}`),
       h("span", { class: "l2 mono" }, `Plan ID: ${p.plan_reference || p.plan_id}`)),
-      reviewMenu(main, p.plan_id, p.review, () => editReview(main, p.plan_id, p.review, navigate), navigate)); })
+      reviewMenu(main, p.plan_id, p.review, () => editReview(main, p.plan_id, p.review, navigate, p.subject_id), navigate)); })
       : h("div", { class: "empty" }, h("p", { class: "muted" }, "No reviews match this search and status.")));
   const detail = h("section", { class: "detail", "aria-label": "Plan detail" });
   const aside = h("aside", { class: "aside", "aria-label": "Evidence and audit" });
@@ -373,19 +376,21 @@ function reviewAction(main, ids, action, done) {
   dialog.showModal();
 }
 
-function editReview(main, pid, review, done) {
+function editReview(main, pid, review, done, employeeId) {
   const dialog = reviewDialog(main, "Edit candidate review");
   const inputs = {};
-  const fields = [["candidate_name", "Candidate name", "text", 120], ["candidate_email", "Email", "email", 254], ["candidate_phone", "Phone", "tel", 50], ["reviewer_notes", "Reviewer notes", "textarea", 10000]];
+  const fields = [["employee_id", "Employee ID", "text", 32], ["candidate_name", "Candidate name", "text", 120], ["candidate_email", "Email", "email", 254], ["candidate_phone", "Phone", "tel", 50], ["reviewer_notes", "Reviewer notes", "textarea", 10000]];
   const form = h("form", { class: "review-form" }, h("h2", {}, "Edit candidate review"),
     h("p", { class: "muted" }, "HR review details are saved separately from the original AI analysis and plan approval."),
     fields.map(([key, label, type, max]) => {
-      inputs[key] = type === "textarea" ? h("textarea", { class: "input", rows: 5, maxlength: max }, review[key]) : h("input", { class: "input", type, maxlength: max, value: review[key] });
+      inputs[key] = type === "textarea" ? h("textarea", { class: "input", rows: 5, maxlength: max }, review[key]) : h("input", { class: "input", type, maxlength: max, value: key === "employee_id" ? employeeId : review[key] });
+      if (key === "employee_id") { inputs[key].required = true; inputs[key].pattern = "[A-Za-z0-9_-]{1,32}"; }
       return h("label", { class: "field" }, h("span", {}, label), inputs[key]);
     }));
   inputs.review_status = h("select", { class: "input" }, ["pending", "approved", "rejected"].map((s) => h("option", { value: s, selected: s === review.review_status }, s[0].toUpperCase() + s.slice(1))));
   const submit = h("button", { class: "btn primary", type: "submit" }, "Save review");
-  form.append(h("label", { class: "field" }, h("span", {}, "Review status"), inputs.review_status),
+  form.append(h("p", { class: "muted" }, "The employee ID applies to this plan. Use an existing employee account's ID to share the plan with them. The original analysis keeps its recorded ID."),
+    h("label", { class: "field" }, h("span", {}, "Review status"), inputs.review_status),
     h("div", { class: "filters" }, h("button", { class: "btn", type: "button", onclick: () => dialog.close() }, "Cancel"), submit));
   form.addEventListener("submit", async (e) => {
     e.preventDefault(); if (submit.disabled) return; submit.disabled = true;
@@ -406,7 +411,7 @@ async function loadDetail(id, detail, aside, wrap) {
   const body = h("div", { class: "detail-body" },
     h("a", { class: "btn ghost sm back", href: "#/review" }, icon("back"), "Queue"),
     h("section", { class: "block" }, h("div", { class: "detail-head" }, h("h2", {}, d.review.candidate_name || d.subject_id), reviewBadge(d.review),
-      reviewMenu($("#main"), id, d.review, () => editReview($("#main"), id, d.review, () => reviewView($("#main"), id)), () => {
+      reviewMenu($("#main"), id, d.review, () => editReview($("#main"), id, d.review, () => reviewView($("#main"), id), d.subject_id), () => {
         if (location.hash === "#/review") return reviewView($("#main"));
         location.hash = "#/review";
       })),
