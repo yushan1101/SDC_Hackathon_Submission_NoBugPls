@@ -157,13 +157,20 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     { position: [0, -0.115, 0.36], rotation: [0, 0, Math.PI] });
 
   let avatarState = "idle";
+  let microphoneLevel = 0;
+  let speechCue = null;
   const setAvatarState = (next) => {
     if (!["idle", "listening", "speaking"].includes(next) || next === avatarState) return;
     avatarState = next;
     host.dataset.avatarState = next;
   };
   host.dataset.avatarState = avatarState;
-  const avatarStateEvent = (event) => setAvatarState(event.detail?.state);
+  const avatarStateEvent = (event) => {
+    const detail = event.detail || {};
+    setAvatarState(detail.state);
+    microphoneLevel = Number.isFinite(detail.microphoneLevel) ? THREE.MathUtils.clamp(detail.microphoneLevel, 0, 1) : 0;
+    speechCue = detail.state === "speaking" ? detail.speechCue || null : null;
+  };
   window.addEventListener("aiversepulse:interview-avatar-state", avatarStateEvent);
   const blinkAmount = (time, offset = 0) => {
     const phase = (time + offset) % 4.1;
@@ -179,13 +186,28 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     mouth.visible = speaking; smile.visible = !speaking;
     const nod = listening && time % 4.8 > 0.25 && time % 4.8 < 0.58
       ? Math.sin((time % 4.8 - 0.25) / 0.33 * Math.PI) * 0.045 : 0;
-    torso.scale.y = 1 + Math.sin(time * 1.3) * 0.007;
+    torso.scale.y = 1 + Math.sin(time * 1.3) * 0.007 + (listening ? microphoneLevel * 0.012 : 0);
     head.rotation.x = ease(head.rotation.x, (listening ? -0.035 : 0) + nod + (speaking ? Math.sin(time * 3.2) * 0.014 : 0), 5);
-    head.rotation.y = ease(head.rotation.y, Math.sin(time * (speaking ? 1.8 : 0.55)) * (listening ? 0.018 : 0.024), 3);
+    head.rotation.y = ease(head.rotation.y, Math.sin(time * (speaking ? 1.8 : 0.55)) * (listening ? 0.018 : 0.024)
+      + (listening ? microphoneLevel * 0.075 : 0), 3);
     head.rotation.z = ease(head.rotation.z, listening ? -0.025 : 0, 4);
     head.position.y = 1.9 + Math.sin(time * 1.3) * 0.006;
-    const speechOpen = speaking ? 0.02 + Math.abs(Math.sin(time * 8.5)) * 0.052 : listening ? 0.022 : 0.018;
-    mouth.scale.y = ease(mouth.scale.y, speechOpen, speaking ? 14 : 7);
+    let speechOpen = 0.018;
+    if (speaking && speechCue?.word) {
+      const word = String(speechCue.word);
+      const secondsPerCharacter = Number.isFinite(speechCue.secondsPerCharacter) ? speechCue.secondsPerCharacter : 0.1;
+      const elapsed = Math.max(0, (performance.now() - speechCue.startedAt) / 1000);
+      const characterIndex = Math.floor(elapsed / secondsPerCharacter);
+      const character = word[Math.min(characterIndex, word.length - 1)]?.toLowerCase() || "";
+      if (characterIndex < word.length) {
+        // SpeechSynthesis word-boundary cues drive simple vowel/consonant jaw shapes.
+        speechOpen = /[aeo]/.test(character) ? 0.064
+          : /[iu]/.test(character) ? 0.043
+            : /[mnbp]/.test(character) ? 0.014 : 0.027;
+        speechOpen += Math.sin(time * 18 + characterIndex) * 0.004;
+      }
+    } else if (listening) speechOpen = 0.022 + microphoneLevel * 0.006;
+    mouth.scale.y = ease(mouth.scale.y, speechOpen, speaking ? 18 : 7);
     eyes.forEach((eye, index) => {
       const blink = Math.max(blinkAmount(time), blinkAmount(time, index * 0.035));
       eye.scale.y = 1 - blink * 0.94;

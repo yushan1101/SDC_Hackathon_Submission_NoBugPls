@@ -169,12 +169,15 @@ function renderRoom(main, detail, initial = null) {
   let elapsedMs = 0, timerStartedAt = null, durationTimer = null;
   let deviceEnumeration = 0;
   let interviewerSpeaking = false, currentUtterance = null, paused = false;
+  let microphoneLevel = 0, speechCue = null, lastAvatarSignalAt = 0;
   let officeDisposer = null;
   const updateAvatarPresentation = () => {
     const micState = voicePanel.dataset.state;
     const state = interviewerSpeaking ? "speaking"
       : ["ready", "listening", "speaking", "captured"].includes(micState) ? "listening" : "idle";
-    window.dispatchEvent(new CustomEvent("aiversepulse:interview-avatar-state", { detail: { state } }));
+    window.dispatchEvent(new CustomEvent("aiversepulse:interview-avatar-state", { detail: {
+      state, microphoneLevel, speechCue,
+    } }));
   };
   const setMicState = (state, message) => {
     voicePanel.dataset.state = state;
@@ -224,6 +227,8 @@ function renderRoom(main, detail, initial = null) {
     micStream?.getTracks().forEach((track) => { track.onended = null; track.stop(); });
     micStream = null; audioContext?.close().catch(() => {}); audioContext = null;
     micBars.forEach((bar) => { bar.style.height = "5px"; });
+    microphoneLevel = 0;
+    updateAvatarPresentation();
     muteBtn.textContent = "Mute";
     muteBtn.setAttribute("aria-label", "Mute microphone");
   };
@@ -236,6 +241,8 @@ function renderRoom(main, detail, initial = null) {
       let squares = 0;
       for (const sample of waveform) { const amplitude = (sample - 128) / 128; squares += amplitude * amplitude; }
       const volume = Math.sqrt(squares / waveform.length), bandSize = Math.max(1, Math.floor(spectrum.length / micBars.length));
+      microphoneLevel = recording && !muted && !interviewerSpeaking
+        ? Math.max(0, Math.min(1, (volume - 0.008) / 0.12)) : 0;
       micBars.forEach((bar, index) => {
         const start = index * bandSize, end = Math.min(spectrum.length, start + bandSize);
         let sum = 0; for (let i = start; i < end; i++) sum += spectrum[i];
@@ -244,6 +251,13 @@ function renderRoom(main, detail, initial = null) {
       if (recording && !muted && !interviewerSpeaking && !speechError) {
         if (volume > 0.025) setMicState("speaking", "Speaking detected · keep answering");
         else setMicState("listening", speechAvailable ? "Listening · speak your answer" : "Listening · browser transcription unavailable; type your answer");
+      }
+      // The avatar uses the same measured input as the visible microphone meter.
+      // Limit presentation events to the room's 30 fps render rate.
+      const now = performance.now();
+      if (now - lastAvatarSignalAt >= 33) {
+        lastAvatarSignalAt = now;
+        updateAvatarPresentation();
       }
       meterFrame = requestAnimationFrame(tick);
     };
@@ -429,16 +443,25 @@ function renderRoom(main, detail, initial = null) {
     window.speechSynthesis.cancel();
     utterance.onstart = () => {
       if (currentUtterance !== utterance) return;
+      speechCue = { word: utterance.text, startedAt: performance.now(), secondsPerCharacter: 0.095 / Math.max(0.5, utterance.rate || 1) };
       interviewerSpeaking = true; updateControls(); setMicState("processing", "Interviewer speaking · microphone capture is off");
+    };
+    utterance.onboundary = (event) => {
+      if (currentUtterance !== utterance || !interviewerSpeaking) return;
+      const remaining = utterance.text.slice(Math.max(0, event.charIndex || 0));
+      const word = remaining.match(/^[\p{L}\p{N}'’\-]+/u)?.[0];
+      if (!word) return;
+      speechCue = { word, startedAt: performance.now(), secondsPerCharacter: 0.105 / Math.max(0.5, utterance.rate || 1) };
+      updateAvatarPresentation();
     };
     utterance.onend = () => {
       if (currentUtterance !== utterance) return;
-      currentUtterance = null; interviewerSpeaking = false; updateControls();
+      currentUtterance = null; interviewerSpeaking = false; speechCue = null; updateControls();
       setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : "Ready to answer · microphone off");
     };
     utterance.onerror = () => {
       if (currentUtterance !== utterance) return;
-      currentUtterance = null; interviewerSpeaking = false; updateControls();
+      currentUtterance = null; interviewerSpeaking = false; speechCue = null; updateControls();
       setMicState("ready", "Ready to answer · microphone off");
     };
     window.speechSynthesis.speak(utterance);
