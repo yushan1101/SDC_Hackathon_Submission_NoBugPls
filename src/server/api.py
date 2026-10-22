@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import queue
+import re
 import secrets
 import threading
 import time
@@ -24,7 +25,7 @@ from pathlib import Path
 import pandas as pd
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request as HttpRequest, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
@@ -87,7 +88,7 @@ async def headers(request: HttpRequest, call_next):
             return JSONResponse({"detail": "origin not allowed"}, status_code=403)
     resp = await call_next(request)
     resp.headers.update({
-        "Content-Security-Policy": "default-src 'self'; script-src 'self' https://js.stripe.com; style-src 'self' 'unsafe-inline' "
+        "Content-Security-Policy": f"default-src 'self'; script-src 'self' '{_assets()[2]}' https://js.stripe.com; style-src 'self' 'unsafe-inline' "
                                    "https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.stripe.com; "
                                    "frame-src https://js.stripe.com https://hooks.stripe.com; "
                                    f"connect-src 'self' https://api.stripe.com; frame-ancestors {cfg.frame_ancestors}; base-uri 'none'; form-action 'self'",
@@ -1585,9 +1586,45 @@ async def apply_submit(token: str, request: HttpRequest, name: str = Form(..., m
 app.mount("/static", StaticFiles(directory=WEB), name="static")
 
 
+# Versioned assets: every page links /js/x.js?v=<content hash>, and an import map does the same for modules that import
+# each other ("./lib.js"). After a deploy each changed file has a new URL, so no browser or Cloudflare copy of an old
+# script can be mixed with new code ("the page still looks old"). Re-hashed only when a file's mtime changes.
+def _asset_sig() -> tuple:
+    return tuple((f.name, f.stat().st_mtime_ns) for d in ("js", "css", "vendor") for f in sorted((WEB / d).glob("*.*")))
+
+
+@lru_cache(maxsize=2)
+def _asset_build(sig: tuple) -> tuple[dict, str, str]:
+    import base64
+    versions = {"/" + f.relative_to(WEB).as_posix(): hashlib.sha256(f.read_bytes()).hexdigest()[:10]
+                for d in ("js", "css", "vendor") for f in sorted((WEB / d).glob("*.*")) if f.suffix in (".js", ".css")}
+    imap = json.dumps({"imports": {k: f"{k}?v={v}" for k, v in versions.items() if k.startswith("/js/")}}, separators=(",", ":"))
+    csp = "sha256-" + base64.b64encode(hashlib.sha256(imap.encode()).digest()).decode()
+    return versions, imap, csp
+
+
+def _assets() -> tuple[dict, str, str]:
+    return _asset_build(_asset_sig())
+
+
+def _page(name: str) -> HTMLResponse:
+    versions, imap, _ = _assets()
+    html = (WEB / name).read_text(encoding="utf-8")
+    html = re.sub(r'(src|href)="((?:js|css|vendor)/[\w.-]+\.(?:js|css))"',
+                  lambda m: f'{m[1]}="/{m[2]}?v={versions.get("/" + m[2], "0")}"', html)
+    return HTMLResponse(html.replace('<script type="module"', f'<script type="importmap">{imap}</script>\n  <script type="module"', 1),
+                        headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/")
+@app.get("/index.html")
 def public_ui():
-    return FileResponse(WEB / "index.html")
+    return _page("index.html")
+
+
+@app.get("/apply.html")
+def apply_page():
+    return _page("apply.html")
 
 
 @app.get("/apply/{token}")
@@ -1596,13 +1633,15 @@ def apply_ui(token: str):  # old-style links -> the static page (token stays in 
 
 
 @app.get("/enterprise")
+@app.get("/enterprise.html")
 def enterprise_ui():
-    return FileResponse(WEB / "enterprise.html")
+    return _page("enterprise.html")
 
 
 @app.get("/admin")
+@app.get("/admin.html")
 def admin_ui():
-    return FileResponse(WEB / "admin.html")
+    return _page("admin.html")
 
 
 @app.get("/healthz")

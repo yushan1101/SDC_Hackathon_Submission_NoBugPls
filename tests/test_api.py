@@ -693,3 +693,15 @@ def test_risk_flags_account_farms_and_spares_normal_people():
         risk.assess(con, "signup", f"farm{i}", "10.0.0.9", {"device_id": "farm-dev", "fill_ms": 6000}, f"farm{i}@gmail.com")
     v = risk.assess(con, "signup", "farm3", "10.0.0.9", {"device_id": "farm-dev", "fill_ms": 6000}, "farm3@gmail.com")
     assert v["decision"] == "review" and any("this device" in r for r in v["reasons"])
+
+
+def test_pages_link_versioned_assets_and_csp_allows_only_that_import_map(client):
+    import base64, hashlib, re as _re
+    for path in ("/", "/enterprise.html", "/admin"):
+        r = client.get(path)
+        html, csp = r.text, r.headers["content-security-policy"]
+        assert _re.search(r'src="/js/\w+\.js\?v=[0-9a-f]{10}"', html) and _re.search(r'href="/css/app\.css\?v=[0-9a-f]{10}"', html)
+        imap = _re.search(r'<script type="importmap">(.*?)</script>', html).group(1)
+        assert '"/js/lib.js":"/js/lib.js?v=' in imap
+        assert "'sha256-" + base64.b64encode(hashlib.sha256(imap.encode()).digest()).decode() + "'" in csp
+        assert "'unsafe-inline'" not in csp.split("script-src")[1].split(";")[0]  # no other inline script allowed
