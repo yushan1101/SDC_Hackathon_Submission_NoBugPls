@@ -1203,19 +1203,24 @@ details.hint p { margin-top: 8px; font-size: 15px; color: var(--ink-2); max-widt
 .meta-pill svg { width: 16px; height: 16px; color: var(--accent); }
 .board-head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
 .board-head h2 { font-size: clamp(30px, 3vw, 40px); }
-.topic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 16px; }
-.topic-card { display: grid; gap: 16px; align-content: start; padding: 22px; border-radius: 24px; background: oklch(1 0 0); box-shadow: var(--card-shadow); }
-.tc-top { display: grid; gap: 10px; justify-items: start; }
-.tc-top h4 { font: 600 18px/1.3 var(--font-ui); margin: 0; }
+.topic-grid { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(250px, auto); gap: 16px; min-width: 0; }
+.topic-card { display: grid; grid-template-rows: minmax(72px, auto) minmax(92px, 1fr) auto; gap: 16px; align-content: start;
+  min-width: 0; max-width: 100%; padding: 22px; border-radius: 24px; background: oklch(1 0 0); box-shadow: var(--card-shadow); }
+.tc-top { display: grid; align-content: start; justify-items: start; gap: 10px; min-width: 0; }
+.tc-top h4 { min-width: 0; max-width: 100%; font: 600 18px/1.3 var(--font-ui); margin: 0; overflow-wrap: anywhere; }
 .topic-card .trend { padding: 3px 12px 3px 9px; border-radius: 999px; font-size: 14px; background: var(--sunken); }
 .topic-card .trend.rising { background: var(--ok-soft); }
 .topic-card .trend.falling { background: var(--danger-soft); }
-.tc-figure { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
-.tc-figure b { display: block; font: 500 40px/1 var(--font-display); letter-spacing: -0.02em; }
-.tc-figure span { font-size: 15px; color: var(--ink-2); }
-.tc-figure .spark { width: 110px; height: 34px; }
-.tc-figure .spark polyline { stroke-width: 2; }
-.tc-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 15px; color: var(--ink-2); }
+.tc-figure { display: grid; grid-template-columns: minmax(0, 1fr) minmax(86px, 38%); align-items: center; gap: 12px; min-width: 0; max-width: 100%; }
+.tc-growth { min-width: 0; }
+.tc-figure b { display: block; font: 500 clamp(30px, 2.7vw, 40px)/1 var(--font-display); letter-spacing: -0.02em; white-space: nowrap; }
+.tc-figure span { display: block; font-size: 14px; line-height: 1.35; color: var(--ink-2); overflow-wrap: anywhere; }
+.tc-charts { display: grid; align-content: center; gap: 9px; min-width: 0; max-width: 100%; overflow: hidden; padding: 3px 2px; }
+.tc-chart-item { display: grid; gap: 3px; min-width: 0; max-width: 100%; }
+.tc-charts svg { display: block; width: 100%; max-width: 100%; height: 26px; overflow: hidden; }
+.tc-charts .spark polyline { stroke-width: 2; }
+.tc-chart-caption { font-size: 13px !important; line-height: 1.25 !important; color: var(--ink-2); white-space: normal; }
+.tc-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 14px; color: var(--ink-2); }
 .tc-foot svg { width: 16px; height: 16px; }
 .tc-jobs, .tc-kind { display: inline-flex; align-items: center; gap: 6px; }
 .tc-kind { color: var(--danger); }
@@ -1238,7 +1243,10 @@ details.hint p { margin-top: 8px; font-size: 15px; color: var(--ink-2); max-widt
 .rl-score.rising { background: var(--ok-soft); }
 .rl-score.falling { background: var(--danger-soft); }
 .board-method { justify-self: center; }
-@media (max-width: 699px) { .topic-grid { grid-template-columns: 1fr; } .board-roles { grid-template-columns: 1fr; } .role-card { padding: 20px; } }
+@media (min-width: 680px) { .topic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 980px) { .topic-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1360px) { .topic-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 699px) { .board-roles { grid-template-columns: 1fr; } .role-card { padding: 20px; } }
 
 /* one header layout on every page: nav left, status + account actions right (home hides the status, not the order) */
 .pub-top .pub-nav { margin-right: auto; }
@@ -1653,7 +1661,8 @@ details.more summary::-webkit-details-marker { display: none; }
 .trend-changes ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 16px; }
 .board-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; }
 .board-filters .input { max-width: 260px; }
-.tc-history { display: grid; gap: 2px; font-size: 13px; color: var(--ink-2); }
+.tc-history { font-size: 12px; }
+.tc-history .zline { width: 100%; max-width: 100%; height: 24px; overflow: hidden; }
 .zline polyline { fill: none; stroke: var(--accent); stroke-width: 1.6; }
 .zline .zl-zero { stroke: var(--rule-strong); stroke-dasharray: 2 3; }
 @media (max-width: 760px) { .radar-row { grid-template-columns: 1fr; } }
