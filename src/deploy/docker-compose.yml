@@ -17,6 +17,7 @@ services:
     image: nginx:1.27-alpine
     environment:
       API_BASE: "http://localhost:8600"
+      VIRTUAL_INTERVIEW_3D: "true"
     volumes:
       - ../web:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/templates/default.conf.template:ro

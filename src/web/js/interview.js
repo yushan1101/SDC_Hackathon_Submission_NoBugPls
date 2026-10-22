@@ -164,6 +164,7 @@ function renderRoom(main, detail, initial = null) {
   let elapsedMs = 0, timerStartedAt = null, durationTimer = null;
   let deviceEnumeration = 0;
   let interviewerSpeaking = false, currentUtterance = null, paused = false;
+  let officeDisposer = null;
   const setMicState = (state, message) => {
     voicePanel.dataset.state = state;
     status.className = `interview-status is-${state}`;
@@ -433,6 +434,7 @@ function renderRoom(main, detail, initial = null) {
     discarded = true; recording = false; muted = false; pauseDuration();
     try { recognizer?.abort(); } catch { /* already stopped */ }
     recognitionActive = false; recognitionRequested = false; releaseAudio(); window.speechSynthesis?.cancel();
+    officeDisposer?.(); officeDisposer = null;
   };
   window.addEventListener("hashchange", () => { if (location.hash !== `#/interview/${sessionId}`) dispose(); });
   window.addEventListener("pagehide", dispose, { once: true });
@@ -490,18 +492,37 @@ function renderRoom(main, detail, initial = null) {
     catch (e) { toast(e.message, "err"); }
   } }, "End interview");
   setQuestion(current, number, source);
+  const officeEnabled = window.AP_CONFIG?.VIRTUAL_INTERVIEW_3D === true;
+  const officeHost = officeEnabled ? h("div", { class: "interview-office-host", role: "group",
+    "aria-label": "First-person view of a modern interview office, seated across the desk" },
+    h("span", { class: "interview-office-label", "aria-hidden": "true" }, "VIRTUAL INTERVIEW OFFICE"),
+    h("span", { class: "interview-office-loading", role: "status" }, "Preparing your interview room…")) : null;
+  const room = h("section", { class: `interview-room${officeEnabled ? " interview-room-office-pending" : ""}` },
+    officeHost,
+    h("div", { class: "interviewer-avatar", "aria-hidden": "true" }, h("span", {}, "AP")),
+    h("div", { class: "interviewer-meta" }, h("b", {}, "AiversePulse interviewer"), h("span", { class: "muted" }, "AI practice session")),
+    h("div", { class: "question-panel" }, h("p", { class: "eyebrow" }, "QUESTION · ", questionStage), qText, skillChips,
+      source?.url ? h("a", { class: "cite", href: source.url, target: "_blank", rel: "noopener noreferrer" }, "Grounded in ESCO · source details") : null),
+    responseFeedback, form,
+    h("p", { class: "fine" }, "Only your reviewed transcript is sent to AiversePulse and saved with this interview. Browser speech recognition may process microphone audio; AiversePulse does not store audio."));
   main.replaceChildren(h("div", { class: "interview-page" },
     h("div", { class: "section-head" }, h("div", {}, h("p", { class: "eyebrow" }, "LIVE PRACTICE"), h("h1", { class: "page-title" }, detail.role_title),
       h("p", { class: "muted" }, `${detail.difficulty || initial?.difficulty || "intermediate"} difficulty · `, stageText)),
       h("div", { class: "interview-room-actions" }, status, repeat, pause, end)),
     progress,
-    h("section", { class: "interview-room" },
-      h("div", { class: "interviewer-avatar", "aria-hidden": "true" }, h("span", {}, "AP")),
-      h("div", { class: "interviewer-meta" }, h("b", {}, "AiversePulse interviewer"), h("span", { class: "muted" }, "AI practice session")),
-      h("div", { class: "question-panel" }, h("p", { class: "eyebrow" }, "QUESTION · ", questionStage), qText, skillChips,
-        source?.url ? h("a", { class: "cite", href: source.url, target: "_blank", rel: "noopener noreferrer" }, "Grounded in ESCO · source details") : null),
-      responseFeedback, form,
-      h("p", { class: "fine" }, "Only your reviewed transcript is sent to AiversePulse and saved with this interview. Browser speech recognition may process microphone audio; AiversePulse does not store audio."))));
+    room));
+  if (officeHost) {
+    const fallbackOffice = (error) => {
+      officeHost.remove(); room.classList.remove("interview-room-office-pending", "interview-room-virtual");
+      officeDisposer?.(); officeDisposer = null;
+      console.warn("Virtual interview office unavailable; using the standard interview room.", error);
+    };
+    import("./virtual-office.js").then(({ mountVirtualOffice }) => mountVirtualOffice(officeHost, { onFailure: fallbackOffice })).then((unmount) => {
+      if (discarded || !officeHost.isConnected) { unmount(); return; }
+      officeDisposer = unmount;
+      room.classList.remove("interview-room-office-pending"); room.classList.add("interview-room-virtual");
+    }).catch(fallbackOffice);
+  }
 }
 
 function showEvaluation(host, evaluation) {
