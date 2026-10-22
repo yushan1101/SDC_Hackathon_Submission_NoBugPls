@@ -8,6 +8,7 @@ Accounts created by the CLI/seed are organisation-issued: plan "org" (full acces
 status: active | pending_email | pending_approval | disabled.
 
     python -m governance.accounts create --username ana --role employee --employee-id E-001
+    python -m governance.accounts set-password --username ana      (new password; also clears a lockout)
     (password read from ACCOUNT_PASSWORD or prompted)
 """
 import argparse
@@ -191,6 +192,9 @@ def account(con, username: str) -> dict | None:
 def authenticate(con, username: str, password: str, max_failures: int = 5, lock_minutes: int = 5) -> dict:
     init(con)
     username = (username or "").strip().lower()
+    if "@" in username:  # people sign in with their email too ("forgot password" accepts either)
+        by_email = con.execute("SELECT username FROM users WHERE lower(email)=?", (username,)).fetchone()
+        username = by_email[0] if by_email else username
     row = con.execute("SELECT pw_hash,salt,role,employee_id,display_name,failed,locked_until,status FROM users WHERE username=?",
                       (username,)).fetchone()
     t = datetime.now(timezone.utc)
@@ -228,14 +232,23 @@ def _event(con, username, event):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["create"])
+    ap.add_argument("action", choices=["create", "set-password"])
     ap.add_argument("--username", required=True)
-    ap.add_argument("--role", required=True, choices=sorted(ROLES))
+    ap.add_argument("--role", choices=sorted(ROLES))
     ap.add_argument("--employee-id")
     ap.add_argument("--display-name", default="")
     a = ap.parse_args()
     pw = os.environ.get("ACCOUNT_PASSWORD") or getpass.getpass("Password: ")
-    create_user(connect(), a.username, pw, a.role, a.employee_id, a.display_name)
+    con = init(connect())
+    if a.action == "set-password":  # also unlocks; sessions end so the old password stops working everywhere
+        set_password(con, a.username.strip().lower(), pw)
+        with con:
+            con.execute("DELETE FROM sessions WHERE username=?", (a.username.strip().lower(),))
+        print(f"new password set for {a.username}; signed out everywhere")
+        return
+    if not a.role:
+        ap.error("--role is required to create an account")
+    create_user(con, a.username, pw, a.role, a.employee_id, a.display_name)
     print(f"created {a.username} ({a.role})")
 
 
