@@ -1939,17 +1939,18 @@ body.interview-takeover-active #app > .pub-main {
   .interview-counter { font-size: 10px; }
   .interview-topbar > .btn { min-height: 30px; padding-inline: 7px; font-size: 11px; }
   .interview-exit-button { min-height: 32px; padding-inline: 10px; font-size: 11px; }
-  .interview-question-overlay { top: max(68px, calc(env(safe-area-inset-top) + 62px)); right: 12px; left: auto; transform: none; width: min(46vw, 320px); max-width: calc(100vw - 12px); max-height: 60vh; }
-  .interview-question-copy { max-height: 60vh; }
-  .interview-takeover .interview-question { max-width: none; margin-bottom: 8px; font-size: clamp(20px, 5vw, 25px); line-height: 1.08; }
-  .interview-question-label { margin-bottom: 4px; font-size: 10px; }
-  .interview-question-overlay .chip-static { padding: 3px 6px; font-size: 9px; }
+  .interview-question-overlay { top: max(58px, calc(env(safe-area-inset-top) + 54px)); right: 12px; left: 12px; transform: none; width: auto; max-width: none; max-height: min(128px, 15vh); }
+  .interview-question-copy { max-height: min(128px, 15vh); padding-right: 32px; }
+  .interview-takeover .interview-question { max-width: none; margin-bottom: 4px; font-size: 14px; line-height: 1.08; }
+  .interview-question-label { margin-bottom: 3px; font-size: 9px; }
+  .interview-question-overlay .chips { max-height: 18px; overflow: hidden; flex-wrap: nowrap; }
+  .interview-question-overlay .chip-static { padding: 2px 5px; font-size: 8px; white-space: nowrap; }
   .interview-question-toggle { top: 0; right: 0; }
   .interview-answer-form { bottom: max(10px, env(safe-area-inset-bottom)); grid-template-columns: minmax(0, 1fr); gap: 7px; width: calc(100% - 20px); padding: 9px 10px; border-radius: 14px; }
   .interview-answer-form > .field { grid-column: 1; }
   .interview-takeover .interview-answer { min-height: 40px; max-height: 9vh; font-size: 12px; }
   .interview-voice-panel { grid-column: 1; grid-template-columns: minmax(0, 1fr) auto; }
-  .interview-voice-controls { flex-wrap: nowrap; }
+  .interview-voice-controls { grid-column: 1 / -1; justify-content: center; flex-wrap: wrap; max-width: 100%; }
   .interview-voice-controls .btn { min-height: 31px; padding-inline: 7px; font-size: 10px; }
   .interview-submit-row { grid-column: 1; grid-row: auto; }
   .interview-submit-row .btn { width: 100%; min-height: 34px; }
