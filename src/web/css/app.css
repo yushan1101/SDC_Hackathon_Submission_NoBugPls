@@ -1913,3 +1913,27 @@ dialog.checkout form { display: grid; gap: 16px; }
 .risk-reasons { margin: 0; padding-left: 16px; font-size: 14px; }
 [data-product="hr"] .stats:has(.stat:nth-child(5)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 899px) { [data-product="hr"] .stats:has(.stat:nth-child(5)) { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---------- slider check (sign-up) and inbox shortcut ---------- */
+.slider-check { display: grid; gap: 10px; max-width: 320px; }
+.sc-stage { position: relative; max-width: 100%; border-radius: 12px; overflow: hidden; background: oklch(1 0 0 / 0.08); }
+.sc-track { display: block; width: 320px; height: 160px; user-select: none; -webkit-user-drag: none; }
+.sc-piece { position: absolute; left: 0; width: 44px; height: 44px; filter: drop-shadow(0 3px 6px rgb(0 0 0 / 0.45)); pointer-events: none; }
+.sc-rail { position: relative; height: 46px; border-radius: 999px; background: oklch(1 0 0 / 0.08); border: 1px solid oklch(1 0 0 / 0.22); overflow: hidden; }
+.sc-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: oklch(0.6 0.15 262 / 0.35); }
+.sc-label { position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; color: var(--shell-ink-2); pointer-events: none; }
+.sc-knob { position: absolute; top: 2px; left: 2px; z-index: 1; width: 52px; height: 40px; border: 0; border-radius: 999px; background: var(--accent);
+  color: #fff; display: grid; place-items: center; cursor: grab; touch-action: none; }
+.sc-knob:active { cursor: grabbing; }
+.sc-knob svg { width: 18px; height: 18px; }
+.sc-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 28px; }
+.sc-note { margin: 0; font-size: 14px; color: oklch(0.82 0.1 36); }
+.slider-check.ok .sc-rail { border-color: oklch(0.72 0.15 150); }
+.slider-check.ok .sc-knob { background: oklch(0.62 0.15 150); }
+.slider-check.ok .sc-label { color: var(--shell-ink); font-weight: 600; }
+.slider-check.ok .sc-new { visibility: hidden; }
+.slider-check.bad .sc-stage { animation: sc-shake .35s; }
+@keyframes sc-shake { 25% { translate: -6px 0; } 75% { translate: 6px 0; } }
+@media (prefers-reduced-motion: reduce) { .slider-check.bad .sc-stage { animation: none; } }
+.inbox-btn { justify-self: start; gap: 8px; }
+.signin-form .btn[disabled] { opacity: .55; cursor: not-allowed; }

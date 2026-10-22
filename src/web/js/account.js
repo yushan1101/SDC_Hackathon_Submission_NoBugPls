@@ -2,11 +2,91 @@
 // with payment history. Card details go from the browser straight to Stripe; the server only sees Stripe's ids.
 import { api, h, icon, toast, fmtTime } from "./lib.js";
 import { Owl } from "./owl.js";
-import { watchForm, pageSignals } from "./risk.js";
+import { watchForm, pageSignals, deviceId } from "./risk.js";
 
 const money = (cents, cur) => new Intl.NumberFormat(undefined, { style: "currency", currency: (cur || "myr").toUpperCase() }).format(cents / 100);
 const PLAN_NAME = { free: "Free", pro: "Pro", team: "Team", org: "Organisation" };
 export const planName = (p) => PLAN_NAME[p] || p;
+
+// ---------------------------------------------------------------- slider check (server-verified, single use)
+/** Drag the piece into the gap. Calls onPass(token) once the server accepts the drag; onReset() when it is undone. */
+function sliderCheck(onPass, onReset) {
+  const stage = h("div", { class: "sc-stage" });
+  const knob = h("button", { class: "sc-knob", type: "button", role: "slider", "aria-label": "Slide the piece into the gap",
+    "aria-valuemin": "0", "aria-valuenow": "0" }, icon("send"));
+  const label = h("span", { class: "sc-label" }, "Slide to fit the piece");
+  const rail = h("div", { class: "sc-rail" }, h("i", { class: "sc-fill" }), knob, label);
+  const note = h("p", { class: "sc-note", role: "status", "aria-live": "polite" });
+  const again = h("button", { class: "btn ghost sm sc-new", type: "button", onclick: () => load() }, icon("history"), "New puzzle");
+  const box = h("div", { class: "slider-check" }, stage, rail, h("div", { class: "sc-foot" }, note, again));
+  let ch = null, piece = null, x = 0, max = 0, trail = [], t0 = 0, busy = false, done = false;
+
+  const place = (nx) => {
+    x = Math.max(0, Math.min(max, nx));
+    piece.style.transform = `translateX(${x}px)`;
+    const k = (x / max) * (rail.clientWidth - knob.offsetWidth);
+    knob.style.transform = `translateX(${k}px)`;
+    rail.querySelector(".sc-fill").style.width = `${k + knob.offsetWidth / 2}px`;
+    knob.setAttribute("aria-valuenow", String(Math.round(x)));
+  };
+  async function load() {
+    done = false; busy = false; onReset?.();
+    box.classList.remove("ok", "bad");
+    note.textContent = ""; label.textContent = "Slide to fit the piece";
+    stage.replaceChildren(h("p", { class: "muted" }, "Loading the puzzle…"));
+    ch = await api("/api/challenge", { method: "POST" });
+    max = ch.width - ch.piece_size;
+    piece = h("img", { class: "sc-piece", src: ch.piece, alt: "", style: { top: `${ch.piece_y}px` } });
+    stage.style.width = `${ch.width}px`; stage.style.height = `${ch.height}px`;
+    stage.replaceChildren(h("img", { class: "sc-track", src: ch.track, alt: "Puzzle: a picture with a gap" }), piece);
+    knob.setAttribute("aria-valuemax", String(max));
+    trail = []; place(0);
+  }
+  async function submit(keyboard) {
+    if (busy || done || !trail.length) return;
+    busy = true;
+    try {
+      const r = await api(`/api/challenge/${ch.id}/verify`, { method: "POST", body: { x, trail: trail.slice(-400), keyboard, device_id: deviceId() } });
+      done = true; box.classList.add("ok"); label.textContent = "Verified"; note.textContent = "";
+      onPass(r.token);
+    } catch (e) {
+      box.classList.add("bad"); note.textContent = e.message;
+      setTimeout(() => { box.classList.remove("bad"); if (/Expired/.test(e.message)) load(); else { trail = []; place(0); } busy = false; }, 700);
+    }
+  }
+  // pointer: mouse, pen or finger
+  let startX = 0, startPos = 0;
+  knob.addEventListener("pointerdown", (e) => {
+    if (done || busy || !ch) return;
+    knob.setPointerCapture(e.pointerId); startX = e.clientX; startPos = x; t0 = performance.now(); trail = [[0, x, e.clientY]];
+  });
+  knob.addEventListener("pointermove", (e) => {
+    if (!knob.hasPointerCapture(e.pointerId)) return;
+    const scale = max / (rail.clientWidth - knob.offsetWidth);  // the rail may be narrower or wider than the picture
+    place(startPos + (e.clientX - startX) * scale);
+    trail.push([Math.round(performance.now() - t0), Math.round(x * 10) / 10, e.clientY]);
+  });
+  knob.addEventListener("pointerup", (e) => { if (knob.hasPointerCapture(e.pointerId)) { knob.releasePointerCapture(e.pointerId); submit(false); } });
+  // keyboard: arrows move it (Shift = bigger steps), Enter checks it
+  knob.addEventListener("keydown", (e) => {
+    if (done || !ch) return;
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (step) { e.preventDefault(); if (!trail.length) t0 = performance.now(); place(x + step * (e.shiftKey ? 10 : 2)); trail.push([Math.round(performance.now() - t0), x]); }
+    if (e.key === "Enter") { e.preventDefault(); submit(true); }
+  });
+  load().catch((e) => { stage.replaceChildren(h("p", { class: "error" }, e.message)); });
+  return { el: box, reset: load };
+}
+
+/** Webmail for an address, so the person can jump straight to the email with the code. */
+function inboxLink(email) {
+  const d = (email.split("@")[1] || "").toLowerCase();
+  if (/^(gmail|googlemail)\.com$/.test(d)) return ["Open Gmail", "https://mail.google.com/mail/u/0/#search/AiversePulse"];
+  if (/^(outlook|hotmail|live|msn)\.[a-z.]+$/.test(d)) return ["Open Outlook", "https://outlook.live.com/mail/0/"];
+  if (/^yahoo\.[a-z.]+$/.test(d) || d === "ymail.com") return ["Open Yahoo Mail", "https://mail.yahoo.com/"];
+  if (/^(icloud|me|mac)\.com$/.test(d)) return ["Open iCloud Mail", "https://www.icloud.com/mail"];
+  return null;
+}
 
 // ---------------------------------------------------------------- sign up
 export function registerView(app, { onSignedIn }) {
@@ -20,22 +100,25 @@ export function registerView(app, { onSignedIn }) {
   const hint = h("p", { class: "signin-next" });
   const user = h("input", { class: "input", name: "username", autocomplete: "username", required: true, minlength: 3, maxlength: 40, pattern: "[a-zA-Z0-9_.\\-]{3,40}" });
   const email = h("input", { class: "input", name: "email", type: "email", autocomplete: "email", required: true, maxlength: 254 });
-  const pass = h("input", { class: "input", name: "password", type: "password", autocomplete: "new-password", required: true, minlength: 10, maxlength: 200 });
-  const btn = h("button", { class: "btn primary", type: "submit" }, "Create account");
+  const pwd = h("input", { class: "input", name: "password", type: "password", autocomplete: "new-password", required: true, minlength: 10, maxlength: 200 });
+  const btn = h("button", { class: "btn primary", type: "submit", disabled: true }, "Create account");
+  let pass = "";  // the slider pass (single use, required by the server)
+  const slider = sliderCheck((t) => { pass = t; btn.disabled = false; }, () => { pass = ""; btn.disabled = true; });
   const form = h("form", { class: "signin-form", onsubmit: async (e) => {
     e.preventDefault();
     btn.disabled = true; err.textContent = "";
     try {
-      const r = await api("/api/register", { method: "POST", body: { username: user.value, email: email.value, password: pass.value, account_type: type, risk: signals() } });
+      const r = await api("/api/register", { method: "POST", body: { username: user.value, email: email.value, password: pwd.value, account_type: type, risk: signals(), challenge_token: pass } });
       after(r);
-    } catch (ex) { err.textContent = ex.message; owl.set("confused"); btn.disabled = false; }
+    } catch (ex) { err.textContent = ex.message; owl.set("confused"); slider.reset(); }  // a pass is single use: solve again
   } },
     h("a", { class: "signin-back", href: "#/start" }, icon("back"), "Back to home"),
     h("span", { class: "wordmark" }, "Create your account"),
     seg, hint,
     h("label", { class: "field" }, h("span", {}, "Username"), user),
     h("label", { class: "field" }, h("span", {}, "Email"), email),
-    h("label", { class: "field" }, h("span", {}, "Password"), pass, h("small", { class: "field-hint" }, "10+ characters with a capital letter and a digit")),
+    h("label", { class: "field" }, h("span", {}, "Password"), pwd, h("small", { class: "field-hint" }, "10+ characters with a capital letter and a digit")),
+    h("div", { class: "field" }, h("span", {}, "Quick check"), slider.el),
     err, btn,
     h("p", { class: "signin-switch" }, "Already have an account? ", h("a", { href: "#/signin" }, "Sign in")));
   const signals = watchForm(form);
@@ -68,7 +151,9 @@ export function registerView(app, { onSignedIn }) {
     } },
       h("a", { class: "signin-back", href: "#/start" }, icon("back"), "Back to home"),
       h("span", { class: "wordmark" }, "Check your email"),
-      h("p", { class: "signin-next" }, `We sent a 6-digit code to ${email.value}. It expires in 10 minutes.`),
+      h("p", { class: "signin-next" }, `We sent a sign-in link and a 6-digit code to ${email.value}. Click the link in the email, or enter the code here. Both expire in 10 minutes.`),
+      inboxLink(email.value) ? h("a", { class: "btn inbox-btn", href: inboxLink(email.value)[1], target: "_blank", rel: "noopener noreferrer" },
+        icon("ext"), inboxLink(email.value)[0]) : null,
       h("label", { class: "field" }, h("span", {}, "Code"), code), e2, go,
       h("button", { class: "btn ghost sm", type: "button", onclick: async () => { await api("/api/register/resend", { method: "POST", body: { username } }); toast("A new code is on its way"); } }, "Send a new code")));
     code.focus();
@@ -172,4 +257,21 @@ export async function accountView(main, { refreshMe }) {
             p.status === "succeeded" ? "paid" : p.status.replaceAll("_", " "))),
           h("td", {}, p.receipt_url ? h("a", { href: p.receipt_url, target: "_blank", rel: "noopener noreferrer" }, "Receipt") : "–")))))
         : h("p", { class: "muted" }, "No payments yet.")));
+}
+
+// ---------------------------------------------------------------- the "Verify and sign in" link from the email
+export async function verifyLinkView(app, { username, token, onSignedIn }) {
+  const owl = new Owl({ size: 160, state: "searching" });
+  const msg = h("p", { class: "signin-next" }, "Verifying your email…");
+  app.replaceChildren(h("main", { class: "signin" }, h("section", { class: "signin-story" }, owl.el, h("h1", {}, "One moment.")),
+    h("div", { class: "signin-form" }, h("span", { class: "wordmark" }, "AiversePulse"), msg)));
+  try {
+    const r = await api("/api/register/verify-link", { method: "POST", body: { username, token } });
+    if (r.status === "active") { onSignedIn(); return; }
+    owl.set("idle");
+    msg.textContent = "Email verified. An administrator reviews new HR accounts; you can sign in once yours is approved.";
+  } catch (e) {
+    owl.set("confused");
+    msg.replaceChildren(e.message, " ", h("a", { href: "#/signin" }, "Go to sign in"));
+  }
 }
