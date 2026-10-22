@@ -41,7 +41,9 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     hairLight: makeClayMaterial("#3d3542", 0.82),
     blazer: makeMaterial("#45587f", 0.88), shirt: makeMaterial("#f7f4ef", 0.86),
     eyes: new THREE.MeshPhysicalMaterial({ color: "#fffdf8", roughness: 0.28, metalness: 0, clearcoat: 0.24, clearcoatRoughness: 0.3 }),
-    iris: makeMaterial("#46536a", 0.4), mouth: makeMaterial("#573b3c", 0.58),
+    iris: makeMaterial("#46536a", 0.4),
+    mouth: makeMaterial("#573b3c", 0.58, { transparent: true, opacity: 0, depthWrite: false }),
+    smile: makeMaterial("#573b3c", 0.58, { transparent: true, opacity: 1, depthWrite: false }),
   };
   const addMesh = (geometry, material, parent = scene, { position = [0, 0, 0], rotation = [0, 0, 0], cast = true, receive = true } = {}) => {
     const mesh = new THREE.Mesh(geometry, material);
@@ -229,15 +231,18 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     eyes.push(eye);
   }
   // Soft brows stay separate from the blinking eye groups so their proportions remain steady.
+  const brows = [];
   for (const x of [-0.09, 0.09]) {
     const brow = ellipsoid(materials.hair, [0.047, 0.011, 0.014], [x, 0.112, 0.366], head);
-    brow.rotation.z = x < 0 ? -0.08 : 0.08;
+    const side = x < 0 ? -1 : 1;
+    brow.rotation.z = side * 0.08;
+    brows.push({ mesh: brow, side });
   }
   ellipsoid(materials.skin, [0.026, 0.064, 0.028], [0, -0.005, 0.372], head);
   ellipsoid(materials.skin, [0.038, 0.045, 0.041], [0, -0.064, 0.392], head);
   const mouth = ellipsoid(materials.mouth, [0.069, 0.014, 0.014], [0, -0.145, 0.37], head);
-  mouth.visible = false;
-  const smile = addMesh(new THREE.TorusGeometry(0.069, 0.009, 8, 24, Math.PI), materials.mouth, head,
+  mouth.scale.y = 0.001;
+  const smile = addMesh(new THREE.TorusGeometry(0.069, 0.009, 8, 24, Math.PI), materials.smile, head,
     { position: [0, -0.14, 0.369], rotation: [0, 0, Math.PI] });
 
   // Rounded, softly beveled frames borrow the reference's defining glasses silhouette.
@@ -272,9 +277,15 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     speechCue = detail.state === "speaking" ? detail.speechCue || null : null;
   };
   window.addEventListener("aiversepulse:interview-avatar-state", avatarStateEvent);
-  const blinkAmount = (time, offset = 0) => {
-    const phase = (time + offset) % 4.1;
-    return phase < 0.12 ? Math.sin(phase / 0.12 * Math.PI) : 0;
+  let blinkStartedAt = -10;
+  let nextBlinkAt = 1.7;
+  const blinkAmount = (time) => {
+    if (time >= nextBlinkAt) {
+      blinkStartedAt = time;
+      nextBlinkAt = time + 3.2 + (Math.sin(time * 1.31) + 1) * 0.9;
+    }
+    const phase = (time - blinkStartedAt) / 0.16;
+    return phase >= 0 && phase <= 1 ? Math.sin(phase * Math.PI) : 0;
   };
   let previousFrameTime = 0;
   const animateAvatar = (timeMs) => {
@@ -283,14 +294,18 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     previousFrameTime = time;
     const ease = (value, target, speed) => THREE.MathUtils.damp(value, target, speed, delta);
     const listening = avatarState === "listening", speaking = avatarState === "speaking";
-    mouth.visible = speaking; smile.visible = !speaking;
+    const quiet = 1 - THREE.MathUtils.smoothstep(microphoneLevel, 0.01, 0.04);
+    const thoughtPhase = time % 8.4;
+    const thoughtPulse = thoughtPhase > 6.5 ? Math.sin((thoughtPhase - 6.5) / 1.9 * Math.PI) : 0;
+    const thinking = listening ? thoughtPulse * quiet : 0;
     const nod = listening && time % 4.8 > 0.25 && time % 4.8 < 0.58
       ? Math.sin((time % 4.8 - 0.25) / 0.33 * Math.PI) * 0.045 : 0;
     torso.scale.y = 1 + Math.sin(time * 1.3) * 0.007 + (listening ? microphoneLevel * 0.012 : 0);
-    head.rotation.x = ease(head.rotation.x, (listening ? -0.035 : 0) + nod + (speaking ? Math.sin(time * 3.2) * 0.014 : 0), 5);
+    head.rotation.x = ease(head.rotation.x, (listening ? -0.035 : 0) + nod + thinking * 0.026
+      + (speaking ? Math.sin(time * 3.2) * 0.014 : 0), 5);
     head.rotation.y = ease(head.rotation.y, Math.sin(time * (speaking ? 1.8 : 0.55)) * (listening ? 0.018 : 0.024)
-      + (listening ? microphoneLevel * 0.075 : 0), 3);
-    head.rotation.z = ease(head.rotation.z, listening ? -0.025 : 0, 4);
+      + (listening ? microphoneLevel * 0.075 : 0) + thinking * 0.03, 3);
+    head.rotation.z = ease(head.rotation.z, (listening ? -0.018 : 0) + thinking * 0.04, 4);
     head.position.y = 1.9 + Math.sin(time * 1.3) * 0.006;
     let speechOpen = 0.018;
     if (speaking && speechCue?.word) {
@@ -307,15 +322,23 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
         speechOpen += Math.sin(time * 18 + characterIndex) * 0.004;
       }
     } else if (listening) speechOpen = 0.022 + microphoneLevel * 0.006;
-    mouth.scale.y = ease(mouth.scale.y, speechOpen, speaking ? 18 : 7);
+    mouth.scale.y = ease(mouth.scale.y, speaking ? speechOpen : 0.001, speaking ? 18 : 9);
+    materials.mouth.opacity = ease(materials.mouth.opacity, speaking ? 0.96 : 0, 13);
+    materials.smile.opacity = ease(materials.smile.opacity, speaking ? 0 : 1, 11);
+    const blink = blinkAmount(time);
     eyes.forEach((eye, index) => {
-      const blink = Math.max(blinkAmount(time), blinkAmount(time, index * 0.035));
-      eye.scale.y = 1 - blink * 0.94;
+      eye.scale.y = 1 - blink * (index === 0 ? 0.95 : 0.93);
+      eye.rotation.x = ease(eye.rotation.x, -thinking * 0.055, 5);
+    });
+    brows.forEach(({ mesh, side }) => {
+      mesh.position.y = ease(mesh.position.y, 0.112 + thinking * 0.009, 6);
+      mesh.rotation.z = ease(mesh.rotation.z, side * (0.08 + thinking * 0.045), 6);
     });
     arms.forEach(({ shoulder, forearm, side }) => {
       const gesture = speaking ? Math.max(0, Math.sin(time * 1.9 + (side > 0 ? 0 : Math.PI))) * 0.045 : 0;
-      shoulder.rotation.z = ease(shoulder.rotation.z, side * gesture, 4);
-      forearm.rotation.x = ease(forearm.rotation.x, speaking ? Math.sin(time * 1.9) * 0.025 : 0, 4);
+      shoulder.rotation.z = ease(shoulder.rotation.z, side * gesture + (listening ? Math.sin(time * 1.1 + side) * 0.006 : 0), 4);
+      forearm.rotation.x = ease(forearm.rotation.x, speaking ? Math.sin(time * 1.9) * 0.025
+        : listening ? Math.sin(time * 0.85 + side) * 0.008 : 0, 4);
     });
   };
 
