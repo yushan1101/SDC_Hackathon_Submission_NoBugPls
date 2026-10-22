@@ -7,7 +7,7 @@ import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, iss
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { startView, quizView, resumeView, todayView, sdgsView } from "./explore.js";
 import { interviewView } from "./interview.js";
-import { registerView, pricingView, accountView, planName, verifyLinkView } from "./account.js";
+import { registerView, pricingView, accountView, planName, verifyLinkView, forgotView, resetLinkView } from "./account.js";
 import { watchForm } from "./risk.js";
 
 const app = $("#app");
@@ -24,7 +24,7 @@ const S = {
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
 // ---------------------------------------------------------------- boot
-const PUBLIC_PAGES = new Set(["", "start", "signin", "sdgs", "register", "pricing", "verify"]);  // everything else needs an account
+const PUBLIC_PAGES = new Set(["", "start", "signin", "sdgs", "register", "pricing", "verify", "forgot", "reset"]);  // everything else needs an account
 
 async function boot() {
   try {
@@ -88,6 +88,7 @@ async function signIn(next = "start") {
       err, btn,
       h("p", { class: "fine" }, "Accounts are issued by your administrator. Decision support only: plans stay drafts until you approve them."),
       h("p", { class: "fine" }, "Employees and HR advisors both sign in here; HR advisors go straight to the Enterprise console."),
+      h("p", { class: "signin-switch" }, h("a", { href: "#/forgot" }, "Forgot password?")),
       h("p", { class: "signin-switch" }, "No account yet? ", h("a", { href: "#/register" }, "Create one free")))));
   const signals = watchForm(app.querySelector(".signin-form"));
   user.focus();
@@ -144,12 +145,12 @@ history.scrollRestoration = "manual";
 function route() {
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "register", "pricing", "account", "verify"]);
+  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "register", "pricing", "account", "verify", "forgot", "reset"]);
   const interviewStart = requested === "interview" && id === "start" && rest.length === 1 && /^[A-Za-z0-9_-]+$/.test(rest[0]);
   // Unknown routes and malformed nested routes return home instead of showing the wrong page.
-  const verifyLink = requested === "verify" && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
-  if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart && !verifyLink) || (requested === "verify" && !verifyLink) ||
-      (id && !["signin", "plans", "report", "interview", "verify"].includes(requested))) {
+  const verifyLink = ["verify", "reset"].includes(requested) && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
+  if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart && !verifyLink) || (["verify", "reset"].includes(requested) && !verifyLink) ||
+      (id && !["signin", "plans", "report", "interview", "verify", "reset"].includes(requested))) {
     location.replace("#/start");
     return;
   }
@@ -168,6 +169,8 @@ function route() {
     } });
     return;
   }
+  if (page === "forgot") { if (S.me) { location.replace("#/account"); return; } forgotView(app); return; }
+  if (page === "reset") { resetLinkView(app, { username: id, token: rest[0] }); return; }
   if (page === "register") {
     if (S.me) { location.replace("#/account"); return; }
     registerView(app, { onSignedIn: async () => {

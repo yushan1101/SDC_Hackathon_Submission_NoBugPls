@@ -730,29 +730,78 @@ def test_signup_cannot_skip_the_slider(client):
     assert bot.status_code == 422
 
 
-def test_email_link_verifies_and_signs_in_like_claude(client, monkeypatch):
+class FakeSMTP:
+    """Captures emails instead of sending them."""
+    sent = []
+
+    def __init__(self, *a, **k): pass
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def starttls(self): pass
+    def login(self, *a): pass
+    def send_message(self, msg): FakeSMTP.sent.append(msg)
+
+
+def _last_email():
+    import re as _re
+    msg = FakeSMTP.sent[-1]
+    text = msg.get_body(("plain",)).get_content()
+    return _re.search(r"code is (\d{6})", text).group(1), _re.search(r"#/(?:verify|reset)/[^/]+/([A-Za-z0-9_-]+)", text).group(1), msg
+
+
+def _with_email(monkeypatch):
     import server.api as api
     from governance import otp
-    sent = {}
     monkeypatch.setattr(api.cfg, "smtp_host", "smtp.test")
-    monkeypatch.setattr(otp, "smtplib", type("S", (), {"SMTP": lambda *a, **k: (_ for _ in ()).throw(AssertionError("no real SMTP"))}))
-    real_issue = otp.issue
-    def capture(con, cfg, username, email, base_url):
-        import secrets as _s
-        monkeypatch.setattr(otp.secrets, "token_urlsafe", lambda n=24: "LINKTOKEN" + "x" * 20)
-        monkeypatch.setattr(otp.secrets, "randbelow", lambda n: 123456)
-        try:
-            real_issue(con, type("C", (), {"smtp_host": ""})(), username, email, base_url)  # logs instead of sending
-        finally:
-            monkeypatch.setattr(otp.secrets, "token_urlsafe", _s.token_urlsafe)
-        sent.update(username=username, base=base_url)
-        return True
-    monkeypatch.setattr(otp, "issue", capture)
+    monkeypatch.setattr(otp.smtplib, "SMTP", FakeSMTP)
+
+
+def test_email_link_verifies_and_signs_in_like_claude(client, monkeypatch):
+    _with_email(monkeypatch)
     client.cookies.clear()
-    r = _register(client, username="linkuser1", email="linkuser1@example.com")
-    assert r.json()["status"] == "pending_email" and sent["username"] == "linkuser1"
-    assert client.post("/api/register/verify-link", json={"username": "linkuser1", "token": "wrong" * 5}, headers={"X-AP": "1"}).status_code == 422
-    ok = client.post("/api/register/verify-link", json={"username": "linkuser1", "token": "LINKTOKEN" + "x" * 20}, headers={"X-AP": "1"})
-    assert ok.status_code == 200 and ok.json()["status"] == "active" and client.get("/api/me").json()["username"] == "linkuser1"
-    again = client.post("/api/register/verify", json={"username": "linkuser1", "code": "123456"}, headers={"X-AP": "1"})
-    assert again.status_code == 422  # the link used the verification up: the code no longer works
+    r = _register(client, username="linkuser1", email="linkuser1@example.com").json()
+    assert r["status"] == "pending_email" and r["wait_token"]
+    code, link, msg = _last_email()
+    assert msg["To"] == "linkuser1@example.com" and "Verify and sign in" in msg.get_body(("html",)).get_content()
+    # the waiting screen (this browser) keeps asking: not yet
+    poll = lambda: client.post("/api/register/poll", json={"username": "linkuser1", "wait_token": r["wait_token"]}, headers={"X-AP": "1"})
+    assert poll().json()["status"] == "pending_email"
+    # the link is opened somewhere else (another device): that device is signed in
+    from fastapi.testclient import TestClient
+    import server.api as api
+    phone = TestClient(api.app)
+    assert phone.post("/api/register/verify-link", json={"username": "linkuser1", "token": "wrong" * 5}, headers={"X-AP": "1"}).status_code == 422
+    ok = phone.post("/api/register/verify-link", json={"username": "linkuser1", "token": link}, headers={"X-AP": "1"})
+    assert ok.json()["status"] == "active"
+    # ...and the waiting screen notices and signs in here too, once
+    assert poll().json()["status"] == "active" and client.get("/api/me").json()["username"] == "linkuser1"
+    assert poll().status_code == 404
+    assert client.post("/api/register/verify", json={"username": "linkuser1", "code": code}, headers={"X-AP": "1"}).status_code == 422
+
+
+def test_forgot_password_by_code_or_link_without_revealing_accounts(client, monkeypatch):
+    import server.api as api
+    from governance import challenge
+    _with_email(monkeypatch)
+    client.cookies.clear()
+    _register(client, username="forgetful1", email="forgetful1@example.com")  # SMTP on: needs the email code first
+    code, _, _ = _last_email()
+    client.post("/api/register/verify", json={"username": "forgetful1", "code": code}, headers={"X-AP": "1"})
+    def forgot(login, dev="dev-forgot"):
+        cid = client.post("/api/challenge", headers={"X-AP": "1"}).json()["id"]
+        tok = challenge.solve_for_tests(api.db, cid, dev)
+        return client.post("/api/password/forgot", json={"login": login, "challenge_token": tok, "risk": HUMAN | {"device_id": dev}}, headers={"X-AP": "1"})
+    before = len(FakeSMTP.sent)
+    assert forgot("nobody-here@example.com").json() == {"ok": True} and len(FakeSMTP.sent) == before  # same answer, no email
+    assert client.post("/api/password/forgot", json={"login": "forgetful1@example.com"}, headers={"X-AP": "1"}).status_code == 422  # slider required
+    assert forgot("forgetful1@example.com").json() == {"ok": True}
+    code, link, msg = _last_email()
+    assert "Reset your AiversePulse password" in msg["Subject"]
+    new = "Brand-New-Pass7"
+    assert client.post("/api/password/reset", json={"login": "forgetful1@example.com", "code": "000000", "password": new}, headers={"X-AP": "1"}).status_code == 422
+    assert client.post("/api/password/reset", json={"login": "forgetful1@example.com", "code": code, "password": new}, headers={"X-AP": "1"}).json()["ok"]
+    assert client.get("/api/me").status_code == 401  # signed out everywhere
+    assert client.post("/api/login", json={"username": "forgetful1", "password": new, "risk": HUMAN}, headers={"X-AP": "1"}).status_code == 200
+    forgot("forgetful1")  # by username, then the link
+    _, link, _ = _last_email()
+    assert client.post("/api/password/reset", json={"username": "forgetful1", "token": link, "password": "Another-Pass88"}, headers={"X-AP": "1"}).json()["ok"]
