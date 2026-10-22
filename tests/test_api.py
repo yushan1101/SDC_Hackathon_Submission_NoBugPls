@@ -569,8 +569,13 @@ def _admin(c):
 
 
 def _register(c, **over):
+    import server.api as api
+    from governance import challenge
     body = {"username": "newbie1", "email": "newbie1@example.com", "password": PW, "account_type": "individual"} | over
     body.setdefault("risk", HUMAN | {"device_id": f"dev-{body['username']}"})  # each test person on their own device
+    if "challenge_token" not in body:  # solve a real slider puzzle, like a person dragging
+        cid = c.post("/api/challenge", headers={"X-AP": "1"}).json()["id"]
+        body["challenge_token"] = challenge.solve_for_tests(api.db, cid, (body["risk"] or {}).get("device_id", ""))
     return c.post("/api/register", json=body, headers={"X-AP": "1"})
 
 
@@ -705,3 +710,49 @@ def test_pages_link_versioned_assets_and_csp_allows_only_that_import_map(client)
         assert '"/js/lib.js":"/js/lib.js?v=' in imap
         assert "'sha256-" + base64.b64encode(hashlib.sha256(imap.encode()).digest()).decode() + "'" in csp
         assert "'unsafe-inline'" not in csp.split("script-src")[1].split(";")[0]  # no other inline script allowed
+
+
+def test_signup_cannot_skip_the_slider(client):
+    import server.api as api
+    from governance import challenge
+    client.cookies.clear()
+    assert _register(client, username="skipper1", email="skipper1@example.com", challenge_token="").status_code == 422
+    cid = client.post("/api/challenge", headers={"X-AP": "1"}).json()["id"]
+    token = challenge.solve_for_tests(api.db, cid, "dev-skipper2")
+    assert _register(client, username="skipper2", email="skipper2@example.com", challenge_token=token).status_code == 200
+    assert _register(client, username="skipper3", email="skipper3@example.com", challenge_token=token).status_code == 422  # used
+    cid = client.post("/api/challenge", headers={"X-AP": "1"}).json()["id"]
+    other = challenge.solve_for_tests(api.db, cid, "someone-elses-device")
+    assert _register(client, username="skipper4", email="skipper4@example.com", challenge_token=other).status_code == 422
+    ch = client.post("/api/challenge", headers={"X-AP": "1"}).json()
+    assert ch["track"].startswith("data:image/png;base64,") and "target" not in str(ch.keys())
+    bot = client.post(f"/api/challenge/{ch['id']}/verify", json={"x": 150, "trail": [[0, 0], [10, 150]]}, headers={"X-AP": "1"})
+    assert bot.status_code == 422
+
+
+def test_email_link_verifies_and_signs_in_like_claude(client, monkeypatch):
+    import server.api as api
+    from governance import otp
+    sent = {}
+    monkeypatch.setattr(api.cfg, "smtp_host", "smtp.test")
+    monkeypatch.setattr(otp, "smtplib", type("S", (), {"SMTP": lambda *a, **k: (_ for _ in ()).throw(AssertionError("no real SMTP"))}))
+    real_issue = otp.issue
+    def capture(con, cfg, username, email, base_url):
+        import secrets as _s
+        monkeypatch.setattr(otp.secrets, "token_urlsafe", lambda n=24: "LINKTOKEN" + "x" * 20)
+        monkeypatch.setattr(otp.secrets, "randbelow", lambda n: 123456)
+        try:
+            real_issue(con, type("C", (), {"smtp_host": ""})(), username, email, base_url)  # logs instead of sending
+        finally:
+            monkeypatch.setattr(otp.secrets, "token_urlsafe", _s.token_urlsafe)
+        sent.update(username=username, base=base_url)
+        return True
+    monkeypatch.setattr(otp, "issue", capture)
+    client.cookies.clear()
+    r = _register(client, username="linkuser1", email="linkuser1@example.com")
+    assert r.json()["status"] == "pending_email" and sent["username"] == "linkuser1"
+    assert client.post("/api/register/verify-link", json={"username": "linkuser1", "token": "wrong" * 5}, headers={"X-AP": "1"}).status_code == 422
+    ok = client.post("/api/register/verify-link", json={"username": "linkuser1", "token": "LINKTOKEN" + "x" * 20}, headers={"X-AP": "1"})
+    assert ok.status_code == 200 and ok.json()["status"] == "active" and client.get("/api/me").json()["username"] == "linkuser1"
+    again = client.post("/api/register/verify", json={"username": "linkuser1", "code": "123456"}, headers={"X-AP": "1"})
+    assert again.status_code == 422  # the link used the verification up: the code no longer works

@@ -7,7 +7,7 @@ import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, iss
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { startView, quizView, resumeView, todayView, sdgsView } from "./explore.js";
 import { interviewView } from "./interview.js";
-import { registerView, pricingView, accountView, planName } from "./account.js";
+import { registerView, pricingView, accountView, planName, verifyLinkView } from "./account.js";
 import { watchForm } from "./risk.js";
 
 const app = $("#app");
@@ -24,7 +24,7 @@ const S = {
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
 // ---------------------------------------------------------------- boot
-const PUBLIC_PAGES = new Set(["", "start", "signin", "sdgs", "register", "pricing"]);  // everything else needs an account
+const PUBLIC_PAGES = new Set(["", "start", "signin", "sdgs", "register", "pricing", "verify"]);  // everything else needs an account
 
 async function boot() {
   try {
@@ -144,11 +144,12 @@ history.scrollRestoration = "manual";
 function route() {
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "register", "pricing", "account"]);
+  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "register", "pricing", "account", "verify"]);
   const interviewStart = requested === "interview" && id === "start" && rest.length === 1 && /^[A-Za-z0-9_-]+$/.test(rest[0]);
   // Unknown routes and malformed nested routes return home instead of showing the wrong page.
-  if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart) ||
-      (id && !["signin", "plans", "report", "interview"].includes(requested))) {
+  const verifyLink = requested === "verify" && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
+  if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart && !verifyLink) || (requested === "verify" && !verifyLink) ||
+      (id && !["signin", "plans", "report", "interview", "verify"].includes(requested))) {
     location.replace("#/start");
     return;
   }
@@ -158,6 +159,13 @@ function route() {
   const page = S.jumpToday ? "start" : requested;
   if (!S.me && !PUBLIC_PAGES.has(page)) {
     location.replace(`#/signin/${hash.slice(2)}`);
+    return;
+  }
+  if (page === "verify") {  // the link from the sign-up email: confirm and sign in
+    verifyLinkView(app, { username: id, token: rest[0], onSignedIn: async () => {
+      S.me = await api("/api/me"); S.meta = await api("/api/meta");
+      history.replaceState(null, "", "#/start"); shell(); toast("Email verified. Welcome!"); route();
+    } });
     return;
   }
   if (page === "register") {

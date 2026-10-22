@@ -3,7 +3,7 @@
 // automation flag, and how the form was filled (time, key count, pastes). Never the typed values.
 const KEY = "ap.device";
 
-function deviceId() {
+export function deviceId() {
   try {
     let id = localStorage.getItem(KEY);
     if (!id) { id = crypto.randomUUID(); localStorage.setItem(KEY, id); }
