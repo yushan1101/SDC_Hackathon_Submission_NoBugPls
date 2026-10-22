@@ -1,6 +1,5 @@
 // AiversePulse (public users): sign-in, plan builder, chat-style streaming report, plans.
 import "./motion.js";  // GSAP animations for whatever the app renders
-import "./smooth-wheel.js";  // Ease discrete desktop mouse-wheel ticks
 import { jobIcon } from "./jobicons.js";
 import { api, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP, GROW } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
@@ -95,7 +94,7 @@ async function signIn(next = "start") {
       h("tbody", {}, sp.skills.map(([k, v], i) => h("tr", {},
         h("td", {}, k), h("td", { class: "num" }, `${v.toFixed(2)}`),
         h("td", { style: { width: "55%" } }, reveal(h("div", { class: "bar", style: { width: `${(v / max) * 100}%`, "transform-origin": "left" } }), GROW, { duration: 900, delay: i * 90 }))))));
-    specimen.after(h("p", { class: "muted", style: { "font-size": "13px" } }, `Most important skills for ${sp.role} (ESCO), predicted importance out of 5. Works the same for any of ~3,000 occupations.`));
+    specimen.after(h("p", { class: "muted signin-note", style: { "font-size": "13px" } }, `Most important skills for ${sp.role} (ESCO), predicted importance out of 5. Works the same for any of ~3,000 occupations.`));
   } catch { /* specimen is decorative context; the form works without it */ }
 }
 
@@ -168,7 +167,6 @@ function route() {
   });
   const main = $("#main");
   if (main.classList.contains("home-page")) homeScrollTop = window.scrollY;
-  main._homeObserver?.disconnect();
   main.classList.toggle("home-page", page === "start");
   if (page === "report") reportView(main, id);
   else if (page === "plans" && id) planDetail(main, id);

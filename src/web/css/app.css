@@ -905,7 +905,7 @@ html { scroll-padding-top: 88px; }
 
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   .way { transition: transform var(--t-slow) var(--ease-out), box-shadow var(--t-slow) var(--ease-out); }
-  .way:hover { transform: translateY(-4px); box-shadow: 0 28px 48px -30px oklch(0.25 0.06 262 / 0.5); }
+  .way:hover { box-shadow: 0 28px 48px -30px oklch(0.25 0.06 262 / 0.5); }
 }
 @media (max-width: 899px) {
   .home-ways { grid-template-columns: 1fr; }
@@ -1830,23 +1830,6 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
   a { color: inherit; }
 }
 
-/* ---------- scroll reveal (home page) ---------- */
-.reveal {
-  opacity: 0; translate: 0 48px; scale: .97;
-  transition:
-    opacity 900ms cubic-bezier(.22, 1, .36, 1) var(--d, 0ms),
-    translate 900ms cubic-bezier(.22, 1, .36, 1) var(--d, 0ms),
-    scale 900ms cubic-bezier(.22, 1, .36, 1) var(--d, 0ms),
-    transform var(--t-slow, 400ms) var(--ease-out, ease),
-    box-shadow var(--t-slow, 400ms) var(--ease-out, ease),
-    border-color var(--t-fast, 150ms) ease,
-    background var(--t-fast, 150ms) ease;
-}
-.reveal.is-visible { opacity: 1; translate: 0 0; scale: 1; }
-.way.reveal { translate: 0 72px; }
-@media (prefers-reduced-motion: reduce) {
-  .reveal { opacity: 1; translate: none; scale: none; transition-duration: 0ms !important; }
-}
 /* HR queue management */
 .review-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--rule); }
 .review-tools .input { min-width: 0; width: 100%; }
@@ -1866,3 +1849,6 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
 .tag.archived { background: var(--sunken); color: var(--ink-2); }
 .plan-status-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .plan-status-control .input { width: auto; min-width: 112px; }
+
+/* sign-in on desktop: no small print (fine print under the button, caption under the skills table) */
+@media (min-width: 900px) { .signin-form .fine, .signin-note { display: none; } }

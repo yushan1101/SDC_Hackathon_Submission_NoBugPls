@@ -169,7 +169,7 @@ def test_public_stream_and_approval(client):
     import re
     assert all(c in known for c in re.findall(r"\[([^\[\]]{3,120})\]", text))
     meta_ev = next(e for e in ev if e["t"] == "meta")["evidence"]
-    assert all(e["id"].split(":")[0] in ("esco", "learn", "stfkan", "signal", "sdg") for e in meta_ev)  # public sources only
+    assert all(e["id"].split(":")[0] in ("esco", "learn", "stfkan", "signal", "sdg", "live") for e in meta_ev)  # public sources only (live = today's job postings / HN)
     pid = ev[-1]["plan_id"]
     assert client.post(f"/api/plans/{pid}/approve", json={"version": 1, "confirmed": False}, headers={"X-AP": "1"}).status_code == 409
     assert client.post(f"/api/plans/{pid}/approve", json={"version": 1, "confirmed": True}, headers={"X-AP": "1"}).json()["status"] == "approved"

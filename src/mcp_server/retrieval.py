@@ -48,8 +48,11 @@ def warm():
     _embed(["warm up"])
 
 
+AUTO_WARM = True  # the API sets this from WARM_ON_START; off = never load the encoder behind a request
+
+
 def warm_in_background():
-    if not _STARTED.is_set():
+    if AUTO_WARM and not _STARTED.is_set():
         _STARTED.set()
         threading.Thread(target=lambda: _safe(warm), daemon=True).start()
 

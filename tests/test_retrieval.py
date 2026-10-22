@@ -37,9 +37,11 @@ def test_vector_search_after_warmup():
     pytest.importorskip("sentence_transformers")
     from mcp_server import retrieval
     try:
-        retrieval._collection()
+        filled = retrieval._collection().count() > 0
     except Exception:
-        pytest.skip("no Chroma index built (CI): offline path covered elsewhere")
+        filled = False
+    if not filled or retrieval.BUILDING.is_set():
+        pytest.skip("no filled Chroma index (CI): the offline path is covered elsewhere")
     retrieval.warm()
     hits, mode = retrieval.search("caring for hospital patients", {"category": "occupation"}, 5)
     assert mode == "vector" and len(hits) == 5
