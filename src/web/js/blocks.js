@@ -157,7 +157,7 @@ export function issuesBlock(issues) {
 }
 
 /** Editable 30/60/90 plan with approval. Talks to /api/plans/:id. Calls onChange(status) after saves. */
-export function planBlock({ planId, plan, version, status, weeklyHours, onChange, approverLabel = "I have reviewed this plan and approve it", title = "Your 90-day plan",
+export function planBlock({ planId, planReference, plan, version, status, weeklyHours, onChange, approverLabel = "I have reviewed this plan and approve it", title = "Your 90-day plan",
   progress = [], evidence = null }) {
   // progress: activities ticked off as done ("<days>:<skill>", saved on the server); evidence: id -> {title, url} for course links
   const done = new Set(progress);
@@ -274,6 +274,7 @@ export function planBlock({ planId, plan, version, status, weeklyHours, onChange
   }
   return reveal(h("section", { class: "block plan-block", "aria-label": "30, 60, 90 day plan" },
     h("h3", {}, title),
+    planId ? h("p", { class: "muted mono" }, `Plan ID: ${planReference || planId}`) : null,
     plan.deferred_skills?.length ? h("details", { class: "note deferred" },
       h("summary", {}, `${plan.deferred_skills.length} more skills don't fit in ${weeklyHours ? weeklyHours + " h/week" : "the weekly hours"}; the plan covers the highest-priority gaps first.`),
       h("p", {}, plan.deferred_skills.join(", "))) : null,

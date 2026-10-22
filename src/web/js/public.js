@@ -1,7 +1,7 @@
 // AiversePulse (public users): sign-in, plan builder, chat-style streaming report, plans.
 import "./motion.js";  // GSAP animations for whatever the app renders
 import { jobIcon } from "./jobicons.js";
-import { api, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP } from "./lib.js";
+import { api, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP, SCENARIO_HELP } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
 import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
@@ -314,8 +314,8 @@ function buildView(main) {
   const hoursIn = h("input", { type: "number", min: "0.5", max: "80", step: "0.5", value: p.weekly_learning_hours, "aria-label": "Hours per week",
     onchange: () => { p.weekly_learning_hours = Math.min(80, Math.max(0.5, Number(hoursIn.value) || 6)); hoursIn.value = p.weekly_learning_hours; saveProfile(); steps[2].dataset.done = "true"; } });
   const bump = (d) => { hoursIn.value = Math.min(80, Math.max(0.5, Number(hoursIn.value) + d)); hoursIn.dispatchEvent(new Event("change")); };
-  const scen = (key, title, note) => h("label", {},
-    h("input", { type: "radio", name: "scenario", value: key, checked: p.scenario === key ? true : null, onchange: () => { p.scenario = key; saveProfile(); steps[3].dataset.done = "true"; } }),
+  const scen = (key, title, note) => h("label", { title: SCENARIO_HELP[key] },
+    h("input", { type: "radio", name: "scenario", value: key, "aria-description": SCENARIO_HELP[key], checked: p.scenario === key ? true : null, onchange: () => { p.scenario = key; saveProfile(); steps[3].dataset.done = "true"; } }),
     h("b", {}, title), h("span", { class: "muted" }, note));
 
   main.replaceChildren(
@@ -335,8 +335,8 @@ function buildView(main) {
             h("button", { type: "button", "aria-label": "More hours", onclick: () => bump(1) }, "+")), h("span", { class: "muted" }, "hours / week"))),
         h("section", { class: "form-section" }, h("h2", {}, "How will AI change this job?"),
           h("div", { class: "scenario" },
-            scen("assistive", "Assistive AI", "AI helps with today's work. Required levels are estimates."),
-            scen("agentic", "Agentic AI", "AI agents handle routine work, so judgement and oversight skills matter more. Based on our assumptions."))),
+            scen("assistive", "Assistive AI", "You do the work. AI helps you."),
+            scen("agentic", "Agentic AI", "AI handles routine tasks. You guide it and check the results. Assumed future scenario."))),
         h("div", { class: "build-actions" }, h("button", { class: "btn primary", type: "submit" }, "Analyse my skills", icon("send"))))));
   drawRows();
   if (p.target_role) choose(p.target_role).catch(() => {});
@@ -408,7 +408,8 @@ async function loadHistory() {
     ...(plans.length ? plans.map((p) => h("a", { class: "core-item", href: `#/report/${p.plan_id}`, onclick: () => S.history.hidePopover?.() },
       h("span", { class: "core-ic" }, icon("report")),
       h("span", { class: "core-t" }, h("b", {}, p.target_role || "Plan"),
-        h("span", {}, `${p.scenario === "agentic" ? "Agentic" : "Assistive"} AI · ${fmtTime(p.created_utc)} · v${p.version}`)),
+        h("span", {}, `${p.scenario === "agentic" ? "Agentic" : "Assistive"} AI · ${fmtTime(p.created_utc)} · v${p.version}`),
+        h("span", { class: "mono" }, `Plan ID: ${p.plan_reference || p.plan_id}`)),
       h("span", { class: `tag ${p.status}` }, p.status)))
       : [h("p", { class: "muted", style: { padding: "8px 12px" } }, "No chats yet.")]));  // spread: replaceChildren does not flatten
 }
@@ -503,7 +504,7 @@ async function openConversation(id) {
       add(r.signals ? signalsBlock(r.signals) : null, true);
       add(r.sdgs?.length ? sdgBlock(r.sdgs) : null, true);
       add(r.issues?.some((x) => x.severity === "error") ? issuesBlock(r.issues.filter((x) => x.severity === "error")) : null);
-      body.append(planHolder(id, d.plan, r.request?.weekly_learning_hours ?? S.profile.weekly_learning_hours, d.status, d.progress));
+      body.append(planHolder(id, d.plan, r.request?.weekly_learning_hours ?? S.profile.weekly_learning_hours, d.status, d.progress, d.plan_reference));
     }
     return [h("div", { class: "turn-user" }, h("p", { class: "q" }, t.q || `Plan for ${t.title || title}`)),
       h("article", { class: "turn-owl" }, new Owl({ size: 44, state: "idle" }).el,
@@ -634,7 +635,7 @@ async function runTurn(params) {
         const el = ev.kind === "changes" ? changesBlock(d) : ev.kind === "gaps" ? gapsBlock(d) : ev.kind === "comparison" ? comparisonBlock(d, p.scenario)
           : ev.kind === "outlook" ? outlookBlock(d) : ev.kind === "signals" ? signalsBlock(d) : ev.kind === "sdgs" ? sdgBlock(d)
           : ev.kind === "issues" ? issuesBlock(d.filter((i) => i.severity === "error"))
-          : ev.kind === "plan" ? planHolder(planId, d, p.weekly_learning_hours, meta?.status || "draft") : null;
+          : ev.kind === "plan" ? planHolder(planId, d, p.weekly_learning_hours, meta?.status || "draft", [], meta?.plan_reference) : null;
         if (el && ["outlook", "signals", "sdgs"].includes(ev.kind)) {  // three small insight cards share one row
           insights ??= body.appendChild(h("div", { class: "insights" }));
           insights.append(el);
@@ -659,10 +660,10 @@ async function runTurn(params) {
   }
 }
 
-function planHolder(planId, plan, hours, status, progress = []) {
+function planHolder(planId, plan, hours, status, progress = [], planReference) {
   const holder = h("div");
   const render = async (st, version) => {
-    holder.replaceChildren(planBlock({ planId, plan, version, status: st, weeklyHours: hours, progress, evidence: S.evidence, onChange: async (next) => {
+    holder.replaceChildren(planBlock({ planId, planReference, plan, version, status: st, weeklyHours: hours, progress, evidence: S.evidence, onChange: async (next) => {
       const fresh = await api(`/api/plans/${planId}`);
       plan = fresh.plan; progress = fresh.progress || [];
       render(fresh.status, fresh.version);
@@ -715,11 +716,12 @@ async function plansView(main) {
   function draw() {
     listEl.replaceChildren(...list.map((pl) => h("div", { class: "plan-item-row" },
       pl.audience === "individual" ? h("input", { class: "plan-select", type: "checkbox", checked: selected.has(pl.plan_id),
-        "aria-label": `Select ${pl.target_title || pl.target_role || "plan"}`,
+        "aria-label": `Select ${pl.target_title || pl.target_role || "plan"}, plan ID ${pl.plan_reference || pl.plan_id}`,
         onchange: (e) => { if (e.target.checked) selected.add(pl.plan_id); else selected.delete(pl.plan_id); syncToolbar(); } }) : h("span", { class: "plan-select-spacer", "aria-hidden": "true" }),
       h("a", { class: "plan-item-main", href: `#/plans/${pl.plan_id}` },
         h("div", {}, h("div", { class: "t" }, pl.target_title || pl.target_role || "Plan", pl.audience === "hr" ? h("span", { class: "muted" }, " · from HR") : null),
-          h("div", { class: "m" }, `${pl.scenario || ""} · v${pl.version} · ${new Date(pl.created_utc).toLocaleDateString()}`)),
+          h("div", { class: "m" }, `${pl.scenario || ""} · v${pl.version} · ${new Date(pl.created_utc).toLocaleDateString()}`),
+          h("div", { class: "m" }, `Plan ID: ${pl.plan_reference || pl.plan_id}`)),
         h("span", { class: `tag ${pl.status}` }, pl.status)))));
     syncToolbar();
   }
@@ -751,7 +753,7 @@ async function planDetail(main, id, focusPlan = false) {
         h("h2", {}, "Your learning roadmap")), h("span", { class: `tag ${d.status}` }, d.status)),
       h("p", { class: "plan-hero-copy" }, approved ? "Your approved plan is ready. Follow the phases below to put it into action." : "Your learning plan, organized into three practical phases."),
       h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days"), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`))),
-    planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence,
+    planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence,
       title: approved ? "Your approved 90-day plan" : "Your proposed 90-day plan",
       onChange: () => planDetail(main, id, true) }));
   let expanded = !approved;
@@ -769,7 +771,7 @@ async function planDetail(main, id, focusPlan = false) {
     } }, expanded ? "Hide report" : "View report");
   const disclosure = h("section", { class: "plan-report", "data-expanded": String(expanded), "aria-label": "Analysis report" },
     h("div", { class: "plan-report-heading" }, h("h2", {}, "Analysis report"), toggle), panel);
-  const blocks = h("div", { class: "body", style: { "max-width": "760px" } },
+  const blocks = h("div", { class: "body plan-detail-body" },
     ...(approved ? [planFocus, disclosure] : [disclosure, planFocus]),
     d.audience === "hr" && d.status === "approved" ? h("div", { class: "approve-bar" }, h("span", {}, "Your HR advisor approved this plan."),
       h("button", { class: "btn primary", onclick: async () => { await api(`/api/plans/${id}/acknowledge`, { method: "POST" }); toast("Acknowledged"); planDetail(main, id); } }, "Acknowledge")) : null,
@@ -781,7 +783,7 @@ async function planDetail(main, id, focusPlan = false) {
     print();
   } }, icon("file"), "Download PDF");
   main.replaceChildren(h("div", { class: "plan-top-actions no-print" }, h("a", { href: "#/plans", class: "btn ghost sm" }, icon("back"), "All plans"), pdf),
-    h("h1", { class: "page-title", style: { "margin-top": "12px" } }, r?.occupation?.title || d.plan.target_role), blocks);
+    h("h1", { class: "page-title plan-detail-title", style: { "margin-top": "12px" } }, r?.occupation?.title || d.plan.target_role), blocks);
   if (focusPlan) planFocus.focus({ preventScroll: true });
 }
 

@@ -1143,7 +1143,9 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
             with DB_LOCK:
                 pid = approval.create(db, out["plan"], user["employee_id"], "individual", out["issues"])
             remember(pid, final, thread)
-        yield sse({"t": "meta", "route": out["route"], "status": out["status"], "plan_id": pid,
+        with DB_LOCK:
+            plan_reference = approval.reference(db, pid) if pid else None
+        yield sse({"t": "meta", "route": out["route"], "status": out["status"], "plan_id": pid, "plan_reference": plan_reference,
                    "usage": out["usage"], "retrieval": out["retrieval"], "evidence": out["evidence"],
                    "target_role": req.target_role, "occupation": out["occupation"], "scenario": req.scenario})
         yield sse({"t": "owl", "state": "update", "say": "Writing your briefing"})

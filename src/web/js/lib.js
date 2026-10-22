@@ -5,6 +5,12 @@ export const API_BASE = (globalThis.AP_CONFIG?.apiBase || "").replace(/\/+$/, ""
 const CREDS = API_BASE ? "include" : "same-origin";  // cross-origin API needs credentials: include (+ CORS allowlist)
 export const apiUrl = (path) => API_BASE + path;
 
+// Shared explanations for the AI scenario selectors.
+export const SCENARIO_HELP = {
+  assistive: "You do the work, and AI helps with suggestions and drafts. Your learning plan focuses on the skills needed to do the job with AI support.",
+  agentic: "AI handles routine tasks, and you guide it and check the results. Your learning plan focuses more on decision-making and reviewing AI's work. This is an assumed future scenario.",
+};
+
 export class ApiError extends Error {
   constructor(status, detail, body) {
     // FastAPI validation errors arrive as a list of {loc, msg}; show them as one readable sentence
@@ -164,7 +170,14 @@ export function toast(msg, kind = "") {
 export const fmtTime = (iso) => {
   if (!iso) return "";
   const d = new Date(iso);
-  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+  return d.toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 };
 
 export const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
