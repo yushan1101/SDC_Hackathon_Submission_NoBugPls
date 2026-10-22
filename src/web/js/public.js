@@ -1,5 +1,6 @@
 // AiversePulse (public users): sign-in, plan builder, chat-style streaming report, plans.
 import "./motion.js";  // GSAP animations for whatever the app renders
+import "./smooth-wheel.js";  // Ease discrete desktop mouse-wheel ticks
 import { jobIcon } from "./jobicons.js";
 import { api, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP, GROW } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
