@@ -8,7 +8,7 @@ const LABELS = {
 const TYPES = { behavioral: "HR / behavioral", technical: "Technical", situational: "Situational",
   problem_solving: "Problem-solving", workplace_scenario: "Workplace scenario" };
 const pct = (n) => `${Math.max(0, Math.min(100, Math.round(Number(n) || 0)))}%`;
-export async function interviewView(main, interviewId, recommendationId = null) {
+export async function interviewView(main, interviewId, recommendationId = null, callbacks = {}) {
   main.replaceChildren(h("div", { class: "interview-loading", role: "status" }, "Preparing your interview workspace…"));
   try {
     if (recommendationId) {
@@ -21,8 +21,14 @@ export async function interviewView(main, interviewId, recommendationId = null) 
     }
     if (interviewId) {
       const detail = await api(`/api/interviews/${encodeURIComponent(interviewId)}`);
-      if (detail.status === "in_progress" && detail.question) { renderRoom(main, detail); return; }
-      if (detail.report) { await renderReport(main, detail.report); return; }
+      if (["in_progress", "paused"].includes(detail.status) && detail.question) {
+        if (detail.status === "paused") {
+          await api(`/api/interviews/${encodeURIComponent(interviewId)}/resume`, { method: "POST", body: {} });
+          detail.status = "in_progress";
+        }
+        renderRoom(main, detail, null, callbacks); return;
+      }
+      if (detail.report) { await renderReport(main, detail.report, callbacks); return; }
       renderEnded(main, detail); return;
     }
     const history = await api("/api/interviews");
@@ -52,15 +58,18 @@ function renderHistory(main, history) {
       const completed = item.status === "completed";
       const source = item.assessment_source === "resume" ? "Resume recommendation"
         : item.assessment_source === "questionnaire" ? "Quick Match" : "Earlier session";
+      const resumable = ["in_progress", "paused"].includes(item.status);
+      const statusLabel = item.status === "in_progress" ? "In progress" : item.status.replaceAll("_", " ");
       return h("li", { class: "interview-history-item" },
         h("div", { class: "interview-history-role" }, h("b", {}, item.role_title),
-          h("span", {}, `${item.interview_type || "AI mock interview"} · ${source} · ${fmtTime(item.created_utc)} · ${item.difficulty}`)),
+          h("span", {}, `${item.interview_type || "AI mock interview"} · ${source} · ${fmtTime(item.created_utc)} · ${item.difficulty}`),
+          resumable ? h("small", { class: "muted" }, `Question ${item.question_number || 1} · Stage ${Math.min((item.stage_index || 0) + 1, item.total_stages || 5)} of ${item.total_stages || 5}`) : null),
         h("div", { class: "interview-history-scores" },
           h("span", {}, h("small", {}, "Performance"), h("b", { class: "num" }, item.performance == null ? "—" : pct(item.performance))),
           h("span", {}, h("small", {}, "Job readiness"), h("b", { class: "num" }, item.readiness == null ? "—" : pct(item.readiness)))),
-        h("span", { class: `tag interview-history-status ${completed ? "" : "pending"}` }, item.status.replaceAll("_", " ")),
+        h("span", { class: `tag interview-history-status ${completed ? "" : "pending"}` }, statusLabel),
         h("div", { class: "interview-history-actions" },
-          h("a", { class: "btn ghost sm", href: `#/interview/${item.interview_id}` }, completed ? "View report" : "Resume"),
+          h("a", { class: "btn ghost sm", href: `#/interview/${item.interview_id}` }, completed ? "View report" : resumable ? "Resume interview" : "View details"),
           h("button", { class: "btn ghost sm", type: "button", "aria-label": `Delete attempt for ${item.role_title}`,
             onclick: async () => { if (!confirm("Delete this interview and its saved transcript?")) return;
               try { await api(`/api/interviews/${item.interview_id}`, { method: "DELETE" }); location.reload(); }
@@ -114,11 +123,11 @@ function renderLaunch(main, recommendation, plans) {
       h("a", { class: "btn ghost", href: "#/interview" }, "Back to interview history")));
 }
 
-function renderRoom(main, detail, initial = null) {
+function renderRoom(main, detail, initial = null, callbacks = {}) {
   const sessionId = detail.interview_id;
   let current = initial?.question || detail.question;
   let source = initial?.source || detail.source;
-  let number = initial?.question_number || 1;
+  let number = initial?.question_number || detail.question_number || 1;
   let stageIndex = initial?.stage_index ?? detail.stage_index ?? 0;
   const total = initial?.total_stages || 5;
   const previousBodyOverflow = document.body.style.overflow;
@@ -130,6 +139,7 @@ function renderRoom(main, detail, initial = null) {
   const skillChips = h("div", { class: "chips" });
   const transcript = h("textarea", { class: "input interview-answer", rows: 5, maxlength: 4000,
     placeholder: "Type your answer here, or record an answer and review the transcript.", "aria-label": "Your answer" });
+  transcript.value = detail.draft_answer || "";
   const responseFeedback = h("div", { class: "interview-answer-feedback", hidden: true });
   const answerBtn = h("button", { class: "btn primary", type: "submit", "aria-label": "Confirm and send answer" }, "Send answer");
   const startBtn = h("button", { class: "btn primary", type: "button", "aria-label": "Start answer recording" }, "Start");
@@ -507,7 +517,7 @@ function renderRoom(main, detail, initial = null) {
       showEvaluation(responseFeedback, result.evaluation);
       transcript.value = "";
       recordedText = ""; recordingAttempted = false; resetDuration();
-      if (result.status === "completed") { dispose(); await renderReport(main, result.report); return; }
+      if (result.status === "completed") { dispose(); await renderReport(main, result.report, callbacks); return; }
       stageIndex = result.stage_index;
       setQuestion(result.question, result.question_number, result.source);
     } catch (e) { setMicState("captured", "Answer captured · review or edit before sending"); toast(e.message, "err"); }
@@ -531,10 +541,22 @@ function renderRoom(main, detail, initial = null) {
   repeat.textContent = "Replay question";
   voicePanel.querySelector(".interview-voice-controls").append(repeat, pause);
   const end = h("button", { class: "interview-exit-button", type: "button", onclick: async () => {
-    if (!confirm("End this interview now? Ending early saves your answers but does not create an assessment.")) return;
-    dispose();
-    try { await api(`/api/interviews/${sessionId}/end`, { method: "POST", body: {} }); location.hash = "#/interview"; }
-    catch (e) { toast(e.message, "err"); }
+    end.disabled = true; end.textContent = "Saving…";
+    try {
+      const pendingTranscript = interimText.trim();
+      if (recording || micStream) await finishRecording(false, false);
+      if (pendingTranscript && !transcript.value.toLocaleLowerCase().includes(pendingTranscript.toLocaleLowerCase())) {
+        transcript.value = [transcript.value.trim(), pendingTranscript].filter(Boolean).join(" ").slice(0, 4000);
+      }
+      window.speechSynthesis?.cancel(); currentUtterance = null; interviewerSpeaking = false; speechCue = null;
+      await api(`/api/interviews/${sessionId}/pause`, { method: "POST", body: { draft_answer: transcript.value.slice(0, 4000) } });
+      const destination = detail.assessment_source === "questionnaire" ? "#/quiz" : "#/resume";
+      dispose(); location.hash = destination;
+      toast("Progress saved. Resume this interview from Interview History when you’re ready.");
+    } catch (e) {
+      end.disabled = false; end.textContent = "Exit";
+      toast(`Could not save your interview progress. You are still in the interview. ${e.message}`, "err");
+    }
   } }, "Exit");
   const onEscape = (event) => { if (event.key === "Escape") { event.preventDefault(); end.click(); } };
   document.addEventListener("keydown", onEscape);
@@ -586,8 +608,10 @@ function showEvaluation(host, evaluation) {
         h("span", { class: "num" }, score == null ? "Not assessed" : `${score}/4`)))));
 }
 
-async function renderReport(main, report) {
+async function renderReport(main, report, callbacks = {}) {
   const history = (await api("/api/interviews").catch(() => ({ interviews: [] }))).interviews || [];
+  const currentAttempt = history.find((x) => x.interview_id === report.interview_id);
+  const assessmentSource = report.assessment_source || currentAttempt?.assessment_source;
   const comparable = history.filter((x) => x.status === "completed" && x.role_id === report.role_id && x.interview_id !== report.interview_id)
     .sort((a, b) => String(a.created_utc).localeCompare(String(b.created_utc)));
   const previous = comparable.at(-1);
@@ -632,6 +656,35 @@ async function renderReport(main, report) {
         h("p", { class: "muted" }, `Related plan activities: ${activities.map((a) => `${a.skill_id} (${a.day_range})`).join(" · ")}`));
     } catch { /* preserve the link if the saved plan is temporarily unavailable */ }
   }
+  const planStatus = h("p", { class: "fine", role: "status", "aria-live": "polite" });
+  const planForRole = h("button", { class: "btn primary", type: "button", onclick: async () => {
+    planForRole.disabled = true;
+    planStatus.textContent = "Checking for an existing plan for this role…";
+    try {
+      if (!report.role_id) throw new Error("This interview report is missing its role ID, so a role-specific plan cannot be opened.");
+      const plans = await api("/api/plans");
+      const existing = (Array.isArray(plans) ? plans : []).find((p) => p.plan_id === report.plan_id)
+        || (Array.isArray(plans) ? plans : []).find((p) => p.audience === "individual" && p.target_role === report.role_id);
+      if (existing) { location.hash = `#/plans/${encodeURIComponent(existing.plan_id)}`; return; }
+      if (!callbacks.onPlan) throw new Error("The learning-plan workflow is unavailable. Please try again from your career results.");
+      const priorities = [...(report.gaps || []).map((x) => x.name || x.skill), ...(report.recommendations || []).map((x) => x.skill)]
+        .filter(Boolean).filter((name, index, all) => all.findIndex((x) => String(x).toLowerCase() === String(name).toLowerCase()) === index).slice(0, 8);
+      const query = priorities.length
+        ? `Create a personalized learning plan for ${report.role_title}. Prioritize these interview-identified improvement areas: ${priorities.join(", ")}.`
+        : `Create a personalized learning plan for ${report.role_title} based on the employee's demonstrated interview performance and role profile.`;
+      planStatus.textContent = "Opening the personalized plan workflow…";
+      callbacks.onPlan({ role_id: report.role_id, role_title: report.role_title }, report.profile || [], query);
+    } catch (e) {
+      planStatus.textContent = e.message || "Could not open the learning plan. Please retry.";
+      planForRole.disabled = false;
+    }
+  } }, "Yes, Plan for This Role");
+  const resultsRoute = assessmentSource === "questionnaire" ? "#/quiz" : "#/resume";
+  const nextSteps = h("section", { class: "interview-card interview-next-steps" },
+    h("h2", {}, "Ready to Improve Your Skills?"),
+    h("p", { class: "muted" }, "Based on your interview performance, we've identified areas you can improve. Would you like to create a personalized learning plan for this role?"),
+    h("div", { class: "interview-report-actions" }, planForRole,
+      h("a", { class: "btn ghost", href: resultsRoute }, "No, Back to My Career Results")), planStatus);
   const compare = previous ? h("section", { class: "interview-card" }, h("h2", {}, "Progress since your last attempt"),
     h("p", { class: "muted" }, `${previous.role_title} · ${fmtTime(previous.created_utc)} · ${previous.difficulty} difficulty`),
     h("div", { class: "interview-compare" }, [["Interview performance", report.performance, previous.performance],
@@ -660,6 +713,7 @@ async function renderReport(main, report) {
       h("section", { class: "interview-card" }, h("h2", {}, "Areas to improve"), list(report.gaps, "No specific skill gaps were identified from this attempt."))),
     h("section", { class: "interview-card" }, h("h2", {}, "Recommended next steps"), recommendations, planPanel),
     compare,
+    nextSteps,
     h("div", { class: "interview-report-actions" },
       h("a", { class: "btn primary", href: "#/quiz" }, "Retake Quick Match"),
       h("a", { class: "btn", href: "#/resume" }, "Upload resume"),

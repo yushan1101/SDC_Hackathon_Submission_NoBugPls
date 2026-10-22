@@ -49,7 +49,7 @@ from validation.document_guard import fingerprint, fraud_signals, risk as doc_ri
 from governance.audit import connect
 from validation.revision import validate
 from interview import service as interview_service, store as interview_store
-from interview.schemas import InterviewAnswer, InterviewCreate, InterviewEnd
+from interview.schemas import InterviewAnswer, InterviewCreate, InterviewEnd, InterviewPause
 
 log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
@@ -978,10 +978,14 @@ def interview_detail(interview_id: str, user: dict = Depends(need("employee"))):
             raise HTTPException(404, "Interview not found.")
         active = interview_store.question(db, sess["active_question_id"]) if sess["active_question_id"] else None
         report = interview_store.report(db, interview_id)
+        answered = db.execute("""SELECT count(*) FROM interview_responses r JOIN interview_questions q USING(question_id)
+            WHERE q.interview_id=?""", (interview_id,)).fetchone()[0]
     return {"interview_id": interview_id, "role_id": sess["role_id"], "role_title": sess["role_title"],
             "difficulty": sess["difficulty"], "status": sess["status"], "stage_index": sess["stage_index"],
             "question": active, "report": report, "profile": sess["profile"], "plan_id": sess["plan_id"],
-            "source": sess["context"]["source"], "created_utc": sess["created_utc"]}
+            "source": sess["context"]["source"], "assessment_source": sess.get("assessment_source"),
+            "created_utc": sess["created_utc"], "question_number": answered + 1,
+            "total_stages": len(interview_service.STAGES), "draft_answer": sess.get("draft_answer", "")}
 
 
 @app.post("/api/interviews/{interview_id}/answer")
@@ -1036,6 +1040,33 @@ def interview_end(interview_id: str, body: InterviewEnd, user: dict = Depends(ne
         if sess["status"] == "in_progress":
             interview_service.finish_without_answer(db, sess)
     return {"status": "ended"}
+
+
+@app.post("/api/interviews/{interview_id}/pause")
+def interview_pause(interview_id: str, body: InterviewPause, user: dict = Depends(need("employee"))):
+    with DB_LOCK, db:
+        sess = interview_store.session(db, interview_id, user["employee_id"])
+        if not sess:
+            raise HTTPException(404, "Interview not found.")
+        if sess["status"] not in ("in_progress", "paused") or not sess["active_question_id"]:
+            raise HTTPException(409, "This interview can no longer be paused.")
+        db.execute("UPDATE interview_sessions SET status='paused', draft_answer=? WHERE interview_id=? AND employee_id=?",
+                   (body.draft_answer.strip(), interview_id, user["employee_id"]))
+    return {"status": "paused"}
+
+
+@app.post("/api/interviews/{interview_id}/resume")
+def interview_resume(interview_id: str, user: dict = Depends(need("employee"))):
+    with DB_LOCK, db:
+        sess = interview_store.session(db, interview_id, user["employee_id"])
+        if not sess:
+            raise HTTPException(404, "Interview not found.")
+        if sess["status"] == "paused" and sess["active_question_id"]:
+            db.execute("UPDATE interview_sessions SET status='in_progress' WHERE interview_id=? AND employee_id=?",
+                       (interview_id, user["employee_id"]))
+        elif sess["status"] != "in_progress" or not sess["active_question_id"]:
+            raise HTTPException(409, "This interview cannot be resumed.")
+    return {"status": "in_progress"}
 
 
 @app.get("/api/interviews/{interview_id}/report")

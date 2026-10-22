@@ -263,7 +263,7 @@ def persist_answer(con, sess, current, text, prepared):
     if answer_count >= MAX_QUESTIONS and next_q:
         next_q, complete = None, True
     if complete:
-        con.execute("UPDATE interview_sessions SET status='completed', stage_index=?, active_question_id=NULL, completed_utc=? WHERE interview_id=?",
+        con.execute("UPDATE interview_sessions SET status='completed', stage_index=?, active_question_id=NULL, completed_utc=?, draft_answer='' WHERE interview_id=?",
                     (stage_index, store.now(), sess["interview_id"]))
         rows = con.execute("""SELECT r.evaluation_json FROM interview_responses r JOIN interview_questions q USING(question_id)
             WHERE q.interview_id=? ORDER BY q.sequence""", (sess["interview_id"],)).fetchall()
@@ -277,7 +277,8 @@ def persist_answer(con, sess, current, text, prepared):
             "evaluation": json.loads(row[6])} for row in qrows]
         result.update({"interview_id": sess["interview_id"], "role_id": sess["role_id"], "role_title": sess["role_title"],
                        "difficulty": sess["difficulty"], "created_utc": sess["created_utc"], "completed_utc": store.now(),
-                       "plan_id": sess["plan_id"], "source": sess["context"]["source"], "profile": sess["profile"]})
+                       "plan_id": sess["plan_id"], "source": sess["context"]["source"], "profile": sess["profile"],
+                       "assessment_source": sess.get("assessment_source")})
         con.execute("INSERT OR REPLACE INTO interview_reports VALUES(?,?,?)",
                     (sess["interview_id"], store.json_dump(result), store.now()))
         return {"status": "completed", "evaluation": evaluation, "report": result}
@@ -286,7 +287,7 @@ def persist_answer(con, sess, current, text, prepared):
                           (sess["interview_id"],)).fetchone()[0]
         _insert_question(con, sess["interview_id"], next_q, seq,
                          current["question_id"] if next_q["is_follow_up"] else None)
-    con.execute("UPDATE interview_sessions SET stage_index=?, active_question_id=? WHERE interview_id=?",
+    con.execute("UPDATE interview_sessions SET stage_index=?, active_question_id=?, draft_answer='' WHERE interview_id=?",
                 (stage_index, next_q["question_id"], sess["interview_id"]))
     return {"status": "in_progress", "evaluation": evaluation, "question": next_q, "source": sess["context"]["source"],
             "question_number": answer_count + 1, "stage_index": stage_index, "total_stages": len(STAGES)}

@@ -216,7 +216,9 @@ function route() {
   else if (page === "plans" && id) planDetail(main, id);
   else if (page === "plans") plansView(main);
   else if (page === "build") buildView(main);
-  else if (page === "interview") interviewView(main, interviewStart ? null : id, interviewStart ? rest[0] : null);
+  else if (page === "interview") interviewView(main, interviewStart ? null : id, interviewStart ? rest[0] : null, {
+    onPlan: (role, skills, query) => planFor({ soc: role.role_id, title: role.role_title }, skills, query),
+  });
   else if (page === "quiz") quizView(main, { status: S.status, planFor, onInterview: startInterview });
   else if (page === "resume") resumeView(main, { status: S.status, planFor, onInterview: startInterview });
   else if (page === "terms") termsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
@@ -344,11 +346,11 @@ function buildView(main) {
 }
 
 /** From a role match (quiz or resume): target that occupation with the skills we found, then run the agents. */
-function planFor(m, skills) {
+function planFor(m, skills, query) {
   Object.assign(S.profile, { target_role: m.soc, target_title: m.title,
     skills: skills.slice(0, 40).map(({ name, level }) => ({ name, level })) });
   saveProfile();
-  start();
+  start(query);
 }
 
 function startInterview(m) {

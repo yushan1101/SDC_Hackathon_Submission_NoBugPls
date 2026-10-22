@@ -412,6 +412,23 @@ def test_interview_access_requires_owner_owned_assessment_recommendation(client,
     assert seen["role_id"] == recommendation["role_id"] and seen["skills"] == recommendation["profile"]
     interview_id = started.json()["interview_id"]
 
+    paused = client.post(f"/api/interviews/{interview_id}/pause", json={"draft_answer": "A saved draft"}, headers=H)
+    assert paused.status_code == 200 and paused.json()["status"] == "paused"
+    detail = client.get(f"/api/interviews/{interview_id}").json()
+    assert detail["status"] == "paused" and detail["draft_answer"] == "A saved draft"
+    assert detail["question_number"] == 1 and detail["total_stages"] == 5
+    paused_item = next(x for x in client.get("/api/interviews").json()["interviews"] if x["interview_id"] == interview_id)
+    assert paused_item["status"] == "paused" and paused_item["question_number"] == 1
+
+    login(client, "bob")
+    assert client.post(f"/api/interviews/{interview_id}/resume", headers=H).status_code == 404
+    assert client.post(f"/api/interviews/{interview_id}/pause", json={"draft_answer": "unauthorized"}, headers=H).status_code == 404
+    login(client, "ana")
+    resumed = client.post(f"/api/interviews/{interview_id}/resume", headers=H)
+    assert resumed.status_code == 200 and resumed.json()["status"] == "in_progress"
+    resumed_detail = client.get(f"/api/interviews/{interview_id}").json()
+    assert resumed_detail["status"] == "in_progress" and resumed_detail["question"]["question_id"] == "mock-question-id"
+
     # Simulate a completed attempt to cover history and report reopening without an LLM call.
     report = {"performance": 81, "readiness": 74, "competitiveness": 70, "role_id": "2221.2"}
     with api.DB_LOCK, api.db:
@@ -423,6 +440,7 @@ def test_interview_access_requires_owner_owned_assessment_recommendation(client,
     item = next(x for x in history if x["interview_id"] == interview_id)
     assert item["status"] == "completed" and item["performance"] == 81 and item["readiness"] == 74
     assert item["assessment_source"] == "questionnaire" and item["interview_type"] == "AI mock interview"
+    assert client.get(f"/api/interviews/{interview_id}").json()["assessment_source"] == "questionnaire"
     assert client.get(f"/api/interviews/{interview_id}/report").json() == report
 
 
@@ -446,6 +464,7 @@ def test_interview_schema_migration_preserves_old_session_and_report():
         ("legacy-id", store.json_dump(old_report), "2026-01-01T00:20:00+00:00"))
     migrated = store.session(con, "legacy-id", "E-001")
     assert migrated["status"] == "completed" and migrated["recommendation_id"] is None
+    assert migrated["draft_answer"] == ""
     assert store.report(con, "legacy-id") == old_report
     history = store.history(con, "E-001")
     assert history[0]["performance"] == 77 and history[0]["readiness"] == 71
