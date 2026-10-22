@@ -6,6 +6,7 @@ import { Owl, OwlStatus } from "./owl.js";
 import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { startView, quizView, resumeView, todayView, sdgsView } from "./explore.js";
+import { interviewView } from "./interview.js";
 
 const app = $("#app");
 const store = {
@@ -43,11 +44,11 @@ async function boot() {
 }
 
 // ---------------------------------------------------------------- sign in
-const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build: "the plan builder", report: "your briefing", plans: "your plans" };
+const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build: "the plan builder", report: "your briefing", plans: "your plans", interview: "mock interview" };
 
 function cleanDestination(next) {
-  return ["start", "today", "quiz", "resume", "build", "report", "plans"].includes(next) ||
-    (/^(plans|report)\/[A-Za-z0-9_-]+$/.test(next)) ? next : "start";
+  return ["start", "today", "quiz", "resume", "build", "report", "plans", "interview"].includes(next) ||
+    (/^(plans|report|interview)\/[A-Za-z0-9_-]+$/.test(next)) ? next : "start";
 }
 async function signIn(next = "start") {
   // Only internal hash routes can be used as post-login destinations.
@@ -114,14 +115,13 @@ function shell() {
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
       // guests get one page (the home, with today's board on it) and one action: sign in
       guest ? null : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/today", "AI trends", "pulse"),
-        nav("#/report", "Chat", "report"), nav("#/plans", "My plans", "plans")),
+        nav("#/report", "Chat", "report"), nav("#/interview", "Interview", "quiz"), nav("#/plans", "My plans", "plans")),
       guest ? null : S.status.el,
       guest
         ? h("div", { class: "top-actions" }, h("a", { class: "btn sm primary top-signin", href: "#/signin" }, icon("user"), "Sign in"))
         : h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out")),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
-    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/today", "AI trends", "pulse"), tab("#/report", "Chat", "report"),
-      tab("#/plans", "Plans", "plans")),
+    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/today", "AI trends", "pulse"), tab("#/interview", "Interview", "quiz"), tab("#/plans", "Plans", "plans")),
     S.sheet].filter(Boolean));  // replaceChildren would print a null as the text "null"
 }
 
@@ -136,11 +136,11 @@ history.scrollRestoration = "manual";
 function route() {
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs"]);
+  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview"]);
   // Unknown routes and malformed nested routes return home instead of showing
   // the wrong page. Plans are the only normal route with a detail identifier.
   if (!allowed.has(requested) || (rest.length && requested !== "signin") ||
-      (id && !["signin", "plans", "report"].includes(requested))) {
+      (id && !["signin", "plans", "report", "interview"].includes(requested))) {
     location.replace("#/start");
     return;
   }
@@ -172,8 +172,9 @@ function route() {
   else if (page === "plans" && id) planDetail(main, id);
   else if (page === "plans") plansView(main);
   else if (page === "build") buildView(main);
-  else if (page === "quiz") quizView(main, { status: S.status, planFor });
-  else if (page === "resume") resumeView(main, { status: S.status, planFor });
+  else if (page === "interview") interviewView(main, id);
+  else if (page === "quiz") quizView(main, { status: S.status, planFor, onInterview: startInterview });
+  else if (page === "resume") resumeView(main, { status: S.status, planFor, onInterview: startInterview });
   else if (page === "sdgs") sdgsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me, jumpToday: S.jumpToday });
@@ -301,6 +302,13 @@ function planFor(m, skills) {
     skills: skills.slice(0, 40).map(({ name, level }) => ({ name, level })) });
   saveProfile();
   start();
+}
+
+function startInterview(m, skills = S.profile.skills) {
+  Object.assign(S.profile, { target_role: m.soc, target_title: m.title,
+    skills: (skills || []).slice(0, 40).map(({ name, level }) => ({ name, level })) });
+  saveProfile();
+  location.hash = "#/interview";
 }
 
 function start(query) {

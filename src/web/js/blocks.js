@@ -408,7 +408,7 @@ function compareTable(rows) {
       line("UN goals", (m) => (m.sdgs || []).map((g) => `SDG ${g.goal}`).join(", ") || "–"))));
 }
 
-export function matchesBlock(matches, { onPlan, title = "Roles you could grow into", note, scenario, onScenario } = {}) {
+export function matchesBlock(matches, { onPlan, onInterview, title = "Roles you could grow into", note, scenario, onScenario } = {}) {
   if (!matches?.length) return block("Role matches", h("h3", {}, title), h("p", { class: "note" }, "No matches yet. Add a few more skills."));
   const picked = new Set();
   const compareHost = h("div");
@@ -439,6 +439,7 @@ export function matchesBlock(matches, { onPlan, title = "Roles you could grow in
       whyScore(m)),
     h("div", { class: "match-actions" },
       onPlan ? h("button", { class: "btn sm primary match-plan", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null,
+      onInterview ? h("button", { class: "btn sm", type: "button", onclick: () => onInterview(m) }, "Start mock interview") : null,
       h("label", { class: "compare-pick" }, h("input", { type: "checkbox", onchange: (e) => {
         if (e.target.checked && picked.size >= 3) { e.target.checked = false; toast("Compare up to 3 roles at a time.", "err"); return; }
         e.target.checked ? picked.add(m.soc) : picked.delete(m.soc); drawCompare(); } }), "Compare"))),

@@ -56,6 +56,7 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 - **Daily AI-trend board.** Hacker News, arXiv and live job postings, scored into "emerging" and "automation pressure" for every occupation, with dated evidence.
 - **Future-role matching and skill gaps** under *assistive* vs *agentic* AI scenarios, plus a STF-KAN skill-outlook forecast.
 - **Personalised 90-day plan.** Fits the learner's weekly hours, cites its sources, and can be edited and approved by a person.
+- **AI mock interviews.** Generate ESCO-grounded, role-specific questions and adaptive follow-ups; answer by text or supported browser voice; review transparent interview performance, job readiness, a clearly simulated competitiveness index, competency feedback, learning links and attempt history.
 - **UN SDG mapping (all 17).** Every role and plan activity links to official SDG targets.
 - **HR hiring.** Thresholds written in plain English, a public apply link, AI screening agents, blind ranked review, and human shortlist/hold/decline with an audit log.
 - **Document guard.** Strips hidden PDF/Word text and prompt-injection lines, and flags fraud signals. Risky résumés are held for a human, never auto-rejected.
@@ -143,6 +144,7 @@ Full requirement mapping: [`docs/requirements_trace.md`](docs/requirements_trace
 2. Open the **Secrets** tab (🔒) and add the variables you need from `.env.example`:
    - `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID` (only for GPU jobs)
    - `GEMINI_API_KEY`, `LLM_FAST_MODEL` (optional; without them every agent runs deterministically)
+   - Mock interviews require a usable configured LLM (`COACH_MODEL` or the configured fast model); the interview page explains this if none is available.
 3. In the Shell: `pip install -r requirements.txt` and `python src/scripts/seed_demo_users.py` (creates demo
    accounts; passwords are written to `src/data/demo_users.local.txt`, which is never committed).
 4. Click **Run**. Replit uses the `.replit` file to start `python src/main.py`.

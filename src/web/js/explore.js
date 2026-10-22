@@ -151,7 +151,8 @@ export async function quizView(main, ctx) {
         h("h2", {}, "Your quick match"),
         h("p", { class: "muted" }, "A fast estimate from 13 answers. For an evidence-backed analysis, ", h("a", { href: "#/resume" }, "upload your resume"), "."),
         h("ul", { class: "skill-chips" }, r.skills.sort((a, b) => b.level - a.level).map((s) => h("li", {}, s.name, h("b", { class: "num" }, ` ${s.level}/5`)))),
-        matchesBlock(r.matches, { onPlan: (m) => ctx.planFor(m, r.skills), scenario: st.scenario, onScenario: (k) => { st.scenario = k; finish(); } }),
+        matchesBlock(r.matches, { onPlan: (m) => ctx.planFor(m, r.skills), onInterview: ctx.onInterview ? (m) => ctx.onInterview(m, r.skills) : null,
+          scenario: st.scenario, onScenario: (k) => { st.scenario = k; finish(); } }),
         h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => { st.answers = {}; go(-1); } }, "Play again"))), RISE));
     } catch (e) {
       owl.set("confused");
@@ -236,6 +237,7 @@ export function resumeView(main, ctx) {
     };
     const rematch = h("button", { class: "btn", type: "button", disabled: true, onclick: () => { rematch.disabled = true; remeasure(); } }, "Re-match with my edits");
     const drawMatches = (m) => matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))),
+      onInterview: ctx.onInterview ? (x) => ctx.onInterview(x, skills.map(({ name, level }) => ({ name, level }))) : null,
       scenario, onScenario: (k) => { scenario = k; remeasure(); } }));
     // the person can correct what was found: change levels, remove a wrong skill, add a missing one
     const skillsUl = h("ul");
