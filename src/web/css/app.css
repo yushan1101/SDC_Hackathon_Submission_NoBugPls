@@ -2234,3 +2234,11 @@ dialog.slider-dialog::backdrop { background: oklch(0.15 0.03 262 / 0.6); }
   .role-card .role-list li { grid-template-columns: 40px minmax(0, 1fr); }
   .rl-meter { grid-column: 2; }
 }
+
+/* landing page: a preview of the board that fills whole rows (lead + 2, or lead + 4 on wide screens), then a way in */
+.board-preview .topic-card:nth-child(n + 4) { display: none; }
+@media (min-width: 1360px) { .board-preview .topic-card:nth-child(n + 4):nth-child(-n + 5) { display: grid; } }
+.board-preview { width: 100%; }
+.lp-more { min-height: 50px; padding: 0 24px; text-decoration: none; color: var(--ink); }
+.lp-more svg { width: 18px; height: 18px; transition: translate var(--t-slow) var(--ease-out); }
+.lp-more:hover svg { translate: 4px 0; }

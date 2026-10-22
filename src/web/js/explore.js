@@ -8,8 +8,8 @@ import { brandMark } from "./brands.js";
 const KEYS = ["A", "B", "C", "D"];
 
 // ---------------------------------------------------------------- start: choose a path
-export function startView(main, { name, guest, jumpToday } = {}) {
-  if (guest) return guestHome(main, { jumpToday });
+export function startView(main, { name, guest } = {}) {
+  if (guest) return guestHome(main);
   // One decision per card. The old hero buttons, repeated giant cards and demo
   // mockups offered the same choices three times and pushed the real actions down.
   const option = (href, ic, title, description, action, featured = false) =>
@@ -30,7 +30,7 @@ export function startView(main, { name, guest, jumpToday } = {}) {
 
 // The landing page for visitors who are not signed in. Every picture of the product is the product's own UI,
 // rendered here at reading size (no screenshots, no stock art); the sky is the one generated image (img/sky-hero.jpg).
-function guestHome(main, { jumpToday } = {}) {
+function guestHome(main) {
   const cta = (href, label, cls = "btn primary lp-cta") => h("a", { class: cls, href }, label);
   const owl = new Owl({ size: 40, state: "searching" });
   const say = h("span", {}, "Comparing your skills");
@@ -113,7 +113,8 @@ function guestHome(main, { jumpToday } = {}) {
     h("section", { class: "home-today", "aria-labelledby": "home-today" },
       h("h2", { id: "home-today" }, "The world of work keeps moving."),
       h("p", {}, "Today’s AI topics and the roles they may affect, rebuilt every day."),
-      today),
+      today,
+      h("a", { class: "btn lp-more", href: "#/today" }, "See all AI trends and the roles they affect", icon("flat"))),
     h("section", { class: "lp-faqs", "aria-labelledby": "lp-faq" },
       h("h2", { id: "lp-faq", class: "lp-title" }, "Questions"),
       faq("Is it free?", "Yes. Quick Match, AI trends and three new plans a month are free. Pro adds unlimited plans, resume analysis, mock interviews and voice input. Team is for HR."),
@@ -138,8 +139,7 @@ function guestHome(main, { jumpToday } = {}) {
     }, 2600);
   } else { owl.set("matched"); say.textContent = "Plan ready, with sources"; }
 
-  api("/api/signals/today").then((b) => today.replaceWith(boardView(b))).catch(() => today.remove())
-    .finally(() => jumpToday && document.getElementById("home-today")?.scrollIntoView({ block: "start" }));  // after the board is in, so nothing scrolls over it
+  api("/api/signals/today").then((b) => today.replaceWith(boardView(b, { preview: true }))).catch(() => today.remove());  // full board: #/today
 }
 
 // ---------------------------------------------------------------- quiz game

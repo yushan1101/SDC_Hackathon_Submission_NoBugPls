@@ -540,7 +540,8 @@ function zLine(values) {
   return s;
 }
 
-export function boardView(b, { onRefresh } = {}) {
+/** The daily AI-trend board. preview: the leading topics only (the landing page links to the full board). */
+export function boardView(b, { onRefresh, preview = false } = {}) {
   if (!b?.available) return h("div", { class: "empty" }, h("h2", {}, "No trend board yet"),
     h("p", { class: "muted" }, b?.message || "The board is built once a day from public news, research and job-posting signals."),
     onRefresh ? h("button", { class: "btn primary", onclick: onRefresh }, "Build today's board") : null);
@@ -584,7 +585,8 @@ export function boardView(b, { onRefresh } = {}) {
       DROP, { delay: Math.min(i, 12) * 30 });
   };
   const topics = [...b.topics].sort((a, z) => Math.abs(z.z) - Math.abs(a.z));
-  const grid = h("div", { class: "topic-grid" }, topics.map(card));
+  const grid = h("div", { class: "topic-grid" }, (preview ? topics.slice(0, 5) : topics).map(card));
+  if (preview) return h("div", { class: "board board-preview" }, meta, grid);
   // filter by type of topic, or by a skill / topic word
   let kind = "all";
   const q = h("input", { class: "input sm", type: "search", placeholder: "Filter by skill, e.g. programming, writing", "aria-label": "Filter topics by skill", oninput: filter });

@@ -26,7 +26,7 @@ const S = {
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
 // ---------------------------------------------------------------- boot
-const PUBLIC_PAGES = new Set(["", "start", "signin", "sdgs", "register", "pricing", "verify", "forgot", "reset", "invite", "terms", "privacy"]);  // everything else needs an account
+const PUBLIC_PAGES = new Set(["", "start", "today", "signin", "sdgs", "register", "pricing", "verify", "forgot", "reset", "invite", "terms", "privacy"]);  // everything else needs an account
 
 async function boot() {
   try {
@@ -123,13 +123,13 @@ function shell() {
     h("button", { class: "sr-only skip-link", type: "button", onclick: () => $("#main")?.focus() }, "Skip to content"),
     h("header", { class: "pub-top" },
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
-      // guests get one page (the home, with today's board on it) and one action: sign in
+      // guests: the home page and the AI-trends page, and one action: sign in
       guest ? null : S.me.role !== "employee" ? h("nav", { class: "pub-nav", "aria-label": "Primary" }, h("a", { href: "enterprise.html" }, icon("back"), h("span", {}, "Back to console")))
         : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/today", "AI trends", "pulse"),
           nav("#/report", "Chat", "report"), nav("#/interview", "Interview", "quiz"), nav("#/plans", "My plans", "plans")),
       guest ? null : S.status.el,
       guest
-        ? h("div", { class: "top-actions" }, h("a", { class: "btn sm top-plans", href: "#/pricing" }, "Plans"),
+        ? h("div", { class: "top-actions" }, h("a", { class: "btn sm top-plans", href: "#/today" }, "AI trends"), h("a", { class: "btn sm top-plans", href: "#/pricing" }, "Plans"),
             h("a", { class: "btn sm primary top-signin", href: "#/signin" }, icon("user"), "Sign in"))
         : h("div", { class: "top-actions" }, h("a", { class: "btn sm plan-pill", href: "#/account", "data-route": "#/account", title: "Your plan and payments" },
             icon("user"), planName(S.me.effective_plan || "org")),
@@ -167,10 +167,7 @@ function route() {
     location.replace("#/start");
     return;
   }
-  // guests see today's board on the home page, not on a page of its own: show home and jump to the board
-  S.jumpToday = !S.me && requested === "today";
-  if (S.jumpToday) history.replaceState(null, "", "#/start");
-  const page = S.jumpToday ? "start" : requested;
+  const page = requested;
   if (!S.me && !PUBLIC_PAGES.has(page)) {
     location.replace(`#/signin/${hash.slice(2)}`);
     return;
@@ -228,8 +225,7 @@ function route() {
   else if (page === "account") accountView(main, { refreshMe }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "sdgs") sdgsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
-  else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me, jumpToday: S.jumpToday });
-  S.jumpToday = false;
+  else startView(main, { name: S.me?.display_name?.split(" ")[0], guest: !S.me });
   reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });
   if (page !== "report") scrollTo({ top: page === "start" ? homeScrollTop : 0, behavior: "instant" });  // the chat manages its own scroll
 }
