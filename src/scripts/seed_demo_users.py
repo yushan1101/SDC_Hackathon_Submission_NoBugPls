@@ -13,7 +13,8 @@ import os
 os.chdir(Path(__file__).resolve().parents[1])  # data/ paths below are relative to src/
 
 USERS = [("demo_employee", "employee", "E-001", "Demo Employee (E-001)"),
-         ("demo_hr", "hr_advisor", None, "Demo HR Advisor")]
+         ("demo_hr", "hr_advisor", None, "Demo HR Advisor"),
+         ("demo_admin", "admin", None, "Demo Administrator")]
 
 con = init(connect())
 lines = []

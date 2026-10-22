@@ -1861,3 +1861,55 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
   .signin-story { display: none; }
   .signin-form { min-height: 100dvh; align-content: start; padding-top: 20px; }
 }
+
+/* ---------- accounts & billing: sign-up extras, plans, checkout, account page ---------- */
+.signin-switch { font-size: 15px; color: var(--shell-ink-2); }
+.signin-switch a { color: var(--shell-ink); font-weight: 600; }
+.field-hint { display: block; margin-top: 6px; font-size: 14px; color: var(--shell-ink-2); }
+.account-type { display: inline-flex; border: 1px solid oklch(1 0 0 / 0.25); border-radius: 999px; overflow: hidden; justify-self: start; }
+.account-type button { padding: 8px 16px; border: 0; background: none; color: var(--shell-ink-2); font: 600 15px var(--font-ui); cursor: pointer; }
+.account-type button[aria-pressed="true"] { background: oklch(1 0 0 / 0.14); color: var(--shell-ink); }
+.code-input { font: 600 24px var(--font-mono, monospace); letter-spacing: 0.4em; text-align: center; }
+.plan-pill { gap: 6px; }
+.plan-pill[aria-current="page"] { border-color: var(--accent); }
+.plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 24px 0 12px; }
+.plan-card { display: grid; gap: 14px; align-content: start; padding: 24px; border: 1px solid var(--rule); border-radius: 22px; background: var(--surface); box-shadow: var(--card-shadow); }
+.plan-card h2 { margin: 0; font-size: 24px; }
+.plan-featured { border-color: var(--accent); }
+.plan-current { outline: 2px solid var(--accent); outline-offset: 2px; }
+.plan-price b { font-size: 30px; }
+.plan-price span { color: var(--ink-2); }
+.plan-card ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.plan-card li { display: flex; gap: 8px; align-items: flex-start; font-size: 16px; }
+.plan-card li svg { width: 18px; height: 18px; flex: none; color: var(--accent); margin-top: 2px; }
+.plan-card .btn, .plan-card .tag { justify-self: start; }
+.plan-fine { font-size: 14px; }
+dialog.checkout { width: min(480px, calc(100vw - 24px)); padding: 24px; border: 1px solid var(--rule); border-radius: 22px; background: var(--surface); color: var(--ink); }
+dialog.checkout::backdrop { background: oklch(0.2 0.03 262 / 0.45); }
+dialog.checkout form { display: grid; gap: 16px; }
+.checkout-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.checkout-head h2 { margin: 0; font-size: 22px; }
+.checkout .btn.primary { justify-content: center; min-height: 46px; }
+.checkout-fine { display: flex; gap: 6px; align-items: center; font-size: 14px; margin: 0; }
+.checkout-fine svg { width: 15px; height: 15px; }
+.pay-element { min-height: 120px; }
+.account-card { display: grid; grid-template-columns: 1fr 1fr auto; gap: 20px; align-items: center; padding: 22px 24px; margin: 20px 0;
+  border: 1px solid var(--rule); border-radius: 20px; background: var(--surface); }
+.account-card p { margin: 0 0 4px; }
+.plan-badge { font-size: 22px; }
+.pay-table { width: 100%; }
+.issue.upsell { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+@media (max-width: 699px) { .account-card { grid-template-columns: 1fr; } .top-plans { display: none; } }
+
+/* ---------- admin console ---------- */
+.admin-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+.admin-filters .input { max-width: 320px; }
+.admin-setup { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
+.stat.warn b { color: var(--danger); }
+.day-bars { list-style: none; margin: 0; padding: 0; display: flex; align-items: flex-end; gap: 4px; height: 160px; }
+.day-bars li { flex: 1; display: grid; grid-template-rows: 1fr auto; align-items: end; height: 100%; min-width: 10px; }
+.day-bars i { display: block; background: var(--accent); border-radius: 4px 4px 0 0; }
+.day-bars span { font-size: 12px; color: var(--ink-2); text-align: center; white-space: nowrap; overflow: hidden; }
+.risk-reasons { margin: 0; padding-left: 16px; font-size: 14px; }
+[data-product="hr"] .stats:has(.stat:nth-child(5)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 899px) { [data-product="hr"] .stats:has(.stat:nth-child(5)) { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

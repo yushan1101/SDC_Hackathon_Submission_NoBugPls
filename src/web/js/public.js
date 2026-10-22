@@ -7,6 +7,8 @@ import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, iss
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { startView, quizView, resumeView, todayView, sdgsView } from "./explore.js";
 import { interviewView } from "./interview.js";
+import { registerView, pricingView, accountView, planName } from "./account.js";
+import { watchForm } from "./risk.js";
 
 const app = $("#app");
 const store = {
@@ -22,7 +24,7 @@ const S = {
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
 // ---------------------------------------------------------------- boot
-const PUBLIC_PAGES = new Set(["", "start", "signin", "sdgs"]);  // everything else needs an account
+const PUBLIC_PAGES = new Set(["", "start", "signin", "sdgs", "register", "pricing"]);  // everything else needs an account
 
 async function boot() {
   try {
@@ -31,7 +33,9 @@ async function boot() {
     if (!(e instanceof ApiError && e.status === 401)) throw e;
     S.me = null;  // guest: public landing + Today; features ask to sign in
   }
-  if (S.me && S.me.role !== "employee") { location.replace("enterprise.html"); return; }
+  const billingPage = /^#\/(pricing|account)\b/.test(location.hash);
+  if (S.me?.role === "admin") { location.replace("admin.html"); return; }
+  if (S.me && S.me.role !== "employee" && !billingPage) { location.replace("enterprise.html"); return; }
   if (S.me) {
     const wait = new Owl({ size: 96, state: "searching" });
     app.replaceChildren(h("main", { class: "empty", style: { margin: "18vh auto 0", "justify-items": "center", "text-align": "center" }, "aria-busy": "true" },
@@ -67,8 +71,9 @@ async function signIn(next = "start") {
       e.preventDefault();
       btn.disabled = true; err.textContent = "";
       try {
-        const me = await api("/api/login", { method: "POST", body: { username: user.value, password: pass.value } });
-        if (me.role !== "employee") { location.replace("enterprise.html"); return; }
+        const me = await api("/api/login", { method: "POST", body: { username: user.value, password: pass.value, risk: signals() } });
+        if (me.role === "admin") { location.replace("admin.html"); return; }
+        if (me.role !== "employee") { location.replace(next.startsWith("pricing") || next.startsWith("account") ? `./#/${next}` : "enterprise.html"); return; }
         // switch to the signed-in app in place: a hash change + reload could show the guest page again
         S.me = me; S.meta = await api("/api/meta");
         shell();
@@ -82,7 +87,9 @@ async function signIn(next = "start") {
       h("label", { class: "field" }, h("span", {}, "Password"), pass),
       err, btn,
       h("p", { class: "fine" }, "Accounts are issued by your administrator. Decision support only: plans stay drafts until you approve them."),
-      h("p", { class: "fine" }, "Employees and HR advisors both sign in here; HR advisors go straight to the Enterprise console."))));
+      h("p", { class: "fine" }, "Employees and HR advisors both sign in here; HR advisors go straight to the Enterprise console."),
+      h("p", { class: "signin-switch" }, "No account yet? ", h("a", { href: "#/register" }, "Create one free")))));
+  const signals = watchForm(app.querySelector(".signin-form"));
   user.focus();
 }
 
@@ -103,15 +110,27 @@ function shell() {
     h("header", { class: "pub-top" },
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
       // guests get one page (the home, with today's board on it) and one action: sign in
-      guest ? null : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/today", "AI trends", "pulse"),
-        nav("#/report", "Chat", "report"), nav("#/interview", "Interview", "quiz"), nav("#/plans", "My plans", "plans")),
+      guest ? null : S.me.role !== "employee" ? h("nav", { class: "pub-nav", "aria-label": "Primary" }, h("a", { href: "enterprise.html" }, icon("back"), h("span", {}, "Back to console")))
+        : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/today", "AI trends", "pulse"),
+          nav("#/report", "Chat", "report"), nav("#/interview", "Interview", "quiz"), nav("#/plans", "My plans", "plans")),
       guest ? null : S.status.el,
       guest
-        ? h("div", { class: "top-actions" }, h("a", { class: "btn sm primary top-signin", href: "#/signin" }, icon("user"), "Sign in"))
-        : h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out")),
+        ? h("div", { class: "top-actions" }, h("a", { class: "btn sm top-plans", href: "#/pricing" }, "Plans"),
+            h("a", { class: "btn sm primary top-signin", href: "#/signin" }, icon("user"), "Sign in"))
+        : h("div", { class: "top-actions" }, h("a", { class: "btn sm plan-pill", href: "#/account", "data-route": "#/account", title: "Your plan and payments" },
+            icon("user"), planName(S.me.effective_plan || "org")),
+          h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out"))),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
     guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/today", "AI trends", "pulse"), tab("#/interview", "Interview", "quiz"), tab("#/plans", "Plans", "plans")),
     S.sheet].filter(Boolean));  // replaceChildren would print a null as the text "null"
+}
+
+/** Re-read the account (plan may have changed) and update the plan button in the top bar. */
+async function refreshMe() {
+  S.me = { ...S.me, ...(await api("/api/me")) };
+  const pill = document.querySelector(".plan-pill");
+  if (pill) pill.replaceChildren(icon("user"), planName(S.me.effective_plan || "org"));
+  return S.me;
 }
 
 async function signOut() {
@@ -125,7 +144,7 @@ history.scrollRestoration = "manual";
 function route() {
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview"]);
+  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "register", "pricing", "account"]);
   const interviewStart = requested === "interview" && id === "start" && rest.length === 1 && /^[A-Za-z0-9_-]+$/.test(rest[0]);
   // Unknown routes and malformed nested routes return home instead of showing the wrong page.
   if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart) ||
@@ -141,6 +160,15 @@ function route() {
     location.replace(`#/signin/${hash.slice(2)}`);
     return;
   }
+  if (page === "register") {
+    if (S.me) { location.replace("#/account"); return; }
+    registerView(app, { onSignedIn: async () => {
+      S.me = await api("/api/me"); S.meta = await api("/api/meta");
+      shell(); toast("Welcome! You're on the Free plan."); location.hash = "#/start";
+    } });
+    return;
+  }
+  if (S.me && S.me.role !== "employee" && !["pricing", "account"].includes(page)) { location.replace("enterprise.html"); return; }
   if (page === "signin") {
     const next = hash.startsWith("#/signin/") ? hash.slice("#/signin/".length) : "start";
     if (S.me) { location.replace(`#/${cleanDestination(next)}`); return; }
@@ -163,6 +191,8 @@ function route() {
   else if (page === "interview") interviewView(main, interviewStart ? null : id, interviewStart ? rest[0] : null);
   else if (page === "quiz") quizView(main, { status: S.status, planFor, onInterview: startInterview });
   else if (page === "resume") resumeView(main, { status: S.status, planFor, onInterview: startInterview });
+  else if (page === "pricing") pricingView(main, { me: S.me }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
+  else if (page === "account") accountView(main, { refreshMe }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "sdgs") sdgsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me, jumpToday: S.jumpToday });
@@ -590,6 +620,10 @@ async function runTurn(params) {
     st.end();
     if (e.name === "AbortError") { mood("idle", "Stopped"); body.append(h("p", { class: "note" }, "Stopped. Nothing was saved from this turn.")); }
     else if (e instanceof ApiError && e.status === 401) { location.replace("#/signin/report"); location.reload(); }
+    else if (e instanceof ApiError && e.status === 402) {  // plan limit: say what to do, not "something went wrong"
+      mood("idle", "Upgrade to keep going");
+      body.append(h("div", { class: "issue upsell" }, e.message, " ", h("a", { class: "btn sm primary", href: "#/pricing" }, "See plans")));
+    }
     else { mood("confused", "Something went wrong"); body.append(h("div", { class: "issue error" }, e.message)); }
   } finally {
     setBusy(null);
