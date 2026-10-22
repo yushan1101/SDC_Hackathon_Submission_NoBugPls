@@ -305,7 +305,7 @@ Frontend interaction checks (Node.js, no packages required): `node --test tests/
 | BOYU         | System developer              | [@OLGTX303](https://github.com/OLGTX303)                                      |
 | Yuan Man     | Developer (HR review queue)   | [@yuanman1021](https://github.com/yuanman1021)  |
 | zy           | Developer (UI scroll animation) | [@zhengyang316](https://github.com/zhengyang316) |
-| _TODO_       | _TODO_              | _TODO_                                       |
+| Lee May Yan       | Developer (UI/UX) | [@maydayen](https://github.com/maydayen)|
 
 ---
 

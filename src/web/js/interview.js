@@ -121,17 +121,21 @@ function renderRoom(main, detail, initial = null) {
   let number = initial?.question_number || 1;
   let stageIndex = initial?.stage_index ?? detail.stage_index ?? 0;
   const total = initial?.total_stages || 5;
+  const previousBodyOverflow = document.body.style.overflow;
+  const alreadyInInterviewRoom = document.body.classList.contains("interview-takeover-active");
+  document.body.classList.add("interview-takeover-active");
+  document.body.style.overflow = "hidden";
   const status = h("span", { class: "interview-status is-off", role: "status", "aria-live": "polite" }, "Microphone off");
   const qText = h("p", { class: "interview-question" });
   const skillChips = h("div", { class: "chips" });
   const transcript = h("textarea", { class: "input interview-answer", rows: 5, maxlength: 4000,
     placeholder: "Type your answer here, or record an answer and review the transcript.", "aria-label": "Your answer" });
   const responseFeedback = h("div", { class: "interview-answer-feedback", hidden: true });
-  const answerBtn = h("button", { class: "btn primary", type: "submit" }, "Submit answer");
-  const startBtn = h("button", { class: "btn primary", type: "button" }, "Start recording");
-  const stopBtn = h("button", { class: "btn", type: "button", disabled: true }, "Stop recording");
-  const retryBtn = h("button", { class: "btn sm", type: "button", disabled: true }, "Record again");
-  const muteBtn = h("button", { class: "btn sm", type: "button", disabled: true }, "Mute");
+  const answerBtn = h("button", { class: "btn primary", type: "submit", "aria-label": "Confirm and send answer" }, "Send answer");
+  const startBtn = h("button", { class: "btn primary", type: "button", "aria-label": "Start answer recording" }, "Start");
+  const stopBtn = h("button", { class: "btn", type: "button", disabled: true, "aria-label": "Stop recording" }, "Stop");
+  const retryBtn = h("button", { class: "btn sm", type: "button", disabled: true, "aria-label": "Retry recording" }, "Retry");
+  const muteBtn = h("button", { class: "btn sm", type: "button", disabled: true, "aria-label": "Mute microphone" }, "Mute");
   const duration = h("span", { class: "interview-recording-time num", "aria-label": "Recording duration" }, "00:00");
   const deviceSelect = h("select", { class: "interview-mic-select", "aria-label": "Microphone device" },
     h("option", { value: "" }, "System default microphone"));
@@ -143,9 +147,10 @@ function renderRoom(main, detail, initial = null) {
   const meter = h("div", { class: "interview-mic-meter", role: "img", "aria-label": "Live microphone sound level" }, micBars);
   const voicePanel = h("div", { class: "interview-voice-panel", dataset: { state: "off" } },
     h("div", { class: "interview-voice-summary" }, meter,
-      h("div", { class: "interview-voice-copy" }, h("b", {}, "Voice answer"),
-        h("label", { class: "interview-voice-field" }, h("span", {}, "Microphone"), deviceSelect),
-        h("label", { class: "interview-voice-field" }, h("span", {}, "Transcription language"), languageSelect)), duration),
+      h("div", { class: "interview-voice-copy" }, h("b", {}, "Voice answer"), status), duration),
+    h("details", { class: "interview-voice-settings" }, h("summary", {}, "Microphone & language"),
+      h("label", { class: "interview-voice-field" }, h("span", {}, "Microphone"), deviceSelect),
+      h("label", { class: "interview-voice-field" }, h("span", {}, "Transcription language"), languageSelect)),
     h("div", { class: "interview-voice-controls" }, startBtn, stopBtn, retryBtn, muteBtn));
   const livePreview = h("p", { class: "interview-live-preview", "aria-live": "polite", hidden: true });
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -164,11 +169,21 @@ function renderRoom(main, detail, initial = null) {
   let elapsedMs = 0, timerStartedAt = null, durationTimer = null;
   let deviceEnumeration = 0;
   let interviewerSpeaking = false, currentUtterance = null, paused = false;
+  let microphoneLevel = 0, speechCue = null, lastAvatarSignalAt = 0;
   let officeDisposer = null;
+  const updateAvatarPresentation = () => {
+    const micState = voicePanel.dataset.state;
+    const state = interviewerSpeaking ? "speaking"
+      : ["ready", "listening", "speaking", "captured"].includes(micState) ? "listening" : "idle";
+    window.dispatchEvent(new CustomEvent("aiversepulse:interview-avatar-state", { detail: {
+      state, microphoneLevel, speechCue,
+    } }));
+  };
   const setMicState = (state, message) => {
     voicePanel.dataset.state = state;
     status.className = `interview-status is-${state}`;
     status.textContent = message;
+    updateAvatarPresentation();
   };
   const updateControls = () => {
     startBtn.disabled = recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking;
@@ -212,7 +227,10 @@ function renderRoom(main, detail, initial = null) {
     micStream?.getTracks().forEach((track) => { track.onended = null; track.stop(); });
     micStream = null; audioContext?.close().catch(() => {}); audioContext = null;
     micBars.forEach((bar) => { bar.style.height = "5px"; });
+    microphoneLevel = 0;
+    updateAvatarPresentation();
     muteBtn.textContent = "Mute";
+    muteBtn.setAttribute("aria-label", "Mute microphone");
   };
   const watchAudio = () => {
     if (!analyser) return;
@@ -223,6 +241,8 @@ function renderRoom(main, detail, initial = null) {
       let squares = 0;
       for (const sample of waveform) { const amplitude = (sample - 128) / 128; squares += amplitude * amplitude; }
       const volume = Math.sqrt(squares / waveform.length), bandSize = Math.max(1, Math.floor(spectrum.length / micBars.length));
+      microphoneLevel = recording && !muted && !interviewerSpeaking
+        ? Math.max(0, Math.min(1, (volume - 0.008) / 0.12)) : 0;
       micBars.forEach((bar, index) => {
         const start = index * bandSize, end = Math.min(spectrum.length, start + bandSize);
         let sum = 0; for (let i = start; i < end; i++) sum += spectrum[i];
@@ -231,6 +251,13 @@ function renderRoom(main, detail, initial = null) {
       if (recording && !muted && !interviewerSpeaking && !speechError) {
         if (volume > 0.025) setMicState("speaking", "Speaking detected · keep answering");
         else setMicState("listening", speechAvailable ? "Listening · speak your answer" : "Listening · browser transcription unavailable; type your answer");
+      }
+      // The avatar uses the same measured input as the visible microphone meter.
+      // Limit presentation events to the room's 30 fps render rate.
+      const now = performance.now();
+      if (now - lastAvatarSignalAt >= 33) {
+        lastAvatarSignalAt = now;
+        updateAvatarPresentation();
       }
       meterFrame = requestAnimationFrame(tick);
     };
@@ -363,7 +390,7 @@ function renderRoom(main, detail, initial = null) {
         analyser = audioContext.createAnalyser(); analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.75;
         audioSource = audioContext.createMediaStreamSource(micStream); audioSource.connect(analyser); watchAudio();
       }
-      starting = false; recording = true; muted = false; muteBtn.textContent = "Mute"; startDuration(); updateControls();
+      starting = false; recording = true; muted = false; muteBtn.textContent = "Mute"; muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration(); updateControls();
       if (recognizer) {
         if (speechError) setMicState("error", speechError);
         else if (recognitionActive) setMicState("listening", "Listening · speak your answer");
@@ -397,10 +424,10 @@ function renderRoom(main, detail, initial = null) {
     if (!micStream) return;
     muted = !muted; micStream.getAudioTracks().forEach((track) => { track.enabled = !muted; });
     if (muted) {
-      pauseDuration(); await stopRecognition(); muteBtn.textContent = "Unmute";
+      pauseDuration(); await stopRecognition(); muteBtn.textContent = "Unmute"; muteBtn.setAttribute("aria-label", "Unmute microphone");
       setMicState("off", "Microphone muted · unmute to continue recording");
     } else {
-      muteBtn.textContent = "Mute"; startDuration();
+      muteBtn.textContent = "Mute"; muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration();
       if (recognizer && recording) {
         try { recognitionRequested = true; recognizer.start(); setMicState("listening", "Listening · speak your answer"); }
         catch { recognitionRequested = false; setMicState("error", "Could not resume speech recognition. Stop and retry, or type your answer."); }
@@ -416,16 +443,25 @@ function renderRoom(main, detail, initial = null) {
     window.speechSynthesis.cancel();
     utterance.onstart = () => {
       if (currentUtterance !== utterance) return;
+      speechCue = { word: utterance.text, startedAt: performance.now(), secondsPerCharacter: 0.095 / Math.max(0.5, utterance.rate || 1) };
       interviewerSpeaking = true; updateControls(); setMicState("processing", "Interviewer speaking · microphone capture is off");
+    };
+    utterance.onboundary = (event) => {
+      if (currentUtterance !== utterance || !interviewerSpeaking) return;
+      const remaining = utterance.text.slice(Math.max(0, event.charIndex || 0));
+      const word = remaining.match(/^[\p{L}\p{N}'’\-]+/u)?.[0];
+      if (!word) return;
+      speechCue = { word, startedAt: performance.now(), secondsPerCharacter: 0.105 / Math.max(0.5, utterance.rate || 1) };
+      updateAvatarPresentation();
     };
     utterance.onend = () => {
       if (currentUtterance !== utterance) return;
-      currentUtterance = null; interviewerSpeaking = false; updateControls();
+      currentUtterance = null; interviewerSpeaking = false; speechCue = null; updateControls();
       setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : "Ready to answer · microphone off");
     };
     utterance.onerror = () => {
       if (currentUtterance !== utterance) return;
-      currentUtterance = null; interviewerSpeaking = false; updateControls();
+      currentUtterance = null; interviewerSpeaking = false; speechCue = null; updateControls();
       setMicState("ready", "Ready to answer · microphone off");
     };
     window.speechSynthesis.speak(utterance);
@@ -435,15 +471,22 @@ function renderRoom(main, detail, initial = null) {
     try { recognizer?.abort(); } catch { /* already stopped */ }
     recognitionActive = false; recognitionRequested = false; releaseAudio(); window.speechSynthesis?.cancel();
     officeDisposer?.(); officeDisposer = null;
+    if (!alreadyInInterviewRoom) document.body.classList.remove("interview-takeover-active");
+    document.body.style.overflow = previousBodyOverflow;
+    document.removeEventListener("keydown", onEscape);
   };
   window.addEventListener("hashchange", () => { if (location.hash !== `#/interview/${sessionId}`) dispose(); });
   window.addEventListener("pagehide", dispose, { once: true });
   const progress = h("div", { class: "interview-progress", role: "progressbar", "aria-label": "Interview progress", "aria-valuemin": "0", "aria-valuemax": String(total), "aria-valuenow": "1" }, h("i"));
   const stageText = h("span");
   const questionStage = h("span");
+  const counter = h("span", { class: "interview-counter" }, `Question ${number} of ${total}`);
   const setQuestion = (q, n, src) => {
     current = q; number = n; source = src || source;
+    counter.textContent = `Question ${number} of ${total}`;
     qText.textContent = q.text || q.question_text || "";
+    qText.animate?.([{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "translateY(0)" }],
+      { duration: 420, easing: "ease-out" });
     stageText.textContent = TYPES[q.type || q.question_type] || String(q.stage || "Interview").replaceAll("_", " ");
     questionStage.textContent = stageText.textContent;
     skillChips.replaceChildren(...(q.target_skills || []).map((s) => h("span", { class: "chip-static" }, s)));
@@ -485,32 +528,40 @@ function renderRoom(main, detail, initial = null) {
     pause.textContent = paused ? "Resume" : "Pause";
     answerBtn.disabled = paused; updateControls();
   } }, "Pause");
-  const end = h("button", { class: "btn sm ghost", type: "button", onclick: async () => {
+  repeat.textContent = "Replay question";
+  voicePanel.querySelector(".interview-voice-controls").append(repeat, pause);
+  const end = h("button", { class: "interview-exit-button", type: "button", onclick: async () => {
     if (!confirm("End this interview now? Ending early saves your answers but does not create an assessment.")) return;
     dispose();
     try { await api(`/api/interviews/${sessionId}/end`, { method: "POST", body: {} }); location.hash = "#/interview"; }
     catch (e) { toast(e.message, "err"); }
-  } }, "End interview");
+  } }, "Exit");
+  const onEscape = (event) => { if (event.key === "Escape") { event.preventDefault(); end.click(); } };
+  document.addEventListener("keydown", onEscape);
   setQuestion(current, number, source);
   const officeEnabled = window.AP_CONFIG?.VIRTUAL_INTERVIEW_3D === true;
   const officeHost = officeEnabled ? h("div", { class: "interview-office-host", role: "group",
     "aria-label": "First-person view of a modern interview office, seated across the desk" },
     h("span", { class: "interview-office-label", "aria-hidden": "true" }, "VIRTUAL INTERVIEW OFFICE"),
     h("span", { class: "interview-office-loading", role: "status" }, "Preparing your interview room…")) : null;
-  const room = h("section", { class: `interview-room${officeEnabled ? " interview-room-office-pending" : ""}` },
-    officeHost,
-    h("div", { class: "interviewer-avatar", "aria-hidden": "true" }, h("span", {}, "AP")),
-    h("div", { class: "interviewer-meta" }, h("b", {}, "AiversePulse interviewer"), h("span", { class: "muted" }, "AI practice session")),
-    h("div", { class: "question-panel" }, h("p", { class: "eyebrow" }, "QUESTION · ", questionStage), qText, skillChips,
-      source?.url ? h("a", { class: "cite", href: source.url, target: "_blank", rel: "noopener noreferrer" }, "Grounded in ESCO · source details") : null),
-    responseFeedback, form,
-    h("p", { class: "fine" }, "Only your reviewed transcript is sent to AiversePulse and saved with this interview. Browser speech recognition may process microphone audio; AiversePulse does not store audio."));
-  main.replaceChildren(h("div", { class: "interview-page" },
-    h("div", { class: "section-head" }, h("div", {}, h("p", { class: "eyebrow" }, "LIVE PRACTICE"), h("h1", { class: "page-title" }, detail.role_title),
-      h("p", { class: "muted" }, `${detail.difficulty || initial?.difficulty || "intermediate"} difficulty · `, stageText)),
-      h("div", { class: "interview-room-actions" }, status, repeat, pause, end)),
-    progress,
-    room));
+  const questionToggle = h("button", { class: "interview-question-toggle", type: "button", "aria-expanded": "true",
+    "aria-label": "Hide interview question", onclick: (event) => {
+      const expanded = event.currentTarget.getAttribute("aria-expanded") === "true";
+      event.currentTarget.setAttribute("aria-expanded", String(!expanded));
+      event.currentTarget.setAttribute("aria-label", expanded ? "Show interview question" : "Hide interview question");
+      event.currentTarget.textContent = expanded ? "+" : "−";
+      questionOverlay.classList.toggle("is-collapsed", expanded);
+    } }, "−");
+  const questionOverlay = h("aside", { class: "interview-question-overlay", "aria-label": "Current interview question" },
+    questionToggle, h("div", { class: "interview-question-copy" },
+      h("p", { class: "interview-question-label" }, "QUESTION · ", questionStage), qText, skillChips));
+  const topbar = h("header", { class: "interview-topbar" },
+    h("div", { class: "interview-role-name" }, detail.role_title),
+    h("div", { class: "interview-topbar-progress" }, counter, progress), end);
+  const room = h("section", { class: `interview-takeover${officeEnabled ? " interview-room-office-pending" : ""}`, "aria-label": "Live mock interview" },
+    officeHost, topbar, questionOverlay, responseFeedback, form,
+    h("p", { class: "interview-room-disclaimer" }, "Only your reviewed transcript is sent to AiversePulse and saved with this interview. Browser speech recognition may process microphone audio; AiversePulse does not store audio."));
+  main.replaceChildren(room);
   if (officeHost) {
     const fallbackOffice = (error) => {
       officeHost.remove(); room.classList.remove("interview-room-office-pending", "interview-room-virtual");
@@ -521,6 +572,7 @@ function renderRoom(main, detail, initial = null) {
       if (discarded || !officeHost.isConnected) { unmount(); return; }
       officeDisposer = unmount;
       room.classList.remove("interview-room-office-pending"); room.classList.add("interview-room-virtual");
+      updateAvatarPresentation();
     }).catch(fallbackOffice);
   }
 }
