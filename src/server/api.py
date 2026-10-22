@@ -1331,6 +1331,10 @@ def _warm():
         log.exception("warm-up failed; vector search stays on the offline snapshot")
 
 
-threading.Thread(target=_warm, daemon=True).start()
+if cfg.warm_on_start:
+    threading.Thread(target=_warm, daemon=True).start()
+else:  # tests/CI: stay on the offline snapshot, start no model threads
+    from mcp_server import retrieval as _retrieval
+    _retrieval.AUTO_WARM = False
 if cfg.signals_daily:
     threading.Thread(target=_daily, daemon=True).start()
