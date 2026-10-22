@@ -13,20 +13,32 @@ export class ApiError extends Error {
   }
 }
 
+// A frontend on another domain than the API: browsers may block the session cookie there (third-party cookie),
+// so the API hands this site its session token and it is sent back as a Bearer header. Same-site: cookie only.
+const TOKEN_KEY = "ap.session";
+const auth = () => { try { const t = API_BASE && localStorage.getItem(TOKEN_KEY); return t ? { Authorization: `Bearer ${t}` } : {}; } catch { return {}; } };
+function keepSession(res, data) {
+  try {
+    if (data?.session_token) { localStorage.setItem(TOKEN_KEY, data.session_token); delete data.session_token; }
+    if (res.status === 401 || (res.ok && /\/api\/logout$/.test(res.url))) localStorage.removeItem(TOKEN_KEY);
+  } catch { /* storage blocked: cookie only */ }
+}
+
 export async function api(path, { method = "GET", body, signal } = {}) {
   const res = await fetch(apiUrl(path), {
     method, signal, credentials: CREDS,
-    headers: { "X-AP": "1", ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+    headers: { "X-AP": "1", ...auth(), ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const data = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
+  keepSession(res, data);
   if (!res.ok) throw new ApiError(res.status, data?.detail || res.statusText, data);
   return data;
 }
 
 /** POST multipart form data (file uploads). */
 export async function upload(path, form, signal) {
-  const res = await fetch(apiUrl(path), { method: "POST", body: form, signal, credentials: CREDS, headers: { "X-AP": "1" } });
+  const res = await fetch(apiUrl(path), { method: "POST", body: form, signal, credentials: CREDS, headers: { "X-AP": "1", ...auth() } });
   const data = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
   if (!res.ok) throw new ApiError(res.status, data?.detail || res.statusText, data);
   return data;
@@ -37,7 +49,7 @@ export async function stream(path, body, onEvent, signal) {
   const form = body instanceof FormData;  // file uploads stream too (resume progress)
   const res = await fetch(apiUrl(path), {
     method: "POST", signal, credentials: CREDS,
-    headers: { "X-AP": "1", Accept: "text/event-stream", ...(form ? {} : { "Content-Type": "application/json" }) },
+    headers: { "X-AP": "1", ...auth(), Accept: "text/event-stream", ...(form ? {} : { "Content-Type": "application/json" }) },
     body: form ? body : JSON.stringify(body),
   });
   if (!res.ok) {
@@ -82,38 +94,50 @@ export function h(tag, attrs = {}, ...kids) {
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-/** Static SVG icons (trusted, authored here). */
+// Static SVG icons: Lucide (lucide.dev, v0.460.0, ISC licence), copied in so the site needs no icon CDN. Key -> Lucide name.
 const ICONS = {
-  info: '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 11v6 M12 7.5h.01"/>',
-  flag: '<path d="M5 21V4 M5 4.5c3-1.6 5.5 1.6 8.5 0s4.5-1 5.5-.5v8.5c-1-.5-2.5-1.1-5.5.5s-5.5-1.6-8.5 0"/>',
-  home: '<path d="M4 11l8-6 8 6 M6 10v9h12v-9 M10 19v-5h4v5"/>',
-  spark: '<path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z"/>',
-  chevron: '<path d="M6 9l6 6 6-6"/>',
-  target: '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M12 12h.01"/>',
-  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
-  clock: '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 7v5l3 2"/>',
-  user: '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0"/>',
-  search: '<path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z M20 20l-4-4"/>',
-  up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
-  down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
-  flat: '<path d="M5 12h14M13 6l6 6-6 6"/>',
-  build: '<path d="M4 20h16M6 16l9-9 3 3-9 9H6v-3z"/>',
-  report: '<path d="M5 4h10l4 4v12H5z M14 4v5h5 M8 13h8 M8 17h5"/>',
-  plans: '<path d="M6 4h12v16H6z M9 8h6 M9 12h6 M9 16h4"/>',
-  grid: '<path d="M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z"/>',
-  upload: '<path d="M12 16V4 M7 9l5-5 5 5 M4 20h16"/>',
-  review: '<path d="M4 6h10 M4 12h10 M4 18h6 M16 15l2 2 4-4"/>',
-  history: '<path d="M12 7v5l3 2 M4 12a8 8 0 1 0 2.3-5.7 M4 4v4h4"/>',
-  out: '<path d="M10 4H5v16h5 M14 8l4 4-4 4 M18 12H9"/>',
-  ext: '<path d="M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6"/>',
-  back: '<path d="M15 5l-7 7 7 7"/>',
-  stop: '<path d="M7 7h10v10H7z"/>',
-  send: '<path d="M4 12h14 M13 6l6 6-6 6"/>',
-  quiz: '<path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14 M12 17.5v.5 M4 4h16v16H4z"/>',
-  pulse: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
-  file: '<path d="M6 3h8l4 4v14H6z M14 3v4h4 M9 12h6 M9 16h6"/>',
-  people: '<path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6 M16 5a3 3 0 0 1 0 6 M18 14c2 .6 3 3 3 6"/>',
-  sources: '<path d="M5 4h14v16H5z M9 4v16"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',  // info
+  flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',  // flag
+  home: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',  // house
+  spark: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',  // sparkles
+  chevron: '<path d="m6 9 6 6 6-6"/>',  // chevron-down
+  target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',  // target
+  check: '<path d="M20 6 9 17l-5-5"/>',  // check
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',  // clock
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',  // user
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',  // search
+  up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',  // arrow-up
+  down: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',  // arrow-down
+  flat: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',  // arrow-right
+  build: '<path d="M13 7 8.7 2.7a2.41 2.41 0 0 0-3.4 0L2.7 5.3a2.41 2.41 0 0 0 0 3.4L7 13"/><path d="m8 6 2-2"/><path d="m18 16 2-2"/><path d="m17 11 4.3 4.3c.94.94.94 2.46 0 3.4l-2.6 2.6c-.94.94-2.46.94-3.4 0L11 17"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',  // pencil-ruler
+  report: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',  // file-text
+  plans: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',  // clipboard-list
+  grid: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',  // layout-grid
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',  // upload
+  review: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',  // list-checks
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',  // history
+  out: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',  // log-out
+  ext: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',  // external-link
+  back: '<path d="m15 18-6-6 6-6"/>',  // chevron-left
+  stop: '<rect width="18" height="18" x="3" y="3" rx="2"/>',  // square
+  send: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',  // send
+  quiz: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',  // circle-help
+  pulse: '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',  // activity
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',  // file
+  people: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',  // users
+  sources: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',  // book-open
+  mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',  // mail
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>',  // share-2
+  plug: '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>',  // plug
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',  // mic
+  "mic-off": '<line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/>',  // mic-off
+  volume: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>',  // volume-2
+  model: '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>',  // cpu
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',  // globe
+  ask: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',  // message-square
+  edit: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>',  // square-pen
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',  // trash-2
+  job: '<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/>',  // briefcase
 };
 export function icon(name) {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -122,7 +146,7 @@ export function icon(name) {
   s.setAttribute("height", "20");
   s.setAttribute("fill", "none");
   s.setAttribute("stroke", "currentColor");
-  s.setAttribute("stroke-width", "1.6");
+  s.setAttribute("stroke-width", "1.75");
   s.setAttribute("stroke-linecap", "round");
   s.setAttribute("stroke-linejoin", "round");
   s.setAttribute("aria-hidden", "true");

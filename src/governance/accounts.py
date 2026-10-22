@@ -5,7 +5,9 @@ Roles: employee (plans for themself; sees plans HR made for their employee_id), 
 
 Self-registration (register()) creates a "free" employee, or an hr_advisor that waits for admin approval.
 Accounts created by the CLI/seed are organisation-issued: plan "org" (full access, never billed).
-status: active | pending_email | pending_approval | disabled.
+Organisation users are invited by an HR advisor (invite()): they never use the sign-up page, they get an email link,
+choose a password (accept_invite()) and belong to that advisor (invited_by), who can disable or remove them.
+status: active | pending_email | pending_approval | invited | disabled.
 
     python -m governance.accounts create --username ana --role employee --employee-id E-001
     python -m governance.accounts set-password --username ana      (new password; also clears a lockout)
@@ -30,9 +32,9 @@ CREATE TABLE IF NOT EXISTS auth_events(id INTEGER PRIMARY KEY, username TEXT, ev
 # added after the first release: (column, definition); existing rows become organisation accounts, active
 COLUMNS = [("email", "TEXT"), ("status", "TEXT DEFAULT 'active'"), ("plan", "TEXT DEFAULT 'org'"),
            ("plan_until", "TEXT"), ("trusted", "INTEGER DEFAULT 0"), ("account_type", "TEXT DEFAULT 'org'"),
-           ("terms_version", "TEXT"), ("terms_accepted_utc", "TEXT")]
+           ("terms_version", "TEXT"), ("terms_accepted_utc", "TEXT"), ("invited_by", "TEXT")]
 TERMS_VERSION = "2026-10-22"  # bump when the Terms of Use or Privacy Policy change
-STATUSES = {"active", "pending_email", "pending_approval", "disabled"}
+STATUSES = {"active", "pending_email", "pending_approval", "invited", "disabled"}
 EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$", re.I)
 USERNAME = re.compile(r"^[a-z0-9_.-]{3,40}$")
 
@@ -115,6 +117,40 @@ def register(con, username: str, email: str, password: str, account_type: str, d
     return {"username": username, "role": role, "status": status}
 
 
+def invite(con, hr: str, email: str, display_name: str = "") -> dict:
+    """An organisation user, created by an HR advisor. No password until they accept the emailed invite; the
+    username comes from the email (made unique)."""
+    init(con)
+    email = email.strip().lower()
+    if not EMAIL.match(email):
+        raise AuthError("enter a valid email address")
+    if con.execute("SELECT 1 FROM users WHERE lower(email)=?", (email,)).fetchone():
+        raise AuthError("that email already has an account")
+    stem = (re.sub(r"[^a-z0-9_.-]", "", email.split("@")[0]) or "member")[:32].ljust(3, "0")
+    username, n = stem, 1
+    while con.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
+        n += 1
+        username = f"{stem}{n}"
+    with con:
+        con.execute("INSERT INTO users(username,pw_hash,salt,role,employee_id,display_name,created_utc,email,status,plan,"
+                    "account_type,invited_by) VALUES(?,NULL,NULL,'employee',?,?,?,?,'invited','org','org',?)",
+                    (username, "U-" + os.urandom(4).hex(), (display_name or username).strip()[:60], now(), email, hr))
+    _event(con, username, f"invited by {hr}")
+    return account(con, username)
+
+
+def accept_invite(con, username: str, password: str):
+    """The invited person chose a password and accepted the terms: the account is ready."""
+    _check_password(password)
+    salt = os.urandom(16)
+    with con:
+        n = con.execute("UPDATE users SET pw_hash=?, salt=?, status='active', terms_version=?, terms_accepted_utc=? "
+                        "WHERE username=? AND status='invited'", (_hash(password, salt), salt, TERMS_VERSION, now(), username)).rowcount
+    if not n:
+        raise AuthError("this invite was already used or withdrawn")
+    _event(con, username, "invite_accepted")
+
+
 def email_verified(con, username: str) -> str:
     """After the emailed code: individuals become active, HR advisors wait for admin approval."""
     row = con.execute("SELECT role FROM users WHERE username=? AND status='pending_email'", (username,)).fetchone()
@@ -141,7 +177,7 @@ def set_password(con, username: str, password: str):
 def check_password(con, username: str, password: str) -> bool:
     """For sensitive actions by a signed-in user (e.g. deleting the account). No lockout side effects."""
     row = con.execute("SELECT pw_hash, salt FROM users WHERE username=?", (username,)).fetchone()
-    return bool(row) and hmac.compare_digest(_hash(password or "", row[1]), row[0])
+    return bool(row and row[0]) and hmac.compare_digest(_hash(password or "", row[1]), row[0])
 
 
 def find_login(con, login: str) -> dict | None:
@@ -176,7 +212,7 @@ def effective_plan(plan: str | None, plan_until: str | None) -> str:
 
 
 KEYS = ["username", "role", "employee_id", "display_name", "email", "status", "plan", "plan_until", "trusted",
-        "account_type", "created_utc", "terms_version", "terms_accepted_utc"]
+        "account_type", "created_utc", "terms_version", "terms_accepted_utc", "invited_by"]
 
 
 def account(con, username: str) -> dict | None:
@@ -201,7 +237,7 @@ def authenticate(con, username: str, password: str, max_failures: int = 5, lock_
     if row and row[6] and datetime.fromisoformat(row[6]) > t:
         _event(con, username, "locked")
         raise AuthError("account temporarily locked; try again later")
-    ok = bool(row) and hmac.compare_digest(_hash(password or "", row[1]), row[0])
+    ok = bool(row and row[0]) and hmac.compare_digest(_hash(password or "", row[1]), row[0])  # invited: no password yet
     if not ok:
         if row:
             failed = row[5] + 1
@@ -218,7 +254,8 @@ def authenticate(con, username: str, password: str, max_failures: int = 5, lock_
         _event(con, username, f"login_{status}")
         raise AuthError({"disabled": "this account is disabled; contact support",
                          "pending_email": "verify your email first: enter the code we sent you",
-                         "pending_approval": "your HR account is waiting for an administrator to approve it"}[status])
+                         "pending_approval": "your HR account is waiting for an administrator to approve it",
+                         "invited": "accept the invite in your email first"}[status])
     with con:
         con.execute("UPDATE users SET failed=0, locked_until=NULL WHERE username=?", (username,))
     _event(con, username, "login")

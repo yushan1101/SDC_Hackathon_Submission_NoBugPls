@@ -743,68 +743,94 @@ class FakeSMTP:
 
 
 def _last_email():
+    """-> (link token, route username, message). The email holds only a link, never a code."""
     import re as _re
     msg = FakeSMTP.sent[-1]
     text = msg.get_body(("plain",)).get_content()
-    return _re.search(r"code is (\d{6})", text).group(1), _re.search(r"#/(?:verify|reset)/[^/]+/([A-Za-z0-9_-]+)", text).group(1), msg
+    assert not _re.search(r"\b\d{6}\b", text)  # no code in the email
+    m = _re.search(r"#/(?:verify|reset|invite)/([^/\s]+)/([A-Za-z0-9_-]+)", text)
+    return m.group(2), m.group(1), msg
 
 
 def _with_email(monkeypatch):
     import server.api as api
-    from governance import otp
+    from governance import mailer
     monkeypatch.setattr(api.cfg, "smtp_host", "smtp.test")
-    monkeypatch.setattr(otp.smtplib, "SMTP", FakeSMTP)
+    monkeypatch.setattr(mailer.smtplib, "SMTP", FakeSMTP)
 
 
-def test_email_link_verifies_and_signs_in_like_claude(client, monkeypatch):
+def _other_device(purpose, username, link):
+    """Open the email link in a browser that didn't start the flow: it shows a code, and signs nothing in."""
+    from fastapi.testclient import TestClient
+    import server.api as api
+    phone = TestClient(api.app)
+    r = phone.post("/api/email/open", json={"purpose": purpose, "username": username, "token": link}, headers={"X-AP": "1"}).json()
+    assert r["same_browser"] is False and len(r["code"]) == 6 and phone.get("/api/me").status_code == 401
+    return r["code"]
+
+
+def test_email_link_continues_only_in_the_browser_that_signed_up(client, monkeypatch):
     _with_email(monkeypatch)
     client.cookies.clear()
     r = _register(client, username="linkuser1", email="linkuser1@example.com").json()
     assert r["status"] == "pending_email" and r["wait_token"]
-    code, link, msg = _last_email()
-    assert msg["To"] == "linkuser1@example.com" and "Verify and sign in" in msg.get_body(("html",)).get_content()
-    # the waiting screen (this browser) keeps asking: not yet
+    link, who, msg = _last_email()
+    html = msg.get_body(("html",)).get_content()
+    assert who == "linkuser1" and msg["To"] == "linkuser1@example.com" and "Verify email" in html
+    assert 'src="cid:' in html and any(part.get_content_type() == "image/png" for part in msg.walk())  # the owl
     poll = lambda: client.post("/api/register/poll", json={"username": "linkuser1", "wait_token": r["wait_token"]}, headers={"X-AP": "1"})
     assert poll().json()["status"] == "pending_email"
-    # the link is opened somewhere else (another device): that device is signed in
+    # opened on another device: a code to type here, the link is used up, nothing signed in there
+    code = _other_device("signup", "linkuser1", link)
     from fastapi.testclient import TestClient
     import server.api as api
-    phone = TestClient(api.app)
-    assert phone.post("/api/register/verify-link", json={"username": "linkuser1", "token": "wrong" * 5}, headers={"X-AP": "1"}).status_code == 422
-    ok = phone.post("/api/register/verify-link", json={"username": "linkuser1", "token": link}, headers={"X-AP": "1"})
-    assert ok.json()["status"] == "active"
-    # ...and the waiting screen notices and signs in here too, once
-    assert poll().json()["status"] == "active" and client.get("/api/me").json()["username"] == "linkuser1"
-    assert poll().status_code == 404
-    assert client.post("/api/register/verify", json={"username": "linkuser1", "code": code}, headers={"X-AP": "1"}).status_code == 422
+    again = TestClient(api.app).post("/api/email/open", json={"purpose": "signup", "username": "linkuser1", "token": link}, headers={"X-AP": "1"})
+    assert again.status_code == 422
+    assert client.post("/api/register/verify", json={"username": "linkuser1", "code": "000000"}, headers={"X-AP": "1"}).status_code == 422
+    ok = client.post("/api/register/verify", json={"username": "linkuser1", "code": code}, headers={"X-AP": "1"})
+    assert ok.json()["status"] == "active" and client.get("/api/me").json()["username"] == "linkuser1"
+    # same browser: the link itself carries on and signs in
+    client.cookies.clear()
+    r2 = _register(client, username="linkuser2", email="linkuser2@example.com").json()
+    link2, _, _ = _last_email()
+    same = client.post("/api/email/open", json={"purpose": "signup", "username": "linkuser2", "token": link2, "wait_token": r2["wait_token"]}, headers={"X-AP": "1"})
+    assert same.json()["same_browser"] is True and same.json()["status"] == "active"
+    assert client.get("/api/me").json()["username"] == "linkuser2"
 
 
-def test_forgot_password_by_code_or_link_without_revealing_accounts(client, monkeypatch):
+def test_forgot_password_link_or_code_without_revealing_accounts(client, monkeypatch):
     import server.api as api
     from governance import challenge
     _with_email(monkeypatch)
     client.cookies.clear()
-    _register(client, username="forgetful1", email="forgetful1@example.com")  # SMTP on: needs the email code first
-    code, _, _ = _last_email()
-    client.post("/api/register/verify", json={"username": "forgetful1", "code": code}, headers={"X-AP": "1"})
+    _register(client, username="forgetful1", email="forgetful1@example.com")
+    link, _, _ = _last_email()
+    client.post("/api/register/verify", json={"username": "forgetful1", "code": _other_device("signup", "forgetful1", link)}, headers={"X-AP": "1"})
     def forgot(login, dev="dev-forgot"):
         cid = client.post("/api/challenge", headers={"X-AP": "1"}).json()["id"]
         tok = challenge.solve_for_tests(api.db, cid, dev)
         return client.post("/api/password/forgot", json={"login": login, "challenge_token": tok, "risk": HUMAN | {"device_id": dev}}, headers={"X-AP": "1"})
     before = len(FakeSMTP.sent)
-    assert forgot("nobody-here@example.com").json() == {"ok": True} and len(FakeSMTP.sent) == before  # same answer, no email
+    nobody = forgot("nobody-here@example.com").json()
+    assert set(nobody) == {"ok", "wait_token"} and len(FakeSMTP.sent) == before  # same shape, no email
     assert client.post("/api/password/forgot", json={"login": "forgetful1@example.com"}, headers={"X-AP": "1"}).status_code == 422  # slider required
-    assert forgot("forgetful1@example.com").json() == {"ok": True}
-    code, link, msg = _last_email()
+    wait = forgot("forgetful1@example.com").json()["wait_token"]
+    link, _, msg = _last_email()
     assert "Reset your AiversePulse password" in msg["Subject"]
+    # another device gets a code; with it (and only it) this browser sets the new password
+    code = _other_device("reset", "forgetful1", link)
     new = "Brand-New-Pass7"
     assert client.post("/api/password/reset", json={"login": "forgetful1@example.com", "code": "000000", "password": new}, headers={"X-AP": "1"}).status_code == 422
     assert client.post("/api/password/reset", json={"login": "forgetful1@example.com", "code": code, "password": new}, headers={"X-AP": "1"}).json()["ok"]
     assert client.get("/api/me").status_code == 401  # signed out everywhere
     assert client.post("/api/login", json={"username": "forgetful1", "password": new, "risk": HUMAN}, headers={"X-AP": "1"}).status_code == 200
-    forgot("forgetful1")  # by username, then the link
-    _, link, _ = _last_email()
-    assert client.post("/api/password/reset", json={"username": "forgetful1", "token": link, "password": "Another-Pass88"}, headers={"X-AP": "1"}).json()["ok"]
+    # same browser: the link opens "choose a new password"; a link without this browser's token is refused
+    wait = forgot("forgetful1").json()["wait_token"]
+    link, _, _ = _last_email()
+    body = {"username": "forgetful1", "token": link, "password": "Another-Pass88"}
+    assert client.post("/api/email/open", json={"purpose": "reset", "username": "forgetful1", "token": link, "wait_token": wait}, headers={"X-AP": "1"}).json() == {"same_browser": True}
+    assert client.post("/api/password/reset", json=body, headers={"X-AP": "1"}).status_code == 422
+    assert client.post("/api/password/reset", json=body | {"wait_token": wait}, headers={"X-AP": "1"}).json()["ok"]
 
 
 def test_unverified_signup_is_never_stuck(client, monkeypatch):
@@ -812,14 +838,15 @@ def test_unverified_signup_is_never_stuck(client, monkeypatch):
     client.cookies.clear()
     first = _register(client, username="stuck1", email="stuck1@example.com").json()
     assert first["status"] == "pending_email"
-    # the code was never entered; signing up again starts fresh instead of "already registered"
+    # the email was never opened; signing up again starts fresh instead of "already registered"
     again = _register(client, username="stuck1", email="stuck1@example.com")
     assert again.status_code == 200 and again.json()["status"] == "pending_email"
-    # or signing in with the right password sends a new code and opens the code screen
+    # or signing in with the right password sends a new email and opens the waiting screen
     n = len(FakeSMTP.sent)
     r = client.post("/api/login", json={"username": "stuck1", "password": PW, "risk": HUMAN}, headers={"X-AP": "1"}).json()
     assert r["status"] == "pending_email" and r["wait_token"] and len(FakeSMTP.sent) == n + 1
-    code, _, _ = _last_email()
+    link, _, _ = _last_email()
+    code = _other_device("signup", "stuck1", link)
     assert client.post("/api/register/verify", json={"username": "stuck1", "code": code}, headers={"X-AP": "1"}).json()["status"] == "active"
     # a wrong password still says nothing about the account
     assert client.post("/api/login", json={"username": "stuck1", "password": "Wrong-pass99", "risk": HUMAN}, headers={"X-AP": "1"}).status_code == 401
@@ -866,3 +893,202 @@ def test_sign_in_with_email_as_well_as_username(client):
     client.cookies.clear()
     bad = client.post("/api/login", json={"username": "nobody-at-all@example.com", "password": PW, "risk": HUMAN}, headers={"X-AP": "1"})
     assert bad.status_code == 401 and bad.json()["detail"] == "invalid username or password"
+
+
+def test_hr_invites_team_members_who_join_without_signing_up(client, monkeypatch):
+    _with_email(monkeypatch)
+    login(client, "hr1")
+    H = {"X-AP": "1"}
+    r = client.post("/api/org/invite", json={"email": "Joiner.One@Example.com", "display_name": "Joiner One"}, headers=H).json()
+    assert r["status"] == "invited" and r["emailed"] and r["username"] == "joiner.one"
+    assert client.post("/api/org/invite", json={"email": "joiner.one@example.com"}, headers=H).status_code == 422  # one account per email
+    link, who, msg = _last_email()
+    assert who == "joiner.one" and "invited you" in msg.get_body(("plain",)).get_content()
+    # no password yet: signing in is impossible, "forgot password" sends nothing
+    assert client.post("/api/login", json={"username": "joiner.one", "password": "", "risk": HUMAN}, headers=H).status_code in (401, 422)
+    people = client.get("/api/org/users").json()
+    assert [p["status"] for p in people if p["username"] == "joiner.one"] == ["invited"]
+    # only the inviting HR advisor manages them
+    from governance import accounts
+    import server.api as api
+    if not accounts.account(api.db, "hr2"):
+        accounts.create_user(api.db, "hr2", PW, "hr_advisor")
+    login(client, "hr2")
+    assert client.post("/api/org/users/joiner.one/resend", headers=H).status_code == 404
+    # the invite link: who it is for, then choose a password (terms required) and be signed in
+    guest = __import__("fastapi.testclient", fromlist=["TestClient"]).TestClient(api.app)
+    assert guest.post("/api/invite/check", json={"username": "joiner.one", "token": link}, headers=H).json()["invited_by"]
+    assert guest.post("/api/invite/accept", json={"username": "joiner.one", "token": link, "password": PW}, headers=H).status_code == 422
+    ok = guest.post("/api/invite/accept", json={"username": "joiner.one", "token": link, "password": PW, "accept_terms": True}, headers=H)
+    assert ok.json()["status"] == "active" and guest.get("/api/me").json()["effective_plan"] == "org"
+    assert guest.post("/api/invite/accept", json={"username": "joiner.one", "token": link, "password": PW, "accept_terms": True}, headers=H).status_code == 422
+    # HR disables (signed out at once), enables, then removes
+    login(client, "hr1")
+    assert client.post("/api/org/users/joiner.one/status", json={"status": "disabled"}, headers=H).status_code == 200
+    assert guest.get("/api/me").status_code == 401
+    assert client.post("/api/login", json={"username": "joiner.one", "password": PW, "risk": HUMAN}, headers=H).status_code == 401
+    assert client.post("/api/org/users/joiner.one/status", json={"status": "active"}, headers=H).status_code == 200
+    login(client, "hr1")
+    assert client.delete("/api/org/users/joiner.one", headers=H).json()["ok"]
+    assert not accounts.account(api.db, "joiner.one")
+
+
+class FakeHTTP:
+    """Records platform calls (Telegram, Discord, Slack, LinkedIn, Facebook, X) instead of making them."""
+    calls = []
+
+    class R:
+        def __init__(self, data, status=200, headers=None):
+            self._d, self.status_code, self.headers = data, status, headers or {}
+        def json(self): return self._d
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                import httpx
+                raise httpx.HTTPStatusError("x", request=httpx.Request("POST", "https://x"), response=httpx.Response(self.status_code))
+
+    @classmethod
+    def post(cls, url, **k):
+        cls.calls.append((url, k))
+        if "api.telegram.org" in url:
+            return cls.R({"ok": True, "result": {"message_id": 7}})
+        if "hooks.slack.com" in url and "broken" in url:
+            return cls.R({}, 403)
+        return cls.R({"id": "1"})
+
+    @classmethod
+    def get(cls, url, **k):
+        cls.calls.append((url, k))
+        return cls.R({"ok": True, "result": {"username": "jobsbot"}})
+
+
+def test_hiring_plugins_post_openings_everywhere_and_keep_tokens_secret(client, monkeypatch):
+    from governance import plugins
+    import server.api as api
+    monkeypatch.setattr(plugins, "httpx", type("H", (), {"post": FakeHTTP.post, "get": FakeHTTP.get, "HTTPStatusError": __import__("httpx").HTTPStatusError}))
+    FakeHTTP.calls.clear()
+    H = {"X-AP": "1"}
+    login(client, "hr1")
+    # only the platform's own webhook host is accepted (no server-side requests to typed-in addresses)
+    bad = client.post("/api/plugins/connect", json={"platform": "discord", "webhook_url": "https://169.254.169.254/api/webhooks/1/x"}, headers=H)
+    assert bad.status_code == 422
+    token = "123456789:" + "A" * 35
+    assert client.post("/api/plugins/connect", json={"platform": "telegram", "bot_token": token, "chat_id": "@ourjobs"}, headers=H).status_code == 200
+    assert client.post("/api/plugins/connect", json={"platform": "discord", "webhook_url": "https://discord.com/api/webhooks/1/abc"}, headers=H).status_code == 200
+    assert client.post("/api/plugins/connect", json={"platform": "slack", "webhook_url": "https://hooks.slack.com/services/broken"}, headers=H).status_code == 200
+    listed = client.get("/api/plugins").json()
+    assert len(listed["connections"]) == 3 and token not in json.dumps(listed)  # tokens never go back to the browser
+    raw = api.db.execute("SELECT secret FROM plugin_connections WHERE platform='telegram'").fetchone()[0]
+    assert token.encode() not in raw  # encrypted at rest
+    oauth = {p["id"]: p for p in listed["platforms"]}
+    assert not oauth["linkedin"]["available"] and oauth["linkedin"]["redirect_uri"].endswith("/api/plugins/oauth/linkedin/callback")
+    # new opening: auto-post runs in the background; then "post now" reports each platform
+    o = client.post("/api/openings", json={"soc": "2221.2", "title": "Ward nurse"}, headers=H).json()
+    out = client.post(f"/api/openings/{o['id']}/publish", json={}, headers=H).json()["results"]
+    by = {r["platform"]: r for r in out}
+    assert by["telegram"]["status"] == "posted" and by["telegram"]["url"] == "https://t.me/ourjobs/7"
+    assert by["discord"]["status"] == "posted" and by["slack"]["status"] == "failed" and "permissions" in by["slack"]["error"]
+    sent = [k["json"]["text"] for u, k in FakeHTTP.calls if "sendMessage" in u]
+    assert sent and all(f"/apply.html#{o['token']}" in t and "Ward nurse" in t for t in sent)
+    assert any(p["status"] == "posted" for p in client.get(f"/api/openings/{o['id']}/posts").json())
+    # someone else's connection can't be touched; X tweets fit in 280 characters with the link
+    cid = listed["connections"][0]["id"]
+    login(client, "ana")
+    assert client.delete(f"/api/plugins/{cid}", headers=H).status_code == 403
+    assert len(plugins._fit("x", "word " * 200, "https://example.com/apply/abc")) <= 280 + 30
+
+
+def test_plugin_oauth_needs_app_keys_and_a_valid_state(client, monkeypatch):
+    import server.api as api
+    H = {"X-AP": "1"}
+    login(client, "hr1")
+    assert client.post("/api/plugins/oauth/x/start", json={}, headers=H).status_code == 422  # no app keys yet
+    monkeypatch.setattr(api.cfg, "x_client_id", "client-123")
+    url = client.post("/api/plugins/oauth/x/start", json={}, headers=H).json()["url"]
+    assert url.startswith("https://x.com/i/oauth2/authorize?") and "code_challenge_method=S256" in url and "state=" in url
+    monkeypatch.setattr(api.cfg, "linkedin_client_id", "li")
+    monkeypatch.setattr(api.cfg, "linkedin_client_secret", __import__("pydantic").SecretStr("s"))
+    assert client.post("/api/plugins/oauth/linkedin/start", json={"org_id": "not-a-number"}, headers=H).status_code == 422
+    r = client.get("/api/plugins/oauth/x/callback?code=abc&state=forged", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].endswith("#/plugins/failed")
+
+
+def test_extra_frontend_sites_sign_in_with_a_bearer_token(client):
+    import server.api as api
+    H = {"X-AP": "1"}
+    _admin(client)
+    assert client.post("/api/admin/sites", json={"origin": "http://evil.example.com"}, headers=H).status_code == 422  # https only
+    assert client.post("/api/admin/sites", json={"origin": "https://jobs.example.org/path"}, headers=H).status_code == 422
+    assert client.post("/api/admin/sites", json={"origin": "https://Jobs.Example.org", "label": "Careers"}, headers=H).json()["origin"] == "https://jobs.example.org"
+    site = {"Origin": "https://jobs.example.org", "X-AP": "1"}
+    pre = client.options("/api/login", headers={"Origin": "https://jobs.example.org", "Access-Control-Request-Method": "POST",
+                                                "Access-Control-Request-Headers": "content-type,x-ap,authorization"})
+    assert pre.headers["access-control-allow-origin"] == "https://jobs.example.org"
+    assert client.post("/api/login", json={"username": "ana", "password": PW}, headers={"Origin": "https://not-listed.example", "X-AP": "1"}).status_code == 403
+    # another site gets its session token (third-party cookies may be blocked there) and uses it as a Bearer header
+    client.cookies.clear()
+    r = client.post("/api/login", json={"username": "ana", "password": PW}, headers=site).json()
+    tok = r["session_token"]
+    client.cookies.clear()
+    assert client.get("/api/me", headers={"Authorization": f"Bearer {tok}"}).json()["username"] == "ana"
+    client.cookies.clear()
+    assert "session_token" not in client.post("/api/login", json={"username": "ana", "password": PW}, headers=H).json()  # same site: cookie only
+    client.post("/api/logout", headers={"Authorization": f"Bearer {tok}", "X-AP": "1"})
+    client.cookies.clear()
+    assert client.get("/api/me", headers={"Authorization": f"Bearer {tok}"}).status_code == 401
+    _admin(client)
+    assert client.delete("/api/admin/sites?origin=https://jobs.example.org", headers=H).json()["ok"]
+
+
+def test_hr_chooses_the_model_per_task_from_the_admins_list(client, monkeypatch):
+    from agents import llm
+    H = {"X-AP": "1"}
+    monkeypatch.setattr(llm, "providers", lambda: {"openai": True, "gemini": True})
+    _admin(client)
+    assert client.post("/api/admin/models", json={"spec": "rm -rf /"}, headers=H).status_code == 422
+    assert client.post("/api/admin/models", json={"spec": "openai:gpt-test-1", "label": "GPT test"}, headers=H).status_code == 200
+    login(client, "hr1")
+    assert client.post("/api/org/models", json={"task": "coach", "spec": "openai:not-allowed"}, headers=H).status_code == 422
+    assert client.post("/api/org/models", json={"task": "coach", "spec": "openai:gpt-test-1"}, headers=H).status_code == 200
+    got = {t["id"]: t for t in client.get("/api/org/models").json()["tasks"]}
+    assert got["coach"]["chosen"] == "openai:gpt-test-1"
+    # the choice applies to this organisation's requests only, and model_for() follows it
+    import server.api as api
+    assert api._org_models(client.cookies.get(api.COOKIE)) == {"coach": "openai:gpt-test-1"}
+    token = llm.ORG_MODELS.set({"coach": "openai:gpt-test-1"})
+    assert llm.model_for("coach") == "openai:gpt-test-1" and llm.model_for("coach", org=False) != "openai:gpt-test-1"
+    llm.ORG_MODELS.reset(token)
+    login(client, "ana")
+    assert api._org_models(client.cookies.get(api.COOKIE)) == {}
+
+
+def test_voice_input_is_a_paid_feature_and_never_stores_audio(client, monkeypatch):
+    import server.api as api
+    H = {"X-AP": "1"}
+    client.cookies.clear()
+    _register(client, username="talker1", email="talker1@example.com")  # free plan
+    audio = {"file": ("speech.webm", b"\x1aE\xdf\xa3" + b"0" * 2000, "audio/webm")}
+    assert client.post("/api/speech/transcribe", files=audio, headers=H).status_code == 402
+    login(client, "ana")  # organisation account: included
+    monkeypatch.setattr(api.llm, "transcribe", lambda audio, mime, lang="": ("hello there", None))
+    assert client.post("/api/speech/transcribe", files={"file": ("x.txt", b"0" * 2000, "text/plain")}, headers=H).status_code == 415
+    assert client.post("/api/speech/transcribe", files=audio, data={"lang": "en"}, headers=H).json() == {"text": "hello there"}
+    monkeypatch.setattr(api.llm, "transcribe", lambda audio, mime, lang="": (None, None))
+    assert client.post("/api/speech/transcribe", files=audio, headers=H).status_code == 503
+
+
+def test_hr_asks_about_the_team_and_drafts_openings_in_plain_words(client, monkeypatch):
+    import server.api as api
+    H = {"X-AP": "1"}
+    login(client, "hr1")
+    monkeypatch.setattr(api.llm, "generate", lambda *a, **k: (None, None))  # no model: plain facts, never an error
+    r = client.post("/api/hr/ask", json={"question": "Who is closest to a nurse role?"}, headers=H).json()
+    assert "openings" in r["answer"] and r["employees"] == []
+    monkeypatch.setattr(api.llm, "generate", lambda *a, **k: (json.dumps({"answer": "E-001 is closest.", "employees": ["E-001", "made-up"]}), None))
+    r = client.post("/api/hr/ask", json={"question": "Who is closest to a nurse role?"}, headers=H).json()
+    assert r["answer"] == "E-001 is closest." and "made-up" not in r["employees"]
+    monkeypatch.setattr(api.llm, "generate", lambda *a, **k: (json.dumps({"title": "Ward nurse", "occupation": "nurse",
+                        "criteria": "Top 5. Must know Microsoft Excel, 3+ years"}), None))
+    d = client.post("/api/openings/draft", json={"text": "We need a ward nurse who knows Excel with three years experience"}, headers=H).json()
+    assert d["title"] == "Ward nurse" and d["occupations"] and d["criteria_text"].startswith("Top 5") and d["summary"]
+    login(client, "ana")
+    assert client.post("/api/hr/ask", json={"question": "anything?"}, headers=H).status_code == 403

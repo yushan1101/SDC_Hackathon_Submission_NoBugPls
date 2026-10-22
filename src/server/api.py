@@ -6,6 +6,7 @@ Streaming: POST /api/analyze and /api/team return Server-Sent Events. Agent prog
 agent as it finishes). The report text is streamed only AFTER the Reviewer has verified its citations, so the
 chat-style typing never shows an unverified claim.
 """
+import contextvars
 import hashlib
 import json
 import logging
@@ -22,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 from io import StringIO
 from pathlib import Path
 
+import httpx
 import pandas as pd
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request as HttpRequest, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -32,14 +34,14 @@ from pydantic import BaseModel, Field, ValidationError
 from agents.gap_analyst import SCENARIO_NOTES
 from agents.pathway import HOURS_PER_LEVEL
 from agents.sdg import goal_meta, role_sdgs
-from agents import criteria, matcher, quiz, resume
+from agents import criteria, llm, matcher, quiz, resume
 from agents.knowledge import learning_resources, occupation, resolve_occupation, role_requirements, search_occupations
 from config.settings import get_settings
 from core import graph, screening
 from core.state import Pathway, Profile, Request, Skill
 from core.team_import import parse_team
 from core.usage import summarize
-from governance import accounts, approval, billing, challenge, deletion, otp, recruiting, reviews, risk
+from governance import accounts, approval, billing, challenge, deletion, otp, plugins, recruiting, reviews, risk
 from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
@@ -65,15 +67,53 @@ RESULTS: "OrderedDict[str, dict]" = OrderedDict()  # plan_id -> last run, to re-
 with DB_LOCK:
     db.executescript("""CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, username TEXT, role TEXT,
                         employee_id TEXT, display_name TEXT, expires_utc TEXT);
+                        CREATE TABLE IF NOT EXISTS frontend_sites(origin TEXT PRIMARY KEY, label TEXT, added_by TEXT,
+                        created_utc TEXT);
+                        CREATE TABLE IF NOT EXISTS model_catalog(spec TEXT PRIMARY KEY, label TEXT, created_utc TEXT);
+                        CREATE TABLE IF NOT EXISTS org_models(owner TEXT, task TEXT, spec TEXT, PRIMARY KEY(owner, task));
                         CREATE TABLE IF NOT EXISTS plan_progress(plan_id TEXT, item TEXT, done_utc TEXT,
                         PRIMARY KEY(plan_id, item));""")  # activities ticked off as done ("<days>:<skill>")
     interview_store.init(db)
 
 app = FastAPI(title="AiversePulse", docs_url=None, redoc_url=None, openapi_url=None)
-if cfg.allowed_origins:  # separate frontend deploy: only these origins may call the API with the session cookie
-    from fastapi.middleware.cors import CORSMiddleware
-    app.add_middleware(CORSMiddleware, allow_origins=cfg.allowed_origins, allow_credentials=True,
-                       allow_methods=["GET", "POST", "DELETE"], allow_headers=["Content-Type", "X-AP", "Accept"], max_age=600)
+
+# --- frontends on other domains, all calling this one backend ----------------------------------------
+# Allowed = CORS_ORIGINS in .env plus the sites an admin adds on the admin dashboard (frontend_sites).
+_sites_cache: tuple[float, set] = (0.0, set())
+
+
+def _frontends() -> set:
+    global _sites_cache
+    if time.monotonic() - _sites_cache[0] > 30:  # ponytail: 30 s cache, so a newly added site works within half a minute
+        # its own connection, not DB_LOCK: this runs while callers already hold that lock (e.g. building email links)
+        import sqlite3
+        from contextlib import closing
+        try:
+            with closing(sqlite3.connect(cfg.database_path, timeout=5)) as c:
+                rows = {r[0] for r in c.execute("SELECT origin FROM frontend_sites")}
+        except sqlite3.Error:
+            rows = _sites_cache[1]
+        _sites_cache = (time.monotonic(), rows)
+    return set(cfg.allowed_origins) | _sites_cache[1]
+
+
+def _foreign_origin(request: HttpRequest) -> str | None:
+    """The calling frontend's origin when it is an allowed site other than this backend, else None."""
+    origin = (request.headers.get("origin") or "").rstrip("/")
+    own = f"{request.url.scheme}://{request.url.netloc}"
+    return origin if origin and origin != own and origin in _frontends() else None
+
+
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+
+class SitesCORS(CORSMiddleware):
+    def is_allowed_origin(self, origin: str) -> bool:
+        return origin.rstrip("/") in _frontends()
+
+
+app.add_middleware(SitesCORS, allow_origins=[], allow_credentials=True, allow_methods=["GET", "POST", "DELETE"],
+                   allow_headers=["Content-Type", "X-AP", "Accept", "Authorization"], max_age=600)
 
 
 # --- security -------------------------------------------------------------------------------------
@@ -84,8 +124,10 @@ async def headers(request: HttpRequest, call_next):
             return JSONResponse({"detail": "missing X-AP header"}, status_code=403)
         origin = (request.headers.get("origin") or "").rstrip("/")
         own = f"{request.url.scheme}://{request.url.netloc}"
-        if origin and origin != own and origin not in cfg.allowed_origins:  # defence in depth behind CORS
+        if origin and origin != own and origin not in _frontends():  # defence in depth behind CORS
             return JSONResponse({"detail": "origin not allowed"}, status_code=403)
+    if request.url.path.startswith("/api/") and (token := _session_token(request)):
+        llm.ORG_MODELS.set(_org_models(token))
     resp = await call_next(request)
     resp.headers.update({
         "Content-Security-Policy": f"default-src 'self'; script-src 'self' '{_assets()[2]}' https://js.stripe.com; style-src 'self' 'unsafe-inline' "
@@ -103,8 +145,30 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def _session_token(request: HttpRequest) -> str | None:
+    """The session cookie; or, for a frontend on another domain (where browsers may block third-party cookies),
+    "Authorization: Bearer <token>"."""
+    auth = request.headers.get("authorization", "")
+    return (auth[7:].strip() if auth.lower().startswith("bearer ") else None) or request.cookies.get(COOKIE)  # explicit wins
+
+
+def _org_models(token: str) -> dict:
+    """{task: model} chosen by the signed-in person's organisation (empty: the admin defaults)."""
+    with DB_LOCK:
+        row = db.execute("SELECT s.username, s.role, u.invited_by FROM sessions s LEFT JOIN users u ON u.username=s.username "
+                         "WHERE s.token_hash=?", (_hash(token),)).fetchone()
+        owner = (row[0] if row[1] == "hr_advisor" else row[2]) if row else None
+        return dict(db.execute("SELECT task, spec FROM org_models WHERE owner=?", (owner,)).fetchall()) if owner else {}
+
+
+def _in_context(fn):
+    """Run fn in a thread with this request's context (the organisation's model choices)."""
+    ctx = contextvars.copy_context()
+    return lambda *a, **k: ctx.run(fn, *a, **k)
+
+
 def current_user(request: HttpRequest) -> dict:
-    token = request.cookies.get(COOKIE)
+    token = _session_token(request)
     if not token:
         raise HTTPException(401, "sign in required")
     now = datetime.now(timezone.utc)
@@ -160,7 +224,7 @@ def _record_usage(username: str, feature: str, records) -> None:
 
 
 class Login(BaseModel):
-    username: str = Field(max_length=40)
+    username: str = Field(max_length=254)  # or the email
     password: str = Field(max_length=200)
     risk: dict | None = None  # device/behaviour signals from web/js/risk.js (Sift-style)
 
@@ -198,12 +262,14 @@ def _start_session(user: dict, request: HttpRequest, response: Response) -> dict
     response.set_cookie(COOKIE, token, httponly=True, samesite=cfg.cookie_samesite,
                         secure=request.url.scheme == "https" or cfg.cookie_samesite == "none",
                         max_age=int(SESSION_IDLE.total_seconds()) * 16)
+    if _foreign_origin(request):  # a frontend on another domain keeps the token itself (sent as a Bearer header)
+        return user | {"session_token": token}
     return user
 
 
 @app.post("/api/logout")
 def logout(request: HttpRequest, response: Response):
-    if token := request.cookies.get(COOKIE):
+    if token := _session_token(request):
         with DB_LOCK:
             db.execute("DELETE FROM sessions WHERE token_hash=?", (_hash(token),))
             db.commit()
@@ -243,7 +309,10 @@ def challenge_verify(cid: str, body: SolveIn):
 
 
 def _base_url(request: HttpRequest) -> str:
-    """Where links in emails point: PUBLIC_URL if set, else this request's address (https behind Cloudflare)."""
+    """Where links in emails point: the frontend the person is using (so "continue in this browser" finds what
+    that site stored), else PUBLIC_URL, else this request's address (https behind Cloudflare)."""
+    if front := _foreign_origin(request):
+        return front
     if cfg.public_url:
         return cfg.public_url
     base = str(request.base_url).rstrip("/")
@@ -366,9 +435,11 @@ def password_forgot(body: ForgotIn, request: HttpRequest):
             raise HTTPException(422, "Complete the slider check first.")
         a = accounts.find_login(db, body.login)
         verdict = risk.assess(db, "password_reset", a["username"] if a else None, _ip(request), body.risk)
-        if a and a.get("email") and a["status"] != "disabled" and verdict["decision"] != "block":
+        wait = secrets.token_urlsafe(24)  # no account: a token that matches nothing, so the answer looks the same
+        if a and a.get("email") and a["status"] not in ("disabled", "invited") and verdict["decision"] != "block":
             otp.issue(db, cfg, a["username"], a["email"], _base_url(request), purpose="reset")
-    return {"ok": True}
+            wait = otp.new_wait(db, a["username"], "reset")
+    return {"ok": True, "wait_token": wait}
 
 
 class ResetIn(BaseModel):
@@ -376,6 +447,7 @@ class ResetIn(BaseModel):
     username: str = Field(default="", max_length=40)    # with a link: from the link
     code: str = Field(default="", max_length=6)
     token: str = Field(default="", max_length=80)
+    wait_token: str = Field(default="", max_length=80)  # with a link: only the browser that asked can use it
     password: str = Field(min_length=10, max_length=200)
 
 
@@ -383,8 +455,8 @@ class ResetIn(BaseModel):
 def password_reset(body: ResetIn):
     with DB_LOCK:
         a = accounts.find_login(db, body.username or body.login)
-        ok = bool(a) and (otp.check_link(db, a["username"], body.token, "reset") if body.token
-                          else otp.check(db, a["username"], body.code, "reset"))
+        ok = bool(a) and (otp.wait_valid(db, a["username"], body.wait_token, "reset") and otp.check_link(db, a["username"], body.token, "reset")
+                          if body.token else otp.check(db, a["username"], body.code, "reset"))
         if not ok:
             raise HTTPException(422, "That code or link is wrong or expired. Ask for a new one.")
         try:
@@ -392,27 +464,86 @@ def password_reset(body: ResetIn):
         except accounts.AuthError as e:
             raise HTTPException(422, str(e))
         db.execute("DELETE FROM sessions WHERE username=?", (a["username"],))  # signed out everywhere
+        db.execute("DELETE FROM signup_waits WHERE username=?", ("reset:" + a["username"],))
         db.commit()
     return {"ok": True}
 
 
-class VerifyLinkIn(BaseModel):
+class EmailOpenIn(BaseModel):
+    purpose: str = Field(pattern="^(signup|reset)$")
+    username: str = Field(max_length=40)
+    token: str = Field(min_length=20, max_length=80)
+    wait_token: str = Field(default="", max_length=80)  # what this browser kept when it started the flow, if anything
+
+
+@app.post("/api/email/open")
+def email_open(body: EmailOpenIn, request: HttpRequest, response: Response):
+    """The link from the email (like Claude's). In the browser that started (it holds the wait token): carry on here -
+    sign-up verifies and signs in; reset goes on to "choose a new password". Anywhere else: the link is used up and
+    a 6-digit code is shown, to be typed in the starting browser. Nothing is signed in on the other device."""
+    name = body.username.strip().lower()
+    with DB_LOCK:
+        same = otp.wait_valid(db, name, body.wait_token, body.purpose)
+        if not same:
+            code = otp.code_for_other_browser(db, name, body.token, body.purpose)
+            if not code:
+                raise HTTPException(422, "This link is used or expired. Ask for a new one.")
+            return {"same_browser": False, "code": code}
+        if body.purpose == "reset":
+            if not otp.link_valid(db, name, body.token, "reset"):
+                raise HTTPException(422, "This link is used or expired. Ask for a new one.")
+            return {"same_browser": True}
+        if not otp.check_link(db, name, body.token):
+            raise HTTPException(422, "This link is used or expired. Sign in, or ask for a new email.")
+        status = accounts.email_verified(db, name)
+        otp.claim_wait(db, name, body.wait_token)
+        user = accounts.account(db, name)
+    if status == "active":  # _start_session takes DB_LOCK itself
+        return {"same_browser": True, "status": "active", **_start_session(user, request, response)}
+    return {"same_browser": True, "status": status, "username": name}
+
+
+# ---------------------------------------------------------------- invited organisation users
+class InviteCheckIn(BaseModel):
     username: str = Field(max_length=40)
     token: str = Field(min_length=20, max_length=80)
 
 
-@app.post("/api/register/verify-link")
-def register_verify_link(body: VerifyLinkIn, request: HttpRequest, response: Response):
-    """The "Verify and sign in" link from the email (like Claude's): same effect as typing the code."""
+def _invited(name: str, token: str) -> dict:
+    a = accounts.account(db, name)
+    if not a or a["status"] != "invited" or not otp.link_valid(db, name, token, "invite"):
+        raise HTTPException(422, "This invite was used, withdrawn or has expired. Ask your HR advisor for a new one.")
+    return a
+
+
+@app.post("/api/invite/check")
+def invite_check(body: InviteCheckIn):
     name = body.username.strip().lower()
     with DB_LOCK:
-        if not otp.check_link(db, name, body.token):
-            raise HTTPException(422, "This link is used or expired. Sign in, or ask for a new code.")
-        status = accounts.email_verified(db, name)
+        a = _invited(name, body.token)
+        hr = accounts.account(db, a["invited_by"] or "") or {}
+    return {"username": name, "display_name": a["display_name"], "email": a["email"], "invited_by": hr.get("display_name") or a["invited_by"]}
+
+
+class InviteAcceptIn(InviteCheckIn):
+    password: str = Field(min_length=10, max_length=200)
+    accept_terms: bool = False
+
+
+@app.post("/api/invite/accept")
+def invite_accept(body: InviteAcceptIn, request: HttpRequest, response: Response):
+    if not body.accept_terms:
+        raise HTTPException(422, "Please accept the Terms of Use and Privacy Policy to continue.")
+    name = body.username.strip().lower()
+    with DB_LOCK:
+        _invited(name, body.token)
+        try:
+            accounts.accept_invite(db, name, body.password)
+        except accounts.AuthError as e:
+            raise HTTPException(422, str(e))
+        otp.check_link(db, name, body.token, "invite")  # used up
         user = accounts.account(db, name)
-    if status == "active":
-        return {"status": "active", **_start_session(user, request, response)}
-    return {"status": status, "username": name}
+    return {"status": "active", **_start_session(user, request, response)}  # outside the lock: it takes DB_LOCK
 
 
 class DeleteAccountIn(BaseModel):
@@ -511,6 +642,53 @@ def billing_payments(user: dict = Depends(current_user)):
 # ---------------------------------------------------------------- admin dashboard
 def _since_days(days: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+
+class SiteIn(BaseModel):
+    origin: str = Field(min_length=8, max_length=200)
+    label: str = Field(default="", max_length=60)
+
+
+@app.get("/api/admin/sites")
+def admin_sites(request: HttpRequest, user: dict = Depends(need("admin"))):
+    with DB_LOCK:
+        rows = db.execute("SELECT origin, label, added_by, created_utc FROM frontend_sites ORDER BY created_utc").fetchall()
+    return {"backend": _backend_url(request), "from_env": cfg.allowed_origins,
+            "plugin_redirects": {p: _oauth_return(request, p) for p in sorted(plugins.OAUTH)},
+            "plugins_ready": plugins.available(cfg),
+            "sites": [dict(zip(("origin", "label", "added_by", "created_utc"), r)) for r in rows]}
+
+
+@app.post("/api/admin/sites")
+def admin_site_add(body: SiteIn, user: dict = Depends(need("admin"))):
+    from urllib.parse import urlparse
+    u = urlparse(body.origin.strip())
+    local = u.hostname in ("localhost", "127.0.0.1")
+    if u.scheme not in ("https", "http") or (u.scheme == "http" and not local) or not u.hostname or u.path not in ("", "/") or u.query:
+        raise HTTPException(422, "Enter the site's address only, e.g. https://jobs.example.com (https required).")
+    origin = f"{u.scheme}://{u.netloc}".lower()
+    with DB_LOCK, db:
+        db.execute("INSERT OR REPLACE INTO frontend_sites VALUES(?,?,?,?)",
+                   (origin, body.label.strip() or u.hostname, user["username"], datetime.now(timezone.utc).isoformat(timespec="seconds")))
+    global _sites_cache
+    _sites_cache = (0.0, set())  # takes effect now
+    return {"origin": origin}
+
+
+@app.delete("/api/admin/sites")
+def admin_site_remove(origin: str, user: dict = Depends(need("admin"))):
+    global _sites_cache
+    with DB_LOCK, db:
+        n = db.execute("DELETE FROM frontend_sites WHERE origin=?", (origin.rstrip("/").lower(),)).rowcount
+    _sites_cache = (0.0, set())
+    if not n:
+        raise HTTPException(404, "not in the list (sites from CORS_ORIGINS are changed in .env)")
+    return {"ok": True}
+
+
+def _backend_url(request: HttpRequest) -> str:
+    base = str(request.base_url).rstrip("/")
+    return base.replace("http://", "https://", 1) if '"https"' in request.headers.get("cf-visitor", "") else base
 
 
 @app.get("/api/admin/summary")
@@ -619,7 +797,8 @@ def meta(user: dict = Depends(current_user)):
     from agents.knowledge import snapshot
     return {"occupations": len(snapshot()["occupations"]), "scenarios": SCENARIO_NOTES,
             "outlook": _outlook_meta(),
-            "llm": (__import__("agents.llm", fromlist=["model_for"]).model_for("coach") or None) if cfg.llm_enabled else None}
+            "llm": llm.model_for("coach") or None if cfg.llm_enabled else None,
+            "voice": bool(llm.stt_model()) and _plan(user) in VOICE_PLANS}  # server speech-to-text for this account
 
 
 # --- serialisation ----------------------------------------------------------------------------------
@@ -1238,7 +1417,7 @@ def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", 
 
         with ThreadPoolExecutor(max_workers=8) as pool:
             for r in reqs:
-                pool.submit(worker, r)
+                pool.submit(_in_context(worker), r)
             yield sse({"t": "roster", "ids": [r.employee_id for r in reqs],
                        "roles": {r.employee_id: occupation(r.target_role)["title"] for r in reqs}})
             remaining = len(reqs)
@@ -1513,7 +1692,7 @@ async def resume_analyze_stream(file: UploadFile = File(...), user: dict = Depen
         events.put(None)
 
     def gen():
-        threading.Thread(target=work, daemon=True).start()
+        threading.Thread(target=_in_context(work), daemon=True).start()
         while (ev := events.get()) is not None:
             yield sse(ev)
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -1590,16 +1769,20 @@ def _opening_or_404(oid: str) -> dict:
 
 
 @app.post("/api/openings")
-def opening_create(body: OpeningIn, user: dict = Depends(need("hr_advisor"))):
+def opening_create(body: OpeningIn, request: HttpRequest, user: dict = Depends(need("hr_advisor"))):
     o = occupation(body.soc)
     if not o:
         raise HTTPException(422, "Unknown occupation: pick one from the ESCO search.")
     c = criteria.parse(body.criteria_text, body.soc)
     try:
         with DB_LOCK:
-            return recruiting.create_opening(db, user["username"], body.soc, body.title or o["title"], body.criteria_text, c)
+            new = recruiting.create_opening(db, user["username"], body.soc, body.title or o["title"], body.criteria_text, c)
     except ValueError as e:
         raise HTTPException(422, str(e))
+    # accounts set to "post new openings automatically" get it now, in the background (the agent + network calls)
+    threading.Thread(target=_in_context(plugins.publish), daemon=True, args=(db, DB_LOCK, cfg, user["username"], new, criteria.describe(c),
+                     _apply_link(request, new), "posting-agent"), kwargs={"auto_only": True}).start()
+    return new
 
 
 @app.get("/api/openings")
@@ -1678,6 +1861,361 @@ def application_decision(aid: str, body: DecisionIn, user: dict = Depends(need("
             return recruiting.decide(db, aid, user["username"], body.decision, body.note)
     except ValueError as e:
         raise HTTPException(404 if "not found" in str(e) else 422, str(e))
+
+
+# --- HR: organisation users (invited by email; no self sign-up) ---------------------------------------------
+def _member(hr: str, username: str) -> dict:
+    with DB_LOCK:
+        a = accounts.account(db, username)
+    if not a or a.get("invited_by") != hr:
+        raise HTTPException(404, "no such member of your organisation")
+    return a
+
+
+@app.get("/api/org/users")
+def org_users(user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        rows = db.execute(f"SELECT {','.join(accounts.KEYS)} FROM users WHERE invited_by=? ORDER BY created_utc DESC",
+                          (user["username"],)).fetchall()
+    keep = ("username", "display_name", "email", "status", "created_utc")
+    return [{k: v for k, v in zip(accounts.KEYS, r) if k in keep} for r in rows]
+
+
+class OrgInviteIn(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+    display_name: str = Field(default="", max_length=60)
+
+
+@app.post("/api/org/invite")
+def org_invite(body: OrgInviteIn, request: HttpRequest, user: dict = Depends(need("hr_advisor"))):
+    try:
+        with DB_LOCK:
+            a = accounts.invite(db, user["username"], body.email, body.display_name)
+            sent = otp.issue(db, cfg, a["username"], a["email"], _base_url(request), "invite", inviter=user["display_name"])
+    except accounts.AuthError as e:
+        raise HTTPException(422, str(e))
+    return {"username": a["username"], "email": a["email"], "status": a["status"], "emailed": sent}
+
+
+@app.post("/api/org/users/{username}/resend")
+def org_resend(username: str, request: HttpRequest, user: dict = Depends(need("hr_advisor"))):
+    a = _member(user["username"], username)
+    if a["status"] != "invited":
+        raise HTTPException(409, "This person already accepted the invite.")
+    with DB_LOCK:
+        sent = otp.issue(db, cfg, a["username"], a["email"], _base_url(request), "invite", inviter=user["display_name"])
+    return {"emailed": sent}
+
+
+class OrgStatusIn(BaseModel):
+    status: str = Field(pattern="^(active|disabled)$")
+
+
+@app.post("/api/org/users/{username}/status")
+def org_status(username: str, body: OrgStatusIn, user: dict = Depends(need("hr_advisor"))):
+    a = _member(user["username"], username)
+    if a["status"] == "invited":
+        raise HTTPException(409, "Not accepted yet: resend or withdraw the invite instead.")
+    with DB_LOCK:
+        accounts.set_status(db, a["username"], body.status)
+        accounts._event(db, a["username"], f"status set by HR {user['username']}")
+        if body.status == "disabled":
+            db.execute("DELETE FROM sessions WHERE username=?", (a["username"],))
+            db.commit()
+    return {"status": body.status}
+
+
+@app.delete("/api/org/users/{username}")
+def org_remove(username: str, user: dict = Depends(need("hr_advisor"))):
+    """Withdraw an invite, or remove the account and its personal data (as self-service deletion does)."""
+    a = _member(user["username"], username)
+    with DB_LOCK:
+        deletion.delete_account(db, a["username"])
+    return {"ok": True}
+
+
+# --- HR: hiring plugins (post openings to LinkedIn, Facebook, X, Telegram, Discord, Slack) -----------------
+def _apply_link(request: HttpRequest, o: dict) -> str:
+    return f"{_base_url(request).rstrip('/')}/apply.html#{o['token']}"  # a static page: works on every frontend site
+
+
+def _oauth_return(request: HttpRequest, platform: str) -> str:
+    """Always this backend (the address registered in each platform's app), whichever frontend started."""
+    return f"{(cfg.public_url or _backend_url(request)).rstrip('/')}/api/plugins/oauth/{platform}/callback"
+
+
+@app.get("/api/plugins")
+def plugins_list(request: HttpRequest, user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        conns = plugins.connections(db, user["username"])
+    ready = plugins.available(cfg)
+    return {"connections": conns, "platforms": [{"id": p, "name": n, "available": ready[p], "oauth": p in plugins.OAUTH,
+            "redirect_uri": _oauth_return(request, p) if p in plugins.OAUTH else None} for p, n in plugins.PLATFORMS.items()]}
+
+
+class PluginConnectIn(BaseModel):
+    platform: str = Field(pattern="^(telegram|discord|slack)$")
+    bot_token: str = Field(default="", max_length=80)
+    chat_id: str = Field(default="", max_length=40)
+    webhook_url: str = Field(default="", max_length=300)
+    label: str = Field(default="", max_length=80)
+
+
+@app.post("/api/plugins/connect")
+def plugins_connect(body: PluginConnectIn, user: dict = Depends(need("hr_advisor"))):
+    try:  # checks the token with the platform first (network): not under DB_LOCK
+        label, secret = plugins.check_simple(body.platform, body.model_dump())
+    except plugins.PluginError as e:
+        raise HTTPException(422, str(e))
+    except httpx.HTTPError:
+        raise HTTPException(502, "Couldn't reach the platform to check that. Try again.")
+    with DB_LOCK:
+        plugins.init(db)
+        return {"id": plugins.save(db, cfg, user["username"], body.platform, label, secret)}
+
+
+class OAuthStartIn(BaseModel):
+    org_id: str = Field(default="", max_length=20)  # LinkedIn company page id
+
+
+@app.post("/api/plugins/oauth/{platform}/start")
+def plugins_oauth_start(platform: str, body: OAuthStartIn, request: HttpRequest, user: dict = Depends(need("hr_advisor"))):
+    try:
+        with DB_LOCK:
+            return {"url": plugins.authorize_url(db, cfg, user["username"], platform, _oauth_return(request, platform),
+                                                 {"org_id": body.org_id.strip(), "back": _foreign_origin(request) or ""})}
+    except plugins.PluginError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/api/plugins/oauth/{platform}/callback")
+def plugins_oauth_callback(platform: str, request: HttpRequest, code: str = "", state: str = "", error: str = ""):
+    """The platform sends the HR advisor back here. Who they are comes from `state` (made when they clicked Connect),
+    not from the session cookie, which a cross-site redirect does not carry (SameSite=Strict)."""
+    with DB_LOCK:
+        row = db.execute("SELECT extra FROM plugin_oauth_states WHERE state=?", (state[:80],)).fetchone() if state else None
+    front = json.loads(row[0] or "{}").get("back", "") if row else ""
+    back = f"{front if front in _frontends() else ''}/enterprise.html#/plugins"  # back to the site the advisor started on
+    if error or not code or not state or platform not in plugins.OAUTH:
+        return RedirectResponse(f"{back}/cancelled", status_code=303)
+    try:
+        plugins.finish_oauth(db, DB_LOCK, cfg, platform, code[:2000], state[:80], _oauth_return(request, platform))
+    except Exception as e:
+        log.warning("plugin sign-in failed (%s): %s", platform, type(e).__name__)
+        return RedirectResponse(f"{back}/failed", status_code=303)
+    return RedirectResponse(f"{back}/connected", status_code=303)
+
+
+class AutoIn(BaseModel):
+    auto: bool
+
+
+@app.post("/api/plugins/{cid}/auto")
+def plugins_auto(cid: str, body: AutoIn, user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        if not plugins.set_auto(db, user["username"], cid[:20], body.auto):
+            raise HTTPException(404, "no such connection")
+    return {"auto": body.auto}
+
+
+@app.delete("/api/plugins/{cid}")
+def plugins_remove(cid: str, user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        if not plugins.remove(db, user["username"], cid[:20]):
+            raise HTTPException(404, "no such connection")
+    return {"ok": True}
+
+
+class PublishIn(BaseModel):
+    connections: list[str] = Field(default_factory=list, max_length=50)  # empty = every connected account
+
+
+@app.post("/api/openings/{oid}/publish")
+def opening_publish(oid: str, body: PublishIn, request: HttpRequest, user: dict = Depends(need("hr_advisor"))):
+    """The posting agent writes a post per platform and sends the opening to the HR advisor's connected accounts."""
+    o = _opening_or_404(oid)
+    if o["status"] != "open":
+        raise HTTPException(409, "This opening is closed. Reopen it to post it.")
+    results = plugins.publish(db, DB_LOCK, cfg, user["username"], o, criteria.describe(o["criteria"]), _apply_link(request, o),
+                              user["username"], only=body.connections or None)
+    if not results:
+        raise HTTPException(409, "No accounts connected yet. Add one under Hiring plugins.")
+    return {"results": results}
+
+
+@app.get("/api/openings/{oid}/posts")
+def opening_posts(oid: str, user: dict = Depends(need("hr_advisor"))):
+    _opening_or_404(oid)
+    with DB_LOCK:
+        return plugins.history(db, oid)
+
+
+# --- AI models per task (admin allows, HR chooses for their organisation) ----------------------------------
+SPEC = r"^(openai|gemini):[\w.\-/:]{1,80}$"
+
+
+class ModelIn(BaseModel):
+    spec: str = Field(pattern=SPEC)
+    label: str = Field(default="", max_length=60)
+
+
+@app.get("/api/admin/models")
+def admin_models(user: dict = Depends(need("admin"))):
+    with DB_LOCK:
+        rows = db.execute("SELECT spec, label FROM model_catalog ORDER BY label").fetchall()
+    return {"catalog": [{"spec": s, "label": lb, "ready": llm.usable(s)} for s, lb in rows], "providers": llm.providers(),
+            "defaults": {t: llm.model_for(t, org=False) or None for t in llm.TASKS}, "tasks": llm.TASKS, "speech": llm.stt_model() or None}
+
+
+@app.post("/api/admin/models")
+def admin_model_add(body: ModelIn, user: dict = Depends(need("admin"))):
+    with DB_LOCK, db:
+        db.execute("INSERT OR REPLACE INTO model_catalog VALUES(?,?,?)",
+                   (body.spec, body.label.strip() or body.spec.split(":", 1)[1], datetime.now(timezone.utc).isoformat(timespec="seconds")))
+    return {"spec": body.spec}
+
+
+@app.delete("/api/admin/models")
+def admin_model_remove(spec: str, user: dict = Depends(need("admin"))):
+    with DB_LOCK, db:  # organisations that chose it go back to the default
+        db.execute("DELETE FROM org_models WHERE spec=?", (spec,))
+        n = db.execute("DELETE FROM model_catalog WHERE spec=?", (spec,)).rowcount
+    if not n:
+        raise HTTPException(404, "not in the list")
+    return {"ok": True}
+
+
+@app.get("/api/org/models")
+def org_models_get(user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        cat = db.execute("SELECT spec, label FROM model_catalog ORDER BY label").fetchall()
+        mine = dict(db.execute("SELECT task, spec FROM org_models WHERE owner=?", (user["username"],)).fetchall())
+    return {"tasks": [{"id": t, "label": d, "chosen": mine.get(t), "default": llm.model_for(t, org=False) or None} for t, d in llm.TASKS.items()],
+            "catalog": [{"spec": s, "label": lb} for s, lb in cat if llm.usable(s)]}
+
+
+class OrgModelIn(BaseModel):
+    task: str = Field(pattern="^(coach|resume|recruiter)$")
+    spec: str = Field(default="", max_length=90)  # "" = the default
+
+
+@app.post("/api/org/models")
+def org_models_set(body: OrgModelIn, user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK, db:
+        if not body.spec:
+            db.execute("DELETE FROM org_models WHERE owner=? AND task=?", (user["username"], body.task))
+            return {"task": body.task, "spec": None}
+        if not db.execute("SELECT 1 FROM model_catalog WHERE spec=?", (body.spec,)).fetchone() or not llm.usable(body.spec):
+            raise HTTPException(422, "Pick a model from the list.")
+        db.execute("INSERT OR REPLACE INTO org_models VALUES(?,?,?)", (user["username"], body.task, body.spec))
+    return {"task": body.task, "spec": body.spec}
+
+
+# --- voice and plain-language features (paid plans) -------------------------------------------------------
+VOICE_PLANS = {"pro", "team", "org"}
+AUDIO_TYPES = ("audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/aac")
+
+
+@app.post("/api/speech/transcribe")
+async def speech_transcribe(file: UploadFile = File(...), lang: str = Form(""), user: dict = Depends(current_user)):
+    """Voice input for every browser (server speech-to-text). Paid plans; the audio is not stored."""
+    if _plan(user) not in VOICE_PLANS:
+        raise HTTPException(402, "Voice input is part of Pro and Team. See plans to upgrade.")
+    mime = (file.content_type or "").split(";")[0]
+    if mime not in AUDIO_TYPES:
+        raise HTTPException(415, "Unsupported audio format.")
+    audio = await file.read(10 * 1024 * 1024 + 1)
+    if len(audio) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Recording too long: keep it under 2 minutes.")
+    if len(audio) < 800:
+        raise HTTPException(422, "Nothing was recorded. Check your microphone and try again.")
+    text, usage = await run_in_threadpool(llm.transcribe, audio, mime, lang[:10])
+    if usage:
+        _record_usage(user["username"], "voice", usage)
+    if text is None:
+        raise HTTPException(503, "Voice input is unavailable right now. Please type instead.")
+    return {"text": text[:4000]}
+
+
+def _org_snapshot(hr: str) -> dict:
+    """What "ask your data" may use: this advisor's team plans, openings and team members. Pseudonymous ids only."""
+    with DB_LOCK:
+        plans = approval.list_plans(db, {"role": "hr_advisor", "username": hr})
+        snaps = {r[0]: json.loads(r[1] or "{}") for r in db.execute(
+            "SELECT p.plan_id, v.snapshot FROM plans p JOIN plan_versions v ON v.plan_id=p.plan_id WHERE p.audience='hr' "
+            "AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)")}
+        openings = recruiting.list_openings(db)
+        people = db.execute("SELECT status, count(*) FROM users WHERE invited_by=? GROUP BY status", (hr,)).fetchall()
+    latest = {}
+    for p in plans:  # newest plan per employee
+        latest.setdefault(p["subject_id"], p)
+    team = []
+    for sid, p in list(latest.items())[:200]:
+        acts = snaps.get(p["plan_id"], {}).get("activities", [])
+        steps = sorted({re.sub(r"^.*?:\s*", "", a.get("activity", "")) for a in acts if "->" in a.get("activity", "")})[:8]
+        team.append({"employee": sid, "target_role": (occupation(p["target_role"]) or {}).get("title", p["target_role"]),
+                     "plan_status": p["status"], "learning_hours": round(sum(a.get("estimated_hours", 0) for a in acts)),
+                     "skill_steps": steps})
+    return {"team": team, "openings": [{"title": o["title"], "status": o["status"], "applicants": o["applications"][0],
+                                        "recommended": o["applications"][1] or 0} for o in openings[:50]],
+            "members": {s: n for s, n in people}}
+
+
+class AskIn(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
+
+
+@app.post("/api/hr/ask")
+def hr_ask(body: AskIn, user: dict = Depends(paid_feature("hr_advisor", {"team", "org"}, "Ask your data"))):
+    """Plain-language questions about the advisor's own team and hiring data. Answers only from that data."""
+    data = _org_snapshot(user["username"])
+    text, usage = llm.generate(f"<QUESTION>{body.question}</QUESTION>\n<DATA>\n{json.dumps(data)[:30000]}\n</DATA>",
+                               "You answer an HR advisor's question using ONLY the DATA (their team's reskilling plans, job "
+                               "openings and team members). Employees are pseudonymous ids: never guess real names. If the data "
+                               "can't answer, say what is missing. Be brief: 1-4 sentences or a short list. Never rank people by "
+                               "age, gender, ethnicity or other protected traits. Return JSON {\"answer\": str, \"employees\": "
+                               "[ids you relied on]}.", max_tokens=600, json=True, agent="recruiter")
+    if usage:
+        _record_usage(user["username"], "ask", usage)
+    try:
+        out = json.loads(text) if text else None
+    except ValueError:
+        out = None
+    if not out or not out.get("answer"):  # no model: the facts, plainly
+        roles = sorted({t["target_role"] for t in data["team"]})
+        out = {"answer": f"{len(data['team'])} people have plans ({', '.join(roles[:6]) or 'none yet'}); "
+                         f"{sum(o['status'] == 'open' for o in data['openings'])} openings are open. "
+                         "Detailed answers need an AI model, which isn't set up right now.", "employees": []}
+    known = {t["employee"] for t in data["team"]}
+    return {"answer": str(out["answer"])[:2000], "employees": [e for e in out.get("employees", []) if e in known][:20]}
+
+
+class DraftIn(BaseModel):
+    text: str = Field(min_length=10, max_length=3000)
+
+
+@app.post("/api/openings/draft")
+def opening_draft(body: DraftIn, user: dict = Depends(paid_feature("hr_advisor", {"team", "org"}, "Voice job drafts"))):
+    """A role described in plain words (typed or spoken) -> a draft opening for the advisor to check: title,
+    occupation and screening thresholds. Nothing is created until they press Create."""
+    text, usage = llm.generate(body.text, "Turn an HR advisor's description of a job into JSON {\"title\": short job title, "
+                               "\"occupation\": 1-3 words naming the occupation for a search, \"criteria\": one line of screening "
+                               "thresholds in plain English, e.g. 'Top 5. Must know Excel and SQL, 3+ years, match above 60%'}. "
+                               "Leave out anything about age, gender, ethnicity, religion, marital status or other protected traits.",
+                               max_tokens=300, json=True, agent="recruiter")
+    if usage:
+        _record_usage(user["username"], "draft", usage)
+    try:
+        d = json.loads(text) if text else {}
+    except ValueError:
+        d = {}
+    title = str(d.get("title") or "").strip()[:80]
+    query = str(d.get("occupation") or title or body.text).strip()
+    hits = search_occupations(query, limit=5) or search_occupations(" ".join(query.split()[-1:]), limit=5)
+    crit = str(d.get("criteria") or "").strip()[:1000]
+    parsed = criteria.parse(crit, hits[0]["soc"] if hits else None) if crit else {}
+    return {"title": title, "occupations": hits, "criteria_text": crit, "summary": criteria.describe(parsed) if crit else [],
+            "ai": bool(text)}
 
 
 # --- public application link (no account; consent required) --------------------------------------------------

@@ -1,26 +1,34 @@
-"""Email verification, like Claude's: one email with a 6-digit code AND a one-click link, for sign-up and for
-"forgot password".
+"""Email verification like Claude's: the email holds one link and no code.
 
-Both are single-use and expire in 10 minutes; codes allow at most 5 wrong tries; using either uses both. Only hashes
-are stored. Sent by SMTP when SMTP_HOST is set; otherwise written to the server log (local development only).
-A sign-up also gets a wait token: the browser that started it is signed in once the email is verified anywhere."""
+The browser that started the flow (sign-up, "forgot password") keeps a wait token. Opening the link where that
+token is (same browser, any tab) carries on right there. Opening it anywhere else (a phone, another browser) uses up
+the link and shows a 6-digit code to type into the browser that started; nothing is signed in on the other device.
+HR invites ("invite") have no starting browser: the link opens the "set your password" page.
+
+Links and codes are single-use (using one uses both), expire (10 minutes; invites 7 days) and allow at most 5 wrong
+code tries. Only hashes are stored."""
 import hashlib
 import hmac
-import html
-import logging
 import secrets
-import smtplib
 from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
 
-log = logging.getLogger(__name__)
+from governance import mailer
+
 SCHEMA = """CREATE TABLE IF NOT EXISTS email_otp(username TEXT PRIMARY KEY, code_hash TEXT, expires_utc TEXT, tries INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS signup_waits(username TEXT PRIMARY KEY, token_hash TEXT, expires_utc TEXT, claimed INTEGER DEFAULT 0);"""
-TTL, MAX_TRIES = timedelta(minutes=10), 5
-# purpose -> (row key prefix, link route, subject, heading, button text, what it is for)
-PURPOSES = {"signup": ("", "verify", "Your AiversePulse code", "Verify your email", "Verify and sign in", "sign up"),
-            "reset": ("reset:", "reset", "Reset your AiversePulse password", "Reset your password", "Choose a new password",
-                      "reset your password")}
+MAX_TRIES = 5
+# purpose -> (row key prefix, link route, lifetime, subject, heading, lines, button)
+PURPOSES = {
+    "signup": ("", "verify", timedelta(minutes=10), "Verify your AiversePulse email", "Verify your email",
+               ["Open this link in the browser where you signed up and you're in.",
+                "On another device, it shows a 6-digit code to type in that browser instead."], "Verify email"),
+    "reset": ("reset:", "reset", timedelta(minutes=10), "Reset your AiversePulse password", "Reset your password",
+              ["Open this link in the browser where you asked for it to choose a new password.",
+               "On another device, it shows a 6-digit code to type in that browser instead."], "Reset password"),
+    "invite": ("invite:", "invite", timedelta(days=7), "You're invited to AiversePulse", "Join your team on AiversePulse",
+               ["{inviter} invited you to AiversePulse, your organisation's reskilling and career-planning space.",
+                "Your username is {username}. Open the link to choose a password; no sign-up needed."], "Accept invite"),
+}
 
 
 def init(con):
@@ -35,83 +43,96 @@ def _h(key: str, secret: str) -> str:
     return hashlib.sha256(f"{key}:{secret}".encode()).hexdigest()
 
 
-def issue(con, cfg, username: str, email: str, base_url: str, purpose: str = "signup") -> bool:
-    """Create (or replace) the code and link, and send them. Returns True if it went out by email."""
-    init(con)
-    prefix, route, subject, heading, button, why = PURPOSES[purpose]
-    key = prefix + username
-    code, link_token = f"{secrets.randbelow(10 ** 6):06d}", secrets.token_urlsafe(24)
-    with con:
-        con.execute("INSERT OR REPLACE INTO email_otp(username,code_hash,expires_utc,tries,link_hash) VALUES(?,?,?,0,?)",
-                    (key, _h(key, code), (datetime.now(timezone.utc) + TTL).isoformat(), _h(key, "link:" + link_token)))
-    link = f"{base_url.rstrip('/')}/#/{route}/{username}/{link_token}"
-    if not cfg.smtp_host:
-        log.warning("SMTP not configured: %s code for %s is %s, link %s (development only)", purpose, username, code, link)
-        return False
-    msg = EmailMessage()
-    msg["Subject"] = f"{subject}: {code}"
-    msg["From"], msg["To"] = cfg.smtp_from or cfg.smtp_user, email
-    msg.set_content(f"Your AiversePulse code is {code}\n\nOr use this link to {why}:\n{link}\n\n"
-                    f"Both expire in 10 minutes. If you didn't try to {why}, you can ignore this email.")
-    msg.add_alternative(f"""<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:480px;margin:auto;color:#1c2547">
-<h2 style="margin:0 0 12px">{heading}</h2>
-<p>Enter this code on the AiversePulse page:</p>
-<p style="font-size:32px;font-weight:700;letter-spacing:8px;margin:8px 0 20px">{code}</p>
-<p>Or with one click:</p>
-<p><a href="{html.escape(link)}" style="display:inline-block;background:#3b5bdb;color:#fff;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">{button}</a></p>
-<p style="color:#667;font-size:13px">Both expire in 10 minutes. If you didn't try to {why}, ignore this email.</p></div>""",
-                    subtype="html")
-    with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=20) as s:
-        s.starttls()
-        if cfg.smtp_user:
-            s.login(cfg.smtp_user, cfg.smtp_password.get_secret_value() if cfg.smtp_password else "")
-        s.send_message(msg)
-    return True
+def _later(d: timedelta) -> str:
+    return (datetime.now(timezone.utc) + d).isoformat()
 
 
-def _use(con, key: str, column: str, secret: str) -> bool:
+def issue(con, cfg, username: str, email: str, base_url: str, purpose: str = "signup", inviter: str = "") -> bool:
+    """Create (or replace) the link and email it. Returns True if it went out by email."""
     init(con)
-    row = con.execute(f"SELECT {column}, expires_utc, tries FROM email_otp WHERE username=?", (key,)).fetchone()
-    if not row or not row[0] or row[2] >= MAX_TRIES or datetime.fromisoformat(row[1]) < datetime.now(timezone.utc):
-        return False
-    ok = hmac.compare_digest(row[0], _h(key, secret))
+    prefix, route, ttl, subject, heading, lines, button = PURPOSES[purpose]
+    key, token = prefix + username, secrets.token_urlsafe(24)
+    with con:  # no code yet: one is made only if the link is opened in another browser
+        con.execute("INSERT OR REPLACE INTO email_otp(username,code_hash,expires_utc,tries,link_hash) VALUES(?,NULL,?,0,?)",
+                    (key, _later(ttl), _h(key, "link:" + token)))
+    link = f"{base_url.rstrip('/')}/#/{route}/{username}/{token}"
+    lasts = "7 days" if ttl.days else "10 minutes"
+    return mailer.send(cfg, email, subject, heading, [t.format(inviter=inviter or "Your HR team", username=username) for t in lines],
+                       button, link, f"The link works once and expires in {lasts}. If you weren't expecting this, ignore it.",
+                       owl_state={"signup": "update", "reset": "reminder", "invite": "greeting"}[purpose])
+
+
+def _row(con, key: str):
+    init(con)
+    row = con.execute("SELECT code_hash, link_hash, expires_utc, tries FROM email_otp WHERE username=?", (key,)).fetchone()
+    return row if row and row[3] < MAX_TRIES and datetime.fromisoformat(row[2]) > datetime.now(timezone.utc) else None
+
+
+def link_valid(con, username: str, token: str, purpose: str) -> bool:
+    """Checks the link without using it up (e.g. to show who an invite is for)."""
+    key = PURPOSES[purpose][0] + username
+    row = _row(con, key)
+    return bool(row and row[1]) and hmac.compare_digest(row[1], _h(key, "link:" + (token or "")))
+
+
+def _done(con, key: str):
     with con:
-        if ok:  # code and link are one verification: using either one uses both
-            con.execute("DELETE FROM email_otp WHERE username=?", (key,))
-        else:
-            con.execute("UPDATE email_otp SET tries=tries+1 WHERE username=?", (key,))
-    return ok
+        con.execute("DELETE FROM email_otp WHERE username=?", (key,))
 
 
 def check(con, username: str, code: str, purpose: str = "signup") -> bool:
-    return _use(con, PURPOSES[purpose][0] + username, "code_hash", (code or "").strip())
+    key = PURPOSES[purpose][0] + username
+    row = _row(con, key)
+    if not row or not row[0]:
+        return False
+    if hmac.compare_digest(row[0], _h(key, (code or "").strip())):
+        _done(con, key)
+        return True
+    with con:
+        con.execute("UPDATE email_otp SET tries=tries+1 WHERE username=?", (key,))
+    return False
 
 
 def check_link(con, username: str, token: str, purpose: str = "signup") -> bool:
-    return _use(con, PURPOSES[purpose][0] + username, "link_hash", "link:" + (token or ""))
+    if not link_valid(con, username, token, purpose):
+        return False
+    _done(con, PURPOSES[purpose][0] + username)
+    return True
 
 
-def new_wait(con, username: str) -> str:
-    """For the browser that started the sign-up: once the email is verified anywhere (e.g. the link opened on a phone),
-    that browser - and only that browser - picks up the signed-in session."""
+def code_for_other_browser(con, username: str, token: str, purpose: str) -> str | None:
+    """The link was opened away from the starting browser: use up the link, return a fresh code (10 minutes) for the
+    person to type there. None if the link is not valid."""
+    if not link_valid(con, username, token, purpose):
+        return None
+    key, code = PURPOSES[purpose][0] + username, f"{secrets.randbelow(10 ** 6):06d}"
+    with con:
+        con.execute("UPDATE email_otp SET code_hash=?, link_hash=NULL, tries=0, expires_utc=? WHERE username=?",
+                    (_h(key, code), _later(timedelta(minutes=10)), key))
+    return code
+
+
+def new_wait(con, username: str, purpose: str = "signup") -> str:
+    """The starting browser's proof that it started this flow (kept in that browser's storage)."""
     init(con)
     token = secrets.token_urlsafe(24)
     with con:
         con.execute("INSERT OR REPLACE INTO signup_waits VALUES(?,?,?,0)",
-                    (username, hashlib.sha256(token.encode()).hexdigest(), (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()))
+                    (PURPOSES[purpose][0] + username, hashlib.sha256(token.encode()).hexdigest(), _later(timedelta(hours=1))))
     return token
 
 
-def wait_valid(con, username: str, token: str) -> bool:
+def wait_valid(con, username: str, token: str, purpose: str = "signup") -> bool:
     init(con)
-    row = con.execute("SELECT token_hash, expires_utc, claimed FROM signup_waits WHERE username=?", (username,)).fetchone()
+    row = con.execute("SELECT token_hash, expires_utc, claimed FROM signup_waits WHERE username=?",
+                      (PURPOSES[purpose][0] + username,)).fetchone()
     return bool(row) and not row[2] and datetime.fromisoformat(row[1]) > datetime.now(timezone.utc) \
         and hmac.compare_digest(row[0], hashlib.sha256((token or "").encode()).hexdigest())
 
 
-def claim_wait(con, username: str, token: str) -> bool:
-    if not wait_valid(con, username, token):
+def claim_wait(con, username: str, token: str, purpose: str = "signup") -> bool:
+    if not wait_valid(con, username, token, purpose):
         return False
     with con:
-        con.execute("UPDATE signup_waits SET claimed=1 WHERE username=?", (username,))
+        con.execute("UPDATE signup_waits SET claimed=1 WHERE username=?", (PURPOSES[purpose][0] + username,))
     return True

@@ -7,9 +7,10 @@ import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, iss
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { startView, quizView, resumeView, todayView, sdgsView } from "./explore.js";
 import { interviewView } from "./interview.js";
-import { registerView, pricingView, accountView, planName, verifyLinkView, forgotView, resetLinkView, emailCodeView } from "./account.js";
+import { registerView, pricingView, accountView, planName, verifyLinkView, forgotView, resetLinkView, emailCodeView, inviteView } from "./account.js";
 import { termsView, privacyView } from "./legal.js";
 import { watchForm } from "./risk.js";
+import { micButton, readAloudButton, setVoice } from "./voice.js";
 
 const app = $("#app");
 const store = {
@@ -25,7 +26,7 @@ const S = {
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
 // ---------------------------------------------------------------- boot
-const PUBLIC_PAGES = new Set(["", "start", "signin", "sdgs", "register", "pricing", "verify", "forgot", "reset", "terms", "privacy"]);  // everything else needs an account
+const PUBLIC_PAGES = new Set(["", "start", "today", "signin", "sdgs", "register", "pricing", "verify", "forgot", "reset", "invite", "terms", "privacy"]);  // everything else needs an account
 
 async function boot() {
   try {
@@ -34,13 +35,14 @@ async function boot() {
     if (!(e instanceof ApiError && e.status === 401)) throw e;
     S.me = null;  // guest: public landing + Today; features ask to sign in
   }
-  const billingPage = /^#\/(pricing|account)\b/.test(location.hash);
-  if (S.me?.role === "admin") { location.replace("admin.html"); return; }
+  const emailLink = /^#\/(verify|reset|invite)\//.test(location.hash);  // links from emails open whoever is signed in here
+  const billingPage = emailLink || /^#\/(pricing|account)\b/.test(location.hash);
+  if (S.me?.role === "admin" && !emailLink) { location.replace("admin.html"); return; }
   if (S.me && S.me.role !== "employee" && !billingPage) { location.replace("enterprise.html"); return; }
   if (S.me) {
     const wait = new Owl({ size: 96, state: "searching" });
     app.replaceChildren(h("main", { class: "empty", style: { margin: "18vh auto 0", "justify-items": "center", "text-align": "center" }, "aria-busy": "true" },
-      wait.el, h("p", { class: "muted" }, "Waking up the agents…")));
+      wait.el, h("p", { class: "muted" }, "Loading…")));
     S.meta = await api("/api/meta");
   }
   shell();
@@ -49,7 +51,7 @@ async function boot() {
 }
 
 // ---------------------------------------------------------------- sign in
-const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build: "the plan builder", report: "your briefing", plans: "your plans", interview: "mock interview" };
+const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build: "the plan builder", report: "chat", plans: "your plans", interview: "mock interview" };
 
 function cleanDestination(next) {
   return ["start", "today", "quiz", "resume", "build", "report", "plans", "interview"].includes(next) ||
@@ -61,7 +63,7 @@ async function signIn(next = "start") {
   next = cleanDestination(next);
   const owl = new Owl({ size: 200, state: "greeting" });
   const err = h("p", { class: "error", role: "alert" });
-  const user = h("input", { class: "input", name: "username", autocomplete: "username", required: true, maxlength: 40 });
+  const user = h("input", { class: "input", name: "username", autocomplete: "username", required: true, maxlength: 254 });
   const pass = h("input", { class: "input", name: "password", type: "password", autocomplete: "current-password", required: true, maxlength: 200 });
   const btn = h("button", { class: "btn primary", type: "submit" }, "Sign in");
   app.replaceChildren(h("main", { class: "signin" },
@@ -94,20 +96,22 @@ async function signIn(next = "start") {
       h("label", { class: "field" }, h("span", {}, "Username or email"), user),
       h("label", { class: "field" }, h("span", {}, "Password"), pass),
       err, btn,
-      h("p", { class: "fine" }, "Accounts are issued by your administrator. Decision support only: plans stay drafts until you approve them."),
-      h("p", { class: "fine" }, "Employees and HR advisors both sign in here; HR advisors go straight to the Enterprise console."),
+      h("p", { class: "fine" }, "Plans stay drafts until you approve them."),
+      h("p", { class: "fine" }, "Employees and HR advisors use the same sign-in."),
       h("p", { class: "signin-switch" }, h("a", { href: "#/forgot" }, "Forgot password?")),
       h("p", { class: "signin-switch legal-links" }, h("a", { href: "#/terms" }, "Terms"), " · ", h("a", { href: "#/privacy" }, "Privacy")),
-      h("p", { class: "signin-switch" }, "No account yet? ", h("a", { href: "#/register" }, "Create one free")))));
+      h("p", { class: "signin-switch" }, "No account yet? ", h("a", { href: "#/register" }, "Create a free account")),
+      h("p", { class: "fine" }, "Joining your company? Use the invite link in your email."))));
   const signals = watchForm(app.querySelector(".signin-form"));
   user.focus();
 }
 
 // ---------------------------------------------------------------- shell
 function shell() {
+  setVoice(S.meta?.voice);
   S.status = new OwlStatus({ size: 32, say: "Ready when you are" });
   S.sources = h("aside", { class: "sources", "aria-label": "Sources" }, h("h2", {}, "Sources"),
-    h("p", { class: "muted" }, "Citations from your report appear here."));
+    h("p", { class: "muted" }, "Sources cited in your plan appear here."));
   S.sheetBody = h("div", { class: "sheet-body" });
   S.sheet = h("dialog", { class: "sheet", "aria-label": "Sources" },
     h("div", { class: "sheet-head" }, h("strong", {}, "Sources"), h("button", { class: "btn sm", onclick: () => S.sheet.close() }, "Close")),
@@ -119,13 +123,13 @@ function shell() {
     h("button", { class: "sr-only skip-link", type: "button", onclick: () => $("#main")?.focus() }, "Skip to content"),
     h("header", { class: "pub-top" },
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
-      // guests get one page (the home, with today's board on it) and one action: sign in
+      // guests: the home page and the AI-trends page, and one action: sign in
       guest ? null : S.me.role !== "employee" ? h("nav", { class: "pub-nav", "aria-label": "Primary" }, h("a", { href: "enterprise.html" }, icon("back"), h("span", {}, "Back to console")))
         : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/today", "AI trends", "pulse"),
           nav("#/report", "Chat", "report"), nav("#/interview", "Interview", "quiz"), nav("#/plans", "My plans", "plans")),
       guest ? null : S.status.el,
       guest
-        ? h("div", { class: "top-actions" }, h("a", { class: "btn sm top-plans", href: "#/pricing" }, "Plans"),
+        ? h("div", { class: "top-actions" }, h("a", { class: "btn sm top-plans", href: "#/today" }, "AI trends"), h("a", { class: "btn sm top-plans", href: "#/pricing" }, "Plans"),
             h("a", { class: "btn sm primary top-signin", href: "#/signin" }, icon("user"), "Sign in"))
         : h("div", { class: "top-actions" }, h("a", { class: "btn sm plan-pill", href: "#/account", "data-route": "#/account", title: "Your plan and payments" },
             icon("user"), planName(S.me.effective_plan || "org")),
@@ -154,19 +158,16 @@ history.scrollRestoration = "manual";
 function route() {
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "register", "pricing", "account", "verify", "forgot", "reset", "terms", "privacy"]);
+  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "register", "pricing", "account", "verify", "forgot", "reset", "invite", "terms", "privacy"]);
   const interviewStart = requested === "interview" && id === "start" && rest.length === 1 && /^[A-Za-z0-9_-]+$/.test(rest[0]);
   // Unknown routes and malformed nested routes return home instead of showing the wrong page.
-  const verifyLink = ["verify", "reset"].includes(requested) && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
-  if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart && !verifyLink) || (["verify", "reset"].includes(requested) && !verifyLink) ||
-      (id && !["signin", "plans", "report", "interview", "verify", "reset"].includes(requested))) {
+  const verifyLink = ["verify", "reset", "invite"].includes(requested) && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
+  if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart && !verifyLink) || (["verify", "reset", "invite"].includes(requested) && !verifyLink) ||
+      (id && !["signin", "plans", "report", "interview", "verify", "reset", "invite"].includes(requested))) {
     location.replace("#/start");
     return;
   }
-  // guests see today's board on the home page, not on a page of its own: show home and jump to the board
-  S.jumpToday = !S.me && requested === "today";
-  if (S.jumpToday) history.replaceState(null, "", "#/start");
-  const page = S.jumpToday ? "start" : requested;
+  const page = requested;
   if (!S.me && !PUBLIC_PAGES.has(page)) {
     location.replace(`#/signin/${hash.slice(2)}`);
     return;
@@ -180,6 +181,13 @@ function route() {
   }
   if (page === "forgot") { if (S.me) { location.replace("#/account"); return; } forgotView(app); return; }
   if (page === "reset") { resetLinkView(app, { username: id, token: rest[0] }); return; }
+  if (page === "invite") {  // an HR advisor's invite: choose a password, then straight in
+    inviteView(app, { username: id, token: rest[0], onSignedIn: async () => {
+      S.me = await api("/api/me"); S.meta = await api("/api/meta");
+      history.replaceState(null, "", "#/start"); shell(); toast("Welcome! Your account is ready."); route();
+    } });
+    return;
+  }
   if (page === "register") {
     if (S.me) { location.replace("#/account"); return; }
     registerView(app, { onSignedIn: async () => {
@@ -216,9 +224,8 @@ function route() {
   else if (page === "pricing") pricingView(main, { me: S.me }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "account") accountView(main, { refreshMe }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "sdgs") sdgsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
-  else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
-  else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me, jumpToday: S.jumpToday });
-  S.jumpToday = false;
+  else if (page === "today") todayView(main, { guest: !S.me }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
+  else startView(main, { name: S.me?.display_name?.split(" ")[0], guest: !S.me });
   reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });
   if (page !== "report") scrollTo({ top: page === "start" ? homeScrollTop : 0, behavior: "instant" });  // the chat manages its own scroll
 }
@@ -283,7 +290,7 @@ function buildView(main) {
     const { results: r } = await api(`/api/occupations?q=${encodeURIComponent(q)}`);
     results.replaceChildren(...(r.length ? r.map((o, k) => h("li", { role: "option", id: `occ-${k}`, "aria-selected": "false", onclick: () => choose(o.soc) },
       jobIcon(o.soc, { size: 36, labelled: true }), h("b", { title: `ESCO ${o.soc}` }, o.title), o.matched ? h("span", { class: "muted" }, ` · “${o.matched}”`) : null))
-      : [h("li", { class: "muted", role: "option", "aria-disabled": "true" }, "No ESCO occupation matches. Try a broader word.")]));
+      : [h("li", { class: "muted", role: "option", "aria-disabled": "true" }, "No matching jobs. Try a broader term.")]));
     results.hidden = false; search.setAttribute("aria-expanded", "true");
   }
   async function choose(soc) {
@@ -313,7 +320,7 @@ function buildView(main) {
 
   main.replaceChildren(
     h("h1", { class: "page-title" }, "Build your plan"),
-    h("p", { class: "lede" }, "Works for any job. The agents compare your skills with the ESCO requirements for the job you pick, then write a plan you can edit and approve."),
+    h("p", { class: "lede" }, "Pick any job. We compare your skills with what it requires, then draft a plan you can edit and approve."),
     h("div", { class: "build" },
       h("ol", { class: "steps", "aria-label": "Steps" }, steps),
       h("form", { onsubmit: (e) => { e.preventDefault(); if (!p.target_role) { toast("Pick a target job first.", "err"); search.focus(); return; } start(); } },
@@ -328,8 +335,8 @@ function buildView(main) {
             h("button", { type: "button", "aria-label": "More hours", onclick: () => bump(1) }, "+")), h("span", { class: "muted" }, "hours / week"))),
         h("section", { class: "form-section" }, h("h2", {}, "How will AI change this job?"),
           h("div", { class: "scenario" },
-            scen("assistive", "Assistive AI", "AI helps you do today's work. Required levels are the model's predictions."),
-            scen("agentic", "Agentic AI", "AI agents take over routine execution; judgement and oversight skills weigh more. A stated assumption."))),
+            scen("assistive", "Assistive AI", "AI helps with today's work. Required levels are estimates."),
+            scen("agentic", "Agentic AI", "AI agents handle routine work, so judgement and oversight skills matter more. Based on our assumptions."))),
         h("div", { class: "build-actions" }, h("button", { class: "btn primary", type: "submit" }, "Analyse my skills", icon("send"))))));
   drawRows();
   if (p.target_role) choose(p.target_role).catch(() => {});
@@ -345,7 +352,7 @@ function planFor(m, skills) {
 }
 
 function startInterview(m) {
-  if (!m?.recommendation_id) { toast("This role is not linked to a completed career recommendation yet.", "err"); return; }
+  if (!m?.recommendation_id) { toast("Practice interviews are available for roles from your Quick Match or resume results.", "err"); return; }
   location.hash = `#/interview/start/${encodeURIComponent(m.recommendation_id)}`;
 }
 
@@ -364,7 +371,7 @@ function reportView(main, openId) {
     S.sendBtn = h("button", { class: "btn primary", type: "submit", "aria-label": "Send" }, icon("send"));
     S.composer = h("form", { class: "composer", onsubmit: (e) => { e.preventDefault(); composerSend(); } },
       S.quick = h("div", { class: "quick", "aria-label": "Suggested next messages" }),
-      h("div", { class: "row" }, S.input, S.sendBtn));
+      h("div", { class: "row" }, S.input, micButton(S.input), S.sendBtn));
     // follow the answer as it streams, unless the reader scrolled up to read something
     S.stick = true;
     addEventListener("scroll", () => { S.stick = innerHeight + scrollY >= document.documentElement.scrollHeight - 160; }, { passive: true });
@@ -378,7 +385,7 @@ function reportView(main, openId) {
             h("button", { class: "btn sm", type: "button", onclick: newChat }, icon("spark"), "New chat"),
             h("button", { class: "btn sm", type: "button", popovertarget: "history-menu" }, icon("history"), "History"),
             h("button", { class: "btn sm only-narrow", type: "button", onclick: () => S.sheet.showModal() }, icon("sources"), "Sources"))),
-        S.history = h("div", { id: "history-menu", popover: "auto", class: "core-menu history-menu", "aria-label": "Past briefings" }),
+        S.history = h("div", { id: "history-menu", popover: "auto", class: "core-menu history-menu", "aria-label": "Past chats" }),
         S.threadEl, S.composer),
       S.sources);
   }
@@ -397,13 +404,13 @@ async function loadHistory() {
   if (!S.history) return;
   let plans = [];
   try { plans = (await api("/api/plans")).filter((p) => p.audience === "individual").slice(0, 12); } catch { /* history is optional */ }
-  S.history.replaceChildren(h("p", { class: "history-head" }, icon("history"), "Past briefings"),
+  S.history.replaceChildren(h("p", { class: "history-head" }, icon("history"), "Past chats"),
     ...(plans.length ? plans.map((p) => h("a", { class: "core-item", href: `#/report/${p.plan_id}`, onclick: () => S.history.hidePopover?.() },
       h("span", { class: "core-ic" }, icon("report")),
       h("span", { class: "core-t" }, h("b", {}, p.target_role || "Plan"),
         h("span", {}, `${p.scenario === "agentic" ? "Agentic" : "Assistive"} AI · ${fmtTime(p.created_utc)} · v${p.version}`)),
       h("span", { class: `tag ${p.status}` }, p.status)))
-      : [h("p", { class: "muted", style: { padding: "8px 12px" } }, "No briefings yet.")]));  // spread: replaceChildren does not flatten
+      : [h("p", { class: "muted", style: { padding: "8px 12px" } }, "No chats yet.")]));  // spread: replaceChildren does not flatten
 }
 
 /** Job search used inside the chat (empty chat, and "Try a different job"): pick any ESCO occupation. */
@@ -419,7 +426,7 @@ function jobPicker(onPick) {
     const { results: r } = await api(`/api/occupations?q=${encodeURIComponent(q)}`);
     results.replaceChildren(...(r.length ? r.map((o) => h("li", { role: "option", onclick: () => { results.hidden = true; onPick(o); } },
       jobIcon(o.soc, { size: 36, labelled: true }), h("b", { title: `ESCO ${o.soc}` }, o.title)))
-      : [h("li", { class: "muted", role: "option", "aria-disabled": "true" }, "No job matches. Try a broader word.")]));
+      : [h("li", { class: "muted", role: "option", "aria-disabled": "true" }, "No matching jobs. Try a broader term.")]));
     results.hidden = false; search.setAttribute("aria-expanded", "true");
   }
   return h("div", { class: "occ-search brief-search" }, search, results);
@@ -439,7 +446,7 @@ async function pickJob(o) {
 /** An owl message in the thread with a job search: choosing a job continues this same conversation. */
 function askForJob() {
   const card = h("article", { class: "turn-owl" }, new Owl({ size: 44, state: "idle" }).el,
-    h("div", { class: "body" }, h("div", { class: "who" }, "JobSmart"), h("p", {}, "Which job should I look at?"),
+    h("div", { class: "body" }, h("div", { class: "who" }, "AiversePulse"), h("p", {}, "Which job should I look at?"),
       jobPicker((o) => { card.remove(); pickJob(o); })));
   S.threadEl.append(card);
   card.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -452,7 +459,7 @@ function briefingStarter() {
   const ready = p.target_role && p.skills.length;
   return h("div", { class: "brief-start" }, new Owl({ size: 96, state: "idle" }).el,
     h("h2", {}, "Which job are you aiming for?"),
-    h("p", { class: "muted" }, "Pick a job and the AI agents compare your skills with it, then write a 90-day plan here."),
+    h("p", { class: "muted" }, "Pick a job. We'll compare it with your skills and draft a 90-day plan."),
     ready ? h("button", { type: "button", class: "btn primary brief-go", onclick: () => start() },
       jobIcon(p.target_role, { size: 28 }), `Continue with ${p.target_title || "my target job"}`) : null,
     jobPicker(pickJob),
@@ -500,7 +507,7 @@ async function openConversation(id) {
     }
     return [h("div", { class: "turn-user" }, h("p", { class: "q" }, t.q || `Plan for ${t.title || title}`)),
       h("article", { class: "turn-owl" }, new Owl({ size: 44, state: "idle" }).el,
-        h("div", { class: "body" }, h("div", { class: "who" }, "JobSmart", t.at ? h("span", { class: "muted" }, fmtTime(t.at)) : null), body))];
+        h("div", { class: "body" }, h("div", { class: "who" }, "AiversePulse", t.at ? h("span", { class: "muted" }, fmtTime(t.at)) : null), body))];
   }));
   S.ctx = { gaps: r.gaps, outlook: r.outlook };
   drawSuggestions();
@@ -584,12 +591,12 @@ async function runTurn(params) {
   const traceList = h("ol");
   const running = h("li", { class: "run" }, h("span", { class: "dot" }), h("span", {}, "Working"), h("span", { class: "ms" }));
   traceList.append(running);
-  const sumText = h("span", {}, "Working through the agents…");
+  const sumText = h("span", {}, "Analysing…");
   const trace = h("details", { class: "trace", open: true }, h("summary", {}, h("span", { class: "spinner", "aria-hidden": "true" }), sumText), traceList);
   const prose = h("p", { class: "prose", "aria-live": "polite" });
   const body = h("div", { class: "body" }, trace, prose);
-  const turn = h("article", { class: "turn-owl", "aria-label": "JobSmart briefing" }, owl.el,
-    h("div", { class: "body" }, h("div", { class: "who" }, "JobSmart", say), body));
+  const turn = h("article", { class: "turn-owl", "aria-label": "AiversePulse reply" }, owl.el,
+    h("div", { class: "body" }, h("div", { class: "who" }, "AiversePulse", say, readAloudButton(() => prose.textContent)), body));
   S.threadEl.querySelector(".empty, .brief-start")?.remove();
   S.threadEl.append(reveal(userTurn, RISE), reveal(turn, RISE, { delay: 120 }));
   S.stick = true;  // a new message: follow it
@@ -618,7 +625,7 @@ async function runTurn(params) {
       } else if (ev.t === "meta") {
         meta = ev; planId = ev.plan_id; if (planId) S.lastPlanId = planId; setSources(ev.evidence || []); loadHistory();
         running.remove(); trace.querySelector(".spinner")?.remove();
-        sumText.textContent = `Ran ${steps} agent steps${reused ? `, reused ${reused}` : ""} · ${(ev.usage.ms / 1000).toFixed(1)} s · ${ev.usage.llm_calls} LLM calls`;
+        sumText.textContent = `Done in ${(ev.usage.ms / 1000).toFixed(1)} s · ${steps} steps${reused ? `, ${reused} reused` : ""}`;
         setTimeout(() => { trace.open = false; }, 700);
       } else if (ev.t === "text") st.push(ev.delta);
       else if (ev.t === "section") {
@@ -660,7 +667,7 @@ function planHolder(planId, plan, hours, status, progress = []) {
       plan = fresh.plan; progress = fresh.progress || [];
       render(fresh.status, fresh.version);
       if (next === "approved") {
-        S.status.set("celebrating", "Plan approved — it's yours");
+        S.status.set("celebrating", "Plan approved");
         location.hash = `#/plans/${planId}`;
       }
     } }));
@@ -671,7 +678,7 @@ function planHolder(planId, plan, hours, status, progress = []) {
 
 // ---------------------------------------------------------------- plans
 async function plansView(main) {
-  main.replaceChildren(h("h1", { class: "page-title" }, "My plans"), h("p", { class: "lede" }, "Your own plans and any plan HR prepared for you."));
+  main.replaceChildren(h("h1", { class: "page-title" }, "My plans"), h("p", { class: "lede" }, "Your plans, including any your HR advisor prepared for you."));
   const list = await api("/api/plans");
   if (!list.length) {
     main.append(h("div", { class: "empty" }, new Owl({ size: 96, state: "sleeping" }).el,
@@ -717,7 +724,7 @@ async function plansView(main) {
     syncToolbar();
   }
   main.append(h("div", { class: "plan-manage" }, h("label", { class: "plan-select-all" }, selectAll, "Select all your plans"), count, remove,
-    h("span", { class: "plan-delete-note" }, "Only your own plans can be deleted; plans shared by HR are kept.")), listEl);
+    h("span", { class: "plan-delete-note" }, "Plans from your HR advisor can't be deleted.")), listEl);
   draw();
 }
 
@@ -730,7 +737,7 @@ async function planDetail(main, id, focusPlan = false) {
   const totalHours = d.plan.activities.reduce((sum, activity) => sum + Number(activity.estimated_hours || 0), 0);
   setSources(r?.evidence || []);
   const reportContent = h("div", { class: "plan-report-content" },
-    !r ? h("p", { class: "note" }, "This older plan has no saved report. Approval cannot restore it. Build a new plan to generate the full analysis; your saved 90-day plan is below.") : null,
+    !r ? h("p", { class: "note" }, "This plan was created before analyses were saved. Your 90-day plan is below. Build a new plan to see the full analysis.") : null,
     r?.narrative ? staticText(r.narrative, highlight) : null,
     r?.gaps?.length ? gapsBlock(r.gaps) : null,
     r?.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null,
@@ -757,14 +764,14 @@ async function planDetail(main, id, focusPlan = false) {
       panel.inert = !expanded;
       panel.setAttribute("aria-hidden", String(!expanded));
       toggle.setAttribute("aria-expanded", String(expanded));
-      toggle.textContent = expanded ? "Hide Report" : "View Report";
+      toggle.textContent = expanded ? "Hide report" : "View report";
       if (!expanded) planFocus.focus({ preventScroll: true });
-    } }, expanded ? "Hide Report" : "View Report");
+    } }, expanded ? "Hide report" : "View report");
   const disclosure = h("section", { class: "plan-report", "data-expanded": String(expanded), "aria-label": "Analysis report" },
     h("div", { class: "plan-report-heading" }, h("h2", {}, "Analysis report"), toggle), panel);
   const blocks = h("div", { class: "body", style: { "max-width": "760px" } },
     ...(approved ? [planFocus, disclosure] : [disclosure, planFocus]),
-    d.audience === "hr" && d.status === "approved" ? h("div", { class: "approve-bar" }, h("span", {}, "HR approved this plan for you."),
+    d.audience === "hr" && d.status === "approved" ? h("div", { class: "approve-bar" }, h("span", {}, "Your HR advisor approved this plan."),
       h("button", { class: "btn primary", onclick: async () => { await api(`/api/plans/${id}/acknowledge`, { method: "POST" }); toast("Acknowledged"); planDetail(main, id); } }, "Acknowledge")) : null,
     h("section", { class: "block" }, h("h3", {}, "History"), historyBlock(d.history)));
   const pdf = h("button", { class: "btn sm no-print", type: "button", onclick: () => {  // the browser's "Save as PDF", every section open

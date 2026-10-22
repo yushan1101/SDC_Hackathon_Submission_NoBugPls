@@ -40,18 +40,18 @@ export async function interviewView(main, interviewId, recommendationId = null) 
 function renderHistory(main, history) {
   const empty = h("section", { class: "interview-empty interview-card" },
     h("div", { class: "interview-empty-icon", "aria-hidden": "true" }, icon("spark")),
-    h("div", {}, h("h2", {}, "Your interview journey starts here!"),
+    h("div", {}, h("h2", {}, "No practice interviews yet"),
       h("p", {}, "Discover your career matches by uploading your resume or completing our career game. Once you've found your recommended roles, you can unlock personalized AI mock interviews to prepare for your future career.")),
     h("div", { class: "interview-report-actions" },
-      h("a", { class: "btn primary", href: "#/resume" }, "Upload Resume"),
-      h("a", { class: "btn", href: "#/quiz" }, "Play Career Game")));
+      h("a", { class: "btn primary", href: "#/resume" }, "Upload resume"),
+      h("a", { class: "btn", href: "#/quiz" }, "Take Quick Match")));
   const list = h("section", { class: "interview-card" },
     h("div", { class: "section-head" }, h("h2", {}, "Interview history"),
       h("span", { class: "muted" }, `${history.length} ${history.length === 1 ? "session" : "sessions"}`)),
     h("ul", { class: "interview-history" }, history.map((item) => {
       const completed = item.status === "completed";
       const source = item.assessment_source === "resume" ? "Resume recommendation"
-        : item.assessment_source === "questionnaire" ? "Career game recommendation" : "Earlier session";
+        : item.assessment_source === "questionnaire" ? "Quick Match" : "Earlier session";
       return h("li", { class: "interview-history-item" },
         h("div", { class: "interview-history-role" }, h("b", {}, item.role_title),
           h("span", {}, `${item.interview_type || "AI mock interview"} · ${source} · ${fmtTime(item.created_utc)} · ${item.difficulty}`)),
@@ -60,7 +60,7 @@ function renderHistory(main, history) {
           h("span", {}, h("small", {}, "Job readiness"), h("b", { class: "num" }, item.readiness == null ? "—" : pct(item.readiness)))),
         h("span", { class: `tag interview-history-status ${completed ? "" : "pending"}` }, item.status.replaceAll("_", " ")),
         h("div", { class: "interview-history-actions" },
-          h("a", { class: "btn ghost sm", href: `#/interview/${item.interview_id}` }, completed ? "View Report" : "Resume"),
+          h("a", { class: "btn ghost sm", href: `#/interview/${item.interview_id}` }, completed ? "View report" : "Resume"),
           h("button", { class: "btn ghost sm", type: "button", "aria-label": `Delete attempt for ${item.role_title}`,
             onclick: async () => { if (!confirm("Delete this interview and its saved transcript?")) return;
               try { await api(`/api/interviews/${item.interview_id}`, { method: "DELETE" }); location.reload(); }
@@ -68,7 +68,7 @@ function renderHistory(main, history) {
     })));
   main.replaceChildren(
     h("div", { class: "interview-page" },
-      h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "PRACTICE · REFLECT · IMPROVE"),
+      h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "MOCK INTERVIEWS"),
         h("h1", { class: "page-title" }, "Interview history"),
         h("p", { class: "lede" }, "Review your practice sessions and track your preparation for recommended roles."))),
       history.length ? list : empty));
@@ -101,14 +101,14 @@ function renderLaunch(main, recommendation, plans) {
       h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "RECOMMENDED ROLE · PRACTICE"),
         h("h1", { class: "page-title" }, recommendation.role_title),
         h("p", { class: "lede" }, recommendation.source === "resume"
-          ? "This role came from your completed resume analysis." : "This role came from your completed career game."))),
+          ? "This role came from your completed resume analysis." : "This role came from your Quick Match results."))),
       h("section", { class: "interview-card" }, h("h2", {}, "Prepare for your interview"),
         h("p", { class: "muted" }, `Recommended role · ESCO ${recommendation.role_id}`),
         h("div", { class: "interview-skills" }, skills.map((s) => h("span", { class: "chip-static" }, `${s.name} · ${s.level}/5`))),
         h("label", { class: "field" }, h("span", {}, "Difficulty"), difficulty),
-        h("label", { class: "field" }, h("span", {}, "Connect a reskilling plan (optional)"), plan),
+        h("label", { class: "field" }, h("span", {}, "Link a learning plan (optional)"), plan),
         h("div", { class: "interview-consent" }, h("label", {}, consent,
-          h("span", {}, "I agree to save my answer transcripts and send them to AiversePulse’s configured AI provider for interview feedback. No audio is stored.")),
+          h("span", {}, "I agree to save my answer transcripts and have them processed by AI for interview feedback. No audio is stored.")),
         h("p", { class: "fine" }, "Voice input uses your browser’s speech recognition when available. Browser speech services may process audio; text entry is always available.")),
         error, start),
       h("a", { class: "btn ghost", href: "#/interview" }, "Back to interview history")));
@@ -121,17 +121,21 @@ function renderRoom(main, detail, initial = null) {
   let number = initial?.question_number || 1;
   let stageIndex = initial?.stage_index ?? detail.stage_index ?? 0;
   const total = initial?.total_stages || 5;
-  const status = h("span", { class: "interview-status is-off", role: "status", "aria-live": "polite" }, "Microphone off · Start Answer to record");
+  const previousBodyOverflow = document.body.style.overflow;
+  const alreadyInInterviewRoom = document.body.classList.contains("interview-takeover-active");
+  document.body.classList.add("interview-takeover-active");
+  document.body.style.overflow = "hidden";
+  const status = h("span", { class: "interview-status is-off", role: "status", "aria-live": "polite" }, "Microphone off");
   const qText = h("p", { class: "interview-question" });
   const skillChips = h("div", { class: "chips" });
   const transcript = h("textarea", { class: "input interview-answer", rows: 5, maxlength: 4000,
     placeholder: "Type your answer here, or record an answer and review the transcript.", "aria-label": "Your answer" });
   const responseFeedback = h("div", { class: "interview-answer-feedback", hidden: true });
-  const answerBtn = h("button", { class: "btn primary", type: "submit" }, "Confirm & Send Answer");
-  const startBtn = h("button", { class: "btn primary", type: "button" }, "Start Answer");
-  const stopBtn = h("button", { class: "btn", type: "button", disabled: true }, "Stop Recording");
-  const retryBtn = h("button", { class: "btn sm", type: "button", disabled: true }, "Retry Recording");
-  const muteBtn = h("button", { class: "btn sm", type: "button", disabled: true }, "Mute Microphone");
+  const answerBtn = h("button", { class: "btn primary", type: "submit", "aria-label": "Confirm and send answer" }, "Send answer");
+  const startBtn = h("button", { class: "btn primary", type: "button", "aria-label": "Start answer recording" }, "Start");
+  const stopBtn = h("button", { class: "btn", type: "button", disabled: true, "aria-label": "Stop recording" }, "Stop");
+  const retryBtn = h("button", { class: "btn sm", type: "button", disabled: true, "aria-label": "Retry recording" }, "Retry");
+  const muteBtn = h("button", { class: "btn sm", type: "button", disabled: true, "aria-label": "Mute microphone" }, "Mute");
   const duration = h("span", { class: "interview-recording-time num", "aria-label": "Recording duration" }, "00:00");
   const deviceSelect = h("select", { class: "interview-mic-select", "aria-label": "Microphone device" },
     h("option", { value: "" }, "System default microphone"));
@@ -143,9 +147,10 @@ function renderRoom(main, detail, initial = null) {
   const meter = h("div", { class: "interview-mic-meter", role: "img", "aria-label": "Live microphone sound level" }, micBars);
   const voicePanel = h("div", { class: "interview-voice-panel", dataset: { state: "off" } },
     h("div", { class: "interview-voice-summary" }, meter,
-      h("div", { class: "interview-voice-copy" }, h("b", {}, "Voice answer"),
-        h("label", { class: "interview-voice-field" }, h("span", {}, "Microphone"), deviceSelect),
-        h("label", { class: "interview-voice-field" }, h("span", {}, "Transcription language"), languageSelect)), duration),
+      h("div", { class: "interview-voice-copy" }, h("b", {}, "Voice answer"), status), duration),
+    h("details", { class: "interview-voice-settings" }, h("summary", {}, "Microphone & language"),
+      h("label", { class: "interview-voice-field" }, h("span", {}, "Microphone"), deviceSelect),
+      h("label", { class: "interview-voice-field" }, h("span", {}, "Transcription language"), languageSelect)),
     h("div", { class: "interview-voice-controls" }, startBtn, stopBtn, retryBtn, muteBtn));
   const livePreview = h("p", { class: "interview-live-preview", "aria-live": "polite", hidden: true });
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -164,11 +169,21 @@ function renderRoom(main, detail, initial = null) {
   let elapsedMs = 0, timerStartedAt = null, durationTimer = null;
   let deviceEnumeration = 0;
   let interviewerSpeaking = false, currentUtterance = null, paused = false;
+  let microphoneLevel = 0, speechCue = null, lastAvatarSignalAt = 0;
   let officeDisposer = null;
+  const updateAvatarPresentation = () => {
+    const micState = voicePanel.dataset.state;
+    const state = interviewerSpeaking ? "speaking"
+      : ["ready", "listening", "speaking", "captured"].includes(micState) ? "listening" : "idle";
+    window.dispatchEvent(new CustomEvent("aiversepulse:interview-avatar-state", { detail: {
+      state, microphoneLevel, speechCue,
+    } }));
+  };
   const setMicState = (state, message) => {
     voicePanel.dataset.state = state;
     status.className = `interview-status is-${state}`;
     status.textContent = message;
+    updateAvatarPresentation();
   };
   const updateControls = () => {
     startBtn.disabled = recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking;
@@ -212,7 +227,10 @@ function renderRoom(main, detail, initial = null) {
     micStream?.getTracks().forEach((track) => { track.onended = null; track.stop(); });
     micStream = null; audioContext?.close().catch(() => {}); audioContext = null;
     micBars.forEach((bar) => { bar.style.height = "5px"; });
-    muteBtn.textContent = "Mute Microphone";
+    microphoneLevel = 0;
+    updateAvatarPresentation();
+    muteBtn.textContent = "Mute";
+    muteBtn.setAttribute("aria-label", "Mute microphone");
   };
   const watchAudio = () => {
     if (!analyser) return;
@@ -223,6 +241,8 @@ function renderRoom(main, detail, initial = null) {
       let squares = 0;
       for (const sample of waveform) { const amplitude = (sample - 128) / 128; squares += amplitude * amplitude; }
       const volume = Math.sqrt(squares / waveform.length), bandSize = Math.max(1, Math.floor(spectrum.length / micBars.length));
+      microphoneLevel = recording && !muted && !interviewerSpeaking
+        ? Math.max(0, Math.min(1, (volume - 0.008) / 0.12)) : 0;
       micBars.forEach((bar, index) => {
         const start = index * bandSize, end = Math.min(spectrum.length, start + bandSize);
         let sum = 0; for (let i = start; i < end; i++) sum += spectrum[i];
@@ -231,6 +251,13 @@ function renderRoom(main, detail, initial = null) {
       if (recording && !muted && !interviewerSpeaking && !speechError) {
         if (volume > 0.025) setMicState("speaking", "Speaking detected · keep answering");
         else setMicState("listening", speechAvailable ? "Listening · speak your answer" : "Listening · browser transcription unavailable; type your answer");
+      }
+      // The avatar uses the same measured input as the visible microphone meter.
+      // Limit presentation events to the room's 30 fps render rate.
+      const now = performance.now();
+      if (now - lastAvatarSignalAt >= 33) {
+        lastAvatarSignalAt = now;
+        updateAvatarPresentation();
       }
       meterFrame = requestAnimationFrame(tick);
     };
@@ -278,7 +305,7 @@ function renderRoom(main, detail, initial = null) {
       recognitionRequested = false;
       if (discarded || (event.error === "aborted" && intentionalStop)) return;
       const messages = {
-        "not-allowed": "Speech recognition permission denied. Allow microphone access for localhost, then retry.",
+        "not-allowed": "Microphone access is blocked. Allow it in your browser settings, then try again.",
         "service-not-allowed": "The browser speech service is unavailable. Type your answer instead.",
         "audio-capture": "No microphone input was detected. Check the selected microphone and retry.",
         "no-speech": "No speech detected. Retry recording or type your answer.",
@@ -324,7 +351,7 @@ function renderRoom(main, detail, initial = null) {
     speechError = null;
     recordingAttempted = true; updateControls(); setMicState("processing", "Requesting microphone access…");
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-      starting = false; setMicState("error", "Microphone capture requires HTTPS or localhost in a supported browser."); updateControls(); return;
+      starting = false; setMicState("error", "Voice answers aren't available in this browser. Type your answer instead."); updateControls(); return;
     }
     try {
       const selectedDevice = deviceSelect.value;
@@ -363,7 +390,7 @@ function renderRoom(main, detail, initial = null) {
         analyser = audioContext.createAnalyser(); analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.75;
         audioSource = audioContext.createMediaStreamSource(micStream); audioSource.connect(analyser); watchAudio();
       }
-      starting = false; recording = true; muted = false; muteBtn.textContent = "Mute Microphone"; startDuration(); updateControls();
+      starting = false; recording = true; muted = false; muteBtn.textContent = "Mute"; muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration(); updateControls();
       if (recognizer) {
         if (speechError) setMicState("error", speechError);
         else if (recognitionActive) setMicState("listening", "Listening · speak your answer");
@@ -376,10 +403,10 @@ function renderRoom(main, detail, initial = null) {
       }
       starting = false; recording = false; pauseDuration(); releaseAudio(); updateControls();
       const messages = {
-        NotAllowedError: "Microphone permission denied. Allow microphone access for localhost, then retry.",
+        NotAllowedError: "Microphone access is blocked. Allow it in your browser settings, then try again.",
         NotFoundError: "No microphone was found. Connect a microphone and retry.",
         NotReadableError: "The microphone is busy in another app. Close that app or choose another input.",
-        SecurityError: "Microphone capture requires HTTPS or localhost.",
+        SecurityError: "Voice answers aren't available in this browser. Type your answer instead.",
       };
       setMicState("error", messages[error.name] || error.message || "Could not start microphone capture. Retry or type your answer.");
     }
@@ -397,10 +424,10 @@ function renderRoom(main, detail, initial = null) {
     if (!micStream) return;
     muted = !muted; micStream.getAudioTracks().forEach((track) => { track.enabled = !muted; });
     if (muted) {
-      pauseDuration(); await stopRecognition(); muteBtn.textContent = "Unmute Microphone";
+      pauseDuration(); await stopRecognition(); muteBtn.textContent = "Unmute"; muteBtn.setAttribute("aria-label", "Unmute microphone");
       setMicState("off", "Microphone muted · unmute to continue recording");
     } else {
-      muteBtn.textContent = "Mute Microphone"; startDuration();
+      muteBtn.textContent = "Mute"; muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration();
       if (recognizer && recording) {
         try { recognitionRequested = true; recognizer.start(); setMicState("listening", "Listening · speak your answer"); }
         catch { recognitionRequested = false; setMicState("error", "Could not resume speech recognition. Stop and retry, or type your answer."); }
@@ -416,16 +443,25 @@ function renderRoom(main, detail, initial = null) {
     window.speechSynthesis.cancel();
     utterance.onstart = () => {
       if (currentUtterance !== utterance) return;
+      speechCue = { word: utterance.text, startedAt: performance.now(), secondsPerCharacter: 0.095 / Math.max(0.5, utterance.rate || 1) };
       interviewerSpeaking = true; updateControls(); setMicState("processing", "Interviewer speaking · microphone capture is off");
+    };
+    utterance.onboundary = (event) => {
+      if (currentUtterance !== utterance || !interviewerSpeaking) return;
+      const remaining = utterance.text.slice(Math.max(0, event.charIndex || 0));
+      const word = remaining.match(/^[\p{L}\p{N}'’\-]+/u)?.[0];
+      if (!word) return;
+      speechCue = { word, startedAt: performance.now(), secondsPerCharacter: 0.105 / Math.max(0.5, utterance.rate || 1) };
+      updateAvatarPresentation();
     };
     utterance.onend = () => {
       if (currentUtterance !== utterance) return;
-      currentUtterance = null; interviewerSpeaking = false; updateControls();
+      currentUtterance = null; interviewerSpeaking = false; speechCue = null; updateControls();
       setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : "Ready to answer · microphone off");
     };
     utterance.onerror = () => {
       if (currentUtterance !== utterance) return;
-      currentUtterance = null; interviewerSpeaking = false; updateControls();
+      currentUtterance = null; interviewerSpeaking = false; speechCue = null; updateControls();
       setMicState("ready", "Ready to answer · microphone off");
     };
     window.speechSynthesis.speak(utterance);
@@ -435,22 +471,29 @@ function renderRoom(main, detail, initial = null) {
     try { recognizer?.abort(); } catch { /* already stopped */ }
     recognitionActive = false; recognitionRequested = false; releaseAudio(); window.speechSynthesis?.cancel();
     officeDisposer?.(); officeDisposer = null;
+    if (!alreadyInInterviewRoom) document.body.classList.remove("interview-takeover-active");
+    document.body.style.overflow = previousBodyOverflow;
+    document.removeEventListener("keydown", onEscape);
   };
   window.addEventListener("hashchange", () => { if (location.hash !== `#/interview/${sessionId}`) dispose(); });
   window.addEventListener("pagehide", dispose, { once: true });
   const progress = h("div", { class: "interview-progress", role: "progressbar", "aria-label": "Interview progress", "aria-valuemin": "0", "aria-valuemax": String(total), "aria-valuenow": "1" }, h("i"));
   const stageText = h("span");
   const questionStage = h("span");
+  const counter = h("span", { class: "interview-counter" }, `Question ${number} of ${total}`);
   const setQuestion = (q, n, src) => {
     current = q; number = n; source = src || source;
+    counter.textContent = `Question ${number} of ${total}`;
     qText.textContent = q.text || q.question_text || "";
+    qText.animate?.([{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "translateY(0)" }],
+      { duration: 420, easing: "ease-out" });
     stageText.textContent = TYPES[q.type || q.question_type] || String(q.stage || "Interview").replaceAll("_", " ");
     questionStage.textContent = stageText.textContent;
     skillChips.replaceChildren(...(q.target_skills || []).map((s) => h("span", { class: "chip-static" }, s)));
     const step = Math.min(total, stageIndex + 1);
     progress.setAttribute("aria-valuenow", String(step));
     progress.querySelector("i").style.width = `${Math.min(100, step / total * 100)}%`;
-    setMicState("off", "Microphone off · Start Answer to record");
+    setMicState("off", "Microphone off");
     if (qText.textContent) void playQuestion();
   };
   const form = h("form", { class: "interview-answer-form", onsubmit: async (e) => {
@@ -471,7 +514,7 @@ function renderRoom(main, detail, initial = null) {
     answerBtn.disabled = false; pause.disabled = false; updateControls();
   } }, h("label", { class: "field" }, h("span", {}, "Your answer"), transcript),
     voicePanel, livePreview, h("div", { class: "row-actions interview-submit-row" }, answerBtn));
-  const repeat = h("button", { class: "btn sm", type: "button", onclick: () => { void playQuestion(); } }, "Replay Interviewer Question");
+  const repeat = h("button", { class: "btn sm", type: "button", onclick: () => { void playQuestion(); } }, "Replay question");
   const pause = h("button", { class: "btn sm", type: "button", onclick: () => {
     paused = !paused;
     if (paused) {
@@ -480,37 +523,45 @@ function renderRoom(main, detail, initial = null) {
       if (!interviewerSpeaking) setMicState("off", "Paused · microphone off");
     } else {
       window.speechSynthesis?.resume();
-      if (!interviewerSpeaking) setMicState("off", "Microphone off · Start Answer to record");
+      if (!interviewerSpeaking) setMicState("off", "Microphone off");
     }
     pause.textContent = paused ? "Resume" : "Pause";
     answerBtn.disabled = paused; updateControls();
   } }, "Pause");
-  const end = h("button", { class: "btn sm ghost", type: "button", onclick: async () => {
+  repeat.textContent = "Replay question";
+  voicePanel.querySelector(".interview-voice-controls").append(repeat, pause);
+  const end = h("button", { class: "interview-exit-button", type: "button", onclick: async () => {
     if (!confirm("End this interview now? Ending early saves your answers but does not create an assessment.")) return;
     dispose();
     try { await api(`/api/interviews/${sessionId}/end`, { method: "POST", body: {} }); location.hash = "#/interview"; }
     catch (e) { toast(e.message, "err"); }
-  } }, "End interview");
+  } }, "Exit");
+  const onEscape = (event) => { if (event.key === "Escape") { event.preventDefault(); end.click(); } };
+  document.addEventListener("keydown", onEscape);
   setQuestion(current, number, source);
   const officeEnabled = window.AP_CONFIG?.VIRTUAL_INTERVIEW_3D === true;
   const officeHost = officeEnabled ? h("div", { class: "interview-office-host", role: "group",
     "aria-label": "First-person view of a modern interview office, seated across the desk" },
     h("span", { class: "interview-office-label", "aria-hidden": "true" }, "VIRTUAL INTERVIEW OFFICE"),
     h("span", { class: "interview-office-loading", role: "status" }, "Preparing your interview room…")) : null;
-  const room = h("section", { class: `interview-room${officeEnabled ? " interview-room-office-pending" : ""}` },
-    officeHost,
-    h("div", { class: "interviewer-avatar", "aria-hidden": "true" }, h("span", {}, "AP")),
-    h("div", { class: "interviewer-meta" }, h("b", {}, "AiversePulse interviewer"), h("span", { class: "muted" }, "AI practice session")),
-    h("div", { class: "question-panel" }, h("p", { class: "eyebrow" }, "QUESTION · ", questionStage), qText, skillChips,
-      source?.url ? h("a", { class: "cite", href: source.url, target: "_blank", rel: "noopener noreferrer" }, "Grounded in ESCO · source details") : null),
-    responseFeedback, form,
-    h("p", { class: "fine" }, "Only your reviewed transcript is sent to AiversePulse and saved with this interview. Browser speech recognition may process microphone audio; AiversePulse does not store audio."));
-  main.replaceChildren(h("div", { class: "interview-page" },
-    h("div", { class: "section-head" }, h("div", {}, h("p", { class: "eyebrow" }, "LIVE PRACTICE"), h("h1", { class: "page-title" }, detail.role_title),
-      h("p", { class: "muted" }, `${detail.difficulty || initial?.difficulty || "intermediate"} difficulty · `, stageText)),
-      h("div", { class: "interview-room-actions" }, status, repeat, pause, end)),
-    progress,
-    room));
+  const questionToggle = h("button", { class: "interview-question-toggle", type: "button", "aria-expanded": "true",
+    "aria-label": "Hide interview question", onclick: (event) => {
+      const expanded = event.currentTarget.getAttribute("aria-expanded") === "true";
+      event.currentTarget.setAttribute("aria-expanded", String(!expanded));
+      event.currentTarget.setAttribute("aria-label", expanded ? "Show interview question" : "Hide interview question");
+      event.currentTarget.textContent = expanded ? "+" : "−";
+      questionOverlay.classList.toggle("is-collapsed", expanded);
+    } }, "−");
+  const questionOverlay = h("aside", { class: "interview-question-overlay", "aria-label": "Current interview question" },
+    questionToggle, h("div", { class: "interview-question-copy" },
+      h("p", { class: "interview-question-label" }, "QUESTION · ", questionStage), qText, skillChips));
+  const topbar = h("header", { class: "interview-topbar" },
+    h("div", { class: "interview-role-name" }, detail.role_title),
+    h("div", { class: "interview-topbar-progress" }, counter, progress), end);
+  const room = h("section", { class: `interview-takeover${officeEnabled ? " interview-room-office-pending" : ""}`, "aria-label": "Live mock interview" },
+    officeHost, topbar, questionOverlay, responseFeedback, form,
+    h("p", { class: "interview-room-disclaimer" }, "Only your reviewed transcript is sent to AiversePulse and saved with this interview. Browser speech recognition may process microphone audio; AiversePulse does not store audio."));
+  main.replaceChildren(room);
   if (officeHost) {
     const fallbackOffice = (error) => {
       officeHost.remove(); room.classList.remove("interview-room-office-pending", "interview-room-virtual");
@@ -521,6 +572,7 @@ function renderRoom(main, detail, initial = null) {
       if (discarded || !officeHost.isConnected) { unmount(); return; }
       officeDisposer = unmount;
       room.classList.remove("interview-room-office-pending"); room.classList.add("interview-room-virtual");
+      updateAvatarPresentation();
     }).catch(fallbackOffice);
   }
 }
@@ -572,11 +624,11 @@ async function renderReport(main, report) {
           h("span", { class: "num" }, value == null ? "Not assessed" : `${value}/4`)))))))) : null;
   let planPanel = h("p", { class: "muted" }, "No plan was linked to this interview.");
   if (report.plan_id) {
-    planPanel = h("a", { class: "btn sm", href: `#/plans/${report.plan_id}` }, "Open your reskilling plan");
+    planPanel = h("a", { class: "btn sm", href: `#/plans/${report.plan_id}` }, "Open your learning plan");
     try {
       const plan = await api(`/api/plans/${report.plan_id}`);
       const activities = (plan.plan?.activities || []).filter((a) => (report.gaps || []).some((g) => g.name.toLowerCase() === String(a.skill_id).toLowerCase()));
-      if (activities.length) planPanel = h("div", {}, h("a", { class: "btn sm", href: `#/plans/${report.plan_id}` }, "Open your reskilling plan"),
+      if (activities.length) planPanel = h("div", {}, h("a", { class: "btn sm", href: `#/plans/${report.plan_id}` }, "Open your learning plan"),
         h("p", { class: "muted" }, `Related plan activities: ${activities.map((a) => `${a.skill_id} (${a.day_range})`).join(" · ")}`));
     } catch { /* preserve the link if the saved plan is temporarily unavailable */ }
   }
@@ -609,8 +661,8 @@ async function renderReport(main, report) {
     h("section", { class: "interview-card" }, h("h2", {}, "Recommended next steps"), recommendations, planPanel),
     compare,
     h("div", { class: "interview-report-actions" },
-      h("a", { class: "btn primary", href: "#/quiz" }, "Play Career Game for a new recommendation"),
-      h("a", { class: "btn", href: "#/resume" }, "Upload Resume"),
+      h("a", { class: "btn primary", href: "#/quiz" }, "Retake Quick Match"),
+      h("a", { class: "btn", href: "#/resume" }, "Upload resume"),
       h("a", { class: "btn ghost", href: "#/interview" }, "Interview history")), sources));
 }
 
@@ -618,7 +670,7 @@ function renderEnded(main) {
   main.replaceChildren(h("div", { class: "interview-page" }, h("h1", { class: "page-title" }, "Interview ended"),
     h("p", { class: "lede" }, "There were not enough completed answers to create an assessment. Find a recommended role from your career results to practice again."),
     h("div", { class: "interview-report-actions" },
-      h("a", { class: "btn primary", href: "#/quiz" }, "Play Career Game"),
-      h("a", { class: "btn", href: "#/resume" }, "Upload Resume"),
+      h("a", { class: "btn primary", href: "#/quiz" }, "Take Quick Match"),
+      h("a", { class: "btn", href: "#/resume" }, "Upload resume"),
       h("a", { class: "btn ghost", href: "#/interview" }, "Interview history"))));
 }

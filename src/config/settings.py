@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     router_model: str = ""
     coach_model: str = ""
     resume_model: str = ""
+    recruiter_model: str = ""  # job posts, "ask your data" and voice job drafts for HR
+    # speech-to-text for voice input: "openai:<model>" on the gateway or "gemini:<model>"; if its provider has no key, the
+    # Gemini fast model is used, else browsers fall back to their own speech recognition
+    stt_model: str = "openai:mimo-v2.6-flash"  # an audio chat model on the gateway; whisper-style ids use /audio/transcriptions
     llm_resume: bool = False  # opt-in: send the REDACTED resume to the LLM to propose extra skills (quotes verified)
     llm_usd_per_1m_input: float = 0.0   # set from the provider's current price sheet; 0 = cost not estimated
     llm_usd_per_1m_output: float = 0.0
@@ -63,6 +67,16 @@ class Settings(BaseSettings):
     smtp_password: SecretStr | None = None
     smtp_from: str = ""
     support_email: str = ""  # shown on the Terms and Privacy pages as the contact for questions and data requests
+    # --- hiring plugins (governance/plugins.py): each platform's own developer app; empty = that platform is off ---
+    linkedin_client_id: str = ""
+    linkedin_client_secret: SecretStr | None = None
+    linkedin_version: str = "202509"           # LinkedIn-Version header (YYYYMM; LinkedIn retires versions after ~1 year)
+    facebook_app_id: str = ""
+    facebook_app_secret: SecretStr | None = None
+    facebook_graph_version: str = "v23.0"
+    x_client_id: str = ""
+    x_client_secret: SecretStr | None = None   # empty = public client (PKCE only)
+    plugin_secret_key: SecretStr | None = None  # Fernet key for stored platform tokens; empty = key file beside the database
     public_url: str = ""  # e.g. https://sdc.olgtx.com: where links in emails point (empty = the address the request came in on)
     # separate frontend deploy: comma-separated origins allowed to call the API with credentials, e.g.
     # "https://app.example.com,http://localhost:5173". Empty = same-origin only (frontend served by this API).

@@ -55,7 +55,8 @@ def delete_account(con, username: str) -> dict:
                     con.execute(f"DELETE FROM {t} WHERE employee_id=?", (employee_id,))
         # sign-in and verification state
         for t, col, val in (("sessions", "username", username), ("email_otp", "username", username),
-                            ("email_otp", "username", "reset:" + username), ("signup_waits", "username", username),
+                            ("email_otp", "username", "reset:" + username), ("email_otp", "username", "invite:" + username),
+                            ("signup_waits", "username", username), ("signup_waits", "username", "reset:" + username),
                             ("briefing_log", "username", username)):
             if t in have:
                 con.execute(f"DELETE FROM {t} WHERE {col}=?", (val,))

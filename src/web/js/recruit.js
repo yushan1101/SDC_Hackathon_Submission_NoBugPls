@@ -4,6 +4,8 @@ import { jobIcon } from "./jobicons.js";
 import { api, h, icon, toast, fmtTime, reveal, DROP, sleep } from "./lib.js";
 import { Owl } from "./owl.js";
 import { boardView, integrityBlock } from "./blocks.js";
+import { publishPanel } from "./org.js";
+import { micButton } from "./voice.js";
 
 const SCREEN_AGENTS = [["parse_resume", "Parse"], ["extract_skills", "Extract"], ["assess_fit", "Fit"], ["judge_criteria", "Judge"]];
 const EXAMPLE = "Top 5. Must know Epic and Microsoft Excel, critical thinking at least 3, 3+ years, match above 55%";
@@ -15,7 +17,7 @@ function criteriaEditor({ soc, text = "", onState }) {
   async function parse() {
     await null;  // callers finish wiring their buttons before the first echo
     const t = box.value.trim();
-    if (!t) { out.replaceChildren(h("li", { class: "muted" }, "No thresholds: the agents rank every applicant by match.")); last = { criteria: {}, summary: [] }; onState?.(last); return; }
+    if (!t) { out.replaceChildren(h("li", { class: "muted" }, "No requirements set. All applicants are ranked by match.")); last = { criteria: {}, summary: [] }; onState?.(last); return; }
     last = await api("/api/criteria/parse", { method: "POST", body: { text: t, soc } }).catch((e) => ({ error: e.message }));
     if (last.error) { out.replaceChildren(h("li", { class: "bad" }, last.error)); return; }
     out.replaceChildren(...last.summary.map((l) => h("li", { class: /^Refused/.test(l) ? "bad" : /^Not understood/.test(l) ? "warn" : "ok" }, l)));
@@ -23,11 +25,12 @@ function criteriaEditor({ soc, text = "", onState }) {
   }
   box.addEventListener("input", () => { clearTimeout(box._t); box._t = setTimeout(parse, 300); });
   parse();
-  return { el: h("div", { class: "crit" }, box,
+  return { el: h("div", { class: "crit" }, h("div", { class: "with-mic" }, box, micButton(box)),
     h("details", { class: "hint" }, h("summary", {}, icon("info"), "How to write"),
       h("p", {}, "The AI agents echo back exactly what they will apply; anything they cannot parse is shown, never silently dropped. " +
         "Criteria about age, gender, ethnicity or other protected characteristics are refused.")),
-    out), get text() { return box.value.trim(); }, get parsed() { return last; } };
+    out), get text() { return box.value.trim(); }, get parsed() { return last; },
+    set(text) { box.value = text; box.dispatchEvent(new Event("input")); } };
 }
 
 function occPicker(onPick) {
@@ -56,14 +59,33 @@ export async function openingsView(main, status) {
     create.disabled = true;
     try {
       const o = await api("/api/openings", { method: "POST", body: { soc, title: title.value.trim(), criteria_text: crit.text } });
-      toast("Opening created. Share its application link.");
+      toast("Opening created. It's being shared to your connected accounts.");
       location.hash = `#/openings/${o.id}`;
     } catch (e) { toast(e.message, "err"); create.disabled = false; }
   } }, "Create opening");
-  const picker = occPicker((o) => { soc = o.soc; if (!title.value) title.placeholder = o.title; create.disabled = !!crit.parsed?.criteria?.blocked?.length; status.set("listening", o.title); });
+  const pickOcc = (o) => { soc = o.soc; if (!title.value) title.placeholder = o.title; create.disabled = !!crit.parsed?.criteria?.blocked?.length; status.set("listening", o.title); };
+  const picker = occPicker(pickOcc);
+  // describe the role in your own words (typed or spoken): a draft to check, nothing is created until Create
+  const said = h("textarea", { class: "input", rows: "3", maxlength: 3000, placeholder: "e.g. We need a ward nurse with 3 years' experience who knows Epic and Excel. Show me the top 5.", "aria-label": "Describe the role" });
+  const jobs = h("div", { class: "suggest", "aria-label": "Matching job types" });
+  const draft = h("button", { class: "btn", type: "button", onclick: async () => {
+    if (said.value.trim().length < 10) { toast("Describe the role in a sentence or two.", "err"); return; }
+    draft.disabled = true; status.set("thinking", "Drafting the opening");
+    try {
+      const d = await api("/api/openings/draft", { method: "POST", body: { text: said.value.trim() } });
+      if (d.title) title.value = d.title;
+      if (d.criteria_text) crit.set(d.criteria_text);
+      jobs.replaceChildren(...d.occupations.map((o, i) => h("button", { class: "chip", type: "button", "aria-pressed": String(i === 0), onclick: (e) => {
+        jobs.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget))); pickOcc(o);
+      } }, jobIcon(o.soc, { size: 20 }), o.title)));
+      if (d.occupations[0]) pickOcc(d.occupations[0]);
+      status.set("matched", d.occupations.length ? "Draft ready: check it, then create" : "Draft ready: pick the job type below");
+    } catch (e) { toast(e.message, "err"); status.set("confused", "No draft"); }
+    draft.disabled = false;
+  } }, icon("spark"), "Draft from description");
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "Openings"),
-      h("span", { class: "muted", style: { "font-size": "14px" } }, "AI agents screen and rank. You decide.")),
+      h("span", { class: "muted", style: { "font-size": "14px" } }, "Create openings, share them and review ranked applicants.")),
     h("div", { class: "overview" },
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Open roles"), h("span", { class: "muted num", style: { "font-size": "14px" } }, `${list.length}`)),
         list.length ? h("div", { class: "table-wrap" }, h("table", { class: "data" },
@@ -75,9 +97,10 @@ export async function openingsView(main, status) {
           : h("div", { class: "pad" }, h("p", { class: "muted" }, "No openings yet. Create one, then share its application link with candidates."))),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "New opening")),
         h("div", { class: "pad", style: { display: "grid", gap: "14px" } },
-          h("label", { class: "field" }, h("span", {}, "Occupation (ESCO)"), picker),
+          h("div", { class: "field" }, h("span", {}, "Describe the role (optional)"), h("div", { class: "with-mic" }, said, micButton(said)), draft, jobs),
+          h("label", { class: "field" }, h("span", {}, "Job type"), picker),
           h("label", { class: "field" }, h("span", {}, "Title"), title),
-          h("div", { class: "field" }, h("span", {}, "Screening thresholds"), crit.el),
+          h("div", { class: "field" }, h("span", {}, "Screening requirements"), crit.el),
           create)))));
 }
 
@@ -86,6 +109,7 @@ export async function openingDetail(main, id, status) {
   main.replaceChildren(h("div", { class: "view" }, h("p", { class: "muted" }, "Loading…")));
   const d = await api(`/api/openings/${id}`);
   const link = new URL(d.apply_path, location.href).href;
+  const share = await publishPanel(id, status, d.status === "open").catch(() => null);
   const crit = criteriaEditor({ soc: d.soc, text: d.criteria_text, onState: (st) => { save.disabled = !!st.criteria?.blocked?.length || crit.text === d.criteria_text; } });
   const save = h("button", { class: "btn", type: "button", disabled: true, onclick: async () => {
     save.disabled = true; status.set("analyzing", "Re-screening every applicant");
@@ -130,7 +154,7 @@ export async function openingDetail(main, id, status) {
         const u = a.usage?.find((x) => x.node === k);
         return h("span", {}, h("i", { class: "on" }), l, u ? h("span", { class: "num muted" }, ` ${Math.round(u.ms)} ms`) : null);
       })),
-      a.checks.length ? h("section", { class: "block" }, h("h3", {}, "Thresholds"),
+      a.checks.length ? h("section", { class: "block" }, h("h3", {}, "Requirements"),
         h("ul", { class: "check-list" }, a.checks.map((k) => h("li", { class: k.pass ? "ok" : "bad" },
           h("b", {}, k.criterion), k.found != null ? h("span", { class: "muted num" }, ` found ${k.found}`) : null,
           k.evidence?.[0] ? h("q", {}, k.evidence[0]) : null)))) : null,
@@ -145,7 +169,7 @@ export async function openingDetail(main, id, status) {
           h("button", { class: "btn primary", type: "button", onclick: decide("shortlisted") }, "Shortlist"),
           h("button", { class: "btn", type: "button", onclick: decide("on_hold") }, "Hold"),
           h("button", { class: "btn", type: "button", onclick: decide("declined") }, "Decline")),
-        h("p", { class: "note" }, "Your decision is recorded with your name. The agents never contact or reject anyone."))), DROP));
+        h("p", { class: "note" }, "Your decision is logged under your name. Applicants are never contacted or rejected automatically."))), DROP));
     pane.classList.add("open");
     if (!matchMedia("(min-width: 1200px)").matches || tr.dataset.user) pane.scrollIntoView({ block: "start", behavior: "smooth" });
   }
@@ -157,23 +181,26 @@ export async function openingDetail(main, id, status) {
       h("div", { class: "row-actions" },
         h("span", { class: `tag ${d.status === "open" ? "approved" : "draft"}` }, d.status),
         h("button", { class: "btn sm", type: "button", onclick: async () => {
-          await api(`/api/openings/${id}/status`, { method: "POST", body: { status: d.status === "open" ? "closed" : "open" } });
+          if (d.status === "open" && !confirm("Close applications? The apply link stops working until you reopen it.")) return;
+          try { await api(`/api/openings/${id}/status`, { method: "POST", body: { status: d.status === "open" ? "closed" : "open" } }); }
+          catch (e) { toast(e.message, "err"); return; }
           openingDetail(main, id, status);
         } }, d.status === "open" ? "Close applications" : "Reopen"))),
     h("section", { class: "panel apply-link" }, h("div", { class: "pad" },
       h("span", { class: "muted" }, "Application link"), h("code", {}, link),
       h("button", { class: "btn sm", type: "button", onclick: () => navigator.clipboard?.writeText(link).then(() => toast("Link copied")) }, "Copy"),
       h("a", { class: "btn sm", href: d.apply_path, target: "_blank", rel: "noopener" }, icon("ext"), "Open"))),
+    share,
     h("div", { class: "overview" },
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Candidates"),
-        h("span", { class: "muted", style: { "font-size": "14px" } }, `${d.candidates.length} screened · ${rec.length} recommended by the ranking agent`)),
+        h("span", { class: "muted", style: { "font-size": "14px" } }, `${d.candidates.length} screened · ${rec.length} recommended`)),
         d.candidates.length ? h("div", { class: "table-wrap" }, h("table", { class: "data" },
-          h("thead", {}, h("tr", {}, h("th", { class: "n" }, "Rank"), h("th", {}, "Ref"), h("th", { class: "n" }, "Match"), h("th", {}, "Thresholds"), h("th", { class: "hide-sm" }, "Agent pick"), h("th", {}, "Decision"))),
+          h("thead", {}, h("tr", {}, h("th", { class: "n" }, "Rank"), h("th", {}, "Ref"), h("th", { class: "n" }, "Match"), h("th", {}, "Requirements"), h("th", { class: "hide-sm" }, "Recommended"), h("th", {}, "Decision"))),
           tbody))
           : h("div", { class: "pad empty" }, new Owl({ size: 64, state: "sleeping" }).el, h("p", { class: "muted" }, "No applications yet. Share the link above; each resume is screened by the AI agents as it arrives."))),
-      h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Screening thresholds")),
+      h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Screening requirements")),
         h("div", { class: "pad", style: { display: "grid", gap: "12px" } }, crit.el, save,
-          h("p", { class: "note" }, "Pipeline per resume: parse to Markdown → extract skills with quotes → document guard (hidden text, prompt injection, fraud signals) → assess fit (ESCO requirements, resume text, today's trend board) → judge each threshold. A ranking agent then recommends the best matches that pass every threshold.")))),
+          h("p", { class: "note" }, "Each resume is checked for hidden or manipulated content, compared with the role's requirements and scored against your screening requirements. The best matches that meet every requirement are recommended.")))),
     pane,
     h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Activity"), h("span", { class: "muted", style: { "font-size": "14px" } }, "append-only · UTC")),
       h("ol", { class: "history pad" }, d.events.slice().reverse().map((e) => h("li", {},
@@ -194,8 +221,8 @@ function checks(list) {
 export async function signalsView(main, status) {
   const host = h("div");
   main.replaceChildren(h("div", { class: "view" },
-    h("div", { class: "view-head" }, h("h1", {}, "AI-trend signals"),
-      h("span", { class: "muted", style: { "font-size": "14px" } }, "Updated daily · read by the agents through MCP")), host));
+    h("div", { class: "view-head" }, h("h1", {}, "AI trends"),
+      h("span", { class: "muted", style: { "font-size": "14px" } }, "Updated daily")), host));
   const draw = async () => host.replaceChildren(boardView(await api("/api/signals/today"), { onRefresh: refresh }));
   async function refresh() {
     const before = (await api("/api/signals/today")).created_utc;

@@ -5,6 +5,8 @@ import { api, stream, h, $, icon, toast, fmtTime, ApiError } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
 import { gapsBlock, comparisonBlock, outlookBlock, planBlock, historyBlock, sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { openingsView, openingDetail, signalsView } from "./recruit.js";
+import { askPanel, modelsView, peopleView, pluginsView } from "./org.js";
+import { setVoice } from "./voice.js";
 
 const app = $("#app");
 const AGENTS = ["supervisor", "profiler", "knowledge_search", "gap_analysis", "market_analyst", "pathway", "coach", "reviewer"];
@@ -19,8 +21,9 @@ async function boot() {
   if (S.me.role === "employee") { location.replace("./"); return; }
   if (S.me.role === "admin") { location.replace("admin.html"); return; }
   app.replaceChildren(h("main", { style: { display: "grid", "place-items": "center", "min-height": "100dvh", gap: "12px", "align-content": "center" }, "aria-busy": "true" },
-    new Owl({ size: 72, state: "searching" }).el, h("p", { class: "muted" }, "Loading the console…")));
+    new Owl({ size: 72, state: "searching" }).el, h("p", { class: "muted" }, "Loading…")));
   S.meta = await api("/api/meta");
+  setVoice(S.meta.voice);
   shell();
   addEventListener("hashchange", route);
   addEventListener("keydown", keys);
@@ -42,14 +45,18 @@ function shell() {
   const review = link("#/review", "Review", "review"); review.append(S.badge);
   const more = h("div", { id: "hr-more", class: "hr-more", popover: "auto", "aria-label": "Additional pages" },
     h("a", { href: "#/openings", onclick: () => more.hidePopover?.() }, icon("people"), "Hiring"),
+    h("a", { href: "#/plugins", onclick: () => more.hidePopover?.() }, icon("plug"), "Hiring plugins"),
+    h("a", { href: "#/people", onclick: () => more.hidePopover?.() }, icon("user"), "Team members"),
+    h("a", { href: "#/models", onclick: () => more.hidePopover?.() }, icon("model"), "AI models"),
     h("a", { href: "#/signals", onclick: () => more.hidePopover?.() }, icon("pulse"), "AI trends"),
     h("a", { href: "./#/account" }, icon("user"), "Plan & billing"),
     h("button", { type: "button", onclick: signOut }, icon("out"), "Sign out"));
   app.replaceChildren(h("div", { class: "hr-shell" },
     h("nav", { class: "rail", "aria-label": "Primary" },
       h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }, S.logo = h("span", { class: "logo-owl" }), h("span", { class: "lbl wordmark" }, "AiversePulse")),
-      link("#/overview", "Overview", "grid"), link("#/run", "Run team", "upload"), review, link("#/plans", "Plans", "history"),
-      link("#/openings", "Hiring", "people"), link("#/signals", "Signals", "pulse"),
+      link("#/overview", "Overview", "grid"), link("#/run", "Analyse team", "upload"), review, link("#/plans", "Plans", "history"),
+      link("#/openings", "Hiring", "people"), link("#/plugins", "Hiring plugins", "plug"), link("#/people", "Team members", "user"), link("#/models", "AI models", "model"),
+      link("#/signals", "AI trends", "pulse"),
       h("div", { style: { flex: 1 } }),
       h("a", { href: "./#/account", "aria-label": "Plan & billing", title: "Plan & billing" }, icon("user"), h("span", { class: "lbl" }, "Plan & billing")),
       h("a", { href: "#", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "lbl" }, "Sign out"))),
@@ -71,7 +78,7 @@ function shell() {
 }
 
 function crumb(page = (location.hash.split("/")[1] || "overview")) {
-  const names = { overview: "Overview", run: "Upload & run", review: "Review queue", plans: "Plans register", openings: "Openings & screening", signals: "AI-trend signals" };
+  const names = { overview: "Overview", run: "Analyse team", review: "Review queue", plans: "Plans register", openings: "Openings & screening", signals: "AI trends", plugins: "Hiring plugins", people: "Team members", models: "AI models" };
   S.crumb.replaceChildren(names[page] || "Overview");
 }
 
@@ -87,14 +94,14 @@ async function refreshPlans() {
 function route() {
   const hash = location.hash || "#/overview";
   const [page = "overview", id, ...extra] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const pages = new Set(["overview", "run", "review", "plans", "openings", "signals"]);
-  if (!pages.has(page) || extra.length || (id && !["review", "plans", "openings"].includes(page))) {
+  const pages = new Set(["overview", "run", "review", "plans", "openings", "signals", "plugins", "people", "models"]);
+  if (!pages.has(page) || extra.length || (id && !["review", "plans", "openings", "plugins"].includes(page))) {
     location.replace("#/overview");
     return;
   }
   document.querySelectorAll("[data-route]").forEach((a) => {
     const dest = a.dataset.route;
-    const active = dest === "#/more" ? ["openings", "signals"].includes(page) :
+    const active = dest === "#/more" ? ["openings", "signals", "plugins", "people", "models"].includes(page) :
       hash === dest || hash.startsWith(dest + "/");
     if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
@@ -104,7 +111,8 @@ function route() {
   S.routeVersion = (S.routeVersion || 0) + 1;
   main.scrollTop = 0;
   const views = { run: runView, review: () => reviewView(main, id), plans: () => plansView(main, id),
-    openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status) };
+    openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status),
+    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status) };
   Promise.resolve((views[page] || overview)(main)).catch((e) => {
     main.replaceChildren(h("div", { class: "view" }, h("div", { class: "issue error", role: "alert" }, e.message)));
   });
@@ -141,7 +149,7 @@ function needsPanel() {
     h("div", { class: "pad" }, S.needs.length ? h("div", { class: "bars" }, S.needs.slice(0, 10).map((n) => h("div", { class: "bar-row" },
       h("span", {}, n.skill_id), h("div", { class: "track" }, h("div", { class: "fill", style: { transform: `scaleX(${n.employees_with_gap / max})` } })),
       h("span", { class: "num" }, n.employees_with_gap))))
-      : h("div", { class: "empty-state" }, h("span", { class: "stat-ic" }, icon("upload")), h("p", {}, "No team analysed yet. Use Upload team above to start."))));
+      : h("div", { class: "empty-state" }, h("span", { class: "stat-ic" }, icon("upload")), h("p", {}, "No team analysed yet. Select Analyse team to start."))));
 }
 
 function rosterTable() {
@@ -164,13 +172,13 @@ async function overview(main) {
   await refreshPlans();
   if (version !== S.routeVersion) return;
   main.replaceChildren(h("div", { class: "view" },
-    h("div", { class: "view-head" }, h("h1", {}, "Overview"), h("a", { class: "btn primary sm", href: "#/run" }, icon("upload"), "Upload team")),
-    stats(), h("div", { class: "overview" }, needsPanel(),
+    h("div", { class: "view-head" }, h("h1", {}, "Overview"), h("a", { class: "btn primary sm", href: "#/run" }, icon("upload"), "Analyse team")),
+    stats(), askPanel(S.status, S.me.effective_plan), h("div", { class: "overview" }, needsPanel(),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Needs your review")),
         h("div", { class: "pad review-list" }, latestPerEmployee(S.plans.filter((p) => p.audience === "hr" && !p.review?.archived && p.review?.review_status === "pending")).slice(0, 6).map((p) =>
           h("a", { href: `#/review/${p.plan_id}`, class: "review-row" },
             h("span", { class: "who" }, h("b", {}, p.subject_id), h("span", { class: "muted" }, `${p.target_role} · v${p.version} · ${fmtTime(p.created_utc)}`)), h("span", { class: `tag ${p.status}` }, p.status))),
-          S.plans.some((p) => p.audience === "hr" && p.status !== "approved") ? null : h("p", { class: "muted" }, "Nothing waiting. Approved plans live in the register.")))),
+          S.plans.some((p) => p.audience === "hr" && p.status !== "approved") ? null : h("p", { class: "muted" }, "You're all caught up.")))),
     rosterTable()));
 }
 
@@ -243,7 +251,7 @@ function runView(main) {
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Team file")), h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, drop, preview)),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Checks")),
         h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, schema, errors,
-          runBtn, h("p", { class: "muted", style: { "font-size": "14px" } }, "Each employee runs the full 8-agent pipeline in parallel. Drafts are never approved automatically.")))),
+          runBtn, h("p", { class: "muted", style: { "font-size": "14px" } }, "Employees are analysed in parallel. Plans stay drafts until you approve them.")))),
     live));
   if (S.csv) setCsv(S.csv, "current file");
 }
@@ -265,7 +273,7 @@ async function reviewView(main, id) {
   const selected = new Set();
   const redraw = () => reviewView(main).catch((e) => toast(e.message, "err"));
   const navigate = () => { if (location.hash === "#/review") return redraw(); else location.hash = "#/review"; };
-  const search = h("input", { class: "input", type: "search", value: S.reviewSearch || "", placeholder: "Search candidates or roles", "aria-label": "Search reviews" });
+  const search = h("input", { class: "input", type: "search", value: S.reviewSearch || "", placeholder: "Search employees or roles", "aria-label": "Search reviews" });
   const seg = h("select", { class: "input", "aria-label": "Review status", onchange: (e) => { S.reviewFilter = e.target.value; navigate(); } },
     [["active", "All active"], ["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["archived", "Archived"], ["all", "All including archived"]].map(([k, l]) => h("option", { value: k, selected: k === filter }, l)));
   const count = h("span", { role: "status" }, "0 selected");
@@ -405,7 +413,7 @@ async function loadDetail(id, detail, aside, wrap) {
     h("div", { class: "detail-head" }, h("h2", {}, h("span", { class: "id" }, d.subject_id), " / ", d.plan.target_role),
       h("span", { class: `tag ${d.status}` }, d.status), h("span", { class: "num muted" }, `v${d.version}`), h("span", { style: { flex: 1 } }), toggleAside),
     d.status === "flagged" ? h("div", { class: "banner flag", role: "alert" }, h("strong", {}, "Flagged."), h("span", {}, "Fix the issues below and save a new draft before approval.")) : null,
-    r ? h("section", { class: "block" }, h("h3", {}, "Summary"), staticText(r.narrative, (cid) => { aside.classList.add("open"); document.getElementById(`src-${cid}`)?.scrollIntoView({ block: "nearest" }); })) : h("p", { class: "muted" }, "The analysis report is not cached on this server (it restarted). The plan and audit trail below are complete."),
+    r ? h("section", { class: "block" }, h("h3", {}, "Summary"), staticText(r.narrative, (cid) => { aside.classList.add("open"); document.getElementById(`src-${cid}`)?.scrollIntoView({ block: "nearest" }); })) : h("p", { class: "muted" }, "The full analysis isn't available for this plan. The plan and audit trail below are complete."),
     r?.issues?.filter((i) => i.severity === "error").map((i) => h("div", { class: "issue error" }, i.message)),
     r?.gaps?.length ? gapsBlock(r.gaps) : null,
     r?.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null,
@@ -420,7 +428,7 @@ async function loadDetail(id, detail, aside, wrap) {
   detail.replaceChildren(body);
   aside.replaceChildren(
     h("header", {}, h("span", {}, "Evidence"), h("span", { class: "num" }, r ? r.evidence.length : 0)),
-    h("section", {}, r ? r.evidence.map(sourceItem) : h("p", { class: "muted" }, "Not cached.")),
+    h("section", {}, r ? r.evidence.map(sourceItem) : h("p", { class: "muted" }, "No sources available.")),
     h("header", {}, h("span", {}, "Audit trail"), h("span", {}, "UTC")),
     h("section", {}, historyBlock(d.history)),
     h("header", {}, h("span", {}, "HR review history")),
@@ -455,7 +463,7 @@ async function plansView(main, id) {
     drawer.replaceChildren(h("div", { class: "panel", style: { border: 0, height: "100%", display: "grid", "grid-template-rows": "auto 1fr" } },
       h("header", {}, h("h2", {}, h("span", { class: "mono" }, d.subject_id), ` · ${d.plan.target_role}`), h("button", { class: "btn sm", onclick: () => drawer.close() }, "Close")),
       h("div", { class: "pad", style: { overflow: "auto", display: "grid", gap: "16px", "align-content": "start" } },
-        h("p", { class: "muted" }, "Versions are immutable. Editing an approved plan creates a new draft."),
+        h("p", { class: "muted" }, "Past versions can't be changed. Editing an approved plan creates a new draft."),
         historyBlock(d.history),
         h("a", { class: "btn primary", href: `#/review/${p.plan_id}`, onclick: () => drawer.close() }, "Open in review"))));
     drawer.showModal();
