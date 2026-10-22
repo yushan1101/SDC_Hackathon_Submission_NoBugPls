@@ -173,7 +173,8 @@ export async function quizView(main, ctx) {
         h("h2", {}, "Your quick match"),
         h("p", { class: "muted" }, "A fast estimate from 13 answers. For an evidence-backed analysis, ", h("a", { href: "#/resume" }, "upload your resume"), "."),
         h("ul", { class: "skill-chips" }, r.skills.sort((a, b) => b.level - a.level).map((s) => h("li", {}, s.name, h("b", { class: "num" }, ` ${s.level}/5`)))),
-        matchesBlock(r.matches, { onPlan: (m) => ctx.planFor(m, r.skills), scenario: st.scenario, onScenario: (k) => { st.scenario = k; finish(); } }),
+        matchesBlock(r.matches, { onPlan: (m) => ctx.planFor(m, r.skills), onInterview: ctx.onInterview ? (m) => ctx.onInterview(m, r.skills) : null,
+          scenario: st.scenario, onScenario: (k) => { st.scenario = k; finish(); } }),
         h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => { st.answers = {}; go(-1); } }, "Play again"))), RISE));
     } catch (e) {
       owl.set("confused");
@@ -246,6 +247,9 @@ export function resumeView(main, ctx) {
 
   function render(r) {
     const skills = r.skills.map((s) => ({ ...s }));
+    const markdown = typeof r.markdown === "string" ? r.markdown : "";
+    const years = r.years_experience != null && Number.isFinite(Number(r.years_experience))
+      ? Number(r.years_experience) : null;
     const matchHost = h("div");
     const lv = (s) => h("div", { class: "seg levels", role: "group", "aria-label": `${s.name} level` },
       [1, 2, 3, 4, 5].map((n) => h("button", { type: "button", "aria-pressed": String(s.level === n), "aria-label": `level ${n}`,
@@ -253,11 +257,14 @@ export function resumeView(main, ctx) {
     let scenario = "assistive";
     const remeasure = async () => {
       owl.set("analyzing");
-      const m = await api("/api/match", { method: "POST", body: { skills: skills.map(({ name, level }) => ({ name, level })), text: r.markdown.slice(0, 20000), scenario } });
+      const m = await api("/api/match", { method: "POST", body: { skills: skills.map(({ name, level }) => ({ name, level })),
+        text: markdown.slice(0, 20000), scenario, assessment_id: r.assessment_id || null } });
+      r.assessment_id = m.assessment_id || r.assessment_id;
       owl.set("matched"); drawMatches(m.matches);
     };
     const rematch = h("button", { class: "btn", type: "button", disabled: true, onclick: () => { rematch.disabled = true; remeasure(); } }, "Re-match with my edits");
     const drawMatches = (m) => matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))),
+      onInterview: ctx.onInterview ? (x) => ctx.onInterview(x, skills.map(({ name, level }) => ({ name, level }))) : null,
       scenario, onScenario: (k) => { scenario = k; remeasure(); } }));
     // the person can correct what was found: change levels, remove a wrong skill, add a missing one
     const skillsUl = h("ul");
@@ -265,10 +272,12 @@ export function resumeView(main, ctx) {
     const drawSkills = () => {
       countEl.textContent = `${skills.length} skills found`;
       skillsUl.replaceChildren(...skills.map((s, i) => h("li", {},
-        h("div", { class: "top" }, h("b", {}, s.name), s.kind === "tool" ? h("span", { class: "tag" }, "tool") : null, lv(s),
+        h("div", { class: "cv-skill-row" },
+          h("div", { class: "cv-skill-title" }, h("b", {}, s.name), s.kind === "tool" ? h("span", { class: "tag" }, "tool") : null),
+          h("div", { class: "cv-skill-controls" }, lv(s),
           h("button", { class: "btn ghost sm", type: "button", "aria-label": `Remove ${s.name}`, title: "Remove this skill",
-            onclick: () => { skills.splice(i, 1); drawSkills(); rematch.disabled = false; } }, "×")),
-        s.evidence?.[0] ? h("q", {}, s.evidence[0]) : null)));
+            onclick: () => { skills.splice(i, 1); drawSkills(); rematch.disabled = false; } }, "×"))),
+        s.evidence?.[0] ? h("q", { class: "cv-skill-evidence" }, s.evidence[0]) : null)));
     };
     const addIn = h("input", { class: "input", placeholder: "Add a skill we missed, e.g. Tableau", maxlength: 60, "aria-label": "Add a skill",
       onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); addSkill(); } } });
@@ -278,10 +287,10 @@ export function resumeView(main, ctx) {
       skills.unshift({ name, level: 2, kind: "skill", evidence: [] }); addIn.value = ""; drawSkills(); rematch.disabled = false;
     };
     drawSkills();
-    const skillsList = h("div", { class: "cv-skill-edit" }, skillsUl,
-      h("div", { class: "add-skill" }, addIn, h("button", { class: "btn sm", type: "button", onclick: addSkill }, "Add")));
+    const addSkillRow = h("div", { class: "add-skill" }, addIn, h("button", { class: "btn sm", type: "button", onclick: addSkill }, "Add"));
+    const skillsList = h("div", { class: "cv-skill-edit" }, skillsUl);
     const skillsViewport = h("div", { class: "cv-skills-scroll", "aria-hidden": "true", inert: true }, skillsList);
-    const skillsCollapse = h("div", { class: "cv-skills-collapse" }, skillsViewport);
+    const skillsCollapse = h("div", { class: "cv-skills-collapse" }, skillsViewport, addSkillRow);
     const skillsToggle = h("button", { class: "btn sm cv-skills-toggle", type: "button", "aria-expanded": "false",
       "aria-controls": "cv-extracted-skills", onclick: () => {
         const expanded = skillsToggle.getAttribute("aria-expanded") !== "true";
@@ -294,7 +303,7 @@ export function resumeView(main, ctx) {
     skillsViewport.id = "cv-extracted-skills";
     const skillsControls = skills.length ? [skillsToggle,
       h("p", { class: "cv-skills-hint" }, icon("info"), "Want to improve your matches? Expand your skills, adjust your ratings, and click Rematch to discover updated career recommendations."),
-      skillsCollapse] : [skillsList];  // no skills found: the add box is shown straight away
+      skillsCollapse] : [skillsList, addSkillRow];  // no skills found: the add box is shown straight away
     const ins = r.insight;
     const mine = () => skills.map(({ name, level }) => ({ name, level }));
     const insight = ins ? h("section", { class: "cv-insight" },
@@ -318,10 +327,10 @@ export function resumeView(main, ctx) {
       integrityBlock(r.integrity, "self"),
       h("div", { class: "cv-grid" },
         h("details", { class: "cv-md", open: matchMedia("(min-width: 900px)").matches || null },
-          h("summary", {}, h("b", {}, "Your resume as Markdown"), h("span", { class: "note" }, ` · ${r.markdown.length.toLocaleString()} characters`)),
-          h("pre", { tabindex: "0" }, r.markdown)),
+          h("summary", {}, h("b", {}, "Your resume as Markdown"), h("span", { class: "note" }, ` · ${markdown.length.toLocaleString()} characters`)),
+          h("pre", { tabindex: "0" }, markdown)),
         h("section", { class: "block cv-skills", "aria-label": "Skills found" },
-          h("h3", {}, countEl, r.years_experience ? h("span", { class: "note" }, ` · about ${r.years_experience} years of experience`) : null),
+          h("h3", {}, countEl, years ? h("span", { class: "note" }, ` · about ${years} years of experience`) : null),
           r.education?.length ? h("div", { class: "cv-facts" }, h("h4", {}, icon("file"), "Education"), h("ul", {}, r.education.map((x) => h("li", {}, h("q", {}, x))))) : null,
           r.experience?.length ? h("div", { class: "cv-facts" }, h("h4", {}, icon("clock"), "Experience"), h("ul", {}, r.experience.map((x) => h("li", {}, h("q", {}, x))))) : null,
           skillsControls,

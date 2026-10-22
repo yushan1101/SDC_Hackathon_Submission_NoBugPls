@@ -1,11 +1,13 @@
 // AiversePulse (public users): sign-in, plan builder, chat-style streaming report, plans.
 import "./motion.js";  // GSAP animations for whatever the app renders
+import "./smooth-wheel.js";  // Ease discrete desktop mouse-wheel ticks
 import { jobIcon } from "./jobicons.js";
 import { api, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP, GROW } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
 import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { startView, quizView, resumeView, todayView, sdgsView } from "./explore.js";
+import { interviewView } from "./interview.js";
 
 const app = $("#app");
 const store = {
@@ -43,11 +45,12 @@ async function boot() {
 }
 
 // ---------------------------------------------------------------- sign in
-const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build: "the plan builder", report: "your briefing", plans: "your plans" };
+const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build: "the plan builder", report: "your briefing", plans: "your plans", interview: "mock interview" };
 
 function cleanDestination(next) {
-  return ["start", "today", "quiz", "resume", "build", "report", "plans"].includes(next) ||
-    (/^(plans|report)\/[A-Za-z0-9_-]+$/.test(next)) ? next : "start";
+  return ["start", "today", "quiz", "resume", "build", "report", "plans", "interview"].includes(next) ||
+    (/^(plans|report|interview)\/[A-Za-z0-9_-]+$/.test(next)) ||
+    (/^interview\/start\/[A-Za-z0-9_-]+$/.test(next)) ? next : "start";
 }
 async function signIn(next = "start") {
   // Only internal hash routes can be used as post-login destinations.
@@ -114,14 +117,13 @@ function shell() {
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
       // guests get one page (the home, with today's board on it) and one action: sign in
       guest ? null : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/today", "AI trends", "pulse"),
-        nav("#/report", "Chat", "report"), nav("#/plans", "My plans", "plans")),
+        nav("#/report", "Chat", "report"), nav("#/interview", "Interview", "quiz"), nav("#/plans", "My plans", "plans")),
       guest ? null : S.status.el,
       guest
         ? h("div", { class: "top-actions" }, h("a", { class: "btn sm primary top-signin", href: "#/signin" }, icon("user"), "Sign in"))
         : h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out")),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
-    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/today", "AI trends", "pulse"), tab("#/report", "Chat", "report"),
-      tab("#/plans", "Plans", "plans")),
+    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/today", "AI trends", "pulse"), tab("#/interview", "Interview", "quiz"), tab("#/plans", "Plans", "plans")),
     S.sheet].filter(Boolean));  // replaceChildren would print a null as the text "null"
 }
 
@@ -136,11 +138,11 @@ history.scrollRestoration = "manual";
 function route() {
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs"]);
-  // Unknown routes and malformed nested routes return home instead of showing
-  // the wrong page. Plans are the only normal route with a detail identifier.
-  if (!allowed.has(requested) || (rest.length && requested !== "signin") ||
-      (id && !["signin", "plans", "report"].includes(requested))) {
+  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview"]);
+  const interviewStart = requested === "interview" && id === "start" && rest.length === 1 && /^[A-Za-z0-9_-]+$/.test(rest[0]);
+  // Unknown routes and malformed nested routes return home instead of showing the wrong page.
+  if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart) ||
+      (id && !["signin", "plans", "report", "interview"].includes(requested))) {
     location.replace("#/start");
     return;
   }
@@ -172,8 +174,9 @@ function route() {
   else if (page === "plans" && id) planDetail(main, id);
   else if (page === "plans") plansView(main);
   else if (page === "build") buildView(main);
-  else if (page === "quiz") quizView(main, { status: S.status, planFor });
-  else if (page === "resume") resumeView(main, { status: S.status, planFor });
+  else if (page === "interview") interviewView(main, interviewStart ? null : id, interviewStart ? rest[0] : null);
+  else if (page === "quiz") quizView(main, { status: S.status, planFor, onInterview: startInterview });
+  else if (page === "resume") resumeView(main, { status: S.status, planFor, onInterview: startInterview });
   else if (page === "sdgs") sdgsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "today") todayView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else startView(main, { name: S.me?.display_name?.match(/^(?!Demo\b)(\S+)/)?.[1], guest: !S.me, jumpToday: S.jumpToday });
@@ -301,6 +304,11 @@ function planFor(m, skills) {
     skills: skills.slice(0, 40).map(({ name, level }) => ({ name, level })) });
   saveProfile();
   start();
+}
+
+function startInterview(m) {
+  if (!m?.recommendation_id) { toast("This role is not linked to a completed career recommendation yet.", "err"); return; }
+  location.hash = `#/interview/start/${encodeURIComponent(m.recommendation_id)}`;
 }
 
 function start(query) {
@@ -628,10 +636,47 @@ async function plansView(main) {
       h("p", {}, "No plans yet. Build your first one in about two minutes."), h("a", { class: "btn primary", href: "#/start" }, "Get started")));
     return;
   }
-  main.append(h("div", { class: "plan-list", style: { "margin-top": "28px" } }, list.map((pl) => h("a", { class: "plan-item", href: `#/plans/${pl.plan_id}`, style: { color: "inherit", "text-decoration": "none" } },
-    h("div", {}, h("div", { class: "t" }, pl.target_title || pl.target_role || "Plan", pl.audience === "hr" ? h("span", { class: "muted" }, " · from HR") : null),
-      h("div", { class: "m" }, `${pl.scenario || ""} · v${pl.version} · ${new Date(pl.created_utc).toLocaleDateString()}`)),
-    h("span", { class: `tag ${pl.status}` }, pl.status)))));
+  const selectable = list.filter((pl) => pl.audience === "individual");
+  const selected = new Set();
+  const count = h("span", { class: "muted", "aria-live": "polite" }, "No plans selected");
+  const selectAll = h("input", { type: "checkbox", "aria-label": "Select all your plans", disabled: !selectable.length,
+    onchange: () => {
+      selectable.forEach((pl) => selectAll.checked ? selected.add(pl.plan_id) : selected.delete(pl.plan_id));
+      listEl.querySelectorAll(".plan-select").forEach((checkbox) => { checkbox.checked = selectAll.checked; });
+      syncToolbar();
+    } });
+  const remove = h("button", { class: "btn sm plan-delete", type: "button", disabled: true, onclick: async () => {
+    const ids = selectable.filter((pl) => selected.has(pl.plan_id)).map((pl) => pl.plan_id);
+    if (!ids.length || !window.confirm(`Delete ${ids.length} selected plan${ids.length === 1 ? "" : "s"}? This permanently removes the plan and its learning progress. Related interview history will be kept.`)) return;
+    remove.disabled = true;
+    try {
+      await api("/api/plans", { method: "DELETE", body: { plan_ids: ids } });
+      toast(`${ids.length} plan${ids.length === 1 ? "" : "s"} deleted`);
+      plansView(main);
+    } catch (e) { toast(e.message, "err"); remove.disabled = false; }
+  } }, "Delete selected");
+  const listEl = h("div", { class: "plan-list" });
+  function syncToolbar() {
+    const n = selected.size;
+    count.textContent = n ? `${n} selected` : "No plans selected";
+    remove.disabled = n === 0;
+    selectAll.checked = selectable.length > 0 && n === selectable.length;
+    selectAll.indeterminate = n > 0 && n < selectable.length;
+  }
+  function draw() {
+    listEl.replaceChildren(...list.map((pl) => h("div", { class: "plan-item-row" },
+      pl.audience === "individual" ? h("input", { class: "plan-select", type: "checkbox", checked: selected.has(pl.plan_id),
+        "aria-label": `Select ${pl.target_title || pl.target_role || "plan"}`,
+        onchange: (e) => { if (e.target.checked) selected.add(pl.plan_id); else selected.delete(pl.plan_id); syncToolbar(); } }) : h("span", { class: "plan-select-spacer", "aria-hidden": "true" }),
+      h("a", { class: "plan-item-main", href: `#/plans/${pl.plan_id}` },
+        h("div", {}, h("div", { class: "t" }, pl.target_title || pl.target_role || "Plan", pl.audience === "hr" ? h("span", { class: "muted" }, " · from HR") : null),
+          h("div", { class: "m" }, `${pl.scenario || ""} · v${pl.version} · ${new Date(pl.created_utc).toLocaleDateString()}`)),
+        h("span", { class: `tag ${pl.status}` }, pl.status)))));
+    syncToolbar();
+  }
+  main.append(h("div", { class: "plan-manage" }, h("label", { class: "plan-select-all" }, selectAll, "Select all your plans"), count, remove,
+    h("span", { class: "plan-delete-note" }, "Only your own plans can be deleted; plans shared by HR are kept.")), listEl);
+  draw();
 }
 
 async function planDetail(main, id, focusPlan = false) {
