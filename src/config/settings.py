@@ -24,9 +24,9 @@ class Settings(BaseSettings):
     coach_model: str = ""
     resume_model: str = ""
     recruiter_model: str = ""  # job posts, "ask your data" and voice job drafts for HR
-    # speech-to-text for voice input: "openai:<model>" (e.g. whisper-1 on the gateway) or "gemini:<model>"; empty = the
-    # coach model's provider if it can hear audio, else browsers fall back to their own speech recognition
-    stt_model: str = ""
+    # speech-to-text for voice input: "openai:<model>" on the gateway or "gemini:<model>"; if its provider has no key, the
+    # Gemini fast model is used, else browsers fall back to their own speech recognition
+    stt_model: str = "openai:mimo-v2.6-flash"  # an audio chat model on the gateway; whisper-style ids use /audio/transcriptions
     llm_resume: bool = False  # opt-in: send the REDACTED resume to the LLM to propose extra skills (quotes verified)
     llm_usd_per_1m_input: float = 0.0   # set from the provider's current price sheet; 0 = cost not estimated
     llm_usd_per_1m_output: float = 0.0

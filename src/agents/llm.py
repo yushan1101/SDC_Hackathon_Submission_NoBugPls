@@ -11,6 +11,7 @@ ORG_MODELS for each request ({task: spec}); model_for() prefers that choice when
 """
 import contextvars
 import logging
+import re
 import time
 
 log = logging.getLogger(__name__)
@@ -119,6 +120,10 @@ def stt_model() -> str:
     return f"gemini:{s.llm_fast_model}" if s.llm_fast_model and providers()["gemini"] else ""
 
 
+AUDIO_FORMATS = {"audio/wav": "wav", "audio/x-wav": "wav", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/aac": "m4a",
+                 "audio/ogg": "ogg", "audio/flac": "flac"}  # what audio chat models take (WebM is not: browsers send WAV)
+
+
 def transcribe(audio: bytes, mime: str, lang: str = ""):
     """-> (text | None, usage). Words only, no commentary; None when no model is set up or the call failed."""
     from config.settings import get_settings
@@ -129,7 +134,24 @@ def transcribe(audio: bytes, mime: str, lang: str = ""):
     provider, name = spec.split(":", 1)
     t = time.perf_counter()
     try:
-        if provider == "openai":
+        if provider == "openai" and not re.search(r"whisper|transcribe", name):
+            # an audio-capable chat model (e.g. mimo-v2.6-flash): the recording goes in as an input_audio part
+            import base64
+            import httpx
+            fmt = AUDIO_FORMATS.get(mime.split(";")[0])
+            if not fmt:
+                raise ValueError(f"audio format {mime} not accepted by {name}")
+            r = httpx.post(api_base(s.llm_base_url) + "/chat/completions", timeout=max(s.llm_timeout_s, 60),
+                           headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"},
+                           json={"model": name, "temperature": 0, "max_tokens": 1200, "messages": [{"role": "user", "content": [
+                               {"type": "text", "text": "Transcribe this audio exactly, in the language spoken. Reply with only the transcript."},
+                               {"type": "input_audio", "input_audio": {"data": base64.b64encode(audio).decode(), "format": fmt}}]}]})
+            r.raise_for_status()
+            d = r.json()
+            m, u = d["choices"][0]["message"], d.get("usage") or {}
+            # some gateways put a reasoning model's answer in reasoning_content and leave content empty
+            text, tin, tout = m.get("content") or m.get("reasoning_content") or "", u.get("prompt_tokens", 0), u.get("completion_tokens", 0)
+        elif provider == "openai":  # a speech-to-text model (whisper-style /audio/transcriptions)
             import httpx
             r = httpx.post(api_base(s.llm_base_url) + "/audio/transcriptions", timeout=max(s.llm_timeout_s, 60),
                            headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"},

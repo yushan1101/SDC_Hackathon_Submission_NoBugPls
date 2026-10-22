@@ -12,6 +12,26 @@ let server = false;  // set from /api/meta: this account may use server speech-t
 export function setVoice(serverVoice) { server = !!serverVoice && canRecord; }
 
 const lang = () => document.documentElement.lang || navigator.language || "en";
+
+/** Any recording the browser made (WebM/Opus, MP4...) -> 16 kHz mono 16-bit WAV, a format every speech model takes.
+ * Two minutes is about 3.8 MB. */
+export async function toWav(blob) {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = await ctx.decodeAudioData(await blob.arrayBuffer());
+  ctx.close();
+  const rate = 16000;
+  const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(src.duration * rate)), rate);  // 1 channel: downmixes to mono
+  const node = off.createBufferSource();
+  node.buffer = src; node.connect(off.destination); node.start();
+  const pcm = (await off.startRendering()).getChannelData(0);
+  const v = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+  const tag = (at, s) => [...s].forEach((c, i) => v.setUint8(at + i, c.charCodeAt(0)));
+  tag(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true); tag(8, "WAVE"); tag(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); tag(36, "data"); v.setUint32(40, pcm.length * 2, true);
+  pcm.forEach((x, i) => v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x)) * 0x7fff, true));
+  return new Blob([v.buffer], { type: "audio/wav" });
+}
 const MAX_MS = 120_000;
 
 /** A mic button that types what you say into `target` (an input or textarea). null when no voice input works here. */
@@ -44,11 +64,10 @@ export function micButton(target, { onText } = {}) {
         rec.onstop = async () => {
           stream.getTracks().forEach((t) => t.stop());
           clearTimeout(timer); busy(false); stop = null;
-          const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
           btn.disabled = true;
           try {
             const form = new FormData();
-            form.append("file", blob, "speech." + ((rec.mimeType || "audio/webm").split("/")[1].split(";")[0]));
+            form.append("file", await toWav(new Blob(chunks, { type: rec.mimeType || "audio/webm" })), "speech.wav");
             form.append("lang", lang());
             put((await upload("/api/speech/transcribe", form)).text);
           } catch (e) { toast(e.message, "err"); }

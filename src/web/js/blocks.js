@@ -626,10 +626,26 @@ export function boardView(b, { onRefresh } = {}) {
         zLine(vals), h("span", { class: "tc-chart-caption" }, `${vals.length}-day strength`)));
     });
   }).catch(() => { /* history is optional: the board stands on its own */ });
-  const roleList = (rows, key, cls) => h("ol", { class: "role-list" }, rows.slice(0, 8).map((r) => h("li", {},
-    jobIcon(r.soc, { size: 40, labelled: true }),
-    h("span", { class: "rl-t" }, h("b", { title: `ESCO ${r.soc}` }, r.title), h("span", {}, r.drivers.map(label).filter(Boolean).slice(0, 2).join(" · "))),
-    h("span", { class: `rl-score trend ${cls}`, title: key === "score" ? "AI-driven growth score" : "Automation pressure score" }, icon(cls === "rising" ? "up" : "down"), r[key].toFixed(1)))));
+  // the roles: a bar against the strongest score, the topics driving it (with their pictures), and a note when a role
+  // is pulled both ways (growth already nets off half the automation pressure, so both can be true)
+  const growing = new Set(b.emerging_roles.map((r) => r.soc)), pressed = new Set(b.declining_roles.map((r) => r.soc));
+  const roleList = (rows, key, cls) => {
+    const top = Math.max(...rows.slice(0, 8).map((r) => r[key]), 1);
+    const other = key === "score" ? pressed : growing;
+    return h("ol", { class: "role-list" }, rows.slice(0, 8).map((r) => h("li", {},
+      jobIcon(r.soc, { size: 40, labelled: true }),
+      h("div", { class: "rl-t" },
+        h("b", { title: `ESCO ${r.soc}` }, r.title,
+          other.has(r.soc) ? h("span", { class: "rl-both", title: "This role shows up on both lists: AI adds work here and automates part of it." },
+            key === "score" ? "Also under pressure" : "Also growing") : null),
+        ((ids) => h("span", { class: "rl-drivers", title: `Driven by: ${ids.map(label).join(", ")}` },
+          h("span", { class: "rl-faces", "aria-hidden": "true" }, ids.map((id) => h("img", { src: `img/topics/${id}-sm.jpg`, alt: "", loading: "lazy",
+            decoding: "async", width: 24, height: 24, onerror: (e) => e.currentTarget.remove() }))),
+          h("span", { class: "rl-names" }, ids.map(label).join(" · "))))(r.drivers.filter(label).slice(0, 2))),
+      h("div", { class: `rl-meter ${cls}`, title: key === "score" ? "AI-driven growth score" : "Automation pressure score" },
+        h("span", { class: "rl-bar" }, h("i", { style: { width: `${Math.round((r[key] / top) * 100)}%` } })),
+        h("b", { class: "num" }, r[key].toFixed(1))))));
+  };
   return h("div", { class: "board" }, meta,
     h("section", { class: "board-section", "aria-labelledby": "bt" },
       h("div", { class: "board-head" }, h("h2", { id: "bt" }, "AI topics today"),
@@ -638,8 +654,10 @@ export function boardView(b, { onRefresh } = {}) {
       h("div", { class: "radar-row" }, radarHost, changes),
       h("div", { class: "board-filters" }, seg, q), empty, grid),
     h("div", { class: "board-roles" },
-      h("section", { class: "role-card" }, h("h3", {}, icon("up"), "Roles AI is pulling forward"), roleList(b.emerging_roles, "score", "rising")),
-      h("section", { class: "role-card" }, h("h3", {}, icon("down"), "Roles under automation pressure"), roleList(b.declining_roles, "pressure", "falling"))),
+      h("section", { class: "role-card rising" }, h("h3", {}, icon("up"), "Roles AI is pulling forward"),
+        h("p", { class: "rl-why" }, "How strongly today’s rising AI topics overlap with each role’s skills."), roleList(b.emerging_roles, "score", "rising")),
+      h("section", { class: "role-card falling" }, h("h3", {}, icon("down"), "Roles under automation pressure"),
+        h("p", { class: "rl-why" }, "How strongly today’s automation topics overlap with each role’s tasks."), roleList(b.declining_roles, "pressure", "falling"))),
     h("details", { class: "hint board-method" }, h("summary", {}, icon("info"), "How this board is built"),
       h("p", {}, b.method, " It reorders role matches and adds dated sources to every plan.")));
 }
