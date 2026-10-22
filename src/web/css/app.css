@@ -2002,3 +2002,58 @@ dialog.slider-dialog::backdrop { background: oklch(0.15 0.03 262 / 0.6); }
 [data-product] .btn.danger:hover { filter: brightness(1.08); }
 .site-foot { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px; padding: 28px 0 8px; font-size: 15px; }
 .site-foot a { color: var(--ink-2); }
+
+/* Medium-width screens: keep the full navbar inside the viewport */
+@media (max-width: 1050px) and (min-width: 700px) {
+
+  .pub-top {
+    width: calc(100% - 16px);
+    padding: 0 8px 0 14px;
+    gap: 6px;
+  }
+
+  .pub-top .wordmark {
+    font-size: 22px;
+    white-space: nowrap;
+  }
+
+  .pub-nav {
+    gap: 0;
+    min-width: 0;
+  }
+
+  .pub-nav a {
+    padding: 0 8px;
+    gap: 5px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .pub-nav a svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .pub-top .top-actions {
+    margin-left: auto;
+    flex-shrink: 0;
+    gap: 4px;
+  }
+
+  .plan-pill {
+    padding-left: 10px;
+    padding-right: 10px;
+    font-size: 14px;
+  }
+
+  /* Sign out can stay on the account page instead at this width */
+  .pub-top .signout {
+    display: none;
+  }
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
