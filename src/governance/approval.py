@@ -122,6 +122,31 @@ def list_plans(con, user: dict) -> list[dict]:
     return [dict(zip(cols, r)) for r in rows]
 
 
+def delete_employee_plans(con, plan_ids: list[str], user: dict) -> list[str]:
+    """Delete selected self-service plans owned by the signed-in employee.
+
+    HR-prepared plans and another employee's plans are intentionally not deletable
+    from the employee My plans page. Interview records are retained and detached.
+    """
+    if user.get("role") != "employee" or not user.get("employee_id"):
+        raise TransitionError("only employees can delete their own plans")
+    ids = list(dict.fromkeys(plan_ids))
+    if not ids or len(ids) > 50:
+        raise TransitionError("select between 1 and 50 plans")
+    marks = ",".join("?" for _ in ids)
+    rows = con.execute(f"SELECT plan_id, subject_id, audience FROM plans WHERE plan_id IN ({marks})", ids).fetchall()
+    if len(rows) != len(ids) or any(subject != user["employee_id"] or audience != "individual"
+                                    for _, subject, audience in rows):
+        raise TransitionError("one or more selected plans cannot be deleted")
+    with con:
+        # Preserve interview history while removing its optional link to a deleted plan.
+        con.execute(f"UPDATE interview_sessions SET plan_id=NULL WHERE plan_id IN ({marks})", ids)
+        for table in ("plan_progress", "plan_reports", "plan_versions", "approval_events", "validation_events"):
+            con.execute(f"DELETE FROM {table} WHERE plan_id IN ({marks})", ids)
+        con.execute(f"DELETE FROM plans WHERE plan_id IN ({marks})", ids)
+    return ids
+
+
 def latest(con, plan_id: str) -> dict:
     v, st, snap = _latest(con, plan_id)
     return {"version": v, "status": st, "plan": json.loads(snap)}

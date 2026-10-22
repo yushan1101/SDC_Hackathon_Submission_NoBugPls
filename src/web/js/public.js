@@ -635,10 +635,47 @@ async function plansView(main) {
       h("p", {}, "No plans yet. Build your first one in about two minutes."), h("a", { class: "btn primary", href: "#/start" }, "Get started")));
     return;
   }
-  main.append(h("div", { class: "plan-list", style: { "margin-top": "28px" } }, list.map((pl) => h("a", { class: "plan-item", href: `#/plans/${pl.plan_id}`, style: { color: "inherit", "text-decoration": "none" } },
-    h("div", {}, h("div", { class: "t" }, pl.target_title || pl.target_role || "Plan", pl.audience === "hr" ? h("span", { class: "muted" }, " · from HR") : null),
-      h("div", { class: "m" }, `${pl.scenario || ""} · v${pl.version} · ${new Date(pl.created_utc).toLocaleDateString()}`)),
-    h("span", { class: `tag ${pl.status}` }, pl.status)))));
+  const selectable = list.filter((pl) => pl.audience === "individual");
+  const selected = new Set();
+  const count = h("span", { class: "muted", "aria-live": "polite" }, "No plans selected");
+  const selectAll = h("input", { type: "checkbox", "aria-label": "Select all your plans", disabled: !selectable.length,
+    onchange: () => {
+      selectable.forEach((pl) => selectAll.checked ? selected.add(pl.plan_id) : selected.delete(pl.plan_id));
+      listEl.querySelectorAll(".plan-select").forEach((checkbox) => { checkbox.checked = selectAll.checked; });
+      syncToolbar();
+    } });
+  const remove = h("button", { class: "btn sm plan-delete", type: "button", disabled: true, onclick: async () => {
+    const ids = selectable.filter((pl) => selected.has(pl.plan_id)).map((pl) => pl.plan_id);
+    if (!ids.length || !window.confirm(`Delete ${ids.length} selected plan${ids.length === 1 ? "" : "s"}? This permanently removes the plan and its learning progress. Related interview history will be kept.`)) return;
+    remove.disabled = true;
+    try {
+      await api("/api/plans", { method: "DELETE", body: { plan_ids: ids } });
+      toast(`${ids.length} plan${ids.length === 1 ? "" : "s"} deleted`);
+      plansView(main);
+    } catch (e) { toast(e.message, "err"); remove.disabled = false; }
+  } }, "Delete selected");
+  const listEl = h("div", { class: "plan-list" });
+  function syncToolbar() {
+    const n = selected.size;
+    count.textContent = n ? `${n} selected` : "No plans selected";
+    remove.disabled = n === 0;
+    selectAll.checked = selectable.length > 0 && n === selectable.length;
+    selectAll.indeterminate = n > 0 && n < selectable.length;
+  }
+  function draw() {
+    listEl.replaceChildren(...list.map((pl) => h("div", { class: "plan-item-row" },
+      pl.audience === "individual" ? h("input", { class: "plan-select", type: "checkbox", checked: selected.has(pl.plan_id),
+        "aria-label": `Select ${pl.target_title || pl.target_role || "plan"}`,
+        onchange: (e) => { if (e.target.checked) selected.add(pl.plan_id); else selected.delete(pl.plan_id); syncToolbar(); } }) : h("span", { class: "plan-select-spacer", "aria-hidden": "true" }),
+      h("a", { class: "plan-item-main", href: `#/plans/${pl.plan_id}` },
+        h("div", {}, h("div", { class: "t" }, pl.target_title || pl.target_role || "Plan", pl.audience === "hr" ? h("span", { class: "muted" }, " · from HR") : null),
+          h("div", { class: "m" }, `${pl.scenario || ""} · v${pl.version} · ${new Date(pl.created_utc).toLocaleDateString()}`)),
+        h("span", { class: `tag ${pl.status}` }, pl.status)))));
+    syncToolbar();
+  }
+  main.append(h("div", { class: "plan-manage" }, h("label", { class: "plan-select-all" }, selectAll, "Select all your plans"), count, remove,
+    h("span", { class: "plan-delete-note" }, "Only your own plans can be deleted; plans shared by HR are kept.")), listEl);
+  draw();
 }
 
 async function planDetail(main, id, focusPlan = false) {

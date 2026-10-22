@@ -332,6 +332,19 @@ table.data tbody tr { }
 .plan-item:hover { background: var(--sunken); }
 .plan-item .t { font-weight: 600; }
 .plan-item .m { font: 12px var(--font-mono); color: var(--ink-2); }
+.plan-manage { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; margin-top: 28px; padding: 12px 0; }
+.plan-select-all { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.plan-select, .plan-select-all input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+.plan-delete { border-color: var(--danger); color: var(--danger); }
+.plan-delete:disabled { opacity: .5; cursor: not-allowed; }
+.plan-delete-note { margin-left: auto; color: var(--ink-2); font-size: 13px; }
+.plan-item-row { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: center; border-bottom: 1px solid var(--rule); }
+.plan-select { justify-self: center; }
+.plan-select-spacer { width: 18px; }
+.plan-item-main { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 14px 4px; color: inherit; text-decoration: none; transition: background var(--t-fast); }
+.plan-item-main:hover { background: var(--sunken); }
+.plan-item-main .t { font-weight: 600; }
+.plan-item-main .m { font: 12px var(--font-mono); color: var(--ink-2); }
 
 .tabbar { display: none; }
 dialog.sheet { border: 0; padding: 0; margin: auto auto 0; width: 100%; max-width: 640px; max-height: 85dvh; background: var(--surface); color: var(--ink); border-radius: 0; }
@@ -801,6 +814,8 @@ html { scroll-padding-top: 88px; }
 [data-product="public"] .composer .quick .chip { font-size: 15px; }
 [data-product="public"] .plan-item .t { font-size: 18px; }
 [data-product="public"] .plan-item .m { font-size: 14px; }
+[data-product="public"] .plan-item-main .t { font-size: 18px; }
+[data-product="public"] .plan-item-main .m { font-size: 14px; }
 [data-product="public"] .tabbar a { font-size: 14px; }
 [data-product="public"] .sdg { font-size: 14px; border-radius: 8px; overflow: hidden; }
 [data-product="public"] .matches li { padding: 20px clamp(16px, 3vw, 24px); }  /* cards: keep the icon off the border */

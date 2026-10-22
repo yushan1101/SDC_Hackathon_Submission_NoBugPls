@@ -538,6 +538,22 @@ def plans(user: dict = Depends(current_user)):
         return approval.list_plans(db, user)
 
 
+class DeletePlansIn(BaseModel):
+    plan_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+@app.delete("/api/plans")
+def delete_plans(body: DeletePlansIn, user: dict = Depends(need("employee"))):
+    try:
+        with DB_LOCK:
+            deleted = approval.delete_employee_plans(db, body.plan_ids, user)
+            for pid in deleted:
+                RESULTS.pop(pid, None)
+    except approval.TransitionError as e:
+        raise HTTPException(404, str(e))
+    return {"deleted": len(deleted), "plan_ids": deleted}
+
+
 @app.get("/api/sdgs")
 def sdgs(request: HttpRequest):
     """All 17 UN goals (public). Signed in: how often each goal appears across the person's own plans."""
