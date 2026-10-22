@@ -2432,3 +2432,9 @@ body {
   max-width: 100%;
   overflow-x: hidden;
 }
+
+/* landing motion (web/js/motion.js): headings split into masked words; nothing here applies without the motion layer */
+.motion .lp-hero h1:not([aria-label]) { visibility: hidden; }
+.lp :is(h1, h2) .w { display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: 0.14em; margin-bottom: -0.14em; }
+.lp :is(h1, h2) .wi { display: inline-block; }
+.lp-step-ui .demo-line mark { background: linear-gradient(var(--accent-soft), var(--accent-soft)) 0 0 / 100% 100% no-repeat; }
