@@ -121,38 +121,321 @@ function renderRoom(main, detail, initial = null) {
   let number = initial?.question_number || 1;
   let stageIndex = initial?.stage_index ?? detail.stage_index ?? 0;
   const total = initial?.total_stages || 5;
-  const status = h("span", { class: "interview-status", role: "status" }, "Ready");
+  const status = h("span", { class: "interview-status is-off", role: "status", "aria-live": "polite" }, "Microphone off · Start Answer to record");
   const qText = h("p", { class: "interview-question" });
   const skillChips = h("div", { class: "chips" });
   const transcript = h("textarea", { class: "input interview-answer", rows: 5, maxlength: 4000,
-    placeholder: "Type your answer here. You can also use voice input.", "aria-label": "Your answer" });
+    placeholder: "Type your answer here, or record an answer and review the transcript.", "aria-label": "Your answer" });
   const responseFeedback = h("div", { class: "interview-answer-feedback", hidden: true });
-  const answerBtn = h("button", { class: "btn primary", type: "submit" }, "Send answer");
-  const voiceBtn = h("button", { class: "btn", type: "button" }, "Use voice input");
+  const answerBtn = h("button", { class: "btn primary", type: "submit" }, "Confirm & Send Answer");
+  const startBtn = h("button", { class: "btn primary", type: "button" }, "Start Answer");
+  const stopBtn = h("button", { class: "btn", type: "button", disabled: true }, "Stop Recording");
+  const retryBtn = h("button", { class: "btn sm", type: "button", disabled: true }, "Retry Recording");
+  const muteBtn = h("button", { class: "btn sm", type: "button", disabled: true }, "Mute Microphone");
+  const duration = h("span", { class: "interview-recording-time num", "aria-label": "Recording duration" }, "00:00");
+  const deviceSelect = h("select", { class: "interview-mic-select", "aria-label": "Microphone device" },
+    h("option", { value: "" }, "System default microphone"));
+  const languageSelect = h("select", { class: "interview-mic-select", "aria-label": "Speech recognition language" },
+    h("option", { value: "en-US" }, "English (US)"), h("option", { value: "en-GB" }, "English (UK)"),
+    h("option", { value: "en-AU" }, "English (Australia)"), h("option", { value: "ms-MY" }, "Malay"),
+    h("option", { value: "zh-CN" }, "Chinese (Simplified)"));
+  const micBars = Array.from({ length: 7 }, () => h("i", { "aria-hidden": "true" }));
+  const meter = h("div", { class: "interview-mic-meter", role: "img", "aria-label": "Live microphone sound level" }, micBars);
+  const voicePanel = h("div", { class: "interview-voice-panel", dataset: { state: "off" } },
+    h("div", { class: "interview-voice-summary" }, meter,
+      h("div", { class: "interview-voice-copy" }, h("b", {}, "Voice answer"),
+        h("label", { class: "interview-voice-field" }, h("span", {}, "Microphone"), deviceSelect),
+        h("label", { class: "interview-voice-field" }, h("span", {}, "Transcription language"), languageSelect)), duration),
+    h("div", { class: "interview-voice-controls" }, startBtn, stopBtn, retryBtn, muteBtn));
+  const livePreview = h("p", { class: "interview-live-preview", "aria-live": "polite", hidden: true });
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
   const speechAvailable = Boolean(Speech);
-  voiceBtn.disabled = !speechAvailable;
-  if (!speechAvailable) voiceBtn.title = "Speech recognition is not available in this browser. Type your answer instead.";
-  let recognizer = null;
-  if (speechAvailable) {
-    recognizer = new Speech(); recognizer.lang = navigator.language || "en-US"; recognizer.continuous = true; recognizer.interimResults = true;
-    recognizer.onresult = (event) => {
-      let finalText = "", interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) finalText += event.results[i][0].transcript + " "; else interim += event.results[i][0].transcript;
-      }
-      if (finalText) transcript.value = `${transcript.value}${transcript.value && !transcript.value.endsWith(" ") ? " " : ""}${finalText}`;
-      status.textContent = interim ? `Listening · ${interim}` : "Listening";
-    };
-    recognizer.onerror = (event) => { status.textContent = event.error === "not-allowed" ? "Microphone permission denied" : "Voice input paused"; };
-    recognizer.onend = () => { if (status.textContent === "Listening") status.textContent = "Ready"; voiceBtn.textContent = "Use voice input"; delete voiceBtn.dataset.listening; };
+  const recognizer = speechAvailable ? new Speech() : null;
+  if (recognizer) {
+    recognizer.lang = languageSelect.value;
+    recognizer.continuous = true;
+    recognizer.interimResults = true;
   }
-  voiceBtn.addEventListener("click", () => {
-    if (!recognizer) return;
-    if (voiceBtn.dataset.listening) { recognizer.stop(); status.textContent = "Ready"; }
-    else { try { recognizer.start(); voiceBtn.dataset.listening = "1"; voiceBtn.textContent = "Stop voice input"; status.textContent = "Listening"; }
-      catch { status.textContent = "Voice input is already active"; } }
+  let micStream = null, audioContext = null, analyser = null, audioSource = null, meterFrame = 0;
+  let recording = false, starting = false, recognitionActive = false, recognitionRequested = false, recognitionStopResolve = null;
+  let finishPromise = null;
+  let recognitionStopTimer = null, intentionalStop = false, discarded = false, muted = false;
+  let recordingAttempted = false, recordedText = "", interimText = "", speechError = null;
+  let elapsedMs = 0, timerStartedAt = null, durationTimer = null;
+  let deviceEnumeration = 0;
+  let interviewerSpeaking = false, currentUtterance = null, paused = false;
+  const setMicState = (state, message) => {
+    voicePanel.dataset.state = state;
+    status.className = `interview-status is-${state}`;
+    status.textContent = message;
+  };
+  const updateControls = () => {
+    startBtn.disabled = recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking;
+    stopBtn.disabled = !recording || Boolean(finishPromise);
+    retryBtn.disabled = !recordingAttempted || recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking;
+    muteBtn.disabled = !micStream || Boolean(finishPromise) || interviewerSpeaking || paused;
+    deviceSelect.disabled = recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking;
+    languageSelect.disabled = recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking;
+  };
+  const updateDuration = () => {
+    const ms = elapsedMs + (timerStartedAt == null ? 0 : Date.now() - timerStartedAt);
+    const seconds = Math.floor(ms / 1000);
+    duration.textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  };
+  const startDuration = () => {
+    if (timerStartedAt != null) return;
+    timerStartedAt = Date.now(); durationTimer = setInterval(updateDuration, 250);
+  };
+  const pauseDuration = () => {
+    if (timerStartedAt != null) elapsedMs += Date.now() - timerStartedAt;
+    timerStartedAt = null; clearInterval(durationTimer); durationTimer = null; updateDuration();
+  };
+  const resetDuration = () => { pauseDuration(); elapsedMs = 0; updateDuration(); };
+  const refreshMicrophones = async (selectedId = "") => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const requestId = ++deviceEnumeration;
+    try {
+      const inputs = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audioinput");
+      if (requestId !== deviceEnumeration) return;
+      deviceSelect.replaceChildren(h("option", { value: "" }, "System default microphone"), ...inputs.map((device, index) =>
+        h("option", { value: device.deviceId }, device.label || `Microphone ${index + 1}`)));
+      if (selectedId && inputs.some((device) => device.deviceId === selectedId)) deviceSelect.value = selectedId;
+    } catch { /* the browser may not expose device details */ }
+  };
+  void refreshMicrophones();
+  languageSelect.addEventListener("change", () => { if (recognizer) recognizer.lang = languageSelect.value; });
+  const releaseAudio = () => {
+    cancelAnimationFrame(meterFrame); meterFrame = 0;
+    try { audioSource?.disconnect(); } catch { /* already disconnected */ }
+    audioSource = null; analyser = null;
+    micStream?.getTracks().forEach((track) => { track.onended = null; track.stop(); });
+    micStream = null; audioContext?.close().catch(() => {}); audioContext = null;
+    micBars.forEach((bar) => { bar.style.height = "5px"; });
+    muteBtn.textContent = "Mute Microphone";
+  };
+  const watchAudio = () => {
+    if (!analyser) return;
+    const waveform = new Uint8Array(analyser.fftSize), spectrum = new Uint8Array(analyser.frequencyBinCount);
+    const tick = () => {
+      if (!analyser || !micStream) return;
+      analyser.getByteTimeDomainData(waveform); analyser.getByteFrequencyData(spectrum);
+      let squares = 0;
+      for (const sample of waveform) { const amplitude = (sample - 128) / 128; squares += amplitude * amplitude; }
+      const volume = Math.sqrt(squares / waveform.length), bandSize = Math.max(1, Math.floor(spectrum.length / micBars.length));
+      micBars.forEach((bar, index) => {
+        const start = index * bandSize, end = Math.min(spectrum.length, start + bandSize);
+        let sum = 0; for (let i = start; i < end; i++) sum += spectrum[i];
+        bar.style.height = `${5 + Math.round((end > start ? sum / (end - start) / 255 : 0) * 24)}px`;
+      });
+      if (recording && !muted && !interviewerSpeaking && !speechError) {
+        if (volume > 0.025) setMicState("speaking", "Speaking detected · keep answering");
+        else setMicState("listening", speechAvailable ? "Listening · speak your answer" : "Listening · browser transcription unavailable; type your answer");
+      }
+      meterFrame = requestAnimationFrame(tick);
+    };
+    meterFrame = requestAnimationFrame(tick);
+  };
+  const stopRecognition = () => new Promise((resolve) => {
+    if (!recognizer || (!recognitionActive && !recognitionRequested)) { resolve(); return; }
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true; clearTimeout(recognitionStopTimer); recognitionStopTimer = null;
+      recognitionStopResolve = null; intentionalStop = false; recognitionRequested = false; resolve();
+    };
+    recognitionStopResolve = settle; recognitionStopTimer = setTimeout(() => {
+      try { recognizer.abort(); } catch { /* recognizer already ended */ }
+      settle();
+    }, 1800); intentionalStop = true;
+    try { recognizer.stop(); } catch { settle(); }
   });
+  if (recognizer) {
+    recognizer.onstart = () => {
+      recognitionActive = true;
+      if ((!recording && !starting) || muted || interviewerSpeaking || discarded) { void stopRecognition(); return; }
+      if (recording && !muted && !interviewerSpeaking && !speechError) setMicState("listening", "Listening · speak your answer");
+    };
+    recognizer.onresult = (event) => {
+      // Playback starts only after capture has stopped, so accept the final
+      // recognition event while stop() drains its last transcript.
+      if ((!recording && !starting) || muted) return;
+      let finalText = ""; interimText = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) finalText += event.results[i][0].transcript.trim() + " ";
+        else interimText += event.results[i][0].transcript;
+      }
+      if (finalText) {
+        const piece = finalText.trim();
+        speechError = null;
+        recordedText += `${recordedText && !recordedText.endsWith(" ") ? " " : ""}${piece} `;
+        const base = transcript.value.trimEnd(); transcript.value = `${base}${base ? " " : ""}${piece}`;
+        setMicState("speaking", "Speech detected · transcript captured");
+      }
+      livePreview.textContent = interimText ? `Live transcript: ${interimText}` : ""; livePreview.hidden = !interimText;
+    };
+    recognizer.onerror = (event) => {
+      recognitionRequested = false;
+      if (discarded || (event.error === "aborted" && intentionalStop)) return;
+      const messages = {
+        "not-allowed": "Speech recognition permission denied. Allow microphone access for localhost, then retry.",
+        "service-not-allowed": "The browser speech service is unavailable. Type your answer instead.",
+        "audio-capture": "No microphone input was detected. Check the selected microphone and retry.",
+        "no-speech": "No speech detected. Retry recording or type your answer.",
+        network: "Browser transcription is unavailable right now. You can type your answer.",
+      };
+      speechError = messages[event.error] || `Speech recognition failed (${event.error}). Retry or type your answer.`;
+      if (starting) return;
+      recording = false; muted = false; pauseDuration(); releaseAudio(); updateControls();
+      setMicState("error", speechError);
+    };
+    recognizer.onend = () => {
+      const endedIntentionally = intentionalStop;
+      recognitionActive = false; recognitionRequested = false; recognitionStopResolve?.();
+      if (endedIntentionally && !recognitionStopResolve) intentionalStop = false;
+      if (recording && !endedIntentionally && !muted && !interviewerSpeaking && !discarded) setTimeout(() => {
+        if (!recording || muted || interviewerSpeaking || discarded || recognitionActive) return;
+        try { recognitionRequested = true; recognizer.start(); } catch { recognitionRequested = false; void finishRecording(true); }
+      }, 250);
+    };
+  }
+  const finishRecording = (fromRecognizer = false, announce = true) => {
+    if (finishPromise) return finishPromise;
+    if (!recording && !micStream) return Promise.resolve();
+    finishPromise = (async () => {
+      if (announce) setMicState("processing", "Transcribing your answer…");
+      if (!fromRecognizer) await stopRecognition();
+      recording = false; muted = false; pauseDuration();
+      releaseAudio(); interimText = ""; livePreview.textContent = ""; livePreview.hidden = true;
+      if (announce) {
+        const hasAnswer = Boolean(transcript.value.trim());
+        setMicState(hasAnswer ? "captured" : "error", hasAnswer
+          ? "Answer captured · review or edit the transcript before sending"
+          : speechAvailable ? "No speech was transcribed · check the language, retry, or type your answer"
+            : "Speech recognition is unavailable in this browser · type your answer instead");
+      }
+    })().finally(() => { finishPromise = null; updateControls(); });
+    updateControls();
+    return finishPromise;
+  };
+  const startRecording = async () => {
+    if (recording || starting || paused || interviewerSpeaking) return;
+    starting = true;
+    speechError = null;
+    recordingAttempted = true; updateControls(); setMicState("processing", "Requesting microphone access…");
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      starting = false; setMicState("error", "Microphone capture requires HTTPS or localhost in a supported browser."); updateControls(); return;
+    }
+    try {
+      const selectedDevice = deviceSelect.value;
+      const capture = navigator.mediaDevices.getUserMedia({ audio: {
+        ...(selectedDevice ? { deviceId: { exact: selectedDevice } } : {}),
+        echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+      } });
+      // Start STT synchronously from the user's click, before waiting for the
+      // permission prompt. Some browsers drop user activation after an await.
+      if (recognizer) {
+        try { recognitionRequested = true; recognizer.start(); }
+        catch (error) {
+          recognitionRequested = false;
+          speechError = error.name === "InvalidStateError"
+            ? "Speech recognition is already active. Stop it and retry."
+            : "The browser could not start speech recognition. Retry or type your answer.";
+        }
+      }
+      micStream = await capture;
+      const track = micStream.getAudioTracks().find((candidate) => candidate.readyState === "live");
+      if (!track || !track.enabled) throw new Error("The selected microphone track is not active.");
+      await refreshMicrophones(track.getSettings?.().deviceId || "");
+      if (paused || interviewerSpeaking || discarded) {
+        await stopRecognition(); starting = false; releaseAudio(); updateControls();
+        if (!discarded) setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : "Ready to answer · microphone off");
+        return;
+      }
+      track.onended = () => {
+        if (!recording || discarded) return;
+        recording = false; pauseDuration(); releaseAudio(); updateControls();
+        setMicState("error", "Microphone disconnected. Reconnect it and retry recording.");
+      };
+      const AudioContextType = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextType) {
+        audioContext = new AudioContextType(); await audioContext.resume();
+        analyser = audioContext.createAnalyser(); analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.75;
+        audioSource = audioContext.createMediaStreamSource(micStream); audioSource.connect(analyser); watchAudio();
+      }
+      starting = false; recording = true; muted = false; muteBtn.textContent = "Mute Microphone"; startDuration(); updateControls();
+      if (recognizer) {
+        if (speechError) setMicState("error", speechError);
+        else if (recognitionActive) setMicState("listening", "Listening · speak your answer");
+        else setMicState("processing", "Starting speech recognition…");
+      } else setMicState("ready", "Microphone active · speech recognition unavailable; type your answer");
+    } catch (error) {
+      if (recognizer && (recognitionActive || recognitionRequested)) {
+        intentionalStop = true;
+        try { recognizer.abort(); } catch { intentionalStop = false; }
+      }
+      starting = false; recording = false; pauseDuration(); releaseAudio(); updateControls();
+      const messages = {
+        NotAllowedError: "Microphone permission denied. Allow microphone access for localhost, then retry.",
+        NotFoundError: "No microphone was found. Connect a microphone and retry.",
+        NotReadableError: "The microphone is busy in another app. Close that app or choose another input.",
+        SecurityError: "Microphone capture requires HTTPS or localhost.",
+      };
+      setMicState("error", messages[error.name] || error.message || "Could not start microphone capture. Retry or type your answer.");
+    }
+  };
+  startBtn.addEventListener("click", startRecording);
+  stopBtn.addEventListener("click", () => { void finishRecording(); });
+  retryBtn.addEventListener("click", () => {
+    if (recordedText) {
+      const value = transcript.value, suffix = recordedText.trimEnd();
+      if (value.trimEnd().endsWith(suffix)) transcript.value = value.trimEnd().slice(0, -suffix.length).trimEnd();
+    }
+    recordedText = ""; resetDuration(); livePreview.hidden = true; livePreview.textContent = ""; void startRecording();
+  });
+  muteBtn.addEventListener("click", async () => {
+    if (!micStream) return;
+    muted = !muted; micStream.getAudioTracks().forEach((track) => { track.enabled = !muted; });
+    if (muted) {
+      pauseDuration(); await stopRecognition(); muteBtn.textContent = "Unmute Microphone";
+      setMicState("off", "Microphone muted · unmute to continue recording");
+    } else {
+      muteBtn.textContent = "Mute Microphone"; startDuration();
+      if (recognizer && recording) {
+        try { recognitionRequested = true; recognizer.start(); setMicState("listening", "Listening · speak your answer"); }
+        catch { recognitionRequested = false; setMicState("error", "Could not resume speech recognition. Stop and retry, or type your answer."); }
+      } else setMicState("ready", "Microphone active · type your answer");
+    }
+    updateControls();
+  });
+  const playQuestion = async () => {
+    if (!window.speechSynthesis) { setMicState("ready", "Ready to answer · microphone off"); toast("Speech playback is unavailable in this browser."); return; }
+    interviewerSpeaking = true; updateControls(); setMicState("processing", "Preparing interviewer question…");
+    if (recording || micStream) await finishRecording(false, false);
+    const utterance = new SpeechSynthesisUtterance(qText.textContent); currentUtterance = utterance;
+    window.speechSynthesis.cancel();
+    utterance.onstart = () => {
+      if (currentUtterance !== utterance) return;
+      interviewerSpeaking = true; updateControls(); setMicState("processing", "Interviewer speaking · microphone capture is off");
+    };
+    utterance.onend = () => {
+      if (currentUtterance !== utterance) return;
+      currentUtterance = null; interviewerSpeaking = false; updateControls();
+      setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : "Ready to answer · microphone off");
+    };
+    utterance.onerror = () => {
+      if (currentUtterance !== utterance) return;
+      currentUtterance = null; interviewerSpeaking = false; updateControls();
+      setMicState("ready", "Ready to answer · microphone off");
+    };
+    window.speechSynthesis.speak(utterance);
+  };
+  const dispose = () => {
+    discarded = true; recording = false; muted = false; pauseDuration();
+    try { recognizer?.abort(); } catch { /* already stopped */ }
+    recognitionActive = false; recognitionRequested = false; releaseAudio(); window.speechSynthesis?.cancel();
+  };
+  window.addEventListener("hashchange", () => { if (location.hash !== `#/interview/${sessionId}`) dispose(); });
+  window.addEventListener("pagehide", dispose, { once: true });
   const progress = h("div", { class: "interview-progress", role: "progressbar", "aria-label": "Interview progress", "aria-valuemin": "0", "aria-valuemax": String(total), "aria-valuenow": "1" }, h("i"));
   const stageText = h("span");
   const questionStage = h("span");
@@ -165,50 +448,45 @@ function renderRoom(main, detail, initial = null) {
     const step = Math.min(total, stageIndex + 1);
     progress.setAttribute("aria-valuenow", String(step));
     progress.querySelector("i").style.width = `${Math.min(100, step / total * 100)}%`;
-    status.textContent = "Ready";
-    if (window.speechSynthesis && qText.textContent) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(qText.textContent);
-      utterance.onstart = () => { status.textContent = "Speaking"; voiceBtn.disabled = true; };
-      utterance.onend = () => { status.textContent = paused ? "Paused" : "Ready"; voiceBtn.disabled = paused || !speechAvailable; };
-      window.speechSynthesis.speak(utterance);
-    }
+    setMicState("off", "Microphone off · Start Answer to record");
+    if (qText.textContent) void playQuestion();
   };
   const form = h("form", { class: "interview-answer-form", onsubmit: async (e) => {
     e.preventDefault();
+    if (recording || micStream) await finishRecording();
     const answer = transcript.value.trim();
     if (!answer) { toast("Add an answer before continuing.", "err"); transcript.focus(); return; }
-    answerBtn.disabled = true; voiceBtn.disabled = true; pause.disabled = true; status.textContent = "Thinking";
+    answerBtn.disabled = true; pause.disabled = true; setMicState("processing", "Submitting answer for feedback…");
     try {
       const result = await api(`/api/interviews/${sessionId}/answer`, { method: "POST", body: { question_id: current.question_id, answer } });
       showEvaluation(responseFeedback, result.evaluation);
       transcript.value = "";
-      if (result.status === "completed") { recognizer?.stop(); window.speechSynthesis?.cancel(); await renderReport(main, result.report); return; }
+      recordedText = ""; recordingAttempted = false; resetDuration();
+      if (result.status === "completed") { dispose(); await renderReport(main, result.report); return; }
       stageIndex = result.stage_index;
       setQuestion(result.question, result.question_number, result.source);
-    } catch (e) { status.textContent = "Ready"; toast(e.message, "err"); }
-    answerBtn.disabled = paused; voiceBtn.disabled = paused || !speechAvailable; pause.disabled = false;
+    } catch (e) { setMicState("captured", "Answer captured · review or edit before sending"); toast(e.message, "err"); }
+    answerBtn.disabled = false; pause.disabled = false; updateControls();
   } }, h("label", { class: "field" }, h("span", {}, "Your answer"), transcript),
-    h("div", { class: "row-actions" }, voiceBtn, answerBtn));
-  const repeat = h("button", { class: "btn sm", type: "button", onclick: () => {
-    if (!window.speechSynthesis) { toast("Speech playback is unavailable in this browser."); return; }
-    recognizer?.stop();
-    const u = new SpeechSynthesisUtterance(qText.textContent);
-    u.onstart = () => { status.textContent = "Speaking"; voiceBtn.disabled = true; };
-    u.onend = () => { status.textContent = paused ? "Paused" : "Ready"; voiceBtn.disabled = paused || !speechAvailable; };
-    window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
-  } }, "Repeat question");
-  let paused = false;
+    voicePanel, livePreview, h("div", { class: "row-actions interview-submit-row" }, answerBtn));
+  const repeat = h("button", { class: "btn sm", type: "button", onclick: () => { void playQuestion(); } }, "Replay Interviewer Question");
   const pause = h("button", { class: "btn sm", type: "button", onclick: () => {
     paused = !paused;
-    if (paused) { recognizer?.stop(); window.speechSynthesis?.pause(); status.textContent = "Paused"; }
-    else { window.speechSynthesis?.resume(); status.textContent = "Ready"; }
+    if (paused) {
+      if (recording || micStream) void finishRecording();
+      window.speechSynthesis?.pause();
+      if (!interviewerSpeaking) setMicState("off", "Paused · microphone off");
+    } else {
+      window.speechSynthesis?.resume();
+      if (!interviewerSpeaking) setMicState("off", "Microphone off · Start Answer to record");
+    }
     pause.textContent = paused ? "Resume" : "Pause";
-    answerBtn.disabled = paused; voiceBtn.disabled = paused || !speechAvailable;
+    answerBtn.disabled = paused; updateControls();
   } }, "Pause");
   const end = h("button", { class: "btn sm ghost", type: "button", onclick: async () => {
     if (!confirm("End this interview now? Ending early saves your answers but does not create an assessment.")) return;
-    try { await api(`/api/interviews/${sessionId}/end`, { method: "POST", body: {} }); recognizer?.stop(); window.speechSynthesis?.cancel(); location.hash = "#/interview"; }
+    dispose();
+    try { await api(`/api/interviews/${sessionId}/end`, { method: "POST", body: {} }); location.hash = "#/interview"; }
     catch (e) { toast(e.message, "err"); }
   } }, "End interview");
   setQuestion(current, number, source);
@@ -223,7 +501,7 @@ function renderRoom(main, detail, initial = null) {
       h("div", { class: "question-panel" }, h("p", { class: "eyebrow" }, "QUESTION · ", questionStage), qText, skillChips,
         source?.url ? h("a", { class: "cite", href: source.url, target: "_blank", rel: "noopener noreferrer" }, "Grounded in ESCO · source details") : null),
       responseFeedback, form,
-      h("p", { class: "fine" }, "Your answer transcript is saved with this interview and sent to the configured AI provider for feedback. No audio is stored."))));
+      h("p", { class: "fine" }, "Only your reviewed transcript is sent to AiversePulse and saved with this interview. Browser speech recognition may process microphone audio; AiversePulse does not store audio."))));
 }
 
 function showEvaluation(host, evaluation) {
