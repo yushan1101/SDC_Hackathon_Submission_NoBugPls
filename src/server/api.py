@@ -276,7 +276,8 @@ def register(body: RegisterIn, request: HttpRequest, response: Response):
     if r["status"] == "pending_email":
         with DB_LOCK:
             otp.issue(db, cfg, r["username"], body.email.strip().lower(), _base_url(request))
-        return {"status": "pending_email", "username": r["username"]}
+            wait = otp.new_wait(db, r["username"])
+        return {"status": "pending_email", "username": r["username"], "wait_token": wait}
     if r["status"] == "active":
         with DB_LOCK:
             user = accounts.account(db, r["username"])
@@ -315,6 +316,74 @@ def register_resend(body: ResendIn, request: HttpRequest):
         if a and a["status"] == "pending_email":
             otp.issue(db, cfg, name, a["email"], _base_url(request))
     return {"ok": True}  # same answer either way: no account enumeration
+
+
+class PollIn(BaseModel):
+    username: str = Field(max_length=40)
+    wait_token: str = Field(min_length=20, max_length=80)
+
+
+@app.post("/api/register/poll")
+def register_poll(body: PollIn, request: HttpRequest, response: Response):
+    """The "check your email" screen asks every few seconds. Once the email is verified (code or link, any device),
+    the browser that holds the wait token is signed in - once."""
+    name = body.username.strip().lower()
+    with DB_LOCK:
+        if not otp.wait_valid(db, name, body.wait_token):
+            raise HTTPException(404, "nothing to wait for")
+        a = accounts.account(db, name) or {}
+        if a.get("status") == "pending_email":
+            return {"status": "pending_email"}
+        otp.claim_wait(db, name, body.wait_token)
+    if a.get("status") == "active":
+        return {"status": "active", **_start_session(a, request, response)}
+    return {"status": a.get("status")}
+
+
+# ---------------------------------------------------------------- forgotten password (email link or code)
+class ForgotIn(BaseModel):
+    login: str = Field(min_length=3, max_length=254)   # username or email
+    challenge_token: str = Field(default="", max_length=80)
+    risk: dict | None = None
+
+
+@app.post("/api/password/forgot")
+def password_forgot(body: ForgotIn, request: HttpRequest):
+    """Sends a reset link and code if the account exists. Same answer either way (no account enumeration); the
+    slider pass is required so this cannot be used to flood inboxes."""
+    with DB_LOCK:
+        if not challenge.consume(db, body.challenge_token, str((body.risk or {}).get("device_id") or "")):
+            raise HTTPException(422, "Complete the slider check first.")
+        a = accounts.find_login(db, body.login)
+        verdict = risk.assess(db, "password_reset", a["username"] if a else None, _ip(request), body.risk)
+        if a and a.get("email") and a["status"] != "disabled" and verdict["decision"] != "block":
+            otp.issue(db, cfg, a["username"], a["email"], _base_url(request), purpose="reset")
+    return {"ok": True}
+
+
+class ResetIn(BaseModel):
+    login: str = Field(default="", max_length=254)      # with a code: what the person typed (username or email)
+    username: str = Field(default="", max_length=40)    # with a link: from the link
+    code: str = Field(default="", max_length=6)
+    token: str = Field(default="", max_length=80)
+    password: str = Field(min_length=10, max_length=200)
+
+
+@app.post("/api/password/reset")
+def password_reset(body: ResetIn):
+    with DB_LOCK:
+        a = accounts.find_login(db, body.username or body.login)
+        ok = bool(a) and (otp.check_link(db, a["username"], body.token, "reset") if body.token
+                          else otp.check(db, a["username"], body.code, "reset"))
+        if not ok:
+            raise HTTPException(422, "That code or link is wrong or expired. Ask for a new one.")
+        try:
+            accounts.set_password(db, a["username"], body.password)
+        except accounts.AuthError as e:
+            raise HTTPException(422, str(e))
+        db.execute("DELETE FROM sessions WHERE username=?", (a["username"],))  # signed out everywhere
+        db.commit()
+    return {"ok": True}
 
 
 class VerifyLinkIn(BaseModel):

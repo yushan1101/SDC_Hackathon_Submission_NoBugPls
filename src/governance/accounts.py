@@ -113,6 +113,26 @@ def email_verified(con, username: str) -> str:
     return status
 
 
+def set_password(con, username: str, password: str):
+    """Forgotten-password reset: new hash, lock cleared. The caller signs the account out everywhere."""
+    _check_password(password)
+    salt = os.urandom(16)
+    with con:
+        n = con.execute("UPDATE users SET pw_hash=?, salt=?, failed=0, locked_until=NULL WHERE username=?",
+                        (_hash(password, salt), salt, username)).rowcount
+    if not n:
+        raise AuthError("no such account")
+    _event(con, username, "password_reset")
+
+
+def find_login(con, login: str) -> dict | None:
+    """An account by username or email (for 'forgot password')."""
+    init(con)
+    login = (login or "").strip().lower()
+    row = con.execute("SELECT username FROM users WHERE username=? OR lower(email)=?", (login, login)).fetchone()
+    return account(con, row[0]) if row else None
+
+
 def set_status(con, username: str, status: str):
     if status not in STATUSES:
         raise AuthError("unknown status")

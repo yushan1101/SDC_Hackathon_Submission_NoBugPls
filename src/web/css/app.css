@@ -1937,3 +1937,22 @@ dialog.checkout form { display: grid; gap: 16px; }
 @media (prefers-reduced-motion: reduce) { .slider-check.bad .sc-stage { animation: none; } }
 .inbox-btn { justify-self: start; gap: 8px; }
 .signin-form .btn[disabled] { opacity: .55; cursor: not-allowed; }
+
+/* ---------- pop-up slider, 6-digit code boxes, verification state ---------- */
+dialog.slider-dialog { width: min(380px, calc(100vw - 24px)); padding: 20px; border: 1px solid oklch(1 0 0 / 0.18); border-radius: 22px;
+  background: var(--shell); color: var(--shell-ink); }
+dialog.slider-dialog::backdrop { background: oklch(0.15 0.03 262 / 0.6); }
+.sd-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.sd-head h2 { margin: 0; font-size: 20px; }
+.slider-dialog .muted { color: var(--shell-ink-2); font-size: 14px; margin: 6px 0 14px; }
+.slider-dialog .btn.ghost { color: var(--shell-ink); }
+.otp-boxes { display: flex; gap: 8px; }
+.otp-box { width: 46px; height: 54px; text-align: center; font: 600 24px var(--font-mono, monospace); border-radius: 12px;
+  border: 1px solid oklch(1 0 0 / 0.25); background: oklch(1 0 0 / 0.06); color: var(--shell-ink); }
+.otp-box:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (max-width: 400px) { .otp-boxes { gap: 5px; } .otp-box { width: 40px; height: 50px; } }
+.verify-state { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; color: var(--shell-ink-2); }
+.verify-state.ok { color: oklch(0.8 0.15 150); font-weight: 600; }
+.verify-state svg { width: 18px; height: 18px; }
+.verify-state .spinner { width: 14px; height: 14px; border: 2px solid oklch(1 0 0 / 0.25); border-top-color: var(--shell-ink); border-radius: 50%; animation: vs-spin .9s linear infinite; }
+@keyframes vs-spin { to { transform: rotate(360deg); } }
