@@ -32,18 +32,20 @@ from agents.gap_analyst import SCENARIO_NOTES
 from agents.pathway import HOURS_PER_LEVEL
 from agents.sdg import goal_meta, role_sdgs
 from agents import criteria, matcher, quiz, resume
-from agents.knowledge import occupation, resolve_occupation, role_requirements, search_occupations
+from agents.knowledge import learning_resources, occupation, resolve_occupation, role_requirements, search_occupations
 from config.settings import get_settings
 from core import graph, screening
 from core.state import Pathway, Profile, Request, Skill
 from core.team_import import parse_team
 from core.usage import summarize
-from governance import accounts, approval, recruiting
+from governance import accounts, approval, recruiting, reviews
 from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
 from governance.audit import connect
 from validation.revision import validate
+from interview import service as interview_service, store as interview_store
+from interview.schemas import InterviewAnswer, InterviewCreate, InterviewEnd
 
 log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,12 +62,13 @@ with DB_LOCK:
                         employee_id TEXT, display_name TEXT, expires_utc TEXT);
                         CREATE TABLE IF NOT EXISTS plan_progress(plan_id TEXT, item TEXT, done_utc TEXT,
                         PRIMARY KEY(plan_id, item));""")  # activities ticked off as done ("<days>:<skill>")
+    interview_store.init(db)
 
 app = FastAPI(title="AiversePulse", docs_url=None, redoc_url=None, openapi_url=None)
 if cfg.allowed_origins:  # separate frontend deploy: only these origins may call the API with the session cookie
     from fastapi.middleware.cors import CORSMiddleware
     app.add_middleware(CORSMiddleware, allow_origins=cfg.allowed_origins, allow_credentials=True,
-                       allow_methods=["GET", "POST"], allow_headers=["Content-Type", "X-AP", "Accept"], max_age=600)
+                       allow_methods=["GET", "POST", "DELETE"], allow_headers=["Content-Type", "X-AP", "Accept"], max_age=600)
 
 
 # --- security -------------------------------------------------------------------------------------
@@ -84,7 +87,7 @@ async def headers(request: HttpRequest, call_next):
                                    "https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; "
                                    f"connect-src 'self'; frame-ancestors {cfg.frame_ancestors}; base-uri 'none'; form-action 'self'",
         "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin",
-        "Permissions-Policy": "camera=(), microphone=(), geolocation=()"})
+        "Permissions-Policy": "camera=(), microphone=(self), geolocation=()"})
     if not request.url.path.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-cache"  # revalidate (cheap 304 via ETag) so UI updates ship immediately
     return resp
@@ -289,6 +292,142 @@ class AnalyzeIn(BaseModel):
     previous_plan_id: str | None = Field(default=None, max_length=40)  # follow-up: reuse that run's unaffected agents
 
 
+# --- individual mock interviews (isolated from the reskilling graph) -------------------------------------
+@app.post("/api/interviews")
+def interview_create(body: InterviewCreate, user: dict = Depends(need("employee"))):
+    if not body.transcript_consent:
+        raise HTTPException(422, "Consent is required to save interview answers and generate a personalized assessment.")
+    with DB_LOCK:
+        recommendation = interview_store.recommendation(db, body.recommendation_id, user["employee_id"])
+    if not recommendation:
+        raise HTTPException(404, "Career recommendation not found.")
+    role_id, skills = recommendation["role_id"], recommendation["profile"]
+    if not resolve_occupation(role_id):
+        raise HTTPException(404, "The recommended role is no longer available.")
+    if body.plan_id:
+        with DB_LOCK:
+            if not approval.can_act(db, body.plan_id, user):
+                raise HTTPException(404, "Plan not found.")
+            planned = approval.latest(db, body.plan_id)["plan"]
+            if resolve_occupation(planned.get("target_role", "")) != role_id:
+                raise HTTPException(422, "Choose a learning plan for the same role.")
+    try:
+        interview_id, context, question = interview_service.prepare_create(role_id, skills, body.difficulty)
+    except interview_service.InterviewError as e:
+        raise HTTPException(e.status, e.message) from None
+    with DB_LOCK, db:
+        result = interview_service.persist_create(db, user["employee_id"], role_id, skills, body.difficulty,
+                                                  body.plan_id, interview_id, context, question,
+                                                  recommendation["recommendation_id"], recommendation["source"])
+    return result
+
+
+@app.get("/api/interview-recommendations/{recommendation_id}")
+def interview_recommendation(recommendation_id: str, user: dict = Depends(need("employee"))):
+    with DB_LOCK:
+        recommendation = interview_store.recommendation(db, recommendation_id, user["employee_id"])
+    if not recommendation:
+        raise HTTPException(404, "Career recommendation not found.")
+    return {key: value for key, value in recommendation.items() if key != "assessment_id"}
+
+
+@app.get("/api/interviews")
+def interview_history(user: dict = Depends(need("employee"))):
+    with DB_LOCK:
+        return {"interviews": interview_store.history(db, user["employee_id"])}
+
+
+@app.get("/api/interviews/{interview_id}")
+def interview_detail(interview_id: str, user: dict = Depends(need("employee"))):
+    with DB_LOCK:
+        sess = interview_store.session(db, interview_id, user["employee_id"])
+        if not sess:
+            raise HTTPException(404, "Interview not found.")
+        active = interview_store.question(db, sess["active_question_id"]) if sess["active_question_id"] else None
+        report = interview_store.report(db, interview_id)
+    return {"interview_id": interview_id, "role_id": sess["role_id"], "role_title": sess["role_title"],
+            "difficulty": sess["difficulty"], "status": sess["status"], "stage_index": sess["stage_index"],
+            "question": active, "report": report, "profile": sess["profile"], "plan_id": sess["plan_id"],
+            "source": sess["context"]["source"], "created_utc": sess["created_utc"]}
+
+
+@app.post("/api/interviews/{interview_id}/answer")
+def interview_answer(interview_id: str, body: InterviewAnswer, user: dict = Depends(need("employee"))):
+    answer_text = body.answer.strip()
+    if not answer_text:
+        raise HTTPException(422, "Enter an answer before continuing.")
+    with DB_LOCK:
+        sess = interview_store.session(db, interview_id, user["employee_id"])
+        if not sess:
+            raise HTTPException(404, "Interview not found.")
+        if sess["status"] != "in_progress":
+            raise HTTPException(409, "This interview is already complete.")
+        if sess["active_question_id"] != body.question_id:
+            raise HTTPException(409, "That is not the active question. Refresh the interview and try again.")
+        current = interview_store.question(db, body.question_id)
+        rows = db.execute("""SELECT q.question_text, q.stage, q.target_skills_json, r.answer_text
+            FROM interview_questions q LEFT JOIN interview_responses r USING(question_id)
+            WHERE q.interview_id=? ORDER BY q.sequence DESC LIMIT 6""", (interview_id,)).fetchall()
+        transcript = [{"stage": r[1], "question": r[0], "target_skills": json.loads(r[2]), "answer": r[3]}
+                      for r in reversed(rows) if r[3]]
+    if not current:
+        raise HTTPException(404, "Interview question not found.")
+    try:
+        prepared = interview_service.prepare_answer(sess, current, answer_text, transcript)
+    except interview_service.InterviewError as e:
+        raise HTTPException(e.status, e.message) from None
+    with DB_LOCK, db:
+        latest = interview_store.session(db, interview_id, user["employee_id"])
+        if not latest or latest["active_question_id"] != body.question_id or latest["status"] != "in_progress":
+            raise HTTPException(409, "This answer was already submitted. Refresh the interview.")
+        result = interview_service.persist_answer(db, latest, current, answer_text, prepared)
+    if result["status"] == "completed":
+        report = result["report"]
+        for recommendation in report.get("recommendations", [])[:3]:
+            try:
+                recommendation["resources"] = [item.model_dump() for item in learning_resources(recommendation["skill"], top_k=2)]
+            except Exception:
+                recommendation["resources"] = []
+        with DB_LOCK, db:
+            db.execute("UPDATE interview_reports SET report_json=? WHERE interview_id=?",
+                       (interview_store.json_dump(report), interview_id))
+    return result
+
+
+@app.post("/api/interviews/{interview_id}/end")
+def interview_end(interview_id: str, body: InterviewEnd, user: dict = Depends(need("employee"))):
+    with DB_LOCK, db:
+        sess = interview_store.session(db, interview_id, user["employee_id"])
+        if not sess:
+            raise HTTPException(404, "Interview not found.")
+        if sess["status"] == "in_progress":
+            interview_service.finish_without_answer(db, sess)
+    return {"status": "ended"}
+
+
+@app.get("/api/interviews/{interview_id}/report")
+def interview_report(interview_id: str, user: dict = Depends(need("employee"))):
+    with DB_LOCK:
+        if not interview_store.session(db, interview_id, user["employee_id"]):
+            raise HTTPException(404, "Interview not found.")
+        report = interview_store.report(db, interview_id)
+    if not report:
+        raise HTTPException(409, "A completed interview report is not available yet.")
+    return report
+
+
+@app.delete("/api/interviews/{interview_id}")
+def interview_delete(interview_id: str, user: dict = Depends(need("employee"))):
+    with DB_LOCK, db:
+        if not interview_store.session(db, interview_id, user["employee_id"]):
+            raise HTTPException(404, "Interview not found.")
+        db.execute("DELETE FROM interview_reports WHERE interview_id=?", (interview_id,))
+        db.execute("DELETE FROM interview_responses WHERE question_id IN (SELECT question_id FROM interview_questions WHERE interview_id=?)", (interview_id,))
+        db.execute("DELETE FROM interview_questions WHERE interview_id=?", (interview_id,))
+        db.execute("DELETE FROM interview_sessions WHERE interview_id=?", (interview_id,))
+    return {"deleted": True}
+
+
 AGENT_NAME = {"profiler": "Profiler", "knowledge_search": "Knowledge", "market_analyst": "Market analyst", "gap_analysis": "Gap analyst",
               "pathway": "Pathway", "coach": "Coach", "reviewer": "Reviewer"}
 
@@ -396,7 +535,78 @@ def _guard(pid: str, user: dict):
 @app.get("/api/plans")
 def plans(user: dict = Depends(current_user)):
     with DB_LOCK:
-        return approval.list_plans(db, user)
+        rows = approval.list_plans(db, user)
+        return [p | {"review": reviews.get(db, p["plan_id"])} for p in rows] if user["role"] == "hr_advisor" else rows
+
+
+@app.get("/api/reviews")
+def review_list(q: str = "", status: str = "active", user: dict = Depends(need("hr_advisor"))):
+    if status not in {"active", "all", "pending", "approved", "rejected", "archived"}:
+        raise HTTPException(422, "Invalid review status")
+    term = q.strip().casefold()
+    with DB_LOCK:
+        rows = [p | {"review": reviews.get(db, p["plan_id"])} for p in approval.list_plans(db, user)]
+    return [p for p in rows if (status == "all" or (p["review"]["archived"] if status == "archived" else
+            not p["review"]["archived"] and (status == "active" or p["review"]["review_status"] == status)))
+            and (not term or term in " ".join(str(x or "") for x in (
+                p["subject_id"], p["target_role"], p["review"]["candidate_name"],
+                p["review"]["candidate_email"], p["review"]["candidate_phone"])).casefold())]
+
+
+class ReviewEditIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    candidate_name: str = Field(default="", max_length=120)
+    candidate_email: str = Field(default="", max_length=254)
+    candidate_phone: str = Field(default="", max_length=50)
+    reviewer_notes: str = Field(default="", max_length=10000)
+    review_status: str = Field(pattern="^(pending|approved|rejected)$")
+    revision: int = Field(ge=0)
+
+
+@app.post("/api/reviews/{pid}/edit")
+def review_edit(pid: str, body: ReviewEditIn, user: dict = Depends(need("hr_advisor"))):
+    _guard(pid, user)
+    try:
+        with DB_LOCK:
+            return reviews.edit(db, pid, user, body.model_dump(exclude={"revision"}), body.revision)
+    except approval.TransitionError as e:
+        raise HTTPException(409, str(e))
+
+
+class ReviewBulkIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    plan_ids: list[str] = Field(min_length=1, max_length=50)
+    action: str = Field(pattern="^(archive|restore|delete)$")
+    confirmed: bool = False
+
+
+@app.post("/api/reviews/bulk")
+def review_bulk(body: ReviewBulkIn, user: dict = Depends(need("hr_advisor"))):
+    try:
+        with DB_LOCK:
+            ids = reviews.bulk(db, body.plan_ids, user, body.action, body.confirmed)
+            if body.action == "delete":
+                for pid in ids:
+                    RESULTS.pop(pid, None)
+        return {"action": body.action, "count": len(ids)}
+    except approval.TransitionError as e:
+        raise HTTPException(409, str(e))
+
+
+class DeletePlansIn(BaseModel):
+    plan_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+@app.delete("/api/plans")
+def delete_plans(body: DeletePlansIn, user: dict = Depends(need("employee"))):
+    try:
+        with DB_LOCK:
+            deleted = approval.delete_employee_plans(db, body.plan_ids, user)
+            for pid in deleted:
+                RESULTS.pop(pid, None)
+    except approval.TransitionError as e:
+        raise HTTPException(404, str(e))
+    return {"deleted": len(deleted), "plan_ids": deleted}
 
 
 @app.get("/api/sdgs")
@@ -425,9 +635,10 @@ def plan(pid: str, user: dict = Depends(current_user)):
     with DB_LOCK:
         saved = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
         done = [r[0] for r in db.execute("SELECT item FROM plan_progress WHERE plan_id=?", (pid,))]
+        review = {"review": reviews.get(db, pid), "review_history": reviews.history(db, pid)} if user["role"] == "hr_advisor" else {}
     report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else None
     return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], **cur, "history": hist, "report": report,
-            "progress": done}
+            "progress": done, **review}
 
 
 class ProgressIn(BaseModel):
@@ -474,6 +685,22 @@ def edit(pid: str, body: EditIn, user: dict = Depends(current_user)):
 class ApproveIn(BaseModel):
     version: int
     confirmed: bool
+
+
+class PlanStatusIn(ApproveIn):
+    model_config = {"extra": "forbid"}
+    status: str = Field(pattern="^(draft|flagged|approved)$")
+
+
+@app.post("/api/plans/{pid}/status")
+def change_plan_status(pid: str, body: PlanStatusIn, user: dict = Depends(need("hr_advisor"))):
+    _guard(pid, user)
+    try:
+        with DB_LOCK:
+            v = approval.change_status(db, pid, user, body.status, body.version, body.confirmed)
+        return {"version": v, "status": body.status}
+    except approval.TransitionError as e:
+        raise HTTPException(409, str(e))
 
 
 @app.post("/api/plans/{pid}/approve")
@@ -748,7 +975,13 @@ def quiz_score(body: QuizIn, user: dict = Depends(current_user)):
     levels, prefixes = quiz.score(body.answers, body.fields)
     if len(levels) < 3:
         raise HTTPException(422, "Answer at least three questions.")
-    return {"skills": [{"name": k, "level": v} for k, v in levels.items()], "matches": _matches(levels, prefixes, quiz.profile_text(body.answers, body.fields) or None, zone=body.zone, scenario=body.scenario)}
+    skills = [{"name": k, "level": v} for k, v in levels.items()]
+    matches = _matches(levels, prefixes, quiz.profile_text(body.answers, body.fields) or None, zone=body.zone, scenario=body.scenario)
+    assessment_id = None
+    if user["role"] == "employee":
+        with DB_LOCK, db:
+            assessment_id = interview_store.save_recommendations(db, user["employee_id"], "questionnaire", skills, matches)
+    return {"skills": skills, "matches": matches, "assessment_id": assessment_id}
 
 
 class MatchIn(BaseModel):
@@ -756,12 +989,24 @@ class MatchIn(BaseModel):
     text: str | None = Field(default=None, max_length=20000)
     fields: list[str] = Field(default=[], max_length=13)
     scenario: str = Field(default="assistive", pattern="^(assistive|agentic)$")
+    assessment_id: str | None = Field(default=None, max_length=40)
 
 
 @app.post("/api/match")
 def match(body: MatchIn, user: dict = Depends(current_user)):
+    if body.assessment_id:
+        with DB_LOCK:
+            if user["role"] != "employee" or not interview_store.valid_assessment(
+                    db, body.assessment_id, user["employee_id"], source="resume"):
+                raise HTTPException(404, "Resume assessment not found.")
     _, prefixes = quiz.score({}, body.fields)
-    return {"matches": _matches({s.name: s.level for s in body.skills}, prefixes, body.text, scenario=body.scenario)}
+    matches = _matches({s.name: s.level for s in body.skills}, prefixes, body.text, scenario=body.scenario)
+    assessment_id = None
+    if body.assessment_id and matches:
+        with DB_LOCK, db:
+            assessment_id = interview_store.save_recommendations(db, user["employee_id"], "resume",
+                [s.model_dump() for s in body.skills], matches, parent_assessment_id=body.assessment_id)
+    return {"matches": matches, "assessment_id": assessment_id}
 
 
 async def _read(file: UploadFile) -> bytes:
@@ -781,7 +1026,13 @@ async def resume_analyze_stream(file: UploadFile = File(...), user: dict = Depen
     def work():
         stage = lambda s: events.put({"t": "stage", "stage": s, "pct": RESUME_STAGES[s][0], "owl": RESUME_STAGES[s][1], "label": RESUME_STAGES[s][2]})
         try:
-            events.put({"t": "result", "pct": 100, "data": _analyze_resume(name, data, stage)})
+            result = _analyze_resume(name, data, stage)
+            if user["role"] == "employee" and result["skills"]:
+                profile = [{"name": s["name"], "level": s["level"]} for s in result["skills"]]
+                with DB_LOCK, db:
+                    result["assessment_id"] = interview_store.save_recommendations(
+                        db, user["employee_id"], "resume", profile, result["matches"])
+            events.put({"t": "result", "pct": 100, "data": result})
         except HTTPException as e:
             events.put({"t": "error", "message": e.detail})
         except Exception:
@@ -798,9 +1049,15 @@ async def resume_analyze_stream(file: UploadFile = File(...), user: dict = Depen
 
 @app.post("/api/resume/analyze")
 async def resume_analyze(file: UploadFile = File(...), user: dict = Depends(current_user)):
-    """Resume -> Markdown -> evidence-backed skills -> future-role matches. Nothing is stored."""
+    """Resume -> Markdown -> evidence-backed skills -> matches; only skill labels and recommendations persist for interview access."""
     data = await _read(file)
-    return await run_in_threadpool(_analyze_resume, file.filename or "resume.txt", data)
+    result = await run_in_threadpool(_analyze_resume, file.filename or "resume.txt", data)
+    if user["role"] == "employee" and result["skills"]:
+        profile = [{"name": s["name"], "level": s["level"]} for s in result["skills"]]
+        with DB_LOCK, db:
+            result["assessment_id"] = interview_store.save_recommendations(
+                db, user["employee_id"], "resume", profile, result["matches"])
+    return result
 
 
 RESUME_STAGES = {  # stage -> (% done when it starts, owl state, label); fixed per step, not a time estimate

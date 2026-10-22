@@ -76,8 +76,8 @@ function crumb(page = (location.hash.split("/")[1] || "overview")) {
 async function signOut() { await api("/api/logout", { method: "POST" }).catch(() => {}); location.reload(); }
 
 async function refreshPlans() {
-  S.plans = await api("/api/plans").catch(() => []);
-  const open = S.plans.filter((p) => p.audience === "hr" && p.status !== "approved").length;
+  S.plans = await api("/api/plans");
+  const open = S.plans.filter((p) => p.audience === "hr" && !p.review?.archived && p.review?.review_status === "pending").length;
   S.badge.hidden = !open; S.badge.textContent = open;
   return S.plans;
 }
@@ -109,7 +109,7 @@ function route() {
 }
 
 function keys(e) {
-  if (!location.hash.startsWith("#/review") || /input|textarea|select/i.test(e.target.tagName)) return;
+  if (!location.hash.startsWith("#/review") || e.target.closest("dialog") || /input|textarea|select/i.test(e.target.tagName)) return;
   if (e.key !== "j" && e.key !== "k") return;
   const items = [...document.querySelectorAll(".queue-item")];
   const i = items.findIndex((x) => x.getAttribute("aria-current") === "true");
@@ -124,7 +124,7 @@ function strip(row) {
 }
 
 function stats() {
-  const latest = S.plans.filter((p) => p.audience === "hr");
+  const latest = S.plans.filter((p) => p.audience === "hr" && !p.review?.archived);
   const cell = (n, label, ic, cls = "") => h("div", { class: `stat ${cls}` }, h("span", { class: "stat-ic" }, icon(ic)), h("b", {}, n), h("span", {}, label));
   return h("div", { class: "stats" },
     cell(new Set(latest.map((p) => p.subject_id)).size, "Employees", "people"),
@@ -165,7 +165,7 @@ async function overview(main) {
     h("div", { class: "view-head" }, h("h1", {}, "Overview"), h("a", { class: "btn primary sm", href: "#/run" }, icon("upload"), "Upload team")),
     stats(), h("div", { class: "overview" }, needsPanel(),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Needs your review")),
-        h("div", { class: "pad review-list" }, latestPerEmployee(S.plans.filter((p) => p.audience === "hr" && p.status !== "approved")).slice(0, 6).map((p) =>
+        h("div", { class: "pad review-list" }, latestPerEmployee(S.plans.filter((p) => p.audience === "hr" && !p.review?.archived && p.review?.review_status === "pending")).slice(0, 6).map((p) =>
           h("a", { href: `#/review/${p.plan_id}`, class: "review-row" },
             h("span", { class: "who" }, h("b", {}, p.subject_id), h("span", { class: "muted" }, `${p.target_role} · v${p.version} · ${fmtTime(p.created_utc)}`)), h("span", { class: `tag ${p.status}` }, p.status))),
           S.plans.some((p) => p.audience === "hr" && p.status !== "approved") ? null : h("p", { class: "muted" }, "Nothing waiting. Approved plans live in the register.")))),
@@ -251,26 +251,39 @@ async function reviewView(main, id) {
   const request = S.reviewRequest = (S.reviewRequest || 0) + 1;
   await refreshPlans();
   if (version !== S.routeVersion || request !== S.reviewRequest) return;
-  const items = S.plans.filter((p) => p.audience === "hr");
-  if (id && !items.some((p) => p.plan_id === id)) { location.replace("#/review"); return; }
-  let filter = S.reviewFilter || "open";
-  // Direct links to an approved/flagged plan must not be hidden by a previous filter.
-  if (id && !items.some((p) => p.plan_id === id &&
-      (filter === "all" || (filter === "open" ? p.status !== "approved" : p.status === filter)))) filter = "all";
+  let filter = S.reviewFilter || "active";
+  const target = id && S.plans.find((p) => p.plan_id === id);
+  if (id && !target) { location.replace("#/review"); return; }
+  if (target && (target.review.archived ? !["all", "archived"].includes(filter) : !["active", "all", target.review.review_status].includes(filter))) filter = target.review.archived ? "archived" : "all";
   S.reviewFilter = filter;
-  const shown = items.filter((p) => filter === "all" || (filter === "open" ? p.status !== "approved" : p.status === filter));
+  const shown = await api(`/api/reviews?status=${filter}&q=${encodeURIComponent(S.reviewSearch || "")}`);
+  if (version !== S.routeVersion || request !== S.reviewRequest) return;
   id = id || shown[0]?.plan_id;
-  const seg = h("div", { class: "seg", role: "group", "aria-label": "Filter" },
-    [["open", "Open"], ["flagged", "Flagged"], ["approved", "Approved"], ["all", "All"]].map(([k, l]) =>
-      h("button", { type: "button", "aria-pressed": String(k === filter), onclick: () => { S.reviewFilter = k; if (location.hash === "#/review") reviewView(main); else location.hash = "#/review"; } }, l)));
+  const selected = new Set();
+  const redraw = () => reviewView(main).catch((e) => toast(e.message, "err"));
+  const navigate = () => { if (location.hash === "#/review") return redraw(); else location.hash = "#/review"; };
+  const search = h("input", { class: "input", type: "search", value: S.reviewSearch || "", placeholder: "Search candidates or roles", "aria-label": "Search reviews" });
+  const seg = h("select", { class: "input", "aria-label": "Review status", onchange: (e) => { S.reviewFilter = e.target.value; navigate(); } },
+    [["active", "All active"], ["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["archived", "Archived"], ["all", "All including archived"]].map(([k, l]) => h("option", { value: k, selected: k === filter }, l)));
+  const count = h("span", { role: "status" }, "0 selected");
+  const boxes = [];
+  const bulkButtons = ["archive", "restore", "delete"].map((action) => h("button", { class: "btn sm", disabled: true,
+    onclick: () => reviewAction(main, [...selected], action, navigate) }, action[0].toUpperCase() + action.slice(1)));
+  function selection() { count.textContent = `${selected.size} selected`; bulkButtons.forEach((b) => b.disabled = !selected.size || selected.size > 50); }
+  const all = h("input", { type: "checkbox", "aria-label": "Select visible reviews", onchange: (e) => { boxes.forEach(([box, pid]) => { box.checked = e.target.checked; if (box.checked) selected.add(pid); else selected.delete(pid); }); selection(); } });
   const queue = h("nav", { class: "queue", "aria-label": "Review queue" },
     h("header", {}, h("span", {}, `${shown.length} plans`), h("span", { class: "mono hide-sm" }, "J / K")),
-    h("div", { style: { padding: "10px 14px", "border-bottom": "1px solid var(--rule)" } }, seg),
-    shown.length ? shown.map((p) => h("button", { class: "queue-item", "aria-current": String(p.plan_id === id),
+    h("form", { class: "review-tools", onsubmit: (e) => { e.preventDefault(); S.reviewSearch = search.value; navigate(); } }, search, h("button", { class: "btn sm", type: "submit" }, "Search"), seg),
+    h("div", { class: "review-tools" }, h("label", {}, all, " Select visible"), count, ...bulkButtons, h("small", { class: "muted" }, "Up to 50 per action")),
+    shown.length ? shown.map((p) => {
+      const box = h("input", { type: "checkbox", "aria-label": `Select ${p.review.candidate_name || p.subject_id}`, onchange: () => { if (box.checked) selected.add(p.plan_id); else selected.delete(p.plan_id); all.checked = selected.size === shown.length; all.indeterminate = selected.size > 0 && selected.size < shown.length; selection(); } });
+      boxes.push([box, p.plan_id]);
+      return h("div", { class: "review-entry" }, box, h("button", { class: "queue-item", "aria-current": String(p.plan_id === id),
       onclick: () => { location.hash = `#/review/${p.plan_id}`; } },
-      h("span", { class: "l1" }, h("span", { class: "id" }, p.subject_id), h("span", { class: `tag ${p.status}` }, p.status)),
-      h("span", { class: "l2" }, `${p.target_role} · v${p.version} · `, h("time", { datetime: p.created_utc }, fmtTime(p.created_utc)))))
-      : h("div", { class: "empty", style: { padding: "24px 14px" } }, new Owl({ size: 64, state: "sleeping" }).el, h("p", { class: "muted" }, "Nothing here. Upload a team to create drafts."), h("a", { class: "btn sm", href: "#/run" }, "Upload team")));
+      h("span", { class: "l1" }, h("span", { class: "id" }, p.review.candidate_name || p.subject_id), reviewBadge(p.review)),
+      h("span", { class: "l2" }, `${p.subject_id} · ${p.target_role} · v${p.version}`)),
+      reviewMenu(main, p.plan_id, p.review, () => editReview(main, p.plan_id, p.review, navigate), navigate)); })
+      : h("div", { class: "empty" }, h("p", { class: "muted" }, "No reviews match this search and status.")));
   const detail = h("section", { class: "detail", "aria-label": "Plan detail" });
   const aside = h("aside", { class: "aside", "aria-label": "Evidence and audit" });
   const wrap = h("div", { class: "review", "data-pane": location.hash.split("/")[2] ? "detail" : "list" }, queue, detail, aside);
@@ -278,14 +291,114 @@ async function reviewView(main, id) {
   if (id) loadDetail(id, detail, aside, wrap);
 }
 
+function reviewBadge(review) {
+  const status = review.archived ? "archived" : review.review_status;
+  return h("span", { class: `tag ${status}` }, status[0].toUpperCase() + status.slice(1));
+}
+
+function planStatusControl(main, plan, done) {
+  const select = h("select", { class: "input", "aria-label": `Plan status for ${plan.subject_id}`,
+    onclick: (e) => e.stopPropagation(), onkeydown: (e) => e.stopPropagation(),
+    onchange: (e) => {
+      const next = e.target.value;
+      e.target.value = plan.status;
+      if (next !== plan.status) confirmPlanStatus(main, plan, next, done);
+    } }, ["draft", "flagged", "approved"].map((status) => h("option", {
+      value: status, selected: status === plan.status, disabled: status === "approved" && plan.status === "flagged"
+    }, status[0].toUpperCase() + status.slice(1))));
+  return select;
+}
+
+function confirmPlanStatus(main, plan, next, done) {
+  const dialog = reviewDialog(main, "Confirm plan status change");
+  const label = (value) => value[0].toUpperCase() + value.slice(1);
+  const submit = h("button", { class: "btn primary", type: "submit" }, "Confirm change");
+  const cancel = h("button", { class: "btn", type: "button", onclick: () => dialog.close() }, "Cancel");
+  let busy = false;
+  dialog.addEventListener("cancel", (e) => { if (busy) e.preventDefault(); });
+  dialog.append(h("form", { class: "review-form", onsubmit: async (e) => {
+    e.preventDefault(); if (busy) return;
+    busy = true; submit.disabled = cancel.disabled = true;
+    try {
+      await api(`/api/plans/${plan.plan_id}/status`, { method: "POST", body: { status: next, version: plan.version, confirmed: true } });
+      dialog.close(); toast(`Plan status changed to ${label(next)}`); await done();
+    } catch (err) { toast(err.message, "err"); }
+    finally { busy = false; submit.disabled = cancel.disabled = false; }
+  } }, h("h2", {}, "Change plan status?"),
+    h("p", {}, `${plan.subject_id}: ${label(plan.status)} → ${label(next)}.`),
+    h("p", { class: "muted" }, next === "approved" ? "Confirm that you have reviewed and approve this plan. This decision will be recorded in its audit history." : "This creates a new plan version and records your decision in the audit history. Previous versions and AI analysis are preserved."),
+    h("div", { class: "filters" }, cancel, submit)));
+  dialog.showModal();
+}
+
+function reviewMenu(main, pid, review, edit, done) {
+  return h("details", { class: "review-menu" }, h("summary", { "aria-label": "Review actions", title: "Review actions" }, "⋯"),
+    h("div", { class: "review-menu-items" }, h("button", { class: "btn sm", onclick: edit }, "Edit review"),
+      ...[review.archived ? "restore" : "archive", "delete"].map((action) => h("button", { class: "btn sm", onclick: () => reviewAction(main, [pid], action, done) }, action[0].toUpperCase() + action.slice(1)))));
+}
+
+function reviewDialog(main, title) {
+  const dialog = h("dialog", { class: "review-dialog", "aria-label": title });
+  dialog.addEventListener("close", () => dialog.remove());
+  main.append(dialog);
+  return dialog;
+}
+
+function reviewAction(main, ids, action, done) {
+  const title = `${action[0].toUpperCase() + action.slice(1)} ${ids.length} review${ids.length === 1 ? "" : "s"}?`;
+  const dialog = reviewDialog(main, title);
+  const submit = h("button", { class: "btn primary", type: "submit" }, "Confirm " + action);
+  const cancel = h("button", { class: "btn", type: "button", onclick: () => dialog.close() }, "Cancel");
+  let busy = false;
+  dialog.addEventListener("cancel", (e) => { if (busy) e.preventDefault(); });
+  dialog.append(h("form", { class: "review-form", onsubmit: async (e) => {
+    e.preventDefault(); if (busy) return; busy = true; submit.disabled = cancel.disabled = true;
+    try { await api("/api/reviews/bulk", { method: "POST", body: { plan_ids: ids, action, confirmed: true } });
+      dialog.close(); toast(`${ids.length} review(s): ${action} completed`); await done();
+    } catch (err) { toast(err.message, "err"); } finally { busy = false; submit.disabled = cancel.disabled = false; }
+  } }, h("h2", {}, title), h("p", {}, action === "delete" ? "Reviews will be removed from normal views. AI analysis and audit history are retained. Deleted reviews cannot be restored from this queue; use Archive if you may need them again." : action === "archive" ? "Reviews will move to Archived. Their previous review status is preserved." : "Reviews will return to the active queue with their previous status."), h("div", { class: "filters" }, cancel, submit)));
+  dialog.showModal();
+}
+
+function editReview(main, pid, review, done) {
+  const dialog = reviewDialog(main, "Edit candidate review");
+  const inputs = {};
+  const fields = [["candidate_name", "Candidate name", "text", 120], ["candidate_email", "Email", "email", 254], ["candidate_phone", "Phone", "tel", 50], ["reviewer_notes", "Reviewer notes", "textarea", 10000]];
+  const form = h("form", { class: "review-form" }, h("h2", {}, "Edit candidate review"),
+    h("p", { class: "muted" }, "HR review details are saved separately from the original AI analysis and plan approval."),
+    fields.map(([key, label, type, max]) => {
+      inputs[key] = type === "textarea" ? h("textarea", { class: "input", rows: 5, maxlength: max }, review[key]) : h("input", { class: "input", type, maxlength: max, value: review[key] });
+      return h("label", { class: "field" }, h("span", {}, label), inputs[key]);
+    }));
+  inputs.review_status = h("select", { class: "input" }, ["pending", "approved", "rejected"].map((s) => h("option", { value: s, selected: s === review.review_status }, s[0].toUpperCase() + s.slice(1))));
+  const submit = h("button", { class: "btn primary", type: "submit" }, "Save review");
+  form.append(h("label", { class: "field" }, h("span", {}, "Review status"), inputs.review_status),
+    h("div", { class: "filters" }, h("button", { class: "btn", type: "button", onclick: () => dialog.close() }, "Cancel"), submit));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault(); if (submit.disabled) return; submit.disabled = true;
+    try { await api(`/api/reviews/${pid}/edit`, { method: "POST", body: { ...Object.fromEntries(Object.entries(inputs).map(([k, el]) => [k, el.value.trim()])), revision: review.revision } });
+      dialog.close(); toast("Review saved"); await done();
+    } catch (err) { toast(err.message, "err"); } finally { submit.disabled = false; }
+  });
+  dialog.append(form); dialog.showModal();
+}
+
 async function loadDetail(id, detail, aside, wrap) {
   detail.replaceChildren(h("div", { class: "detail-body" }, h("p", { class: "muted" }, "Loading…")));
   let d;
   try { d = await api(`/api/plans/${id}`); } catch (e) { detail.replaceChildren(h("div", { class: "detail-body" }, h("div", { class: "issue error" }, e.message))); return; }
+  if (!detail.isConnected) return;
   const r = d.report;
   const toggleAside = h("button", { class: "btn sm ev-toggle", type: "button", "aria-expanded": "false", onclick: (e) => { e.currentTarget.setAttribute("aria-expanded", String(aside.classList.toggle("open"))); } }, icon("sources"), "Evidence");
   const body = h("div", { class: "detail-body" },
     h("a", { class: "btn ghost sm back", href: "#/review" }, icon("back"), "Queue"),
+    h("section", { class: "block" }, h("div", { class: "detail-head" }, h("h2", {}, d.review.candidate_name || d.subject_id), reviewBadge(d.review),
+      reviewMenu($("#main"), id, d.review, () => editReview($("#main"), id, d.review, () => reviewView($("#main"), id)), () => {
+        if (location.hash === "#/review") return reviewView($("#main"));
+        location.hash = "#/review";
+      })),
+      h("p", { class: "muted" }, [d.review.candidate_email, d.review.candidate_phone].filter(Boolean).join(" · ")),
+      h("p", { class: "review-notes" }, d.review.reviewer_notes || "No reviewer notes yet.")),
     h("div", { class: "detail-head" }, h("h2", {}, h("span", { class: "id" }, d.subject_id), " / ", d.plan.target_role),
       h("span", { class: `tag ${d.status}` }, d.status), h("span", { class: "num muted" }, `v${d.version}`), h("span", { style: { flex: 1 } }), toggleAside),
     d.status === "flagged" ? h("div", { class: "banner flag", role: "alert" }, h("strong", {}, "Flagged."), h("span", {}, "Fix the issues below and save a new draft before approval.")) : null,
@@ -299,15 +412,18 @@ async function loadDetail(id, detail, aside, wrap) {
     planBlock({ planId: id, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: d.report?.evidence,
       approverLabel: "I have reviewed this plan", title: "90-day plan", onChange: async (next) => {
         if (next === "approved") S.status.set("celebrating", `${d.subject_id} approved`);
-        await refreshPlans();
-        loadDetail(id, detail, aside, wrap);
+        await reviewView($("#main"), id);
       } }));
   detail.replaceChildren(body);
   aside.replaceChildren(
     h("header", {}, h("span", {}, "Evidence"), h("span", { class: "num" }, r ? r.evidence.length : 0)),
     h("section", {}, r ? r.evidence.map(sourceItem) : h("p", { class: "muted" }, "Not cached.")),
     h("header", {}, h("span", {}, "Audit trail"), h("span", {}, "UTC")),
-    h("section", {}, historyBlock(d.history)));
+    h("section", {}, historyBlock(d.history)),
+    h("header", {}, h("span", {}, "HR review history")),
+    h("section", {}, d.review_history.map((event) => h("details", {},
+      h("summary", {}, `${event.action} by ${event.actor} · ${fmtTime(event.at_utc)}`),
+      h("pre", { class: "review-notes" }, JSON.stringify({ before: event.before, after: event.after }, null, 2))))));
 }
 
 // ---------------------------------------------------------------- plans register
@@ -326,7 +442,9 @@ async function plansView(main, id) {
       && (!term || `${p.subject_id} ${p.target_role}`.toLowerCase().includes(term)));
     tbody.replaceChildren(...rows.map((p) => h("tr", { "data-href": "1", tabindex: "0", onclick: () => { location.hash = `#/plans/${p.plan_id}`; }, onkeydown: (e) => e.key === "Enter" && (location.hash = `#/plans/${p.plan_id}`) },
       h("td", { class: "mono" }, p.plan_id), h("td", { class: "mono" }, p.subject_id), h("td", {}, p.target_role), h("td", { class: "hide-sm" }, p.scenario),
-      h("td", { class: "n" }, `v${p.version}`), h("td", {}, h("span", { class: `tag ${p.status}` }, p.status)), h("td", { class: "mono hide-sm" }, fmtTime(p.created_utc)))));
+      h("td", { class: "n" }, `v${p.version}`), h("td", {}, h("div", { class: "plan-status-control" },
+        h("span", { class: `tag ${p.status}` }, p.status), planStatusControl(main, p, async () => { await refreshPlans(); if (main.contains(tbody)) draw(); }))),
+      h("td", { class: "mono hide-sm" }, fmtTime(p.created_utc)))));
   }
   async function open(p) {
     const d = await api(`/api/plans/${p.plan_id}`);
@@ -343,7 +461,7 @@ async function plansView(main, id) {
     h("div", { class: "view-head" }, h("h1", {}, "Plans register"), h("div", { class: "filters" }, q, st)),
     h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "data" },
       h("thead", {}, h("tr", {}, h("th", {}, "Plan"), h("th", {}, "Employee"), h("th", {}, "Role"), h("th", { class: "hide-sm" }, "Scenario"),
-        h("th", { class: "n" }, "Version"), h("th", {}, "Status"), h("th", { class: "hide-sm" }, "Created"))), tbody))),
+        h("th", { class: "n" }, "Version"), h("th", {}, "Plan status"), h("th", { class: "hide-sm" }, "Created"))), tbody))),
     drawer));
   drawer.addEventListener("close", () => {
     if (location.hash.startsWith("#/plans/")) location.hash = "#/plans";
