@@ -61,7 +61,9 @@ function guestHome(main, { jumpToday } = {}) {
     h("section", { class: "home-today", "aria-labelledby": "home-today" },
       h("h2", { id: "home-today" }, "The world of work keeps moving."),
       h("p", {}, "Today’s AI topics and the roles they may affect, rebuilt every day."),
-      today)));
+      today),
+    h("footer", { class: "site-foot" }, h("a", { href: "#/terms" }, "Terms of Use"), h("a", { href: "#/privacy" }, "Privacy Policy"),
+      h("a", { href: "#/pricing" }, "Plans"))));
   api("/api/signals/today").then((b) => today.replaceWith(boardView(b))).catch(() => today.remove())
     .finally(() => jumpToday && document.getElementById("home-today")?.scrollIntoView({ block: "start" }));  // after the board is in, so nothing scrolls over it
 }

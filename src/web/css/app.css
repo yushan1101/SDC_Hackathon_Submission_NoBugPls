@@ -1986,3 +1986,19 @@ dialog.slider-dialog::backdrop { background: oklch(0.15 0.03 262 / 0.6); }
 .verify-state svg { width: 18px; height: 18px; }
 .verify-state .spinner { width: 14px; height: 14px; border: 2px solid oklch(1 0 0 / 0.25); border-top-color: var(--shell-ink); border-radius: 50%; animation: vs-spin .9s linear infinite; }
 @keyframes vs-spin { to { transform: rotate(360deg); } }
+
+/* ---------- terms agreement, legal pages, account deletion ---------- */
+.agree { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; color: var(--shell-ink-2); line-height: 1.45; }
+.agree input { width: 18px; height: 18px; margin-top: 2px; flex: none; accent-color: var(--accent); }
+.agree a { color: var(--shell-ink); font-weight: 600; }
+.legal-links { font-size: 14px; }
+.legal { max-width: 780px; display: grid; gap: 8px; }
+.legal-sec h2 { font-size: 22px; margin: 18px 0 8px; }
+.legal-sec p, .legal-sec li { font-size: 16px; line-height: 1.6; }
+.legal-sec ul { padding-left: 20px; display: grid; gap: 6px; }
+.legal-table td { vertical-align: top; font-size: 15px; line-height: 1.5; }
+.danger-zone { border: 1px solid var(--danger-soft, #f3c4c4); border-radius: 16px; padding: 18px 20px; }
+[data-product] .btn.danger { background: var(--danger, #b42318); border-color: var(--danger, #b42318); color: #fff; }
+[data-product] .btn.danger:hover { filter: brightness(1.08); }
+.site-foot { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px; padding: 28px 0 8px; font-size: 15px; }
+.site-foot a { color: var(--ink-2); }

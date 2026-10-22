@@ -7,7 +7,8 @@ import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, iss
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { startView, quizView, resumeView, todayView, sdgsView } from "./explore.js";
 import { interviewView } from "./interview.js";
-import { registerView, pricingView, accountView, planName, verifyLinkView, forgotView, resetLinkView } from "./account.js";
+import { registerView, pricingView, accountView, planName, verifyLinkView, forgotView, resetLinkView, emailCodeView } from "./account.js";
+import { termsView, privacyView } from "./legal.js";
 import { watchForm } from "./risk.js";
 
 const app = $("#app");
@@ -24,7 +25,7 @@ const S = {
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
 // ---------------------------------------------------------------- boot
-const PUBLIC_PAGES = new Set(["", "start", "signin", "sdgs", "register", "pricing", "verify", "forgot", "reset"]);  // everything else needs an account
+const PUBLIC_PAGES = new Set(["", "start", "signin", "sdgs", "register", "pricing", "verify", "forgot", "reset", "terms", "privacy"]);  // everything else needs an account
 
 async function boot() {
   try {
@@ -72,6 +73,13 @@ async function signIn(next = "start") {
       btn.disabled = true; err.textContent = "";
       try {
         const me = await api("/api/login", { method: "POST", body: { username: user.value, password: pass.value, risk: signals() } });
+        if (me.status === "pending_email") {  // email never verified: a new code was sent, so finish that here
+          emailCodeView(app, { username: me.username, email: me.email, waitToken: me.wait_token, onSignedIn: async () => {
+            S.me = await api("/api/me"); S.meta = await api("/api/meta"); shell();
+            if (location.hash === `#/${next}`) route(); else location.hash = `#/${next}`;
+          } });
+          return;
+        }
         if (me.role === "admin") { location.replace("admin.html"); return; }
         if (me.role !== "employee") { location.replace(next.startsWith("pricing") || next.startsWith("account") ? `./#/${next}` : "enterprise.html"); return; }
         // switch to the signed-in app in place: a hash change + reload could show the guest page again
@@ -89,6 +97,7 @@ async function signIn(next = "start") {
       h("p", { class: "fine" }, "Accounts are issued by your administrator. Decision support only: plans stay drafts until you approve them."),
       h("p", { class: "fine" }, "Employees and HR advisors both sign in here; HR advisors go straight to the Enterprise console."),
       h("p", { class: "signin-switch" }, h("a", { href: "#/forgot" }, "Forgot password?")),
+      h("p", { class: "signin-switch legal-links" }, h("a", { href: "#/terms" }, "Terms"), " · ", h("a", { href: "#/privacy" }, "Privacy")),
       h("p", { class: "signin-switch" }, "No account yet? ", h("a", { href: "#/register" }, "Create one free")))));
   const signals = watchForm(app.querySelector(".signin-form"));
   user.focus();
@@ -145,7 +154,7 @@ history.scrollRestoration = "manual";
 function route() {
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "register", "pricing", "account", "verify", "forgot", "reset"]);
+  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "register", "pricing", "account", "verify", "forgot", "reset", "terms", "privacy"]);
   const interviewStart = requested === "interview" && id === "start" && rest.length === 1 && /^[A-Za-z0-9_-]+$/.test(rest[0]);
   // Unknown routes and malformed nested routes return home instead of showing the wrong page.
   const verifyLink = ["verify", "reset"].includes(requested) && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
@@ -202,6 +211,8 @@ function route() {
   else if (page === "interview") interviewView(main, interviewStart ? null : id, interviewStart ? rest[0] : null);
   else if (page === "quiz") quizView(main, { status: S.status, planFor, onInterview: startInterview });
   else if (page === "resume") resumeView(main, { status: S.status, planFor, onInterview: startInterview });
+  else if (page === "terms") termsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
+  else if (page === "privacy") privacyView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "pricing") pricingView(main, { me: S.me }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "account") accountView(main, { refreshMe }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "sdgs") sdgsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
