@@ -1,5 +1,6 @@
 """Additive SQLite persistence for employee-owned interview sessions."""
 import json
+import uuid
 from datetime import datetime, timezone
 
 
@@ -28,6 +29,20 @@ CREATE TABLE IF NOT EXISTS interview_reports (
     interview_id TEXT PRIMARY KEY REFERENCES interview_sessions(interview_id) ON DELETE CASCADE,
     report_json TEXT NOT NULL, created_utc TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS interview_access_assessments (
+    assessment_id TEXT PRIMARY KEY, employee_id TEXT NOT NULL,
+    source TEXT NOT NULL CHECK(source IN ('resume', 'questionnaire')),
+    parent_assessment_id TEXT, created_utc TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS interview_access_assessments_owner
+    ON interview_access_assessments(employee_id, created_utc);
+CREATE TABLE IF NOT EXISTS interview_access_recommendations (
+    recommendation_id TEXT PRIMARY KEY, assessment_id TEXT NOT NULL,
+    employee_id TEXT NOT NULL, role_id TEXT NOT NULL, role_title TEXT NOT NULL,
+    profile_json TEXT NOT NULL, created_utc TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS interview_access_recommendations_owner
+    ON interview_access_recommendations(employee_id, recommendation_id);
 """
 
 
@@ -37,6 +52,11 @@ def now():
 
 def init(con):
     con.executescript(SCHEMA)
+    columns = {row[1] for row in con.execute("PRAGMA table_info(interview_sessions)")}
+    if "recommendation_id" not in columns:
+        con.execute("ALTER TABLE interview_sessions ADD COLUMN recommendation_id TEXT")
+    if "assessment_source" not in columns:
+        con.execute("ALTER TABLE interview_sessions ADD COLUMN assessment_source TEXT")
 
 
 def json_dump(value):
@@ -73,15 +93,63 @@ def report(con, interview_id):
 
 def history(con, employee_id, limit=30):
     rows = con.execute("""SELECT s.interview_id, s.role_id, s.role_title, s.difficulty, s.status,
-        s.created_utc, s.completed_utc, r.report_json FROM interview_sessions s
+        s.created_utc, s.completed_utc, r.report_json, s.assessment_source FROM interview_sessions s
         LEFT JOIN interview_reports r USING(interview_id) WHERE s.employee_id=?
         ORDER BY s.created_utc DESC LIMIT ?""", (employee_id, limit)).fetchall()
     out = []
     for row in rows:
-        item = dict(zip(("interview_id", "role_id", "role_title", "difficulty", "status", "created_utc", "completed_utc", "report_json"), row))
+        item = dict(zip(("interview_id", "role_id", "role_title", "difficulty", "status", "created_utc", "completed_utc", "report_json", "assessment_source"), row))
         result = json.loads(item.pop("report_json")) if item.get("report_json") else None
+        item["interview_type"] = "AI mock interview"
         item["performance"] = result.get("performance") if result else None
         item["readiness"] = result.get("readiness") if result else None
         item["competitiveness"] = result.get("competitiveness") if result else None
         out.append(item)
     return out
+
+
+def save_recommendations(con, employee_id, source, profile, matches, parent_assessment_id=None):
+    """Persist only assessment-derived skill summaries and role recommendations, never a raw resume."""
+    if source not in ("resume", "questionnaire"):
+        return None
+    if parent_assessment_id and not valid_assessment(con, parent_assessment_id, employee_id, source="resume"):
+        return None
+    safe_profile = [{"name": str(s["name"]).strip(), "level": int(s["level"])} for s in profile
+                    if str(s.get("name", "")).strip()][:40]
+    if not safe_profile:
+        return None
+    assessment_id, created = uuid.uuid4().hex, now()
+    con.execute("INSERT INTO interview_access_assessments VALUES(?,?,?,?,?)",
+                (assessment_id, employee_id, source, parent_assessment_id, created))
+    for match in matches or []:
+        role_id, role_title = str(match.get("soc", "")), str(match.get("title", ""))
+        if not role_id or not role_title:
+            continue
+        recommendation_id = uuid.uuid4().hex
+        con.execute("""INSERT INTO interview_access_recommendations
+            VALUES(?,?,?,?,?,?,?)""", (recommendation_id, assessment_id, employee_id,
+                role_id, role_title, json_dump(safe_profile), created))
+        match["recommendation_id"] = recommendation_id
+        match["assessment_source"] = source
+    return assessment_id
+
+
+def valid_assessment(con, assessment_id, employee_id, source=None):
+    query = "SELECT 1 FROM interview_access_assessments WHERE assessment_id=? AND employee_id=?"
+    args = [assessment_id, employee_id]
+    if source:
+        query += " AND source=?"
+        args.append(source)
+    return con.execute(query, args).fetchone() is not None
+
+
+def recommendation(con, recommendation_id, employee_id):
+    row = con.execute("""SELECT r.recommendation_id, r.assessment_id, a.source, r.role_id,
+        r.role_title, r.profile_json, r.created_utc FROM interview_access_recommendations r
+        JOIN interview_access_assessments a ON a.assessment_id=r.assessment_id
+        WHERE r.recommendation_id=? AND r.employee_id=? AND a.employee_id=?""",
+        (recommendation_id, employee_id, employee_id)).fetchone()
+    if not row:
+        return None
+    return {"recommendation_id": row[0], "assessment_id": row[1], "source": row[2], "role_id": row[3],
+            "role_title": row[4], "profile": json.loads(row[5]), "created_utc": row[6]}

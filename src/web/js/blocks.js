@@ -439,7 +439,7 @@ export function matchesBlock(matches, { onPlan, onInterview, title = "Roles you 
       whyScore(m)),
     h("div", { class: "match-actions" },
       onPlan ? h("button", { class: "btn sm primary match-plan", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null,
-      onInterview ? h("button", { class: "btn sm", type: "button", onclick: () => onInterview(m) }, "Start mock interview") : null,
+      onInterview && m.recommendation_id ? h("button", { class: "btn sm", type: "button", onclick: () => onInterview(m) }, "Practice Interview") : null,
       h("label", { class: "compare-pick" }, h("input", { type: "checkbox", onchange: (e) => {
         if (e.target.checked && picked.size >= 3) { e.target.checked = false; toast("Compare up to 3 roles at a time.", "err"); return; }
         e.target.checked ? picked.add(m.soc) : picked.delete(m.soc); drawCompare(); } }), "Compare"))),

@@ -1737,6 +1737,20 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
 .interview-history li { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--rule); }
 .interview-history a { display: grid; gap: 3px; }
 .interview-history a span { color: var(--ink-2); font-size: 14px; }
+.interview-history .interview-history-item { grid-template-columns: minmax(0, 1.4fr) minmax(190px, .8fr) auto auto; gap: 12px; }
+.interview-history-role, .interview-history-scores { display: grid; gap: 4px; }
+.interview-history-role span { color: var(--ink-2); font-size: 14px; }
+.interview-history-scores { grid-template-columns: repeat(2, minmax(76px, 1fr)); gap: 10px; }
+.interview-history-scores span { display: grid; gap: 2px; }
+.interview-history-scores small { color: var(--ink-2); }
+.interview-history-status { white-space: nowrap; }
+.interview-history-status.pending { background: var(--sunken); color: var(--ink-2); }
+.interview-history-actions { display: flex; justify-content: end; gap: 6px; }
+.interview-empty { max-width: 720px; margin: 20px auto; justify-items: center; text-align: center; padding: clamp(24px, 6vw, 52px); }
+.interview-empty h2 { margin: 0; }
+.interview-empty p { max-width: 58ch; margin: 10px auto 0; line-height: 1.6; color: var(--ink-2); }
+.interview-empty-icon { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; color: var(--link); background: var(--accent-soft); }
+.interview-empty-icon svg { width: 28px; height: 28px; }
 .interview-compare { display: grid; gap: 14px; }
 .interview-compare > div { display: grid; grid-template-columns: minmax(170px, 1fr) 2fr; gap: 8px 14px; align-items: center; }
 .interview-compare .interview-meter { grid-column: 1 / -1; }
@@ -1747,8 +1761,10 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
   .interview-heading { align-items: start; }
   .interview-room { grid-template-columns: 52px 1fr; }
   .interview-room-actions { grid-column: 1 / -1; justify-content: start; }
-  .interview-history li { grid-template-columns: 1fr auto; }
-  .interview-history-score { grid-column: 1; }
+  .interview-history .interview-history-item { grid-template-columns: 1fr auto; }
+  .interview-history-role { grid-column: 1 / -1; }
+  .interview-history-scores { grid-column: 1; }
+  .interview-history-actions { grid-column: 1 / -1; justify-content: start; }
   .interview-compare > div { grid-template-columns: 1fr; }
 }
 

@@ -147,16 +147,19 @@ def prepare_create(role_id, profile, difficulty):
     return interview_id, context, q
 
 
-def persist_create(con, employee_id, role_id, profile, difficulty, plan_id, interview_id, context, q):
+def persist_create(con, employee_id, role_id, profile, difficulty, plan_id, interview_id, context, q,
+                   recommendation_id, assessment_source):
     con.execute("""INSERT INTO interview_sessions(interview_id, employee_id, role_id, role_title, difficulty,
         status, stage_index, active_question_id, plan_id, profile_json, context_json, transcript_consent,
-        rubric_version, created_utc) VALUES(?,?,?,?,?,'in_progress',0,?,?,?,?,1,'1.0',?)""",
+        rubric_version, created_utc, recommendation_id, assessment_source)
+        VALUES(?,?,?,?,?,'in_progress',0,?,?,?,?,1,'1.0',?,?,?)""",
         (interview_id, employee_id, role_id, context["title"], difficulty, q["question_id"], plan_id,
-         store.json_dump(profile), store.json_dump(context), store.now()))
+         store.json_dump(profile), store.json_dump(context), store.now(), recommendation_id, assessment_source))
     _insert_question(con, interview_id, q, 1)
     return {"interview_id": interview_id, "role_title": context["title"], "difficulty": difficulty,
             "status": "in_progress", "question": q, "question_number": 1, "total_stages": len(STAGES),
-            "source": context["source"]}
+            "source": context["source"], "recommendation_id": recommendation_id,
+            "assessment_source": assessment_source}
 
 
 def evaluate_and_choose(sess, current, answer, transcript):

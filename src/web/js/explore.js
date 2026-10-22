@@ -232,7 +232,9 @@ export function resumeView(main, ctx) {
     let scenario = "assistive";
     const remeasure = async () => {
       owl.set("analyzing");
-      const m = await api("/api/match", { method: "POST", body: { skills: skills.map(({ name, level }) => ({ name, level })), text: r.markdown.slice(0, 20000), scenario } });
+      const m = await api("/api/match", { method: "POST", body: { skills: skills.map(({ name, level }) => ({ name, level })),
+        text: r.markdown.slice(0, 20000), scenario, assessment_id: r.assessment_id || null } });
+      r.assessment_id = m.assessment_id || r.assessment_id;
       owl.set("matched"); drawMatches(m.matches);
     };
     const rematch = h("button", { class: "btn", type: "button", disabled: true, onclick: () => { rematch.disabled = true; remeasure(); } }, "Re-match with my edits");

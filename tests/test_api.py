@@ -140,6 +140,7 @@ def test_matches_explain_their_score_and_follow_the_scenario(client):
     a = client.post("/api/match", json={"skills": skills}, headers={"X-AP": "1"}).json()["matches"]
     g = client.post("/api/match", json={"skills": skills, "scenario": "agentic"}, headers={"X-AP": "1"}).json()["matches"]
     assert {"coverage", "alignment", "skill_fit", "trend_effect", "scenario"} <= set(a[0]) and a[0]["scenario"] == "assistive"
+    assert "recommendation_id" not in a[0]  # raw matching is not a completed assessment and cannot unlock an interview
     assert g[0]["scenario"] == "agentic"
     assert client.post("/api/match", json={"skills": skills, "scenario": "doom"}, headers={"X-AP": "1"}).status_code == 422
 
@@ -223,6 +224,125 @@ def test_quiz_resume_and_match(client):
     big = client.post("/api/resume/analyze", files={"file": ("cv.txt", b"x" * 2_100_000)}, headers=H)
     assert big.status_code == 413
     assert client.get("/api/signals/today").status_code == 200  # empty board is a valid, labelled state
+
+
+def test_interview_access_requires_owner_owned_assessment_recommendation(client, monkeypatch):
+    import server.api as api
+    from governance import accounts
+
+    login(client, "ana")
+    q = client.get("/api/quiz").json()
+    matches = [{"soc": "2221.2", "title": "Nurse responsible for general care"}]
+    monkeypatch.setattr(api, "_matches", lambda *args, **kwargs: [dict(item) for item in matches])
+    scored = client.post("/api/quiz/score", json={"answers": {x["id"]: 2 for x in q["questions"]}}, headers=H)
+    assert scored.status_code == 200
+    result = scored.json()
+    recommendation_id = result["matches"][0]["recommendation_id"]
+    assert result["assessment_id"] and result["matches"][0]["assessment_source"] == "questionnaire"
+    recommendation = client.get(f"/api/interview-recommendations/{recommendation_id}").json()
+    assert recommendation["role_id"] == "2221.2" and recommendation["source"] == "questionnaire"
+    assert recommendation["profile"] == result["skills"]
+
+    # A direct request with a free-form target cannot replace a recommendation ID.
+    assert client.post("/api/interviews", json={"target_role": "2221.2", "transcript_consent": True}, headers=H).status_code == 422
+    assert client.post("/api/interviews", json={"recommendation_id": "not-a-real-recommendation",
+        "transcript_consent": True}, headers=H).status_code == 404
+
+    accounts.create_user(api.db, "bob", PW, "employee", "E-002")
+    login(client, "bob")
+    assert client.get(f"/api/interview-recommendations/{recommendation_id}").status_code == 404
+    assert client.post("/api/interviews", json={"recommendation_id": recommendation_id,
+        "transcript_consent": True}, headers=H).status_code == 404
+
+    login(client, "ana")
+    seen = {}
+    def prepare(role_id, skills, difficulty):
+        seen["role_id"], seen["skills"] = role_id, skills
+        return "mock-interview-id", {"title": "Nurse responsible for general care", "source": {"url": "https://example.test"}}, {
+            "question_id": "mock-question-id", "text": "Tell me about a relevant example.", "stage": "behavioral",
+            "type": "behavioral", "difficulty": difficulty, "target_skills": [], "source_refs": [], "criteria": []}
+    monkeypatch.setattr(api.interview_service, "prepare_create", prepare)
+    started = client.post("/api/interviews", json={"recommendation_id": recommendation_id,
+        "difficulty": "foundational", "transcript_consent": True}, headers=H)
+    assert started.status_code == 200
+    assert seen["role_id"] == recommendation["role_id"] and seen["skills"] == recommendation["profile"]
+    interview_id = started.json()["interview_id"]
+
+    # Simulate a completed attempt to cover history and report reopening without an LLM call.
+    report = {"performance": 81, "readiness": 74, "competitiveness": 70, "role_id": "2221.2"}
+    with api.DB_LOCK, api.db:
+        api.db.execute("UPDATE interview_sessions SET status='completed', completed_utc=? WHERE interview_id=?",
+                       (api.interview_store.now(), interview_id))
+        api.db.execute("INSERT INTO interview_reports VALUES(?,?,?)",
+                       (interview_id, api.interview_store.json_dump(report), api.interview_store.now()))
+    history = client.get("/api/interviews").json()["interviews"]
+    item = next(x for x in history if x["interview_id"] == interview_id)
+    assert item["status"] == "completed" and item["performance"] == 81 and item["readiness"] == 74
+    assert item["assessment_source"] == "questionnaire" and item["interview_type"] == "AI mock interview"
+    assert client.get(f"/api/interviews/{interview_id}/report").json() == report
+
+
+def test_interview_schema_migration_preserves_old_session_and_report():
+    import sqlite3
+    from interview import store
+
+    con = sqlite3.connect(":memory:")
+    con.execute("""CREATE TABLE interview_sessions (
+        interview_id TEXT PRIMARY KEY, employee_id TEXT NOT NULL, role_id TEXT NOT NULL, role_title TEXT NOT NULL,
+        difficulty TEXT NOT NULL, status TEXT NOT NULL, stage_index INTEGER NOT NULL DEFAULT 0,
+        active_question_id TEXT, plan_id TEXT, profile_json TEXT NOT NULL, context_json TEXT NOT NULL,
+        transcript_consent INTEGER NOT NULL, rubric_version TEXT NOT NULL, created_utc TEXT NOT NULL, completed_utc TEXT
+    )""")
+    old_report = {"performance": 77, "readiness": 71}
+    con.execute("""INSERT INTO interview_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        ("legacy-id", "E-001", "2221.2", "Nurse", "intermediate", "completed", 5, None, None,
+         "[]", "{}", 1, "1.0", "2026-01-01T00:00:00+00:00", "2026-01-01T00:20:00+00:00"))
+    store.init(con)
+    con.execute("INSERT INTO interview_reports VALUES(?,?,?)",
+        ("legacy-id", store.json_dump(old_report), "2026-01-01T00:20:00+00:00"))
+    migrated = store.session(con, "legacy-id", "E-001")
+    assert migrated["status"] == "completed" and migrated["recommendation_id"] is None
+    assert store.report(con, "legacy-id") == old_report
+    history = store.history(con, "E-001")
+    assert history[0]["performance"] == 77 and history[0]["readiness"] == 71
+
+
+def test_incomplete_assessments_and_unlinked_matches_do_not_unlock_interviews(client, monkeypatch):
+    import server.api as api
+    login(client, "ana")
+    q = client.get("/api/quiz").json()
+    monkeypatch.setattr(api, "_matches", lambda *args, **kwargs: [])
+    quiz_result = client.post("/api/quiz/score", json={"answers": {x["id"]: 2 for x in q["questions"]}}, headers=H).json()
+    assert quiz_result["assessment_id"] and quiz_result["matches"] == []
+
+    # A successful file read with no role match has no recommendation record to start an interview from.
+    monkeypatch.setattr(api, "_analyze_resume", lambda *args, **kwargs: {
+        "markdown": "resume text", "skills": [{"name": "Communication", "level": 3}], "matches": []})
+    resume_result = client.post("/api/resume/analyze", files={"file": ("cv.txt", b"resume", "text/plain")}, headers=H).json()
+    assert resume_result["assessment_id"] and resume_result["matches"] == []
+    assert client.post("/api/match", json={"skills": [{"name": "Communication", "level": 3}]}, headers=H).json()["matches"] == []
+    assert client.post("/api/interviews", json={"target_role": "2221.2", "transcript_consent": True}, headers=H).status_code == 422
+
+
+def test_resume_recommendations_are_persisted_only_after_success_and_rematch_is_linked(client, monkeypatch):
+    import server.api as api
+    login(client, "ana")
+    role = {"soc": "2221.2", "title": "Nurse responsible for general care"}
+    monkeypatch.setattr(api, "_analyze_resume", lambda *args, **kwargs: {
+        "markdown": "resume text", "skills": [{"name": "Communication", "level": 3}], "matches": [dict(role)]})
+    events_out = events(client.post("/api/resume/analyze/stream",
+        files={"file": ("cv.txt", b"resume", "text/plain")}, headers=H))
+    data = events_out[-1]["data"]
+    assert data["assessment_id"] and data["matches"][0]["recommendation_id"]
+    rec_id = data["matches"][0]["recommendation_id"]
+    assert client.get(f"/api/interview-recommendations/{rec_id}").json()["source"] == "resume"
+
+    rematched = client.post("/api/match", json={"skills": [{"name": "Communication", "level": 4}],
+        "assessment_id": data["assessment_id"]}, headers=H).json()
+    assert rematched["assessment_id"] != data["assessment_id"]
+    assert rematched["matches"][0]["recommendation_id"]
+    assert client.get(f"/api/interview-recommendations/{rematched['matches'][0]['recommendation_id']}").json()["profile"] == [
+        {"name": "Communication", "level": 4}]
 
 
 def test_recruiting_flow_blind_review_and_human_decision(client):

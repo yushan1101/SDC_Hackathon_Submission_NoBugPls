@@ -297,10 +297,13 @@ class AnalyzeIn(BaseModel):
 def interview_create(body: InterviewCreate, user: dict = Depends(need("employee"))):
     if not body.transcript_consent:
         raise HTTPException(422, "Consent is required to save interview answers and generate a personalized assessment.")
-    role_id = resolve_occupation(body.target_role)
-    if not role_id:
-        raise HTTPException(422, "Choose a valid ESCO occupation first.")
-    skills = [{"name": s.name.strip(), "level": s.level} for s in body.skills if s.name.strip()]
+    with DB_LOCK:
+        recommendation = interview_store.recommendation(db, body.recommendation_id, user["employee_id"])
+    if not recommendation:
+        raise HTTPException(404, "Career recommendation not found.")
+    role_id, skills = recommendation["role_id"], recommendation["profile"]
+    if not resolve_occupation(role_id):
+        raise HTTPException(404, "The recommended role is no longer available.")
     if body.plan_id:
         with DB_LOCK:
             if not approval.can_act(db, body.plan_id, user):
@@ -314,8 +317,18 @@ def interview_create(body: InterviewCreate, user: dict = Depends(need("employee"
         raise HTTPException(e.status, e.message) from None
     with DB_LOCK, db:
         result = interview_service.persist_create(db, user["employee_id"], role_id, skills, body.difficulty,
-                                                  body.plan_id, interview_id, context, question)
+                                                  body.plan_id, interview_id, context, question,
+                                                  recommendation["recommendation_id"], recommendation["source"])
     return result
+
+
+@app.get("/api/interview-recommendations/{recommendation_id}")
+def interview_recommendation(recommendation_id: str, user: dict = Depends(need("employee"))):
+    with DB_LOCK:
+        recommendation = interview_store.recommendation(db, recommendation_id, user["employee_id"])
+    if not recommendation:
+        raise HTTPException(404, "Career recommendation not found.")
+    return {key: value for key, value in recommendation.items() if key != "assessment_id"}
 
 
 @app.get("/api/interviews")
@@ -874,7 +887,13 @@ def quiz_score(body: QuizIn, user: dict = Depends(current_user)):
     levels, prefixes = quiz.score(body.answers, body.fields)
     if len(levels) < 3:
         raise HTTPException(422, "Answer at least three questions.")
-    return {"skills": [{"name": k, "level": v} for k, v in levels.items()], "matches": _matches(levels, prefixes, quiz.profile_text(body.answers, body.fields) or None, zone=body.zone, scenario=body.scenario)}
+    skills = [{"name": k, "level": v} for k, v in levels.items()]
+    matches = _matches(levels, prefixes, quiz.profile_text(body.answers, body.fields) or None, zone=body.zone, scenario=body.scenario)
+    assessment_id = None
+    if user["role"] == "employee":
+        with DB_LOCK, db:
+            assessment_id = interview_store.save_recommendations(db, user["employee_id"], "questionnaire", skills, matches)
+    return {"skills": skills, "matches": matches, "assessment_id": assessment_id}
 
 
 class MatchIn(BaseModel):
@@ -882,12 +901,24 @@ class MatchIn(BaseModel):
     text: str | None = Field(default=None, max_length=20000)
     fields: list[str] = Field(default=[], max_length=13)
     scenario: str = Field(default="assistive", pattern="^(assistive|agentic)$")
+    assessment_id: str | None = Field(default=None, max_length=40)
 
 
 @app.post("/api/match")
 def match(body: MatchIn, user: dict = Depends(current_user)):
+    if body.assessment_id:
+        with DB_LOCK:
+            if user["role"] != "employee" or not interview_store.valid_assessment(
+                    db, body.assessment_id, user["employee_id"], source="resume"):
+                raise HTTPException(404, "Resume assessment not found.")
     _, prefixes = quiz.score({}, body.fields)
-    return {"matches": _matches({s.name: s.level for s in body.skills}, prefixes, body.text, scenario=body.scenario)}
+    matches = _matches({s.name: s.level for s in body.skills}, prefixes, body.text, scenario=body.scenario)
+    assessment_id = None
+    if body.assessment_id and matches:
+        with DB_LOCK, db:
+            assessment_id = interview_store.save_recommendations(db, user["employee_id"], "resume",
+                [s.model_dump() for s in body.skills], matches, parent_assessment_id=body.assessment_id)
+    return {"matches": matches, "assessment_id": assessment_id}
 
 
 async def _read(file: UploadFile) -> bytes:
@@ -907,7 +938,13 @@ async def resume_analyze_stream(file: UploadFile = File(...), user: dict = Depen
     def work():
         stage = lambda s: events.put({"t": "stage", "stage": s, "pct": RESUME_STAGES[s][0], "owl": RESUME_STAGES[s][1], "label": RESUME_STAGES[s][2]})
         try:
-            events.put({"t": "result", "pct": 100, "data": _analyze_resume(name, data, stage)})
+            result = _analyze_resume(name, data, stage)
+            if user["role"] == "employee" and result["skills"]:
+                profile = [{"name": s["name"], "level": s["level"]} for s in result["skills"]]
+                with DB_LOCK, db:
+                    result["assessment_id"] = interview_store.save_recommendations(
+                        db, user["employee_id"], "resume", profile, result["matches"])
+            events.put({"t": "result", "pct": 100, "data": result})
         except HTTPException as e:
             events.put({"t": "error", "message": e.detail})
         except Exception:
@@ -924,9 +961,15 @@ async def resume_analyze_stream(file: UploadFile = File(...), user: dict = Depen
 
 @app.post("/api/resume/analyze")
 async def resume_analyze(file: UploadFile = File(...), user: dict = Depends(current_user)):
-    """Resume -> Markdown -> evidence-backed skills -> future-role matches. Nothing is stored."""
+    """Resume -> Markdown -> evidence-backed skills -> matches; only skill labels and recommendations persist for interview access."""
     data = await _read(file)
-    return await run_in_threadpool(_analyze_resume, file.filename or "resume.txt", data)
+    result = await run_in_threadpool(_analyze_resume, file.filename or "resume.txt", data)
+    if user["role"] == "employee" and result["skills"]:
+        profile = [{"name": s["name"], "level": s["level"]} for s in result["skills"]]
+        with DB_LOCK, db:
+            result["assessment_id"] = interview_store.save_recommendations(
+                db, user["employee_id"], "resume", profile, result["matches"])
+    return result
 
 
 RESUME_STAGES = {  # stage -> (% done when it starts, owl state, label); fixed per step, not a time estimate

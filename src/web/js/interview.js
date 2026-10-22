@@ -8,77 +8,89 @@ const LABELS = {
 const TYPES = { behavioral: "HR / behavioral", technical: "Technical", situational: "Situational",
   problem_solving: "Problem-solving", workplace_scenario: "Workplace scenario" };
 const pct = (n) => `${Math.max(0, Math.min(100, Math.round(Number(n) || 0)))}%`;
-const savedProfile = () => { try { return JSON.parse(localStorage.getItem("ap.profile.v2") || "{}"); } catch { return {}; } };
-
-export async function interviewView(main, interviewId) {
+export async function interviewView(main, interviewId, recommendationId = null) {
   main.replaceChildren(h("div", { class: "interview-loading", role: "status" }, "Preparing your interview workspace…"));
   try {
+    if (recommendationId) {
+      const [recommendation, plans] = await Promise.all([
+        api(`/api/interview-recommendations/${encodeURIComponent(recommendationId)}`),
+        api("/api/plans").catch(() => ({ plans: [] })),
+      ]);
+      renderLaunch(main, recommendation, plans.plans || plans || []);
+      return;
+    }
     if (interviewId) {
       const detail = await api(`/api/interviews/${encodeURIComponent(interviewId)}`);
       if (detail.status === "in_progress" && detail.question) { renderRoom(main, detail); return; }
       if (detail.report) { await renderReport(main, detail.report); return; }
       renderEnded(main, detail); return;
     }
-    const [history, plans] = await Promise.all([
-      api("/api/interviews"), api("/api/plans").catch(() => ({ plans: [] })),
-    ]);
-    renderSetup(main, history.interviews || [], plans.plans || plans || []);
+    const history = await api("/api/interviews");
+    renderHistory(main, history.interviews || []);
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) { location.hash = "#/signin/interview"; return; }
+    if (e instanceof ApiError && e.status === 401) {
+      const next = recommendationId ? `interview/start/${encodeURIComponent(recommendationId)}`
+        : interviewId ? `interview/${encodeURIComponent(interviewId)}` : "interview";
+      location.hash = `#/signin/${next}`; return;
+    }
     main.replaceChildren(h("h1", { class: "page-title" }, "Mock interview"), h("div", { class: "issue error" }, e.message));
   }
 }
 
-function renderSetup(main, history, plans) {
-  const p = savedProfile();
-  let role = p.target_role && /^\d{4}(?:\.\d+)*$/.test(p.target_role)
-    ? { soc: p.target_role, title: p.target_title || p.target_role } : null;
-  let skills = Array.isArray(p.skills) ? p.skills.map((s) => ({ name: s.name, level: Number(s.level) || 0 })) : [];
-  const query = h("input", { id: "interview-role", class: "input", type: "search", placeholder: "Search an ESCO job title", role: "combobox",
-    "aria-label": "Target job", autocomplete: "off" });
-  const results = h("ul", { class: "occ-results", role: "listbox", hidden: true });
-  const picked = h("div", { class: "interview-picked muted" }, role ? `Selected: ${role.title}` : "Choose a job to personalize your questions.");
-  const skillList = h("div", { class: "interview-skills" });
-  const drawSkills = () => skillList.replaceChildren(...skills.map((s) => h("span", { class: "chip-static" }, `${s.name} · ${s.level}/5`)));
-  drawSkills();
-  let timer;
-  query.addEventListener("input", () => {
-    clearTimeout(timer);
-    timer = setTimeout(async () => {
-      const q = query.value.trim();
-      if (q.length < 2) { results.hidden = true; return; }
-      try {
-        const data = await api(`/api/occupations?q=${encodeURIComponent(q)}`);
-        results.replaceChildren(...(data.results.length ? data.results.map((item) => h("li", { role: "option", onclick: async () => {
-          role = { soc: item.soc, title: item.title };
-          try {
-            const detail = await api(`/api/occupations/${encodeURIComponent(item.soc)}`);
-            const current = new Map(skills.map((s) => [s.name.toLowerCase(), s.level]));
-            skills = detail.skills.slice(0, 12).map((s) => ({ name: s.name, level: current.get(s.name.toLowerCase()) ?? 0 }));
-          } catch { /* selection still works with the existing profile */ }
-          picked.textContent = `Selected: ${role.title} · ESCO ${role.soc}`;
-          drawSkills(); results.hidden = true; query.value = role.title;
-        } }, h("b", {}, item.title), h("span", { class: "muted" }, ` ESCO ${item.soc}`)))
-          : [h("li", { class: "muted", role: "option", "aria-disabled": "true" }, "No matching ESCO role found.")]));
-        results.hidden = false;
-      } catch { results.hidden = true; }
-    }, 220);
-  });
+function renderHistory(main, history) {
+  const empty = h("section", { class: "interview-empty interview-card" },
+    h("div", { class: "interview-empty-icon", "aria-hidden": "true" }, icon("spark")),
+    h("div", {}, h("h2", {}, "Your interview journey starts here!"),
+      h("p", {}, "Discover your career matches by uploading your resume or completing our career game. Once you've found your recommended roles, you can unlock personalized AI mock interviews to prepare for your future career.")),
+    h("div", { class: "interview-report-actions" },
+      h("a", { class: "btn primary", href: "#/resume" }, "Upload Resume"),
+      h("a", { class: "btn", href: "#/quiz" }, "Play Career Game")));
+  const list = h("section", { class: "interview-card" },
+    h("div", { class: "section-head" }, h("h2", {}, "Interview history"),
+      h("span", { class: "muted" }, `${history.length} ${history.length === 1 ? "session" : "sessions"}`)),
+    h("ul", { class: "interview-history" }, history.map((item) => {
+      const completed = item.status === "completed";
+      const source = item.assessment_source === "resume" ? "Resume recommendation"
+        : item.assessment_source === "questionnaire" ? "Career game recommendation" : "Earlier session";
+      return h("li", { class: "interview-history-item" },
+        h("div", { class: "interview-history-role" }, h("b", {}, item.role_title),
+          h("span", {}, `${item.interview_type || "AI mock interview"} · ${source} · ${fmtTime(item.created_utc)} · ${item.difficulty}`)),
+        h("div", { class: "interview-history-scores" },
+          h("span", {}, h("small", {}, "Performance"), h("b", { class: "num" }, item.performance == null ? "—" : pct(item.performance))),
+          h("span", {}, h("small", {}, "Job readiness"), h("b", { class: "num" }, item.readiness == null ? "—" : pct(item.readiness)))),
+        h("span", { class: `tag interview-history-status ${completed ? "" : "pending"}` }, item.status.replaceAll("_", " ")),
+        h("div", { class: "interview-history-actions" },
+          h("a", { class: "btn ghost sm", href: `#/interview/${item.interview_id}` }, completed ? "View Report" : "Resume"),
+          h("button", { class: "btn ghost sm", type: "button", "aria-label": `Delete attempt for ${item.role_title}`,
+            onclick: async () => { if (!confirm("Delete this interview and its saved transcript?")) return;
+              try { await api(`/api/interviews/${item.interview_id}`, { method: "DELETE" }); location.reload(); }
+              catch (e) { toast(e.message, "err"); } } }, "Delete")));
+    })));
+  main.replaceChildren(
+    h("div", { class: "interview-page" },
+      h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "PRACTICE · REFLECT · IMPROVE"),
+        h("h1", { class: "page-title" }, "Interview history"),
+        h("p", { class: "lede" }, "Review your practice sessions and track your preparation for recommended roles."))),
+      history.length ? list : empty));
+}
+
+function renderLaunch(main, recommendation, plans) {
+  const skills = recommendation.profile || [];
   const difficulty = h("select", { class: "input", "aria-label": "Interview difficulty" },
     h("option", { value: "foundational" }, "Foundational"), h("option", { value: "intermediate", selected: true }, "Intermediate"),
     h("option", { value: "advanced" }, "Advanced"));
   const planOptions = [h("option", { value: "" }, "No plan selected"), ...plans
-    .filter((x) => x.audience === "individual" && (!role || x.target_role === role.soc))
+    .filter((x) => x.audience === "individual" && x.target_role === recommendation.role_id)
     .map((x) => h("option", { value: x.plan_id }, `${x.target_role || "Role plan"} · ${x.status} · ${fmtTime(x.created_utc)}`))];
   const plan = h("select", { class: "input", "aria-label": "Link a learning plan" }, planOptions);
   const consent = h("input", { type: "checkbox" });
   const error = h("p", { class: "error", role: "alert" });
   const start = h("button", { class: "btn primary", type: "button", onclick: async () => {
     error.textContent = "";
-    if (!role) { error.textContent = "Choose a target job first."; query.focus(); return; }
     if (!consent.checked) { error.textContent = "Please agree to the transcript and AI processing notice to continue."; consent.focus(); return; }
     start.disabled = true; start.textContent = "Building your first question…";
-    const payload = { target_role: role.soc, skills, difficulty: difficulty.value, plan_id: plan.value || null, transcript_consent: true };
+    const payload = { recommendation_id: recommendation.recommendation_id, difficulty: difficulty.value,
+      plan_id: plan.value || null, transcript_consent: true };
     try {
       const session = await api("/api/interviews", { method: "POST", body: payload });
       location.hash = `#/interview/${session.interview_id}`;
@@ -86,35 +98,20 @@ function renderSetup(main, history, plans) {
   } }, "Start mock interview");
   main.replaceChildren(
     h("div", { class: "interview-page" },
-      h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "PRACTICE · REFLECT · IMPROVE"),
-        h("h1", { class: "page-title" }, "Mock interview"),
-        h("p", { class: "lede" }, "Practice a role-specific interview, then see the evidence behind each score."))),
-      h("section", { class: "interview-card" }, h("h2", {}, "Set up your interview"),
-        h("div", { class: "field" }, h("label", { for: "interview-role" }, h("span", {}, "Target job")),
-          query, results), picked,
+      h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "RECOMMENDED ROLE · PRACTICE"),
+        h("h1", { class: "page-title" }, recommendation.role_title),
+        h("p", { class: "lede" }, recommendation.source === "resume"
+          ? "This role came from your completed resume analysis." : "This role came from your completed career game."))),
+      h("section", { class: "interview-card" }, h("h2", {}, "Prepare for your interview"),
+        h("p", { class: "muted" }, `Recommended role · ESCO ${recommendation.role_id}`),
+        h("div", { class: "interview-skills" }, skills.map((s) => h("span", { class: "chip-static" }, `${s.name} · ${s.level}/5`))),
         h("label", { class: "field" }, h("span", {}, "Difficulty"), difficulty),
-        h("div", { class: "form-section" }, h("h3", {}, "Your skills and experience"),
-          h("p", { class: "muted" }, "Only these skill names and levels are used to personalize questions. Your uploaded CV is not stored or sent from this screen."), skillList),
         h("label", { class: "field" }, h("span", {}, "Connect a reskilling plan (optional)"), plan),
         h("div", { class: "interview-consent" }, h("label", {}, consent,
           h("span", {}, "I agree to save my answer transcripts and send them to AiversePulse’s configured AI provider for interview feedback. No audio is stored.")),
-        h("p", { class: "fine" }, "Voice input uses your browser’s speech recognition when available. Browser speech services may process audio; text entry is always available."),
-        error, start)),
-      historyBlock(history)));
-}
-
-function historyBlock(history) {
-  const items = history;
-  return h("section", { class: "interview-card" }, h("div", { class: "section-head" }, h("h2", {}, "Previous attempts"),
-    h("span", { class: "muted" }, "Compare progress using the same rubric.")),
-    items.length ? h("ul", { class: "interview-history" }, items.map((item) => h("li", {},
-      h("a", { href: `#/interview/${item.interview_id}` }, h("b", {}, item.role_title),
-        h("span", {}, `${fmtTime(item.created_utc)} · ${item.difficulty}`)),
-      h("span", { class: "interview-history-score num" }, item.status !== "completed" ? item.status.replaceAll("_", " ") : `Readiness ${pct(item.readiness)}`),
-      h("button", { class: "btn ghost sm", type: "button", "aria-label": `Delete attempt for ${item.role_title}`,
-        onclick: async () => { if (!confirm("Delete this interview and its saved transcript?")) return;
-          try { await api(`/api/interviews/${item.interview_id}`, { method: "DELETE" }); location.reload(); } catch (e) { toast(e.message, "err"); } } }, "Delete"))))
-      : h("p", { class: "muted" }, "Completed interviews will appear here."));
+        h("p", { class: "fine" }, "Voice input uses your browser’s speech recognition when available. Browser speech services may process audio; text entry is always available.")),
+        error, start),
+      h("a", { class: "btn ghost", href: "#/interview" }, "Back to interview history")));
 }
 
 function renderRoom(main, detail, initial = null) {
@@ -294,12 +291,6 @@ async function renderReport(main, report) {
       h("p", { class: "muted" }, "This is your first completed interview for this role. Complete another attempt to compare scores."));
   const sources = report.source ? h("p", { class: "fine" }, "Question context: ", h("a", { href: report.source.url, target: "_blank", rel: "noopener noreferrer" }, report.source.title),
     ` · ${report.source.publisher} · retrieved ${report.source.access_date}`) : null;
-  const retry = h("button", { class: "btn primary", type: "button", onclick: () => {
-    const payload = { target_role: report.role_id, skills: report.profile || [], difficulty: report.difficulty,
-      plan_id: report.plan_id || null, transcript_consent: true };
-    api("/api/interviews", { method: "POST", body: payload }).then((session) => { location.hash = `#/interview/${session.interview_id}`; })
-      .catch((e) => toast(e.message, "err"));
-  } }, "Retry interview");
   main.replaceChildren(h("div", { class: "interview-page" },
     h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "YOUR PRACTICE REPORT"),
       h("h1", { class: "page-title" }, `${report.role_title} interview assessment`),
@@ -318,11 +309,17 @@ async function renderReport(main, report) {
       h("section", { class: "interview-card" }, h("h2", {}, "Areas to improve"), list(report.gaps, "No specific skill gaps were identified from this attempt."))),
     h("section", { class: "interview-card" }, h("h2", {}, "Recommended next steps"), recommendations, planPanel),
     compare,
-    h("div", { class: "interview-report-actions" }, retry, h("a", { class: "btn", href: "#/interview" }, "Interview history")), sources));
+    h("div", { class: "interview-report-actions" },
+      h("a", { class: "btn primary", href: "#/quiz" }, "Play Career Game for a new recommendation"),
+      h("a", { class: "btn", href: "#/resume" }, "Upload Resume"),
+      h("a", { class: "btn ghost", href: "#/interview" }, "Interview history")), sources));
 }
 
 function renderEnded(main) {
   main.replaceChildren(h("div", { class: "interview-page" }, h("h1", { class: "page-title" }, "Interview ended"),
-    h("p", { class: "lede" }, "There were not enough completed answers to create an assessment. You can start another attempt when you are ready."),
-    h("a", { class: "btn primary", href: "#/interview" }, "Return to interviews")));
+    h("p", { class: "lede" }, "There were not enough completed answers to create an assessment. Find a recommended role from your career results to practice again."),
+    h("div", { class: "interview-report-actions" },
+      h("a", { class: "btn primary", href: "#/quiz" }, "Play Career Game"),
+      h("a", { class: "btn", href: "#/resume" }, "Upload Resume"),
+      h("a", { class: "btn ghost", href: "#/interview" }, "Interview history"))));
 }

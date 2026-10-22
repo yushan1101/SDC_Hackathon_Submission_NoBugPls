@@ -56,7 +56,7 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 - **Daily AI-trend board.** Hacker News, arXiv and live job postings, scored into "emerging" and "automation pressure" for every occupation, with dated evidence.
 - **Future-role matching and skill gaps** under *assistive* vs *agentic* AI scenarios, plus a STF-KAN skill-outlook forecast.
 - **Personalised 90-day plan.** Fits the learner's weekly hours, cites its sources, and can be edited and approved by a person.
-- **AI mock interviews.** Generate ESCO-grounded, role-specific questions and adaptive follow-ups; answer by text or supported browser voice; review transparent interview performance, job readiness, a clearly simulated competitiveness index, competency feedback, learning links and attempt history.
+- **AI mock interviews.** Launch only from roles recommended by a completed resume analysis or career game; review past sessions and reports in interview history, answer ESCO-grounded adaptive questions by text or supported browser voice, and compare transparent performance/readiness scores and learning recommendations.
 - **UN SDG mapping (all 17).** Every role and plan activity links to official SDG targets.
 - **HR hiring.** Thresholds written in plain English, a public apply link, AI screening agents, blind ranked review, and human shortlist/hold/decline with an audit log.
 - **Document guard.** Strips hidden PDF/Word text and prompt-injection lines, and flags fraud signals. Risky résumés are held for a human, never auto-rejected.

@@ -48,7 +48,8 @@ const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build
 
 function cleanDestination(next) {
   return ["start", "today", "quiz", "resume", "build", "report", "plans", "interview"].includes(next) ||
-    (/^(plans|report|interview)\/[A-Za-z0-9_-]+$/.test(next)) ? next : "start";
+    (/^(plans|report|interview)\/[A-Za-z0-9_-]+$/.test(next)) ||
+    (/^interview\/start\/[A-Za-z0-9_-]+$/.test(next)) ? next : "start";
 }
 async function signIn(next = "start") {
   // Only internal hash routes can be used as post-login destinations.
@@ -137,9 +138,9 @@ function route() {
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
   const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview"]);
-  // Unknown routes and malformed nested routes return home instead of showing
-  // the wrong page. Plans are the only normal route with a detail identifier.
-  if (!allowed.has(requested) || (rest.length && requested !== "signin") ||
+  const interviewStart = requested === "interview" && id === "start" && rest.length === 1 && /^[A-Za-z0-9_-]+$/.test(rest[0]);
+  // Unknown routes and malformed nested routes return home instead of showing the wrong page.
+  if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart) ||
       (id && !["signin", "plans", "report", "interview"].includes(requested))) {
     location.replace("#/start");
     return;
@@ -172,7 +173,7 @@ function route() {
   else if (page === "plans" && id) planDetail(main, id);
   else if (page === "plans") plansView(main);
   else if (page === "build") buildView(main);
-  else if (page === "interview") interviewView(main, id);
+  else if (page === "interview") interviewView(main, interviewStart ? null : id, interviewStart ? rest[0] : null);
   else if (page === "quiz") quizView(main, { status: S.status, planFor, onInterview: startInterview });
   else if (page === "resume") resumeView(main, { status: S.status, planFor, onInterview: startInterview });
   else if (page === "sdgs") sdgsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
@@ -304,11 +305,9 @@ function planFor(m, skills) {
   start();
 }
 
-function startInterview(m, skills = S.profile.skills) {
-  Object.assign(S.profile, { target_role: m.soc, target_title: m.title,
-    skills: (skills || []).slice(0, 40).map(({ name, level }) => ({ name, level })) });
-  saveProfile();
-  location.hash = "#/interview";
+function startInterview(m) {
+  if (!m?.recommendation_id) { toast("This role is not linked to a completed career recommendation yet.", "err"); return; }
+  location.hash = `#/interview/start/${encodeURIComponent(m.recommendation_id)}`;
 }
 
 function start(query) {
