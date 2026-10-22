@@ -3,6 +3,7 @@ import { api, upload, stream, h, icon, toast, ApiError, reveal, RISE, DROP } fro
 import { Owl } from "./owl.js";
 import { jobIcon } from "./jobicons.js";
 import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
+import { brandMark } from "./brands.js";
 
 const KEYS = ["A", "B", "C", "D"];
 
@@ -27,43 +28,116 @@ export function startView(main, { name, guest, jumpToday } = {}) {
       option("#/resume", "file", "Use my resume", "Upload PDF, Word or text to find skills supported by evidence.", "Upload resume"))));  // today's signals are one tap away in the header (Today)
 }
 
-// The full landing page for visitors who are not signed in: the three ways in, each with a live-looking demo.
+// The landing page for visitors who are not signed in. Every picture of the product is the product's own UI,
+// rendered here at reading size (no screenshots, no stock art); the sky is the one generated image (img/sky-hero.jpg).
 function guestHome(main, { jumpToday } = {}) {
-  const go = (href, label, cls = "btn") => h("a", { class: cls, href }, label, icon("send"));
-  const way = (id, cls, ic, heading, text, href, button, demo) =>
-    h("section", { class: `way ${cls}`, "aria-labelledby": `way-${id}` },
-      h("div", {}, h("span", { class: "core-ic way-ic" }, icon(ic)), h("h2", { id: `way-${id}` }, heading), h("p", {}, text)), demo, go(href, button));
-  // demos show the real mechanism: a real quiz item, a resume line with its quoted skill, the 30/60/90 plan
-  const quizDemo = h("div", { class: "demo", "aria-hidden": "true" },
+  const cta = (href, label, cls = "btn primary lp-cta") => h("a", { class: cls, href }, label);
+  const owl = new Owl({ size: 40, state: "searching" });
+  const say = h("span", {}, "Comparing your skills");
+
+  // hero: the chat answer you get, with the owl's live status above it
+  const pill = h("div", { class: "lp-pill", "aria-hidden": "true" }, owl.el, say,
+    h("span", { class: "lp-pill-btn" }, icon("mic")), h("span", { class: "lp-pill-btn" }, icon("volume")));
+  const mock = h("div", { class: "lp-window", "aria-hidden": "true" },
+    h("div", { class: "lp-bar" }, h("i"), h("i"), h("i"), h("span", {}, "Chat")),
+    h("div", { class: "lp-chat" },
+      h("p", { class: "lp-ask" }, "Plan for Data analyst · 6 h a week"),
+      h("div", { class: "lp-answer" },
+        h("p", {}, "You already have most of what a data analyst needs. Two skills stand between you and the role: ",
+          h("b", {}, "SQL"), h("sup", { class: "lp-cite" }, "1"), " and ", h("b", {}, "Python"), h("sup", { class: "lp-cite" }, "2"), "."),
+        h("div", { class: "lp-gaps" }, [["SQL", 2, 4], ["Python", 0, 3], ["Data visualisation", 3, 3]].map(([n, have, need]) =>
+          h("div", { class: "lp-gap" }, h("span", {}, n),
+            h("span", { class: "lp-track" }, h("i", { style: { width: `${have * 20}%` } }), h("b", { style: { left: `${need * 20}%` } })),
+            h("span", { class: "num" }, have >= need ? "Ready" : `${have} → ${need}`)))),
+        h("div", { class: "lp-phases" }, [["Days 1–30", "SQL foundations"], ["Days 31–60", "Python on a real report"], ["Days 61–90", "Portfolio review"]]
+          .map(([d, t]) => h("div", {}, h("b", {}, d), h("span", {}, t)))))));
+
+  const hero = h("section", { class: "lp-hero" },
+    h("h1", {}, "Where could your skills take you?"),
+    h("p", {}, "Find roles you could grow into and get a 90-day learning plan, with a source for every recommendation."),
+    cta("#/register", "Start free"),
+    h("p", { class: "lp-sub" }, "No card needed. ", h("a", { href: "#/signin" }, "Sign in")),
+    h("div", { class: "lp-stage" }, pill, mock));
+
+  // how it helps: three steps, each beside the real piece of UI it uses
+  const step = (heading, text, href, label, demo, flip) => h("section", { class: `lp-step${flip ? " flip" : ""}` },
+    h("div", { class: "lp-step-copy" }, h("h2", {}, heading), h("p", {}, text), h("a", { class: "lp-link", href }, label, icon("flat"))),
+    h("div", { class: "lp-step-ui", "aria-hidden": "true" }, demo));
+  const quizDemo = h("div", { class: "demo" },
     h("p", { class: "demo-q" }, "A spreadsheet total looks wrong. You…"),
     h("div", { class: "demo-opt" }, h("kbd", {}, "A"), "Flag it and move on"),
     h("div", { class: "demo-opt" }, h("kbd", {}, "B"), "Re-add the column by hand"),
     h("div", { class: "demo-opt on" }, h("kbd", {}, "C"), "Trace the formula and fix it"));
-  const resumeDemo = h("div", { class: "demo", "aria-hidden": "true" },
+  const resumeDemo = h("div", { class: "demo" },
     h("p", { class: "demo-line" }, "“Automated monthly reporting with ", h("mark", {}, "Python scripts"), " and SQL queries.”"),
     h("span", { class: "demo-skill" }, icon("sources"), "Python (computer programming)"));
-  const planDemo = h("div", { class: "demo demo-phases", "aria-hidden": "true" },
+  const planDemo = h("div", { class: "demo demo-phases" },
     [["1–30", "Foundations"], ["31–60", "Apply it on real work"], ["61–90", "Show it, get it reviewed"]].map(([d, t]) =>
       h("div", {}, h("b", {}, `Days ${d}`), h("span", {}, t))));  // same phases as agents/pathway.py
-  const owl = new Owl({ size: 168, state: "greeting" });
+
+  // what else it does: tiles of different sizes, each showing the feature itself
+  const tile = (cls, heading, text, ui) => h("article", { class: `lp-tile ${cls}` }, h("h3", {}, heading), h("p", {}, text), ui);
+  const voiceUi = h("div", { class: "lp-voice", "aria-hidden": "true" },
+    h("p", {}, "“Tell me about a time you fixed a mistake in someone else’s work.”"),
+    h("div", { class: "lp-wave" }, Array.from({ length: 28 }, (_, i) => h("i", { style: { height: `${18 + Math.round(Math.abs(Math.sin(i * 0.9)) * 70)}%` } }))),
+    h("span", { class: "lp-rec" }, icon("mic"), "Recording · 0:42"));
+  const sourceUi = h("ol", { class: "lp-sources", "aria-hidden": "true" },
+    h("li", {}, h("b", {}, "ESCO"), " Data analyst · essential skill: SQL"),
+    h("li", {}, h("b", {}, "Job postings"), " Data analyst roles asking for Python, this week"));
+  const postUi = h("div", { class: "lp-brands", "aria-label": "LinkedIn, Facebook, X, Telegram, Discord and Slack" },
+    ["linkedin", "facebook", "x", "telegram", "discord", "slack"].map(brandMark));
+  const askUi = h("div", { class: "lp-ask-ui", "aria-hidden": "true" },
+    h("span", {}, "Who on my team is closest to data analyst?"),
+    h("p", {}, "E-014 and E-022: both need only SQL, about 30 hours each."));
+
+  const faq = (q, a) => h("details", { class: "lp-faq" }, h("summary", {}, q, icon("chevron")), h("p", {}, a));
   const today = h("p", { class: "muted" }, "Loading today’s board…");
-  main.replaceChildren(h("div", { class: "home" },
-    h("section", { class: "home-hero" }, owl.el,
-      h("h1", {}, "Where could your skills take you?"),
-      h("p", {}, "Find roles you could grow into and get a 90-day learning plan, with a source for every recommendation.")),
-    h("div", { class: "home-ways" },
-      way("quiz", "way-quiz", "quiz", "Discover what you’re good at", "13 everyday work questions, about 2 minutes. We estimate your skills and suggest roles.",
+
+  main.replaceChildren(h("div", { class: "home lp" },
+    hero,
+    h("div", { class: "lp-steps" },
+      h("h2", { class: "lp-title" }, "Three ways to begin"),
+      step("Discover what you’re good at", "Thirteen everyday work questions, about two minutes. We estimate your skills and suggest roles you could grow into.",
         "#/quiz", "Start Quick Match", quizDemo),
-      way("resume", "way-resume", "file", "Start from your resume", "PDF, Word or text. Every skill we find quotes the line that proves it.",
-        "#/resume", "Upload resume", resumeDemo),
-      way("plan", "way-plan", "target", "Already know where you’re headed?", "Pick any job, see the skills to build, and get a plan that fits your schedule.",
+      step("Start from your resume", "Upload PDF, Word or text. Each skill we find quotes the line it came from, and you can edit any of them.",
+        "#/resume", "Upload resume", resumeDemo, true),
+      step("Already know where you’re headed?", "Pick any job, see the skills to build, and get a 90-day plan that fits the hours you have.",
         "#/report", "Pick a job", planDemo)),
+    h("section", { class: "lp-bento", "aria-labelledby": "lp-more" },
+      h("h2", { id: "lp-more", class: "lp-title" }, "More than a plan"),
+      tile("t-wide", "Every recommendation shows its source", "Plans cite the occupation data and job postings behind them. Nothing is a guess dressed up as a fact.", sourceUi),
+      tile("t-voice", "Practise the interview out loud", "Mock interviews for the roles you match, by voice or text, with feedback you can act on. Answers can be read aloud too.", voiceUi),
+      tile("t-ask", "HR teams ask in plain words", "Team plans, skills gaps and hiring in one place. Ask a question by voice or text.", askUi),
+      tile("t-post", "Post an opening everywhere at once", "Connect your company accounts once. Each new opening is written for each platform and shared.", postUi),
+      tile("t-data", "Built on public data", `${(2938).toLocaleString()} occupations from ESCO, the European Commission’s skills classification, the 169 UN Sustainable Development Goal targets, and AI-trend signals rebuilt every day.`, null)),
     h("section", { class: "home-today", "aria-labelledby": "home-today" },
       h("h2", { id: "home-today" }, "The world of work keeps moving."),
       h("p", {}, "Today’s AI topics and the roles they may affect, rebuilt every day."),
       today),
+    h("section", { class: "lp-faqs", "aria-labelledby": "lp-faq" },
+      h("h2", { id: "lp-faq", class: "lp-title" }, "Questions"),
+      faq("Is it free?", "Yes. Quick Match, AI trends and three new plans a month are free. Pro adds unlimited plans, resume analysis, mock interviews and voice input. Team is for HR."),
+      faq("Where do the recommendations come from?", "From ESCO, the European Commission’s public skills and occupations data, live job postings and daily AI-trend signals. Every plan lists its sources."),
+      faq("What happens to my resume?", "We read it to find your skills and don’t store the file. Names and contact details are removed before any AI model sees the text."),
+      faq("Does it make decisions for me?", "No. Plans stay drafts until you approve them, and in hiring a person makes every decision. Applicants are never rejected automatically."),
+      faq("Can my company use it?", "Yes. HR advisors invite their team by email, review plans, screen applicants and post openings to LinkedIn, Facebook, X and more.")),
+    h("section", { class: "lp-close" },
+      h("h2", {}, "Your next role starts with what you already know."),
+      cta("#/register", "Start free")),
     h("footer", { class: "site-foot" }, h("a", { href: "#/terms" }, "Terms of Use"), h("a", { href: "#/privacy" }, "Privacy Policy"),
       h("a", { href: "#/pricing" }, "Plans"))));
+
+  // one authored moment: the owl works through a request while the answer settles in
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const beats = [["searching", "Comparing your skills"], ["analyzing", "Checking today’s job postings"], ["matched", "Plan ready, with sources"]];
+    let i = 0;
+    const tick = setInterval(() => {
+      if (!pill.isConnected) { clearInterval(tick); return; }
+      i = (i + 1) % beats.length;
+      owl.set(beats[i][0]); say.textContent = beats[i][1];
+    }, 2600);
+  } else { owl.set("matched"); say.textContent = "Plan ready, with sources"; }
+
   api("/api/signals/today").then((b) => today.replaceWith(boardView(b))).catch(() => today.remove())
     .finally(() => jumpToday && document.getElementById("home-today")?.scrollIntoView({ block: "start" }));  // after the board is in, so nothing scrolls over it
 }
