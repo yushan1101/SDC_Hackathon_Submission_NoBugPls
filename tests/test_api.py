@@ -32,6 +32,61 @@ def login(c, user):
     return r
 
 
+def test_hr_review_management(client):
+    import server.api as api
+    from governance import approval
+    from governance.audit import connect
+    hr_plan = {"target_role": "Review test role", "activities": [], "status": "draft"}
+    with api.DB_LOCK:
+        pid = approval.create(api.db, hr_plan, "REVIEW-001", "hr")
+        private = approval.create(api.db, hr_plan, "E-001", "individual")
+        with api.db:
+            api.db.execute("INSERT INTO plan_reports VALUES(?,?)", (pid, json.dumps({"narrative": "Unchanged original", "evidence": []})))
+    client.cookies.clear()
+    assert client.get("/api/reviews").status_code == 401
+    login(client, "ana")
+    assert client.get("/api/reviews").status_code == 403
+    assert client.post("/api/reviews/bulk", json={"plan_ids": [pid], "action": "delete", "confirmed": True}, headers={"X-AP": "1"}).status_code == 403
+    assert "review" not in client.get(f"/api/plans/{pid}").json()  # HR notes are private
+    login(client, "hr1")
+    original = client.get(f"/api/plans/{pid}").json()
+    edit = {"candidate_name": "Queue Candidate", "candidate_email": "queue@example.org", "candidate_phone": "+6012",
+            "reviewer_notes": "Reviewed by HR", "review_status": "rejected", "revision": 0}
+    assert client.post(f"/api/reviews/{pid}/edit", json=edit).status_code == 403  # CSRF
+    assert client.post(f"/api/reviews/{private}/edit", json=edit, headers={"X-AP": "1"}).status_code == 404
+    assert client.post(f"/api/reviews/{pid}/edit", json=edit | {"report": {}}, headers={"X-AP": "1"}).status_code == 422
+    assert client.post(f"/api/reviews/{pid}/edit", json=edit, headers={"X-AP": "1"}).status_code == 200
+    assert client.post(f"/api/reviews/{pid}/edit", json=edit, headers={"X-AP": "1"}).status_code == 409
+    assert client.post(f"/api/reviews/{pid}/edit", json=edit | {"reviewer_notes": "x" * 10001}, headers={"X-AP": "1"}).status_code == 422
+    assert [p["plan_id"] for p in client.get("/api/reviews?q=QUEUE%40example.org&status=rejected").json()] == [pid]
+    assert client.get("/api/reviews?status=invalid").status_code == 422
+    def bulk(action, ids=None, confirmed=False):
+        return client.post("/api/reviews/bulk", json={"plan_ids": ids or [pid], "action": action, "confirmed": confirmed}, headers={"X-AP": "1"})
+    assert bulk("archive", [pid, private]).status_code == 409
+    assert not client.get(f"/api/plans/{pid}").json()["review"]["archived"]
+    assert bulk("archive").status_code == 200
+    assert client.get("/api/reviews?q=REVIEW-001").json() == []
+    assert [p["plan_id"] for p in client.get("/api/reviews?q=REVIEW-001&status=archived").json()] == [pid]
+    assert bulk("restore").status_code == 200
+    api.RESULTS.clear()
+    reopened = client.get(f"/api/plans/{pid}").json()
+    assert reopened["review"]["review_status"] == "rejected"
+    assert reopened["report"] == original["report"] and reopened["plan"] == original["plan"]
+    assert reopened["history"] == original["history"]
+    assert len(reopened["review_history"]) == 3
+    assert bulk("delete").status_code == 409
+    assert bulk("delete", confirmed=True).status_code == 200
+    assert client.get(f"/api/plans/{pid}").status_code == 404
+    assert client.post(f"/api/plans/{pid}/approve", json={"version": 1, "confirmed": True}, headers={"X-AP": "1"}).status_code == 404
+    assert client.get("/api/reviews?q=REVIEW-001&status=all").json() == []
+    with api.DB_LOCK:
+        fresh = connect(api.cfg.database_path)
+        assert fresh.execute("SELECT count(*) FROM hr_review_events WHERE plan_id=?", (pid,)).fetchone()[0] == 4
+        assert fresh.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
+        fresh.close()
+    client.cookies.clear()
+
+
 def events(resp):
     return [json.loads(line[6:]) for line in resp.text.splitlines() if line.startswith("data: ")]
 
@@ -44,6 +99,47 @@ def test_auth_csrf_and_headers(client):
     assert "httponly" in r.headers["set-cookie"].lower() and "samesite=strict" in r.headers["set-cookie"].lower()
     assert client.get("/api/me").json()["employee_id"] == "E-001"
     assert "frame-ancestors 'none'" in client.get("/").headers["content-security-policy"]
+
+
+def test_plan_register_status_confirmation_and_history(client):
+    import server.api as api
+    from governance import approval
+    from governance.audit import connect
+    with api.DB_LOCK:
+        pid = approval.create(api.db, {"target_role": "Analyst", "activities": [], "status": "draft"}, "E-001", "hr")
+        private = approval.create(api.db, {"status": "draft"}, "E-001", "individual")
+        with api.db:
+            api.db.execute("INSERT INTO plan_reports VALUES(?,?)", (pid, '{"narrative":"Original AI"}'))
+    login(client, "ana")
+    body = {"status": "approved", "version": 1, "confirmed": True}
+    assert client.post(f"/api/plans/{pid}/status", json=body, headers={"X-AP": "1"}).status_code == 403
+    login(client, "hr1")
+    original = client.get(f"/api/plans/{pid}").json()
+    def change(status, version, confirmed=True):
+        return client.post(f"/api/plans/{pid}/status", json={"status": status, "version": version, "confirmed": confirmed}, headers={"X-AP": "1"})
+    assert client.post(f"/api/plans/{pid}/status", json=body).status_code == 403
+    assert client.post(f"/api/plans/{private}/status", json=body, headers={"X-AP": "1"}).status_code == 404
+    assert change("approved", 1, False).status_code == 409
+    assert change("rejected", 1).status_code == 422
+    assert change("approved", 1).json() == {"status": "approved", "version": 2}
+    assert change("draft", 1).status_code == 409
+    assert change("draft", 2).json()["version"] == 3
+    assert change("flagged", 3).json()["version"] == 4
+    assert change("approved", 4).status_code == 409  # retain flagged-plan approval guard
+    assert change("draft", 4).json()["version"] == 5
+    assert change("draft", 5).status_code == 409  # no redundant versions
+    reopened = client.get(f"/api/plans/{pid}").json()
+    assert reopened["report"] == original["report"]
+    assert reopened["plan"] == original["plan"]
+    assert len(reopened["history"]) == 5
+    assert reopened["history"][1]["action"] == "approved"
+    assert reopened["history"][-1]["actor"] == "hr1"
+    with api.DB_LOCK:
+        fresh = connect(api.cfg.database_path)
+        assert approval.latest(fresh, pid)["version"] == 5
+        assert fresh.execute("SELECT snapshot FROM plan_versions WHERE plan_id=? AND version=1", (pid,)).fetchone()
+        fresh.close()
+    client.cookies.clear()
 
 
 def test_preview_embedding_uses_only_configured_origins(client, monkeypatch):
@@ -140,6 +236,7 @@ def test_matches_explain_their_score_and_follow_the_scenario(client):
     a = client.post("/api/match", json={"skills": skills}, headers={"X-AP": "1"}).json()["matches"]
     g = client.post("/api/match", json={"skills": skills, "scenario": "agentic"}, headers={"X-AP": "1"}).json()["matches"]
     assert {"coverage", "alignment", "skill_fit", "trend_effect", "scenario"} <= set(a[0]) and a[0]["scenario"] == "assistive"
+    assert "recommendation_id" not in a[0]  # raw matching is not a completed assessment and cannot unlock an interview
     assert g[0]["scenario"] == "agentic"
     assert client.post("/api/match", json={"skills": skills, "scenario": "doom"}, headers={"X-AP": "1"}).status_code == 422
 
@@ -223,6 +320,125 @@ def test_quiz_resume_and_match(client):
     big = client.post("/api/resume/analyze", files={"file": ("cv.txt", b"x" * 2_100_000)}, headers=H)
     assert big.status_code == 413
     assert client.get("/api/signals/today").status_code == 200  # empty board is a valid, labelled state
+
+
+def test_interview_access_requires_owner_owned_assessment_recommendation(client, monkeypatch):
+    import server.api as api
+    from governance import accounts
+
+    login(client, "ana")
+    q = client.get("/api/quiz").json()
+    matches = [{"soc": "2221.2", "title": "Nurse responsible for general care"}]
+    monkeypatch.setattr(api, "_matches", lambda *args, **kwargs: [dict(item) for item in matches])
+    scored = client.post("/api/quiz/score", json={"answers": {x["id"]: 2 for x in q["questions"]}}, headers=H)
+    assert scored.status_code == 200
+    result = scored.json()
+    recommendation_id = result["matches"][0]["recommendation_id"]
+    assert result["assessment_id"] and result["matches"][0]["assessment_source"] == "questionnaire"
+    recommendation = client.get(f"/api/interview-recommendations/{recommendation_id}").json()
+    assert recommendation["role_id"] == "2221.2" and recommendation["source"] == "questionnaire"
+    assert recommendation["profile"] == result["skills"]
+
+    # A direct request with a free-form target cannot replace a recommendation ID.
+    assert client.post("/api/interviews", json={"target_role": "2221.2", "transcript_consent": True}, headers=H).status_code == 422
+    assert client.post("/api/interviews", json={"recommendation_id": "not-a-real-recommendation",
+        "transcript_consent": True}, headers=H).status_code == 404
+
+    accounts.create_user(api.db, "bob", PW, "employee", "E-002")
+    login(client, "bob")
+    assert client.get(f"/api/interview-recommendations/{recommendation_id}").status_code == 404
+    assert client.post("/api/interviews", json={"recommendation_id": recommendation_id,
+        "transcript_consent": True}, headers=H).status_code == 404
+
+    login(client, "ana")
+    seen = {}
+    def prepare(role_id, skills, difficulty):
+        seen["role_id"], seen["skills"] = role_id, skills
+        return "mock-interview-id", {"title": "Nurse responsible for general care", "source": {"url": "https://example.test"}}, {
+            "question_id": "mock-question-id", "text": "Tell me about a relevant example.", "stage": "behavioral",
+            "type": "behavioral", "difficulty": difficulty, "target_skills": [], "source_refs": [], "criteria": []}
+    monkeypatch.setattr(api.interview_service, "prepare_create", prepare)
+    started = client.post("/api/interviews", json={"recommendation_id": recommendation_id,
+        "difficulty": "foundational", "transcript_consent": True}, headers=H)
+    assert started.status_code == 200
+    assert seen["role_id"] == recommendation["role_id"] and seen["skills"] == recommendation["profile"]
+    interview_id = started.json()["interview_id"]
+
+    # Simulate a completed attempt to cover history and report reopening without an LLM call.
+    report = {"performance": 81, "readiness": 74, "competitiveness": 70, "role_id": "2221.2"}
+    with api.DB_LOCK, api.db:
+        api.db.execute("UPDATE interview_sessions SET status='completed', completed_utc=? WHERE interview_id=?",
+                       (api.interview_store.now(), interview_id))
+        api.db.execute("INSERT INTO interview_reports VALUES(?,?,?)",
+                       (interview_id, api.interview_store.json_dump(report), api.interview_store.now()))
+    history = client.get("/api/interviews").json()["interviews"]
+    item = next(x for x in history if x["interview_id"] == interview_id)
+    assert item["status"] == "completed" and item["performance"] == 81 and item["readiness"] == 74
+    assert item["assessment_source"] == "questionnaire" and item["interview_type"] == "AI mock interview"
+    assert client.get(f"/api/interviews/{interview_id}/report").json() == report
+
+
+def test_interview_schema_migration_preserves_old_session_and_report():
+    import sqlite3
+    from interview import store
+
+    con = sqlite3.connect(":memory:")
+    con.execute("""CREATE TABLE interview_sessions (
+        interview_id TEXT PRIMARY KEY, employee_id TEXT NOT NULL, role_id TEXT NOT NULL, role_title TEXT NOT NULL,
+        difficulty TEXT NOT NULL, status TEXT NOT NULL, stage_index INTEGER NOT NULL DEFAULT 0,
+        active_question_id TEXT, plan_id TEXT, profile_json TEXT NOT NULL, context_json TEXT NOT NULL,
+        transcript_consent INTEGER NOT NULL, rubric_version TEXT NOT NULL, created_utc TEXT NOT NULL, completed_utc TEXT
+    )""")
+    old_report = {"performance": 77, "readiness": 71}
+    con.execute("""INSERT INTO interview_sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        ("legacy-id", "E-001", "2221.2", "Nurse", "intermediate", "completed", 5, None, None,
+         "[]", "{}", 1, "1.0", "2026-01-01T00:00:00+00:00", "2026-01-01T00:20:00+00:00"))
+    store.init(con)
+    con.execute("INSERT INTO interview_reports VALUES(?,?,?)",
+        ("legacy-id", store.json_dump(old_report), "2026-01-01T00:20:00+00:00"))
+    migrated = store.session(con, "legacy-id", "E-001")
+    assert migrated["status"] == "completed" and migrated["recommendation_id"] is None
+    assert store.report(con, "legacy-id") == old_report
+    history = store.history(con, "E-001")
+    assert history[0]["performance"] == 77 and history[0]["readiness"] == 71
+
+
+def test_incomplete_assessments_and_unlinked_matches_do_not_unlock_interviews(client, monkeypatch):
+    import server.api as api
+    login(client, "ana")
+    q = client.get("/api/quiz").json()
+    monkeypatch.setattr(api, "_matches", lambda *args, **kwargs: [])
+    quiz_result = client.post("/api/quiz/score", json={"answers": {x["id"]: 2 for x in q["questions"]}}, headers=H).json()
+    assert quiz_result["assessment_id"] and quiz_result["matches"] == []
+
+    # A successful file read with no role match has no recommendation record to start an interview from.
+    monkeypatch.setattr(api, "_analyze_resume", lambda *args, **kwargs: {
+        "markdown": "resume text", "skills": [{"name": "Communication", "level": 3}], "matches": []})
+    resume_result = client.post("/api/resume/analyze", files={"file": ("cv.txt", b"resume", "text/plain")}, headers=H).json()
+    assert resume_result["assessment_id"] and resume_result["matches"] == []
+    assert client.post("/api/match", json={"skills": [{"name": "Communication", "level": 3}]}, headers=H).json()["matches"] == []
+    assert client.post("/api/interviews", json={"target_role": "2221.2", "transcript_consent": True}, headers=H).status_code == 422
+
+
+def test_resume_recommendations_are_persisted_only_after_success_and_rematch_is_linked(client, monkeypatch):
+    import server.api as api
+    login(client, "ana")
+    role = {"soc": "2221.2", "title": "Nurse responsible for general care"}
+    monkeypatch.setattr(api, "_analyze_resume", lambda *args, **kwargs: {
+        "markdown": "resume text", "skills": [{"name": "Communication", "level": 3}], "matches": [dict(role)]})
+    events_out = events(client.post("/api/resume/analyze/stream",
+        files={"file": ("cv.txt", b"resume", "text/plain")}, headers=H))
+    data = events_out[-1]["data"]
+    assert data["assessment_id"] and data["matches"][0]["recommendation_id"]
+    rec_id = data["matches"][0]["recommendation_id"]
+    assert client.get(f"/api/interview-recommendations/{rec_id}").json()["source"] == "resume"
+
+    rematched = client.post("/api/match", json={"skills": [{"name": "Communication", "level": 4}],
+        "assessment_id": data["assessment_id"]}, headers=H).json()
+    assert rematched["assessment_id"] != data["assessment_id"]
+    assert rematched["matches"][0]["recommendation_id"]
+    assert client.get(f"/api/interview-recommendations/{rematched['matches'][0]['recommendation_id']}").json()["profile"] == [
+        {"name": "Communication", "level": 4}]
 
 
 def test_recruiting_flow_blind_review_and_human_decision(client):
