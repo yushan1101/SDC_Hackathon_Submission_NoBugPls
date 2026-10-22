@@ -17,7 +17,7 @@ async function boot() {
     throw e;
   }
   if (S.me.role === "employee") { location.replace("./"); return; }
-  if (S.me.role !== "hr_advisor") { app.replaceChildren(h("main", { class: "view" }, h("p", {}, "Admin accounts are managed from the command line."))); return; }
+  if (S.me.role === "admin") { location.replace("admin.html"); return; }
   app.replaceChildren(h("main", { style: { display: "grid", "place-items": "center", "min-height": "100dvh", gap: "12px", "align-content": "center" }, "aria-busy": "true" },
     new Owl({ size: 72, state: "searching" }).el, h("p", { class: "muted" }, "Loading the console…")));
   S.meta = await api("/api/meta");
@@ -43,6 +43,7 @@ function shell() {
   const more = h("div", { id: "hr-more", class: "hr-more", popover: "auto", "aria-label": "Additional pages" },
     h("a", { href: "#/openings", onclick: () => more.hidePopover?.() }, icon("people"), "Hiring"),
     h("a", { href: "#/signals", onclick: () => more.hidePopover?.() }, icon("pulse"), "AI trends"),
+    h("a", { href: "./#/account" }, icon("user"), "Plan & billing"),
     h("button", { type: "button", onclick: signOut }, icon("out"), "Sign out"));
   app.replaceChildren(h("div", { class: "hr-shell" },
     h("nav", { class: "rail", "aria-label": "Primary" },
@@ -50,6 +51,7 @@ function shell() {
       link("#/overview", "Overview", "grid"), link("#/run", "Run team", "upload"), review, link("#/plans", "Plans", "history"),
       link("#/openings", "Hiring", "people"), link("#/signals", "Signals", "pulse"),
       h("div", { style: { flex: 1 } }),
+      h("a", { href: "./#/account", "aria-label": "Plan & billing", title: "Plan & billing" }, icon("user"), h("span", { class: "lbl" }, "Plan & billing")),
       h("a", { href: "#", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "lbl" }, "Sign out"))),
     h("header", { class: "hr-top" }, S.crumb, S.status.el,
       h("div", { class: "who" }, h("div", {}, S.me.display_name), h("div", { class: "muted" }, "HR advisor"))),
@@ -228,7 +230,8 @@ function runView(main) {
       live.append(h("a", { class: "btn primary", href: "#/review" }, "Open review queue"));
     } catch (e) {
       S.status.set("confused", "Run failed");
-      errors.replaceChildren(...(e.body?.errors || [e.message]).map((x) => h("li", {}, x)));
+      errors.replaceChildren(...(e.body?.errors || [e.message]).map((x) => h("li", {}, x)),
+        ...(e.status === 402 ? [h("li", {}, h("a", { class: "btn sm primary", href: "./#/pricing" }, "See the Team plan"))] : []));
     } finally { S.running = false; }
   }
 

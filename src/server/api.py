@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import queue
+import re
 import secrets
 import threading
 import time
@@ -24,7 +25,7 @@ from pathlib import Path
 import pandas as pd
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request as HttpRequest, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
@@ -38,7 +39,7 @@ from core import graph, screening
 from core.state import Pathway, Profile, Request, Skill
 from core.team_import import parse_team
 from core.usage import summarize
-from governance import accounts, approval, recruiting, reviews
+from governance import accounts, approval, billing, otp, recruiting, reviews, risk
 from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
@@ -51,7 +52,11 @@ log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 cfg = get_settings()
-db = recruiting.init(accounts.init(connect(cfg.database_path)))
+db = otp.init(billing.init(risk.init(recruiting.init(accounts.init(connect(cfg.database_path))))))
+db.executescript("""CREATE TABLE IF NOT EXISTS llm_usage(id INTEGER PRIMARY KEY, at_utc TEXT, username TEXT, feature TEXT, node TEXT,
+                        model TEXT, calls INTEGER, input_tokens INTEGER, output_tokens INTEGER, est_usd REAL);
+                    CREATE INDEX IF NOT EXISTS llm_usage_at ON llm_usage(at_utc);
+                    CREATE TABLE IF NOT EXISTS briefing_log(username TEXT, at_utc TEXT);""")  # token use; free-plan quota
 DB_LOCK = threading.Lock()  # one sqlite connection shared across request threads
 SESSION_IDLE = timedelta(minutes=30)
 COOKIE = "ap_session"
@@ -83,9 +88,10 @@ async def headers(request: HttpRequest, call_next):
             return JSONResponse({"detail": "origin not allowed"}, status_code=403)
     resp = await call_next(request)
     resp.headers.update({
-        "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' "
-                                   "https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; "
-                                   f"connect-src 'self'; frame-ancestors {cfg.frame_ancestors}; base-uri 'none'; form-action 'self'",
+        "Content-Security-Policy": f"default-src 'self'; script-src 'self' '{_assets()[2]}' https://js.stripe.com; style-src 'self' 'unsafe-inline' "
+                                   "https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.stripe.com; "
+                                   "frame-src https://js.stripe.com https://hooks.stripe.com; "
+                                   f"connect-src 'self' https://api.stripe.com; frame-ancestors {cfg.frame_ancestors}; base-uri 'none'; form-action 'self'",
         "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin",
         "Permissions-Policy": "camera=(), microphone=(self), geolocation=()"})
     if not request.url.path.startswith("/api/"):
@@ -122,18 +128,61 @@ def need(role: str):
     return dep
 
 
+def _plan(user: dict) -> str:
+    with DB_LOCK:
+        return (accounts.account(db, user["username"]) or {}).get("effective_plan", "org")
+
+
+def paid_feature(role: str, plans: set, what: str):
+    """role + a plan that includes the feature; 402 says what to buy."""
+    def dep(user: dict = Depends(need(role))):
+        if _plan(user) not in plans:
+            raise HTTPException(402, f"{what} is part of {'Team' if plans == {'team', 'org'} else 'Pro'}. See plans to upgrade.")
+        return user
+    return dep
+
+
+def _ip(request: HttpRequest) -> str:
+    return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "")
+
+
+def _record_usage(username: str, feature: str, records) -> None:
+    """Token use per user, feature, agent and model, for the admin dashboard."""
+    rows = [r for r in (records if isinstance(records, list) else [records]) if isinstance(r, dict)]
+    rows = [r for r in rows if r.get("llm_calls") or r.get("input_tokens") or r.get("output_tokens")]
+    if not rows:
+        return
+    with DB_LOCK, db:
+        db.executemany("INSERT INTO llm_usage(at_utc,username,feature,node,model,calls,input_tokens,output_tokens,est_usd) VALUES(?,?,?,?,?,?,?,?,?)",
+                       [(datetime.now(timezone.utc).isoformat(), username, feature, r.get("node", feature), r.get("model", ""),
+                         int(r.get("llm_calls", 1)), int(r.get("input_tokens", 0)), int(r.get("output_tokens", 0)),
+                         float(r.get("est_usd", 0.0))) for r in rows])
+
+
 class Login(BaseModel):
     username: str = Field(max_length=40)
     password: str = Field(max_length=200)
+    risk: dict | None = None  # device/behaviour signals from web/js/risk.js (Sift-style)
 
 
 @app.post("/api/login")
 def login(body: Login, request: HttpRequest, response: Response):
+    name = (body.username or "").strip().lower()
     try:
         with DB_LOCK:
             user = accounts.authenticate(db, body.username, body.password, cfg.login_max_failures, cfg.login_lock_minutes)
     except accounts.AuthError as e:
+        with DB_LOCK:
+            risk.assess(db, "login_failed", name, _ip(request), body.risk)
         raise HTTPException(401, str(e))
+    with DB_LOCK:
+        verdict = risk.assess(db, "login", user["username"], _ip(request), body.risk)
+    if verdict["decision"] == "block":
+        raise HTTPException(403, "Sign-in was blocked for your account's safety. Contact support if this was you.")
+    return _start_session(user, request, response)
+
+
+def _start_session(user: dict, request: HttpRequest, response: Response) -> dict:
     token = secrets.token_urlsafe(32)
     with DB_LOCK:
         db.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?)", (_hash(token), user["username"], user["role"],
@@ -158,7 +207,252 @@ def logout(request: HttpRequest, response: Response):
 
 @app.get("/api/me")
 def me(user: dict = Depends(current_user)):
-    return user
+    with DB_LOCK:
+        a = accounts.account(db, user["username"]) or {}
+    return user | {k: a.get(k) for k in ("email", "status", "plan", "plan_until", "effective_plan", "account_type")}
+
+
+class RegisterIn(BaseModel):
+    username: str = Field(min_length=3, max_length=40)
+    email: str = Field(min_length=5, max_length=254)
+    password: str = Field(min_length=10, max_length=200)
+    display_name: str = Field(default="", max_length=60)
+    account_type: str = Field(pattern="^(individual|hr)$")
+    risk: dict | None = None
+
+
+@app.post("/api/register")
+def register(body: RegisterIn, request: HttpRequest, response: Response):
+    """Sign-up, scored like Sift: block -> refused; review -> an admin approves it first. With SMTP set up, the email is
+    verified with a one-time code before the account can be used."""
+    name = body.username.strip().lower()
+    with DB_LOCK:
+        verdict = risk.assess(db, "signup", name, _ip(request), body.risk, body.email)
+    if verdict["decision"] == "block":
+        raise HTTPException(403, "We couldn't create this account. If you think this is a mistake, contact support.")
+    try:
+        with DB_LOCK:
+            r = accounts.register(db, body.username, body.email, body.password, body.account_type, body.display_name,
+                                  verify_email=bool(cfg.smtp_host))
+            if verdict["decision"] == "review" and r["status"] == "active":  # suspicious individual: a person checks first
+                accounts.set_status(db, r["username"], "pending_approval")
+                r["status"] = "pending_approval"
+    except accounts.AuthError as e:
+        raise HTTPException(422, str(e))
+    if r["status"] == "pending_email":
+        with DB_LOCK:
+            otp.issue(db, cfg, r["username"], body.email.strip().lower())
+        return {"status": "pending_email", "username": r["username"]}
+    if r["status"] == "active":
+        with DB_LOCK:
+            user = accounts.account(db, r["username"])
+        return {"status": "active", **_start_session(user, request, response)}
+    return {"status": r["status"], "username": r["username"]}
+
+
+class VerifyIn(BaseModel):
+    username: str = Field(max_length=40)
+    code: str = Field(min_length=6, max_length=6)
+
+
+@app.post("/api/register/verify")
+def register_verify(body: VerifyIn, request: HttpRequest, response: Response):
+    name = body.username.strip().lower()
+    with DB_LOCK:
+        ok = otp.check(db, name, body.code)
+        if not ok:
+            raise HTTPException(422, "That code is wrong or expired. Request a new one.")
+        status = accounts.email_verified(db, name)
+        user = accounts.account(db, name)
+    if status == "active":
+        return {"status": "active", **_start_session(user, request, response)}
+    return {"status": status, "username": name}
+
+
+class ResendIn(BaseModel):
+    username: str = Field(max_length=40)
+
+
+@app.post("/api/register/resend")
+def register_resend(body: ResendIn):
+    name = body.username.strip().lower()
+    with DB_LOCK:
+        a = accounts.account(db, name)
+        if a and a["status"] == "pending_email":
+            otp.issue(db, cfg, name, a["email"])
+    return {"ok": True}  # same answer either way: no account enumeration
+
+
+# ---------------------------------------------------------------- plans and payments (Stripe Elements, test mode)
+@app.get("/api/billing/plans")
+def billing_plans():
+    return {"plans": billing.catalog(cfg), "enabled": billing.configured(cfg), "publishable_key": cfg.stripe_publishable_key or None}
+
+
+class IntentIn(BaseModel):
+    plan: str = Field(pattern="^(pro|team)$")
+    risk: dict | None = None
+
+
+@app.post("/api/billing/intent")
+def billing_intent(body: IntentIn, request: HttpRequest, user: dict = Depends(current_user)):
+    with DB_LOCK:
+        verdict = risk.assess(db, "payment", user["username"], _ip(request), body.risk)
+    if verdict["decision"] == "block":
+        raise HTTPException(403, "This payment was blocked for your account's safety. Contact support.")
+    try:
+        with DB_LOCK:
+            return billing.create_intent(db, cfg, user, body.plan)
+    except billing.BillingError as e:
+        raise HTTPException(503 if not billing.configured(cfg) else 400, str(e))
+
+
+class ConfirmIn(BaseModel):
+    intent_id: str = Field(max_length=80)
+
+
+@app.post("/api/billing/confirm")
+def billing_confirm(body: ConfirmIn, request: HttpRequest, user: dict = Depends(current_user)):
+    try:
+        with DB_LOCK:
+            r = billing.confirm(db, cfg, user, body.intent_id)
+            if r["status"] in ("requires_payment_method", "canceled"):
+                risk.assess(db, "payment_failed", user["username"], _ip(request), None)
+            return r | {"me": accounts.account(db, user["username"])}
+    except billing.BillingError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/billing/webhook")
+async def billing_webhook(request: HttpRequest):
+    """Stripe -> us (signed). Backup for /confirm: the plan is activated even if the browser closed after paying."""
+    payload = await request.body()
+    secret = cfg.stripe_webhook_secret.get_secret_value() if cfg.stripe_webhook_secret else ""
+    if not billing.verify_webhook(payload, request.headers.get("stripe-signature"), secret):
+        raise HTTPException(400, "bad signature")
+    event = json.loads(payload)
+    obj = event.get("data", {}).get("object", {})
+    if event.get("type") in ("payment_intent.succeeded", "payment_intent.payment_failed") and obj.get("object") == "payment_intent":
+        try:
+            with DB_LOCK:
+                billing.apply_intent(db, cfg, obj)
+                if event["type"] == "payment_intent.payment_failed":
+                    risk.assess(db, "payment_failed", (obj.get("metadata") or {}).get("username"), None, {"device_id": "stripe"})
+        except billing.BillingError:
+            pass  # not one of ours
+    return {"received": True}
+
+
+@app.get("/api/billing/payments")
+def billing_payments(user: dict = Depends(current_user)):
+    with DB_LOCK:
+        return billing.payments(db, user["username"])
+
+
+# ---------------------------------------------------------------- admin dashboard
+def _since_days(days: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+
+@app.get("/api/admin/summary")
+def admin_summary(user: dict = Depends(need("admin"))):
+    with DB_LOCK:
+        q = lambda sql, *a: db.execute(sql, a).fetchone()[0]
+        return {
+            "users": q("SELECT COUNT(*) FROM users WHERE role!='admin'"),
+            "pending_approval": q("SELECT COUNT(*) FROM users WHERE status='pending_approval'"),
+            "disabled": q("SELECT COUNT(*) FROM users WHERE status='disabled'"),
+            "paid": q("SELECT COUNT(*) FROM users WHERE plan IN ('pro','team') AND plan_until>?", datetime.now(timezone.utc).isoformat()),
+            "revenue_30d_cents": q("SELECT COALESCE(SUM(amount_cents),0) FROM payments WHERE status='succeeded' AND created_utc>?", _since_days(30)),
+            "currency": cfg.currency,
+            "tokens_30d": q("SELECT COALESCE(SUM(input_tokens+output_tokens),0) FROM llm_usage WHERE at_utc>?", _since_days(30)),
+            "llm_calls_30d": q("SELECT COALESCE(SUM(calls),0) FROM llm_usage WHERE at_utc>?", _since_days(30)),
+            "risk_blocked_7d": q("SELECT COUNT(*) FROM risk_events WHERE decision='block' AND at_utc>?", _since_days(7)),
+            "risk_review_7d": q("SELECT COUNT(*) FROM risk_events WHERE decision='review' AND at_utc>?", _since_days(7)),
+            "payments_enabled": billing.configured(cfg), "email_codes": bool(cfg.smtp_host)}
+
+
+@app.get("/api/admin/users")
+def admin_users(q: str = "", status: str = "", user: dict = Depends(need("admin"))):
+    sql = f"SELECT {','.join(accounts.KEYS)} FROM users WHERE role!='admin'"
+    args: list = []
+    if q:
+        sql += " AND (username LIKE ? OR email LIKE ? OR display_name LIKE ?)"
+        args += [f"%{q[:60]}%"] * 3
+    if status:
+        sql += " AND status=?"
+        args.append(status)
+    with DB_LOCK:
+        rows = [dict(zip(accounts.KEYS, r)) for r in db.execute(sql + " ORDER BY created_utc DESC LIMIT 300", args)]
+        for r in rows:
+            r["effective_plan"] = accounts.effective_plan(r["plan"], r["plan_until"])
+            r["risk"] = risk.score_of(db, r["username"])
+    return rows
+
+
+class AdminStatusIn(BaseModel):
+    status: str = Field(pattern="^(active|disabled|pending_approval)$")
+
+
+@app.post("/api/admin/users/{username}/status")
+def admin_set_status(username: str, body: AdminStatusIn, user: dict = Depends(need("admin"))):
+    """Approve (active), disable or put back on hold. Disabling signs the account out everywhere."""
+    try:
+        with DB_LOCK:
+            accounts.set_status(db, username, body.status)
+            if body.status != "active":
+                db.execute("DELETE FROM sessions WHERE username=?", (username,))
+                db.commit()
+            accounts._event(db, username, f"status set by admin {user['username']}")  # who changed it
+    except accounts.AuthError as e:
+        raise HTTPException(404, str(e))
+    return {"ok": True}
+
+
+class TrustIn(BaseModel):
+    trusted: bool
+
+
+@app.post("/api/admin/users/{username}/trust")
+def admin_trust(username: str, body: TrustIn, user: dict = Depends(need("admin"))):
+    with DB_LOCK, db:
+        n = db.execute("UPDATE users SET trusted=? WHERE username=? AND role!='admin'", (int(body.trusted), username)).rowcount
+    if not n:
+        raise HTTPException(404, "no such account")
+    return {"ok": True}
+
+
+@app.get("/api/admin/usage")
+def admin_usage(days: int = 30, user: dict = Depends(need("admin"))):
+    since = _since_days(max(1, min(days, 365)))
+    def group(col):
+        return [dict(zip(["key", "calls", "input_tokens", "output_tokens", "est_usd"], r)) for r in db.execute(
+            f"SELECT {col}, SUM(calls), SUM(input_tokens), SUM(output_tokens), ROUND(SUM(est_usd),4) FROM llm_usage WHERE at_utc>? "
+            f"GROUP BY {col} ORDER BY SUM(input_tokens+output_tokens) DESC LIMIT 50", (since,))]
+    with DB_LOCK:
+        return {"by_user": group("username"), "by_model": group("model"), "by_agent": group("node"), "by_feature": group("feature"),
+                "by_day": group("substr(at_utc,1,10)")}
+
+
+@app.get("/api/admin/risk")
+def admin_risk(days: int = 7, decision: str = "", user: dict = Depends(need("admin"))):
+    keys = ["at_utc", "event", "username", "ip_hash", "device_id", "score", "decision", "reasons", "signals"]
+    sql = f"SELECT {','.join(keys)} FROM risk_events WHERE at_utc>?"
+    args: list = [_since_days(max(1, min(days, 90)))]
+    if decision:
+        sql += " AND decision=?"
+        args.append(decision)
+    with DB_LOCK:
+        rows = [dict(zip(keys, r)) for r in db.execute(sql + " ORDER BY at_utc DESC LIMIT 300", args)]
+    for r in rows:
+        r["reasons"], r["signals"] = json.loads(r["reasons"] or "[]"), json.loads(r["signals"] or "{}")
+    return rows
+
+
+@app.get("/api/admin/payments")
+def admin_payments(user: dict = Depends(need("admin"))):
+    with DB_LOCK:
+        return billing.payments(db)
 
 
 @app.get("/api/meta")
@@ -294,7 +588,7 @@ class AnalyzeIn(BaseModel):
 
 # --- individual mock interviews (isolated from the reskilling graph) -------------------------------------
 @app.post("/api/interviews")
-def interview_create(body: InterviewCreate, user: dict = Depends(need("employee"))):
+def interview_create(body: InterviewCreate, user: dict = Depends(paid_feature("employee", billing.FULL, "AI mock interviews"))):
     if not body.transcript_consent:
         raise HTTPException(422, "Consent is required to save interview answers and generate a personalized assessment.")
     with DB_LOCK:
@@ -445,6 +739,18 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
     except ValidationError as e:
         raise HTTPException(422, str(e).splitlines()[0])
 
+    if not body.previous_plan_id and _plan(user) == "free":
+        month = datetime.now(timezone.utc).strftime("%Y-%m")
+        with DB_LOCK:
+            used = db.execute("SELECT COUNT(*) FROM briefing_log WHERE username=? AND substr(at_utc,1,7)=?",
+                              (user["username"], month)).fetchone()[0]
+        if used >= cfg.free_monthly_briefings:
+            raise HTTPException(402, f"You've used your {cfg.free_monthly_briefings} free briefings this month. "
+                                     "Upgrade to Pro for unlimited briefings, or keep asking follow-up questions here.")
+    if not body.previous_plan_id:
+        with DB_LOCK, db:
+            db.execute("INSERT INTO briefing_log VALUES(?,?)", (user["username"], datetime.now(timezone.utc).isoformat()))
+
     prev, history = None, []
     if body.previous_plan_id:  # only the caller's own run; if the server restarted, it falls back to a full run
         with DB_LOCK:
@@ -485,6 +791,7 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
             yield sse({"t": "error", "message": "The analysis failed. Please try again."})
             return
         out = serialise(final)
+        _record_usage(user["username"], "briefing", final.get("usage", []))
         # the conversation so far plus this turn; q is None for the default "make my plan" request
         thread = history + [{"q": asked,
                              "a": out["narrative"] or out["answer"] or "", "target_role": req.target_role,
@@ -747,7 +1054,7 @@ def _parse(body: TeamIn):
 
 
 @app.post("/api/team")
-def team(body: TeamIn, user: dict = Depends(need("hr_advisor"))):
+def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", "org"}, "Team analysis"))):
     reqs, errs = _parse(body)
     if errs:
         return JSONResponse({"detail": "invalid team file", "errors": errs}, status_code=422)
@@ -1016,8 +1323,14 @@ async def _read(file: UploadFile) -> bytes:
     return data
 
 
+def _resume_allowed(user: dict):
+    if user["role"] == "employee" and _plan(user) not in billing.FULL:
+        raise HTTPException(402, "Résumé analysis is part of Pro. See plans to upgrade.")
+
+
 @app.post("/api/resume/analyze/stream")
 async def resume_analyze_stream(file: UploadFile = File(...), user: dict = Depends(current_user)):
+    _resume_allowed(user)
     """Same analysis as /api/resume/analyze, streamed: a progress event as each real stage starts, then the result."""
     data = await _read(file)
     name = file.filename or "resume.txt"
@@ -1049,6 +1362,7 @@ async def resume_analyze_stream(file: UploadFile = File(...), user: dict = Depen
 
 @app.post("/api/resume/analyze")
 async def resume_analyze(file: UploadFile = File(...), user: dict = Depends(current_user)):
+    _resume_allowed(user)
     """Resume -> Markdown -> evidence-backed skills -> matches; only skill labels and recommendations persist for interview access."""
     data = await _read(file)
     result = await run_in_threadpool(_analyze_resume, file.filename or "resume.txt", data)
@@ -1272,9 +1586,45 @@ async def apply_submit(token: str, request: HttpRequest, name: str = Form(..., m
 app.mount("/static", StaticFiles(directory=WEB), name="static")
 
 
+# Versioned assets: every page links /js/x.js?v=<content hash>, and an import map does the same for modules that import
+# each other ("./lib.js"). After a deploy each changed file has a new URL, so no browser or Cloudflare copy of an old
+# script can be mixed with new code ("the page still looks old"). Re-hashed only when a file's mtime changes.
+def _asset_sig() -> tuple:
+    return tuple((f.name, f.stat().st_mtime_ns) for d in ("js", "css", "vendor") for f in sorted((WEB / d).glob("*.*")))
+
+
+@lru_cache(maxsize=2)
+def _asset_build(sig: tuple) -> tuple[dict, str, str]:
+    import base64
+    versions = {"/" + f.relative_to(WEB).as_posix(): hashlib.sha256(f.read_bytes()).hexdigest()[:10]
+                for d in ("js", "css", "vendor") for f in sorted((WEB / d).glob("*.*")) if f.suffix in (".js", ".css")}
+    imap = json.dumps({"imports": {k: f"{k}?v={v}" for k, v in versions.items() if k.startswith("/js/")}}, separators=(",", ":"))
+    csp = "sha256-" + base64.b64encode(hashlib.sha256(imap.encode()).digest()).decode()
+    return versions, imap, csp
+
+
+def _assets() -> tuple[dict, str, str]:
+    return _asset_build(_asset_sig())
+
+
+def _page(name: str) -> HTMLResponse:
+    versions, imap, _ = _assets()
+    html = (WEB / name).read_text(encoding="utf-8")
+    html = re.sub(r'(src|href)="((?:js|css|vendor)/[\w.-]+\.(?:js|css))"',
+                  lambda m: f'{m[1]}="/{m[2]}?v={versions.get("/" + m[2], "0")}"', html)
+    return HTMLResponse(html.replace('<script type="module"', f'<script type="importmap">{imap}</script>\n  <script type="module"', 1),
+                        headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/")
+@app.get("/index.html")
 def public_ui():
-    return FileResponse(WEB / "index.html")
+    return _page("index.html")
+
+
+@app.get("/apply.html")
+def apply_page():
+    return _page("apply.html")
 
 
 @app.get("/apply/{token}")
@@ -1283,8 +1633,15 @@ def apply_ui(token: str):  # old-style links -> the static page (token stays in 
 
 
 @app.get("/enterprise")
+@app.get("/enterprise.html")
 def enterprise_ui():
-    return FileResponse(WEB / "enterprise.html")
+    return _page("enterprise.html")
+
+
+@app.get("/admin")
+@app.get("/admin.html")
+def admin_ui():
+    return _page("admin.html")
 
 
 @app.get("/healthz")

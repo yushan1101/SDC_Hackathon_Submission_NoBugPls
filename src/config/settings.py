@@ -47,6 +47,21 @@ class Settings(BaseSettings):
     # load MiniLM and build/open the vector index in the background at start-up. CI sets WARM_ON_START=false: no index
     # there, and a model still loading in a thread when the test run exits aborts Python (exit 134)
     warm_on_start: bool = True
+    # --- billing (Stripe, test mode first). Keys live in .env only; empty = payments switched off (503) ---
+    stripe_secret_key: SecretStr | None = None       # sk_test_... (never logged)
+    stripe_publishable_key: str = ""                 # pk_test_... (sent to the browser for Stripe Elements)
+    stripe_webhook_secret: SecretStr | None = None   # whsec_... (verifies /api/billing/webhook)
+    currency: str = "myr"
+    price_pro_cents: int = Field(1900, gt=0)         # RM 19.00 for 30 days
+    price_team_cents: int = Field(9900, gt=0)        # RM 99.00 for 30 days
+    plan_days: int = Field(30, gt=0)
+    free_monthly_briefings: int = Field(3, ge=0)     # new briefings per calendar month on the free plan
+    # --- email one-time codes at sign-up; empty host = no email (the code is written to the server log instead) ---
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: SecretStr | None = None
+    smtp_from: str = ""
     # separate frontend deploy: comma-separated origins allowed to call the API with credentials, e.g.
     # "https://app.example.com,http://localhost:5173". Empty = same-origin only (frontend served by this API).
     cors_origins: str = ""
