@@ -130,6 +130,58 @@ function inboxLink(email) {
   return null;
 }
 
+// ---------------------------------------------------------------- check your email: code boxes, inbox button, live "Email verified"
+function codePanel(panel, owl, { username, email, waitToken }, after) {
+  const e2 = h("p", { class: "error", role: "alert" });
+  const state = h("p", { class: "verify-state", role: "status", "aria-live": "polite" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Waiting for you to verify…");
+  let stop = false;
+  const boxes = otpBoxes(async (code) => {
+    e2.textContent = "";
+    try { finished(await api("/api/register/verify", { method: "POST", body: { username, code } })); }
+    catch (ex) { e2.textContent = ex.message; boxes.clear(); }
+  });
+  const inbox = inboxLink(email);
+  panel.replaceChildren(h("div", { class: "signin-form" },
+    h("a", { class: "signin-back", href: "#/start" }, icon("back"), "Back to home"),
+    h("span", { class: "wordmark" }, "Check your email"),
+    h("p", { class: "signin-next" }, `We sent a link and a 6-digit code to ${email}. Click the link in the email (on any device), or type the code below.`),
+    inbox ? h("a", { class: "btn inbox-btn", href: inbox[1], target: "_blank", rel: "noopener noreferrer" }, icon("ext"), inbox[0]) : null,
+    h("div", { class: "field" }, h("span", {}, "Code"), boxes.el), e2, state,
+    h("button", { class: "btn ghost sm", type: "button", onclick: async () => { await api("/api/register/resend", { method: "POST", body: { username } }); toast("A new email is on its way"); } }, "Send a new email")));
+  boxes.focus();
+  // the link may be opened anywhere (a phone, another tab): keep asking, and finish here as soon as it is
+  (async function poll() {
+    while (!stop) {
+      await new Promise((r) => setTimeout(r, 3000));
+      if (stop || !document.body.contains(state)) return;
+      try { const r = await api("/api/register/poll", { method: "POST", body: { username, wait_token: waitToken } }); if (r.status !== "pending_email") finished(r); }
+      catch { /* offline for a moment: try again */ }
+    }
+  })();
+  function finished(r) {
+    if (stop) return;
+    stop = true;
+    owl.set("celebrating");
+    state.replaceChildren(icon("check"), "Email verified");
+    state.classList.add("ok");
+    setTimeout(() => after(r), 900);  // show the confirmation, then continue
+  }
+}
+
+/** Full page for signing in to an account whose email was never verified (a new code was just sent). */
+export function emailCodeView(app, { username, email, waitToken, onSignedIn }) {
+  const owl = new Owl({ size: 200, state: "idle" });
+  const panel = h("div", { class: "signin-form-host" });
+  app.replaceChildren(h("main", { class: "signin" }, h("section", { class: "signin-story" }, owl.el, h("h1", {}, "One more step.")), panel));
+  const after = (r) => {
+    if (r.status === "active") { onSignedIn(); return; }
+    panel.replaceChildren(h("div", { class: "signin-form" }, h("span", { class: "wordmark" }, "Email verified"),
+      h("p", { class: "signin-next" }, "An administrator will review this account. You can sign in once it's approved."),
+      h("a", { class: "btn", href: "#/signin" }, "Go to sign in")));
+  };
+  codePanel(panel, owl, { username, email, waitToken }, after);
+}
+
 // ---------------------------------------------------------------- sign up
 export function registerView(app, { onSignedIn }) {
   const owl = new Owl({ size: 200, state: "greeting" });
@@ -144,12 +196,13 @@ export function registerView(app, { onSignedIn }) {
   const email = h("input", { class: "input", name: "email", type: "email", autocomplete: "email", required: true, maxlength: 254 });
   const pwd = h("input", { class: "input", name: "password", type: "password", autocomplete: "new-password", required: true, minlength: 10, maxlength: 200 });
   const btn = h("button", { class: "btn primary", type: "submit" }, "Create account");
+  const agree = h("input", { type: "checkbox", required: true, name: "accept_terms", "aria-label": "I agree to the Terms of Use and the Privacy Policy" });
   const form = h("form", { class: "signin-form", onsubmit: async (e) => {
     e.preventDefault();
     btn.disabled = true; err.textContent = "";
     try {
       const pass = await sliderDialog();  // pops up now; the server requires its single-use pass
-      const r = await api("/api/register", { method: "POST", body: { username: user.value, email: email.value, password: pwd.value, account_type: type, risk: signals(), challenge_token: pass } });
+      const r = await api("/api/register", { method: "POST", body: { username: user.value, email: email.value, password: pwd.value, account_type: type, risk: signals(), challenge_token: pass, accept_terms: agree.checked } });
       after(r);
     } catch (ex) { err.textContent = ex.message; owl.set("confused"); btn.disabled = false; }
   } },
@@ -159,6 +212,9 @@ export function registerView(app, { onSignedIn }) {
     h("label", { class: "field" }, h("span", {}, "Username"), user),
     h("label", { class: "field" }, h("span", {}, "Email"), email),
     h("label", { class: "field" }, h("span", {}, "Password"), pwd, h("small", { class: "field-hint" }, "10+ characters with a capital letter and a digit")),
+    h("label", { class: "agree" }, agree, h("span", {}, "I agree to the ",
+      h("a", { href: "#/terms", target: "_blank", rel: "noopener" }, "Terms of Use"), " and the ",
+      h("a", { href: "#/privacy", target: "_blank", rel: "noopener" }, "Privacy Policy"), ", including how my data is used.")),
     err, btn,
     h("p", { class: "signin-switch" }, "Already have an account? ", h("a", { href: "#/signin" }, "Sign in")));
   const signals = watchForm(form);
@@ -170,7 +226,7 @@ export function registerView(app, { onSignedIn }) {
   // the next step depends on what the server decided (email code, admin approval, or signed in)
   function after(r) {
     if (r.status === "active") { onSignedIn(); return; }
-    if (r.status === "pending_email") { codeStep(r.username, r.wait_token); return; }
+    if (r.status === "pending_email") { codePanel(panel, owl, { username: r.username, email: email.value, waitToken: r.wait_token }, after); return; }
     const hr = type === "hr";
     owl.set("idle");
     panel.replaceChildren(h("div", { class: "signin-form" },
@@ -179,42 +235,6 @@ export function registerView(app, { onSignedIn }) {
       h("p", { class: "signin-next" }, hr ? "An administrator reviews new HR accounts. You can sign in as soon as yours is approved."
         : "For your account's safety, an administrator will review this sign-up. You can sign in once it's approved."),
       h("a", { class: "btn", href: "#/signin" }, "Go to sign in")));
-  }
-  function codeStep(username, waitToken) {
-    const e2 = h("p", { class: "error", role: "alert" });
-    const state = h("p", { class: "verify-state", role: "status", "aria-live": "polite" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Waiting for you to verify…");
-    let stop = false;
-    const boxes = otpBoxes(async (code) => {
-      e2.textContent = "";
-      try { finished(await api("/api/register/verify", { method: "POST", body: { username, code } })); }
-      catch (ex) { e2.textContent = ex.message; boxes.clear(); }
-    });
-    const inbox = inboxLink(email.value);
-    panel.replaceChildren(h("div", { class: "signin-form" },
-      h("a", { class: "signin-back", href: "#/start" }, icon("back"), "Back to home"),
-      h("span", { class: "wordmark" }, "Check your email"),
-      h("p", { class: "signin-next" }, `We sent a link and a 6-digit code to ${email.value}. Click the link in the email (on any device), or type the code below.`),
-      inbox ? h("a", { class: "btn inbox-btn", href: inbox[1], target: "_blank", rel: "noopener noreferrer" }, icon("ext"), inbox[0]) : null,
-      h("div", { class: "field" }, h("span", {}, "Code"), boxes.el), e2, state,
-      h("button", { class: "btn ghost sm", type: "button", onclick: async () => { await api("/api/register/resend", { method: "POST", body: { username } }); toast("A new email is on its way"); } }, "Send a new email")));
-    boxes.focus();
-    // the link may be opened anywhere (a phone, another tab): keep asking, and finish here as soon as it is
-    (async function poll() {
-      while (!stop) {
-        await new Promise((r) => setTimeout(r, 3000));
-        if (stop || !document.body.contains(state)) return;
-        try { const r = await api("/api/register/poll", { method: "POST", body: { username, wait_token: waitToken } }); if (r.status !== "pending_email") finished(r); }
-        catch { /* offline for a moment: try again */ }
-      }
-    })();
-    function finished(r) {
-      if (stop) return;
-      stop = true;
-      owl.set("celebrating");
-      state.replaceChildren(icon("check"), "Email verified");
-      state.classList.add("ok");
-      setTimeout(() => after(r), 900);  // show the confirmation, then continue
-    }
   }
 }
 
@@ -314,7 +334,36 @@ export async function accountView(main, { refreshMe }) {
           h("td", {}, h("span", { class: `tag ${p.status === "succeeded" ? "approved" : p.status === "requires_payment_method" ? "flagged" : "draft"}` },
             p.status === "succeeded" ? "paid" : p.status.replaceAll("_", " "))),
           h("td", {}, p.receipt_url ? h("a", { href: p.receipt_url, target: "_blank", rel: "noopener noreferrer" }, "Receipt") : "–")))))
-        : h("p", { class: "muted" }, "No payments yet.")));
+        : h("p", { class: "muted" }, "No payments yet.")),
+    h("section", { class: "block privacy-block" }, h("h2", {}, "Your data"),
+      h("p", {}, "See what we collect and why in the ", h("a", { href: "#/privacy" }, "Privacy Policy"), ", and the rules in the ",
+        h("a", { href: "#/terms" }, "Terms of Use"), "."),
+      me.terms_version ? h("p", { class: "muted" }, `You accepted the terms of ${me.terms_version}.`) : null),
+    h("section", { class: "block danger-zone" }, h("h2", {}, "Delete account"),
+      h("p", {}, "Deletes your login and your own plans, conversations, progress and interviews. Payment records are kept for accounting, without your name. This can't be undone."),
+      me.role === "admin" ? h("p", { class: "muted" }, "Admin accounts are removed from the command line.")
+        : h("button", { class: "btn danger", type: "button", onclick: () => deleteDialog() }, "Delete my account")));
+}
+
+function deleteDialog() {
+  const pwd = h("input", { class: "input", type: "password", autocomplete: "current-password", required: true, maxlength: 200 });
+  const typed = h("input", { class: "input", required: true, maxlength: 20, autocomplete: "off", placeholder: "DELETE" });
+  const err = h("p", { class: "error", role: "alert" });
+  const go = h("button", { class: "btn danger", type: "submit" }, "Delete my account");
+  const dlg = h("dialog", { class: "checkout delete-dialog" }, h("form", { onsubmit: async (e) => {
+    e.preventDefault(); go.disabled = true; err.textContent = "";
+    try {
+      await api("/api/account/delete", { method: "POST", body: { password: pwd.value, confirm: typed.value } });
+      dlg.close(); location.replace("/");  // a fresh start as a guest on the home page
+    } catch (ex) { err.textContent = ex.message; go.disabled = false; }
+  } },
+    h("div", { class: "checkout-head" }, h("h2", {}, "Delete your account?"), h("button", { class: "btn ghost sm", type: "button", onclick: () => dlg.close() }, "Cancel")),
+    h("p", {}, "This permanently deletes your account and your own data. You'll be signed out."),
+    h("label", { class: "field" }, h("span", {}, "Your password"), pwd),
+    h("label", { class: "field" }, h("span", {}, "Type DELETE to confirm"), typed),
+    err, go));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal(); pwd.focus();
 }
 
 // ---------------------------------------------------------------- the "Verify and sign in" link from the email

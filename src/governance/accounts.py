@@ -28,7 +28,9 @@ CREATE TABLE IF NOT EXISTS auth_events(id INTEGER PRIMARY KEY, username TEXT, ev
 """
 # added after the first release: (column, definition); existing rows become organisation accounts, active
 COLUMNS = [("email", "TEXT"), ("status", "TEXT DEFAULT 'active'"), ("plan", "TEXT DEFAULT 'org'"),
-           ("plan_until", "TEXT"), ("trusted", "INTEGER DEFAULT 0"), ("account_type", "TEXT DEFAULT 'org'")]
+           ("plan_until", "TEXT"), ("trusted", "INTEGER DEFAULT 0"), ("account_type", "TEXT DEFAULT 'org'"),
+           ("terms_version", "TEXT"), ("terms_accepted_utc", "TEXT")]
+TERMS_VERSION = "2026-10-22"  # bump when the Terms of Use or Privacy Policy change
 STATUSES = {"active", "pending_email", "pending_approval", "disabled"}
 EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$", re.I)
 USERNAME = re.compile(r"^[a-z0-9_.-]{3,40}$")
@@ -36,6 +38,10 @@ USERNAME = re.compile(r"^[a-z0-9_.-]{3,40}$")
 
 class AuthError(ValueError):
     pass
+
+
+class PendingEmail(AuthError):
+    """Right password, but the email was never verified: the caller sends a fresh code instead of failing."""
 
 
 def init(con):
@@ -87,6 +93,12 @@ def register(con, username: str, email: str, password: str, account_type: str, d
     if not EMAIL.match(email):
         raise AuthError("enter a valid email address")
     _check_password(password)
+    # an unverified sign-up never became an account: starting again (same username or email) replaces it
+    stale = [r[0] for r in con.execute("SELECT username FROM users WHERE (username=? OR lower(email)=?) AND status='pending_email'",
+                                       (username, email))]
+    with con:
+        for old in stale:
+            con.execute("DELETE FROM users WHERE username=?", (old,))
     if con.execute("SELECT 1 FROM users WHERE username=? OR lower(email)=?", (username, email)).fetchone():
         raise AuthError("that username or email is already registered")
     role = "employee" if account_type == "individual" else "hr_advisor"
@@ -95,9 +107,9 @@ def register(con, username: str, email: str, password: str, account_type: str, d
     salt = os.urandom(16)
     with con:
         con.execute("INSERT INTO users(username,pw_hash,salt,role,employee_id,display_name,created_utc,email,status,plan,"
-                    "account_type) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    "account_type,terms_version,terms_accepted_utc) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (username, _hash(password, salt), salt, role, employee_id, (display_name or username).strip()[:60], now(),
-                     email, status, "free", account_type))
+                     email, status, "free", account_type, TERMS_VERSION, now()))
     _event(con, username, "registered")
     return {"username": username, "role": role, "status": status}
 
@@ -123,6 +135,12 @@ def set_password(con, username: str, password: str):
     if not n:
         raise AuthError("no such account")
     _event(con, username, "password_reset")
+
+
+def check_password(con, username: str, password: str) -> bool:
+    """For sensitive actions by a signed-in user (e.g. deleting the account). No lockout side effects."""
+    row = con.execute("SELECT pw_hash, salt FROM users WHERE username=?", (username,)).fetchone()
+    return bool(row) and hmac.compare_digest(_hash(password or "", row[1]), row[0])
 
 
 def find_login(con, login: str) -> dict | None:
@@ -157,7 +175,7 @@ def effective_plan(plan: str | None, plan_until: str | None) -> str:
 
 
 KEYS = ["username", "role", "employee_id", "display_name", "email", "status", "plan", "plan_until", "trusted",
-        "account_type", "created_utc"]
+        "account_type", "created_utc", "terms_version", "terms_accepted_utc"]
 
 
 def account(con, username: str) -> dict | None:
@@ -190,6 +208,8 @@ def authenticate(con, username: str, password: str, max_failures: int = 5, lock_
         _event(con, username, "login_failed")
         raise AuthError("invalid username or password")  # same message: no user enumeration
     status = row[7] or "active"
+    if status == "pending_email":
+        raise PendingEmail("verify your email first: we sent you a new code")
     if status != "active":  # the password was right, so saying why does not reveal whether the account exists
         _event(con, username, f"login_{status}")
         raise AuthError({"disabled": "this account is disabled; contact support",

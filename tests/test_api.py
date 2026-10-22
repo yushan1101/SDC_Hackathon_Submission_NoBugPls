@@ -571,7 +571,7 @@ def _admin(c):
 def _register(c, **over):
     import server.api as api
     from governance import challenge
-    body = {"username": "newbie1", "email": "newbie1@example.com", "password": PW, "account_type": "individual"} | over
+    body = {"username": "newbie1", "email": "newbie1@example.com", "password": PW, "account_type": "individual", "accept_terms": True} | over
     body.setdefault("risk", HUMAN | {"device_id": f"dev-{body['username']}"})  # each test person on their own device
     if "challenge_token" not in body:  # solve a real slider puzzle, like a person dragging
         cid = c.post("/api/challenge", headers={"X-AP": "1"}).json()["id"]
@@ -805,3 +805,53 @@ def test_forgot_password_by_code_or_link_without_revealing_accounts(client, monk
     forgot("forgetful1")  # by username, then the link
     _, link, _ = _last_email()
     assert client.post("/api/password/reset", json={"username": "forgetful1", "token": link, "password": "Another-Pass88"}, headers={"X-AP": "1"}).json()["ok"]
+
+
+def test_unverified_signup_is_never_stuck(client, monkeypatch):
+    _with_email(monkeypatch)
+    client.cookies.clear()
+    first = _register(client, username="stuck1", email="stuck1@example.com").json()
+    assert first["status"] == "pending_email"
+    # the code was never entered; signing up again starts fresh instead of "already registered"
+    again = _register(client, username="stuck1", email="stuck1@example.com")
+    assert again.status_code == 200 and again.json()["status"] == "pending_email"
+    # or signing in with the right password sends a new code and opens the code screen
+    n = len(FakeSMTP.sent)
+    r = client.post("/api/login", json={"username": "stuck1", "password": PW, "risk": HUMAN}, headers={"X-AP": "1"}).json()
+    assert r["status"] == "pending_email" and r["wait_token"] and len(FakeSMTP.sent) == n + 1
+    code, _, _ = _last_email()
+    assert client.post("/api/register/verify", json={"username": "stuck1", "code": code}, headers={"X-AP": "1"}).json()["status"] == "active"
+    # a wrong password still says nothing about the account
+    assert client.post("/api/login", json={"username": "stuck1", "password": "Wrong-pass99", "risk": HUMAN}, headers={"X-AP": "1"}).status_code == 401
+
+
+def test_signup_requires_accepting_the_terms(client):
+    client.cookies.clear()
+    r = _register(client, username="noterms1", email="noterms1@example.com", accept_terms=False)
+    assert r.status_code == 422 and "Terms" in r.json()["detail"]
+    _register(client, username="terms1", email="terms1@example.com")
+    me = client.get("/api/me").json()
+    assert me["terms_version"] == me["terms_current"]
+
+
+def test_account_deletion_removes_personal_data_and_keeps_anonymised_records(client):
+    import server.api as api
+    client.cookies.clear()
+    _register(client, username="leaver1", email="leaver1@example.com")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}
+    pid = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))[-1]["plan_id"]
+    with api.DB_LOCK, api.db:
+        api.db.execute("INSERT INTO payments(username,plan,amount_cents,currency,intent_id,status,created_utc,updated_utc) "
+                       "VALUES('leaver1','pro',1900,'myr','pi_leaver','succeeded','2026-10-22','2026-10-22')")
+    assert client.post("/api/account/delete", json={"password": PW, "confirm": "nope"}, headers={"X-AP": "1"}).status_code == 422
+    assert client.post("/api/account/delete", json={"password": "Wrong-pass99", "confirm": "DELETE"}, headers={"X-AP": "1"}).status_code == 403
+    assert client.post("/api/account/delete", json={"password": PW, "confirm": "DELETE"}, headers={"X-AP": "1"}).json()["ok"]
+    assert client.get("/api/me").status_code == 401
+    db = api.db
+    assert not db.execute("SELECT 1 FROM users WHERE username='leaver1'").fetchone()
+    assert not db.execute("SELECT 1 FROM plans WHERE plan_id=?", (pid,)).fetchone()
+    assert not db.execute("SELECT 1 FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
+    pay = db.execute("SELECT username FROM payments WHERE intent_id='pi_leaver'").fetchone()[0]
+    assert pay.startswith("deleted-")  # kept for accounting, no longer linked to the person
+    assert not db.execute("SELECT 1 FROM risk_events WHERE username='leaver1'").fetchone()
+    assert client.post("/api/login", json={"username": "leaver1", "password": PW, "risk": HUMAN}, headers={"X-AP": "1"}).status_code == 401

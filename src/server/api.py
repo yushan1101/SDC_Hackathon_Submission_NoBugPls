@@ -39,7 +39,7 @@ from core import graph, screening
 from core.state import Pathway, Profile, Request, Skill
 from core.team_import import parse_team
 from core.usage import summarize
-from governance import accounts, approval, billing, challenge, otp, recruiting, reviews, risk
+from governance import accounts, approval, billing, challenge, deletion, otp, recruiting, reviews, risk
 from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
@@ -171,6 +171,12 @@ def login(body: Login, request: HttpRequest, response: Response):
     try:
         with DB_LOCK:
             user = accounts.authenticate(db, body.username, body.password, cfg.login_max_failures, cfg.login_lock_minutes)
+    except accounts.PendingEmail:  # right password, email never verified: a new code instead of a dead end
+        with DB_LOCK:
+            a = accounts.account(db, name)
+            otp.issue(db, cfg, name, a["email"], _base_url(request))
+            wait = otp.new_wait(db, name)
+        return {"status": "pending_email", "username": name, "email": a["email"], "wait_token": wait}
     except accounts.AuthError as e:
         with DB_LOCK:
             risk.assess(db, "login_failed", name, _ip(request), body.risk)
@@ -209,7 +215,8 @@ def logout(request: HttpRequest, response: Response):
 def me(user: dict = Depends(current_user)):
     with DB_LOCK:
         a = accounts.account(db, user["username"]) or {}
-    return user | {k: a.get(k) for k in ("email", "status", "plan", "plan_until", "effective_plan", "account_type")}
+    return user | {k: a.get(k) for k in ("email", "status", "plan", "plan_until", "effective_plan", "account_type")} \
+        | {"terms_version": a.get("terms_version"), "terms_current": accounts.TERMS_VERSION}
 
 
 @app.post("/api/challenge")
@@ -244,6 +251,7 @@ def _base_url(request: HttpRequest) -> str:
 
 
 class RegisterIn(BaseModel):
+    accept_terms: bool = False                                # Terms of Use + Privacy Policy; required
     challenge_token: str = Field(default="", max_length=80)  # the slider pass; required
     username: str = Field(min_length=3, max_length=40)
     email: str = Field(min_length=5, max_length=254)
@@ -258,6 +266,8 @@ def register(body: RegisterIn, request: HttpRequest, response: Response):
     """Sign-up, scored like Sift: block -> refused; review -> an admin approves it first. With SMTP set up, the email is
     verified with a one-time code before the account can be used."""
     name = body.username.strip().lower()
+    if not body.accept_terms:
+        raise HTTPException(422, "Please accept the Terms of Use and Privacy Policy to create an account.")
     with DB_LOCK:  # the slider check cannot be skipped: no valid, unused pass from this device, no account
         if not challenge.consume(db, body.challenge_token, str((body.risk or {}).get("device_id") or "")):
             raise HTTPException(422, "Complete the slider check first.")
@@ -277,7 +287,7 @@ def register(body: RegisterIn, request: HttpRequest, response: Response):
         with DB_LOCK:
             otp.issue(db, cfg, r["username"], body.email.strip().lower(), _base_url(request))
             wait = otp.new_wait(db, r["username"])
-        return {"status": "pending_email", "username": r["username"], "wait_token": wait}
+        return {"status": "pending_email", "username": r["username"], "email": body.email.strip().lower(), "wait_token": wait}
     if r["status"] == "active":
         with DB_LOCK:
             user = accounts.account(db, r["username"])
@@ -405,7 +415,34 @@ def register_verify_link(body: VerifyLinkIn, request: HttpRequest, response: Res
     return {"status": status, "username": name}
 
 
+class DeleteAccountIn(BaseModel):
+    password: str = Field(max_length=200)
+    confirm: str = Field(max_length=20)  # the person types DELETE
+
+
+@app.post("/api/account/delete")
+def account_delete(body: DeleteAccountIn, response: Response, user: dict = Depends(current_user)):
+    """Deletes the account and the person's own data (see governance/deletion.py and the Privacy Policy)."""
+    if body.confirm.strip().upper() != "DELETE":
+        raise HTTPException(422, "Type DELETE to confirm.")
+    with DB_LOCK:
+        if not accounts.check_password(db, user["username"], body.password):
+            raise HTTPException(403, "That password is not right.")
+        try:
+            result = deletion.delete_account(db, user["username"])
+        except deletion.DeletionError as e:
+            raise HTTPException(400, str(e))
+    response.delete_cookie(COOKIE)
+    log.info("account deleted on request (%s items)", sum(result.values()))
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------- plans and payments (Stripe Elements, test mode)
+@app.get("/api/legal")
+def legal_meta():
+    return {"support_email": cfg.support_email or None, "terms_version": accounts.TERMS_VERSION}
+
+
 @app.get("/api/billing/plans")
 def billing_plans():
     return {"plans": billing.catalog(cfg), "enabled": billing.configured(cfg), "publishable_key": cfg.stripe_publishable_key or None}
