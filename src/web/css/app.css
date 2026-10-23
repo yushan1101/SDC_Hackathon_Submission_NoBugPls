@@ -3319,3 +3319,13 @@ body {
 .phase .act-steps { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; color: var(--ink-2); font-size: 14px; line-height: 1.5; }
 .phase .act-steps li::marker { color: var(--accent); font-weight: 600; }
 .phase .act-description .act-outcome { margin-top: 8px; color: var(--ink); }
+
+/* HR console: no top bar; the page gets the full height. Top-level rail links line up with the folder headers. */
+[data-product="hr"] .hr-shell:not(.admin-shell) { grid-template-rows: minmax(0, 1fr); }
+[data-product="hr"] .hr-shell:not(.admin-shell) .review { height: 100dvh; }
+@media (max-width: 767px) {
+  [data-product="hr"] .hr-shell:not(.admin-shell) { grid-template-rows: minmax(0, 1fr) calc(72px + env(safe-area-inset-bottom)); }
+  [data-product="hr"] .hr-shell:not(.admin-shell) .review { height: auto; }
+}
+.hr-shell:not(.admin-shell):not(.is-sidebar-collapsed) .hr-rail > a:not(.logo) { justify-content: flex-start; padding: 0 14px; }
+.hr-shell:not(.admin-shell):not(.is-sidebar-collapsed) .hr-rail .rail-sub a { justify-content: flex-start; padding: 0 14px 0 26px; }

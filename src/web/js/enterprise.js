@@ -57,7 +57,6 @@ function shell() {
       title: SCENARIO_HELP[k], "aria-description": SCENARIO_HELP[k],
       onclick: (e) => { S.scenario = k; S.seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget))); S.onScenarioChange?.(); } },
       k === "assistive" ? "Assistive" : "Agentic")));
-  S.crumb = h("div", { class: "crumb" });
   const review = link("#/review", "Review", "review"); review.append(S.badge);
   const more = h("div", { id: "hr-more", class: "hr-more", popover: "auto", "aria-label": "Additional pages" },
     h("a", { href: "#/agents", onclick: () => more.hidePopover?.() }, icon("ask"), "Agent"),
@@ -91,13 +90,11 @@ function shell() {
       group("Hiring", "job", link("#/openings", "Openings", "people"), link("#/plugins", "Hiring plugins", "plug")),
       link("#/signals", "AI trends", "pulse"),
       h("div", { style: { flex: 1 } }),
-      group("Settings", "sliders", link("#/models", "AI models", "model"),
+      group(S.me.display_name || "Account", "user", link("#/models", "AI models", "model"),
         h("a", { class: "hr-nav-link", href: "./#/account", "aria-label": "Plan & billing", title: "Plan & billing" }, icon("user"), h("span", { class: "lbl" }, "Plan & billing"), h("span", { class: "tip", "aria-hidden": "true" }, "Plan & billing")),
         h("a", { class: "hr-nav-link", href: "#", "aria-label": "Sign out", title: "Sign out", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "lbl" }, "Sign out"), h("span", { class: "tip", "aria-hidden": "true" }, "Sign out"))));
   shellEl = h("div", { class: "hr-shell" },
     sidebar,
-    h("header", { class: "hr-top" }, S.crumb, S.status.el,
-      h("div", { class: "who" }, h("div", {}, S.me.display_name), h("div", { class: "muted" }, "HR advisor"))),
     h("main", { id: "main", class: "hr-main", tabindex: "-1" }),
     h("nav", { class: "hr-tabbar", "aria-label": "Primary" }, tab("#/overview", "Overview", "grid"), tab("#/run", "Analyse", "upload"),
       tab("#/review", "Review", "review"),
@@ -107,11 +104,7 @@ function shell() {
   app.replaceChildren(shellEl);
   updateSidebar();
   // the owl lives in the rail's logo spot; on phones (no rail) it moves back next to the status text
-  const narrow = matchMedia("(max-width: 767px)");
-  const place = () => (narrow.matches ? S.status.el.prepend(S.status.owl.el) : S.logo.append(S.status.owl.el));
-  narrow.addEventListener("change", place);
-  place();
-  crumb();
+  S.logo.append(S.status.owl.el);
   refreshPlans();
 }
 
@@ -139,11 +132,6 @@ function capsule() {
   });
 }
 
-function crumb(page = (location.hash.split("/")[1] || "overview")) {
-  const names = { overview: "Overview", run: "Analyse team", review: "Review queue", plans: "Plans register", openings: "Openings & screening", signals: "AI trends", plugins: "Hiring plugins", people: "Team members", models: "AI models", agents: "Agent" };
-  S.crumb.replaceChildren(names[page] || "Overview");
-}
-
 async function signOut() { await api("/api/logout", { method: "POST" }).catch(() => {}); location.reload(); }
 
 async function refreshPlans() {
@@ -168,12 +156,11 @@ function route() {
       hash === dest || hash.startsWith(dest + "/");
     if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
-  document.querySelectorAll(".rail-group").forEach((g) => {  // the folder holding this page opens itself
+  document.querySelectorAll(".rail-group").forEach((g) => {  // only the folder holding this page stays open
     const here = !!g.querySelector('[aria-current="page"]');
     g.classList.toggle("has-current", here);
-    if (here) { g.classList.add("open"); g.firstChild.setAttribute("aria-expanded", "true"); }
+    g.classList.toggle("open", here); g.firstChild.setAttribute("aria-expanded", String(here));
   });
-  crumb(page);
   S.capsule.hidden = page === "agents";  // the agent page is the same chat, full size
   S.onScenarioChange = null;
   const main = $("#main");
