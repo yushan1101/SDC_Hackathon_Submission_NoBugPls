@@ -110,7 +110,7 @@ function route() {
   S.onScenarioChange = null;
   const main = $("#main");
   S.routeVersion = (S.routeVersion || 0) + 1;
-  main.scrollTop = 0;
+  if (page !== "review" || !main.querySelector(".review")) main.scrollTop = 0;
   const views = { run: runView, review: () => reviewView(main, id), plans: () => plansView(main, id),
     openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status),
     plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status) };
@@ -303,7 +303,11 @@ async function reviewView(main, id) {
   const detail = h("section", { class: "detail", "aria-label": "Plan detail" });
   const aside = h("aside", { class: "aside", "aria-label": "Evidence and audit" });
   const wrap = h("div", { class: "review", "data-pane": location.hash.split("/")[2] ? "detail" : "list" }, queue, detail, aside);
+  // Keep the list's position when selecting a plan or returning from detail on phones.
+  const previousQueue = main.querySelector(".queue");
+  if (previousQueue?.getClientRects().length) S.reviewQueueScroll = previousQueue.scrollTop;
   main.replaceChildren(wrap);
+  queue.scrollTop = S.reviewQueueScroll || 0;
   if (id) loadDetail(id, detail, aside, wrap);
 }
 
