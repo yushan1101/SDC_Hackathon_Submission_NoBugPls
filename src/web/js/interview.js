@@ -12,6 +12,12 @@ const TYPES = { behavioral: "HR / behavioral", technical: "Technical", situation
 const STAGE_ORDER = ["behavioral", "technical", "situational", "problem_solving", "workplace_scenario"];
 const pct = (n) => `${Math.max(0, Math.min(100, Math.round(Number(n) || 0)))}%`;
 const OFFICE = () => window.AP_CONFIG?.VIRTUAL_INTERVIEW_3D === true;
+/** Resolves once `el` has a size (a just-inserted room can measure 0 for a frame or two); gives up after ~1 s. */
+const sized = (el) => new Promise((resolve) => {
+  let frames = 0;
+  const check = () => ((el.clientWidth && el.clientHeight) || ++frames > 60 ? resolve() : requestAnimationFrame(check));
+  check();
+});
 
 /** The interviewer, waiting in the 3D office (the same scene as the live room), with the page's heading and next
  *  step over it. Call mountStage() once the stage is on the page. Without WebGL or the 3D flag the owl stands in. */
@@ -24,7 +30,8 @@ function interviewerStage({ eyebrow, title, text, greeting, actions = [] }) {
   stage.mount = () => {
     const owl = () => { scene.querySelector("canvas")?.remove(); scene.append(new Owl({ size: 168, state: "greeting" }).el); stage.classList.add("is-owl"); };
     if (!OFFICE()) { owl(); return; }
-    import("./virtual-office.js").then(({ mountVirtualOffice }) => {
+    import("./virtual-office.js").then(async ({ mountVirtualOffice }) => {
+      await sized(scene);
       if (!scene.isConnected) return;
       // wide: look left of the interviewer so they sit on the right, clear of the heading; phones: centred
       const unmount = mountVirtualOffice(scene, { onFailure: owl, aimX: (w) => (w > 760 ? -1 : 0.12) });
@@ -265,9 +272,12 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   const officeArrived = officeEnabled ? new Promise((resolve) => {
     markOfficeReady = () => { if (officeReady) return; officeReady = true; resolve(); room.classList.add("is-office-ready"); updateControls(); };
   }) : Promise.resolve();
+  // Mina only "speaks" (lips, gestures) while her voice is actually playing: while the clip is still on its way she
+  // waits, calm and attentive, so sound and movement start together.
+  let voicePlaying = false;
   const updateAvatarPresentation = () => {
     const micState = voicePanel.dataset.state;
-    const state = interviewerSpeaking ? "speaking"
+    const state = voicePlaying ? "speaking" : interviewerSpeaking ? "idle"
       : ["ready", "listening", "speaking", "captured"].includes(micState) ? "listening" : "idle";
     window.dispatchEvent(new CustomEvent("aiversepulse:interview-avatar-state", { detail: {
       state, microphoneLevel, speechCue, speechLevel,
@@ -548,13 +558,13 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   const playQuestion = async () => {
     const text = qText.textContent;
     if (!text) return;
-    interviewerSpeaking = true; updateControls(); setMicState("processing", "Preparing interviewer question…");
+    interviewerSpeaking = true; voicePlaying = false; updateControls(); setMicState("processing", "Getting ready to ask…");
     if (recording || micStream) await finishRecording(false, false);
     let lips = 0;
     const voice = currentUtterance = speak(text, { onStart: () => {
       if (currentUtterance !== voice) return;
       speechCue = { word: text, startedAt: performance.now(), secondsPerCharacter: 0.095 };
-      interviewerSpeaking = true; updateControls(); setMicState("processing", "Interviewer speaking");
+      interviewerSpeaking = true; voicePlaying = true; updateControls(); setMicState("processing", "Interviewer speaking");
       const follow = () => {
         if (currentUtterance !== voice) { speechLevel = 0; return; }
         speechLevel = voice.level(); updateAvatarPresentation();
@@ -565,7 +575,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     await voice.done;
     cancelAnimationFrame(lips);
     if (currentUtterance !== voice) return;
-    currentUtterance = null; interviewerSpeaking = false; speechCue = null; speechLevel = 0; updateControls();
+    currentUtterance = null; interviewerSpeaking = false; voicePlaying = false; speechCue = null; speechLevel = 0; updateControls();
     setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : "Ready to answer · microphone off");
   };
   const dispose = () => {
@@ -625,10 +635,10 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     paused = !paused;
     if (paused) {
       if (recording || micStream) void finishRecording();
-      currentUtterance?.pause();
+      currentUtterance?.pause(); voicePlaying = false; updateAvatarPresentation();  // she pauses with her voice
       if (!interviewerSpeaking) setMicState("off", "Paused · microphone off");
     } else {
-      currentUtterance?.resume();
+      currentUtterance?.resume(); voicePlaying = Boolean(currentUtterance && speechCue); updateAvatarPresentation();
       if (!interviewerSpeaking) setMicState("off", "Microphone off");
     }
     pause.replaceChildren(icon(paused ? "play" : "pause"));
@@ -648,7 +658,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       if (pendingTranscript && !transcript.value.toLocaleLowerCase().includes(pendingTranscript.toLocaleLowerCase())) {
         transcript.value = [transcript.value.trim(), pendingTranscript].filter(Boolean).join(" ").slice(0, 4000);
       }
-      currentUtterance?.stop(); currentUtterance = null; interviewerSpeaking = false; speechCue = null;
+      currentUtterance?.stop(); currentUtterance = null; interviewerSpeaking = false; voicePlaying = false; speechCue = null;
       await api(`/api/interviews/${sessionId}/pause`, { method: "POST", body: { draft_answer: transcript.value.slice(0, 4000) } });
       const destination = detail.assessment_source === "questionnaire" ? "#/quiz" : "#/resume";
       dispose(); location.hash = destination;
@@ -712,8 +722,8 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     };
     // a minute is long enough on a slow connection; after that the plain room is the better experience
     const giveUp = setTimeout(() => { if (!officeReady && !discarded) fallbackOffice(new Error("The interviewer took too long to load.")); }, 60_000);
-    import("./virtual-office.js").then(({ mountVirtualOffice }) => mountVirtualOffice(officeHost, { onFailure: fallbackOffice,
-      onProgress: showProgress, onReady: () => { clearTimeout(giveUp); showProgress(1); markOfficeReady(); } })).then((unmount) => {
+    import("./virtual-office.js").then(async ({ mountVirtualOffice }) => (await sized(officeHost), mountVirtualOffice(officeHost, { onFailure: fallbackOffice,
+      onProgress: showProgress, onReady: () => { clearTimeout(giveUp); showProgress(1); markOfficeReady(); } }))).then((unmount) => {
       if (discarded || !officeHost.isConnected) { unmount(); return; }
       officeDisposer = unmount;
       room.classList.remove("interview-room-office-pending"); room.classList.add("interview-room-virtual");
