@@ -5,4 +5,5 @@
 
 Changes made here (Apache-2.0 section 4b):
 - `mina.fbx` is `SK_MINA_CASUAL_01_with_bones_in_skirt.fbx`, unchanged.
-- The textures are the originals resized to 1024 px (eyes 512, teeth 256), with colour maps saved as JPEG and the hair and lash masks as greyscale+alpha PNG. `outfit.jpg` is the black casual colourway.
+- The textures are the originals resized to 1024 px (eyes 512, teeth 256), with colour maps saved as JPEG and the hair and lash masks as greyscale+alpha PNG.
+- `suit.jpg` is rebuilt from the casual outfit's base colour (`T_MINA_CASUAL_BaseColor_White.png`) on the same UV layout by `src/scripts/build_mina_suit.py`: the latex panels and trims become a neutral wool weave (tinted per garment in `js/mina.js`), and the jewellery keeps its original pixels.

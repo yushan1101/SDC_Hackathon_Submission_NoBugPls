@@ -201,7 +201,7 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
       if (index < word.length) jaw = (/[aeo]/.test(character) ? 1 : /[iu]/.test(character) ? 0.67 : /[mnbp]/.test(character) ? 0.22 : 0.42)
         + Math.sin(time * 18 + index) * 0.06;
     }
-    mina.set({ blink: blinkAmount(time), jaw: Math.max(0, jaw) * 0.55, smile: speaking ? 0.15 : 0.32,
+    mina.set({ time, speaking, listening, blink: blinkAmount(time), jaw: Math.max(0, jaw) * 0.55, smile: speaking ? 0.15 : 0.32,
       headX: look.x, headY: look.y, headZ: look.z, breath: Math.sin(time * 1.3) });
   };
 
