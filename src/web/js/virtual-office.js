@@ -11,7 +11,8 @@ const ROOM_AIM = (w) => (w >= 1024 ? 0.34 : w <= 760 ? 0.12 : 0);
 
 // The room only shows (host[data-ready]) once Mina is seated, so nothing else ever appears in her chair; if she
 // can't load, onFailure lets the caller fall back to its plain layout.
-export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
+// onProgress(0..1) while she loads; onReady() once she is seated, textured and her shaders are compiled.
+export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX = ROOM_AIM } = {}) {
   const width = host.clientWidth;
   const height = host.clientHeight;
   if (!width || !height) throw new Error("The interview office has no visible size.");
@@ -128,12 +129,16 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
 
   // Mina sits in the chair across the desk; the desk hides everything below her waist. 2.45 is the office's scale.
   let mina = null;
-  import("./mina.js").then(({ loadMina }) => loadMina({ envMap: studio, height: 2.45 })).then((m) => {
+  import("./mina.js").then(({ loadMina }) => loadMina({ envMap: studio, height: 2.45, onProgress })).then(async (m) => {
     if (disposed) return;
     m.root.updateMatrixWorld(true);
     m.root.position.add(new THREE.Vector3(0, 1.65, 0.34).sub(m.head.getWorldPosition(new THREE.Vector3())));
-    scene.add(m.root); mina = m;
+    scene.add(m.root);
+    await renderer.compileAsync?.(scene, camera);  // no first-frame hitch while the shaders build
+    if (disposed) return;
+    mina = m;
     if (still) drawStill(); else draw();
+    onReady?.();
   }).catch((error) => {
     if (disposed) return;
     onFailure?.(error instanceof Error ? error : new Error("The interviewer could not load."));

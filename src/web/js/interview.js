@@ -258,6 +258,13 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   let interviewerSpeaking = false, currentUtterance = null, paused = false;
   let microphoneLevel = 0, speechCue = null, lastAvatarSignalAt = 0;
   let officeDisposer = null;
+  // The interviewer speaks (and the microphone opens) only once Mina is fully in the room, so there is no voice from an
+  // empty chair and no half-loaded model on screen. Without the 3D office there is nothing to wait for.
+  const officeEnabled = window.AP_CONFIG?.VIRTUAL_INTERVIEW_3D === true;
+  let officeReady = !officeEnabled, markOfficeReady = () => {};
+  const officeArrived = officeEnabled ? new Promise((resolve) => {
+    markOfficeReady = () => { if (officeReady) return; officeReady = true; resolve(); room.classList.add("is-office-ready"); updateControls(); };
+  }) : Promise.resolve();
   const updateAvatarPresentation = () => {
     const micState = voicePanel.dataset.state;
     const state = interviewerSpeaking ? "speaking"
@@ -273,7 +280,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     if (present) updateAvatarPresentation();
   };
   const updateControls = () => {
-    startBtn.disabled = recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking;
+    startBtn.disabled = recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking || !officeReady;
     stopBtn.disabled = !recording || Boolean(finishPromise);
     retryBtn.disabled = !recordingAttempted || recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking;
     muteBtn.disabled = !micStream || Boolean(finishPromise) || interviewerSpeaking || paused;
@@ -599,7 +606,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     progress.setAttribute("aria-valuenow", String(step));
     progress.querySelector("i").style.width = `${Math.min(100, step / total * 100)}%`;
     setMicState("off", "Microphone off");
-    if (qText.textContent) void playQuestion();
+    if (qText.textContent) void officeArrived.then(playQuestion);
   };
   const form = h("form", { class: "interview-answer-form", onsubmit: async (e) => {
     e.preventDefault();
@@ -661,11 +668,18 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   const onEscape = (event) => { if (event.key === "Escape") { event.preventDefault(); end.click(); } };
   document.addEventListener("keydown", onEscape);
   setQuestion(current, source);
-  const officeEnabled = window.AP_CONFIG?.VIRTUAL_INTERVIEW_3D === true;
   const officeHost = officeEnabled ? h("div", { class: "interview-office-host", role: "group",
     "aria-label": "First-person view of a modern interview office, seated across the desk" },
     h("span", { class: "interview-office-label", "aria-hidden": "true" }, "VIRTUAL INTERVIEW OFFICE"),
     h("span", { class: "interview-office-loading", role: "status" }, "Preparing your interview room…")) : null;
+  const loadPct = h("b", {}, "0%");
+  const loadRing = h("span", { class: "room-loading-ring", "aria-hidden": "true" });
+  const roomLoading = officeEnabled ? h("div", { class: "room-loading", role: "status", "aria-live": "polite" },
+    loadRing, h("p", {}, "Your interviewer is joining", h("br"), loadPct)) : null;
+  const showProgress = (p) => {
+    const pct = Math.round(Math.min(1, Math.max(0, p)) * 100);
+    loadPct.textContent = `${pct}%`; loadRing.style.setProperty("--p", pct);
+  };
   const questionToggle = h("button", { class: "interview-question-toggle", type: "button", "aria-expanded": "true",
     "aria-label": "Hide interview question", onclick: (event) => {
       const expanded = event.currentTarget.getAttribute("aria-expanded") === "true";
@@ -692,16 +706,20 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     h("div", { class: "interview-role-name" }, detail.role_title),
     h("div", { class: "interview-topbar-progress" }, counter, progress), modeSwitch, end);
   const room = h("section", { class: `interview-takeover${officeEnabled ? " interview-room-office-pending" : ""}`, "aria-label": "Live mock interview" },
-    officeHost, topbar, questionOverlay, responseFeedback, form);
+    officeHost, topbar, questionOverlay, responseFeedback, form, roomLoading);
   setMode(officeEnabled ? "card" : "focus");
+  updateControls();  // the record button stays off until the interviewer is in the room
   main.replaceChildren(room);
   if (officeHost) {
     const fallbackOffice = (error) => {
       officeHost.remove(); room.classList.remove("interview-room-office-pending", "interview-room-virtual"); setMode("focus");
-      officeDisposer?.(); officeDisposer = null;
+      officeDisposer?.(); officeDisposer = null; roomLoading?.remove(); markOfficeReady();
       console.warn("Virtual interview office unavailable; using the standard interview room.", error);
     };
-    import("./virtual-office.js").then(({ mountVirtualOffice }) => mountVirtualOffice(officeHost, { onFailure: fallbackOffice })).then((unmount) => {
+    // a minute is long enough on a slow connection; after that the plain room is the better experience
+    const giveUp = setTimeout(() => { if (!officeReady && !discarded) fallbackOffice(new Error("The interviewer took too long to load.")); }, 60_000);
+    import("./virtual-office.js").then(({ mountVirtualOffice }) => mountVirtualOffice(officeHost, { onFailure: fallbackOffice,
+      onProgress: showProgress, onReady: () => { clearTimeout(giveUp); showProgress(1); markOfficeReady(); } })).then((unmount) => {
       if (discarded || !officeHost.isConnected) { unmount(); return; }
       officeDisposer = unmount;
       room.classList.remove("interview-room-office-pending"); room.classList.add("interview-room-virtual");

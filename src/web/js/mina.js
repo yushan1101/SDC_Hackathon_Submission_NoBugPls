@@ -12,11 +12,18 @@ const DIR = "models/mina/";
 // garment tints over the neutral grey suit atlas; jewellery and anything unlisted keeps the atlas colours
 const SUIT = { JACKET: 0x2c3a58, TOP: 0xf1ece4, SKIRT: 0x3b3e46, SOCKS: 0x2a2c32, SHOES: 0x1d1e22 };
 
-/** Loads Mina; resolves to { root, head, set(pose) } once the FBX is in. Textures stream in after. */
-export async function loadMina({ envMap, height = 1.6 } = {}) {
+/** Loads Mina; resolves to { root, head, set(pose) } once the model and every texture are in, so she never shows
+ *  half-dressed. onProgress(0..1): the model download is most of it, then the textures. */
+export async function loadMina({ envMap, height = 1.6, onProgress } = {}) {
   const loader = new THREE.TextureLoader();
+  const textures = [];
+  let texturesDone = 0;
   const T = (file, srgb = true, flipY = true) => {
-    const t = loader.load(DIR + file);
+    let t;
+    textures.push(new Promise((resolve, reject) => {
+      t = loader.load(DIR + file, () => { texturesDone++; onProgress?.(0.85 + 0.15 * texturesDone / textures.length); resolve(); },
+        undefined, () => reject(new Error(`Mina's texture ${file} did not load.`)));
+    }));
     if (srgb) t.colorSpace = THREE.SRGBColorSpace;
     t.flipY = flipY; t.anisotropy = 4;
     return t;
@@ -45,7 +52,7 @@ export async function loadMina({ envMap, height = 1.6 } = {}) {
     return old;
   };
 
-  const fbx = await new FBXLoader().loadAsync(DIR + "mina.fbx");
+  const fbx = await new FBXLoader().loadAsync(DIR + "mina.fbx", (e) => { if (e.lengthComputable) onProgress?.(0.85 * e.loaded / e.total); });
   const morphMeshes = [], seen = new Set();
   fbx.traverse((o) => {
     if (!o.isMesh) return;
@@ -126,6 +133,7 @@ export async function loadMina({ envMap, height = 1.6 } = {}) {
   const wobble = (t, f) => (Math.sin(t * f) + Math.sin(t * f * 2.7 + 1.3) * 0.5 + Math.sin(t * f * 0.31 + 4.1) * 0.8) / 2.3;
   let talk = 0, attend = 0, last = 0;
 
+  await Promise.all(textures);
   return {
     root: fbx, head: bones.head,
     /** pose: { time, speaking, listening, blink, jaw, smile, headX, headY, headZ, breath }, from the room each frame */
