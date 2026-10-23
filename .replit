@@ -12,6 +12,10 @@ expertMode = true
 COOKIE_SAMESITE = "none"
 FRAME_ANCESTORS = "'self' https://replit.com https://*.replit.com https://*.replit.dev"
 
+[userenv.shared]
+COACH_MODEL = "gemini:gemini-3.1-flash-lite"
+LLM_FAST_MODEL = "gemini-3.1-flash-lite"
+
 [workflows]
 runButton = "Project"
 
