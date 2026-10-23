@@ -27,7 +27,6 @@ function interviewerStage({ eyebrow, title, text, greeting, actions = [] }) {
       if (!scene.isConnected) return;
       // wide: look left of the interviewer so they sit on the right, clear of the heading; phones: centred
       const unmount = mountVirtualOffice(scene, { onFailure: owl, aimX: (w) => (w > 760 ? -1 : 0.12) });
-      stage.classList.add("is-ready");
       const leave = () => { removeEventListener("hashchange", leave); unmount(); };  // the page is replaced on any route
       addEventListener("hashchange", leave);
     }).catch(owl);

@@ -1,23 +1,17 @@
-// Phase 1 virtual interview scene. This module is imported only for an active
-// interview when VIRTUAL_INTERVIEW_3D is enabled.
+// The virtual interview office, with Mina (js/mina.js) as the interviewer. Imported only when VIRTUAL_INTERVIEW_3D is
+// enabled: by the live interview room and by the interview landing pages.
 import * as THREE from "../vendor/three.module.js";
 import { reduceMotion } from "./lib.js";
 
 const makeMaterial = (color, roughness = 0.82, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, ...extra });
-const makeClayMaterial = (color, roughness) => new THREE.MeshPhysicalMaterial({
-  color, roughness, metalness: 0, clearcoat: 0.1, clearcoatRoughness: 0.72,
-});
 
 // aimX(width): where the camera looks across the desk; the room leaves its left side to the question overlay,
 // the landing stage (interview.js) leaves its left side to the page heading.
 const ROOM_AIM = (w) => (w >= 1024 ? 0.34 : w <= 760 ? 0.12 : 0);
 
-// face: a generated photo (scripts/generate_interviewer_face.py: front-facing, eyes at ~(336|686, 426), nose tip
-// ~(512, 650), mouth ~(514, 794) on a 1024 square) projected onto a head carved to the same features; without it,
-// or until it loads, the drawn face shows.
-// mina: load HoloHuman's Mina (js/mina.js) and seat her in place of the built avatar once she arrives; the built
-// avatar (with the photo face) shows until then, and stays if she can't load.
-export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: faceUrl = "img/interviewer-face.jpg", mina: useMina = true } = {}) {
+// The room only shows (host[data-ready]) once Mina is seated, so nothing else ever appears in her chair; if she
+// can't load, onFailure lets the caller fall back to its plain layout.
+export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
   const width = host.clientWidth;
   const height = host.clientHeight;
   if (!width || !height) throw new Error("The interview office has no visible size.");
@@ -35,8 +29,7 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.setSize(width, height, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  // After HoloHuman's Mina, simplified: filmic tone mapping, and a soft studio reflection that only skin picks up
-  // (MeshPhysical skin with sheen and a light clearcoat), so the face has real highlights instead of looking printed.
+  // As in HoloHuman: filmic tone mapping, and a soft studio reflection that only Mina's materials pick up.
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.3;
   const studio = (() => {
     const room = new THREE.Scene();
@@ -50,8 +43,6 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
     pmrem.dispose(); room.traverse((node) => { if (node.isMesh) { node.geometry.dispose(); node.material.dispose(); } });
     return texture;
   })();
-  const SKIN = { roughness: 0.62, ior: 1.4, sheen: 0.18, sheenRoughness: 0.55, sheenColor: new THREE.Color("#ffd9c8"),
-    clearcoat: 0.18, clearcoatRoughness: 0.45, envMap: studio, envMapIntensity: 0.7 };
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.domElement.setAttribute("aria-hidden", "true");
@@ -64,14 +55,6 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
     metal: makeMaterial("#9aa9bc", 0.3, { metalness: 0.58 }), glass: makeMaterial("#b5d5e9", 0.22, { metalness: 0.08 }),
     leaf: makeMaterial("#66856e"), leafLight: makeMaterial("#83a080"), pot: makeMaterial("#c18d73"),
     paper: makeMaterial("#fffdf8"), screen: makeMaterial("#27344e", 0.26), accent: makeMaterial("#5b7de0", 0.32),
-    skin: makeClayMaterial("#e9b895", 0.66),
-    cheek: new THREE.MeshPhysicalMaterial({ color: "#cf827a", roughness: 0.82, metalness: 0, transparent: true, opacity: 0.2, depthWrite: false }),
-    hair: makeClayMaterial("#302936", 0.84), hairLight: makeClayMaterial("#403440", 0.82),
-    blazer: makeMaterial("#3e5279", 0.92), shirt: makeMaterial("#f7f4ef", 0.9),
-    eyes: new THREE.MeshPhysicalMaterial({ color: "#fffdf8", roughness: 0.34, metalness: 0, clearcoat: 0.16, clearcoatRoughness: 0.42 }),
-    iris: makeMaterial("#657185", 0.48), pupil: makeMaterial("#282b35", 0.32),
-    mouth: makeMaterial("#573b3c", 0.58, { transparent: true, opacity: 0, depthWrite: false }),
-    smile: makeMaterial("#573b3c", 0.58, { transparent: true, opacity: 1, depthWrite: false }),
   };
   const addMesh = (geometry, material, parent = scene, { position = [0, 0, 0], rotation = [0, 0, 0], cast = true, receive = true } = {}) => {
     const mesh = new THREE.Mesh(geometry, material);
@@ -143,302 +126,19 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
   };
   chair(0, 0.22, 0.82);
 
-  // Project-owned seated HR avatar, built from lightweight Three.js geometry.
-  // No external character asset or asset license is required.
-  const person = new THREE.Group(); person.position.set(0, -0.25, 0.22); scene.add(person);
-  const ellipsoid = (material, scale, position, parent = person) => {
-    const mesh = addMesh(new THREE.SphereGeometry(1, 20, 14), material, parent, { position });
-    mesh.scale.set(...scale); return mesh;
-  };
-  // Smooth, variable-radius tubes make hair locks and facial curves feel sculpted
-  // while keeping their vertex count small enough for laptop integrated graphics.
-  const taperedTube = (points, radius, material, parent, { radialSegments = 8, tubularSegments = 18, taper = 0.12 } = {}) => {
-    const curve = new THREE.CatmullRomCurve3(points.map((point) => new THREE.Vector3(...point)), false, "centripetal");
-    const frames = curve.computeFrenetFrames(tubularSegments, false);
-    const positions = [], indices = [];
-    for (let i = 0; i <= tubularSegments; i++) {
-      const t = i / tubularSegments;
-      const point = curve.getPointAt(t);
-      const endTaper = THREE.MathUtils.smoothstep(t, 1 - taper, 1);
-      const startTaper = THREE.MathUtils.smoothstep(t, 0, taper * 0.55);
-      const r = radius * Math.max(0.08, startTaper) * (1 - endTaper * 0.94);
-      for (let j = 0; j <= radialSegments; j++) {
-        const angle = j / radialSegments * Math.PI * 2;
-        const normal = frames.normals[i].clone().multiplyScalar(Math.cos(angle));
-        const binormal = frames.binormals[i].clone().multiplyScalar(Math.sin(angle));
-        const vertex = point.clone().addScaledVector(normal, r).addScaledVector(binormal, r);
-        positions.push(vertex.x, vertex.y, vertex.z);
-        if (i < tubularSegments && j < radialSegments) {
-          const a = i * (radialSegments + 1) + j, b = a + radialSegments + 1;
-          indices.push(a, b, a + 1, b, b + 1, a + 1);
-        }
-      }
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setIndex(indices); geometry.computeVertexNormals();
-    return addMesh(geometry, material, parent);
-  };
-  const taperedFaceGeometry = () => {
-    const geometry = new THREE.SphereGeometry(1, 72, 54);
-    const positions = geometry.attributes.position, uv = geometry.attributes.uv;
-    // Relief where the photo's features are (unit-sphere x, y): a flat photo on a ball reads as a sticker, while the
-    // same photo on a nose, brow and lips catches the light like a face (as Mina's sculpted head does).
-    const bump = (x, y, cx, cy, sx, sy) => Math.exp(-(((x - cx) / sx) ** 2) - (((y - cy) / sy) ** 2));
-    const RELIEF = [[0, -0.07, 0.07, 0.2, 0.15], [0, -0.24, 0.12, 0.08, 0.07], [0, -0.3, 0.16, 0.05, -0.03],  // nose bridge, tip, under it
-      [-0.43, 0.13, 0.17, 0.09, -0.07], [0.43, 0.13, 0.17, 0.09, -0.07], [0, 0.29, 0.6, 0.07, 0.035],           // eye sockets, brow
-      [0, -0.43, 0.24, 0.07, 0.05], [0, -0.58, 0.2, 0.05, -0.025], [0, -0.82, 0.24, 0.13, 0.04],               // lips, under them, chin
-      [-0.6, -0.08, 0.16, 0.13, 0.03], [0.6, -0.08, 0.16, 0.13, 0.03]];                                        // cheekbones
-    for (let i = 0; i < positions.count; i++) {
-      const x0 = positions.getX(i), y = positions.getY(i), z0 = positions.getZ(i);
-      // the jaw narrows to the photo's jawline (two thirds as wide at the chin), so the head is the face's own shape
-      // rather than a ball with a face printed on it
-      const jaw = THREE.MathUtils.smoothstep(-y, 0.4, 0.85);
-      const cheek = Math.exp(-((y + 0.06) ** 2) / 0.12) * Math.exp(-(x0 ** 2) / 0.3);
-      const x = x0 * (1 - jaw * 0.35) * (1 + cheek * 0.025);
-      // projected straight from the front, from the final outline, cheek to cheek (the photo's ears would stretch
-      // round the sides; the head keeps sculpted ears): the photo's eyes land on the eyelids, its lips on the mouth
-      uv.setXY(i, 0.499 + 0.4 * x, 0.506 + 0.602 * y);
-      const relief = z0 > 0 ? z0 * RELIEF.reduce((sum, [cx, cy, sx, sy, h]) => sum + h * bump(x, y, cx, cy, sx, sy), 0) : 0;
-      positions.setX(i, x);
-      positions.setZ(i, z0 * (1 - jaw * 0.12) + cheek * 0.018 + relief);
-    }
-    positions.needsUpdate = true; uv.needsUpdate = true;
-    geometry.computeVertexNormals();
-    return geometry;
-  };
-  const roundedFrameGeometry = (width, height, radius, innerWidth, innerHeight, innerRadius) => {
-    const traceRoundRect = (path, w, h, r, reverse = false) => {
-      const x = w / 2, y = h / 2;
-      if (!reverse) {
-        path.moveTo(-x + r, -y); path.lineTo(x - r, -y); path.quadraticCurveTo(x, -y, x, -y + r);
-        path.lineTo(x, y - r); path.quadraticCurveTo(x, y, x - r, y); path.lineTo(-x + r, y);
-        path.quadraticCurveTo(-x, y, -x, y - r); path.lineTo(-x, -y + r); path.quadraticCurveTo(-x, -y, -x + r, -y);
-      } else {
-        path.moveTo(-x + r, -y); path.quadraticCurveTo(-x, -y, -x, -y + r);
-        path.lineTo(-x, y - r); path.quadraticCurveTo(-x, y, -x + r, y); path.lineTo(x - r, y);
-        path.quadraticCurveTo(x, y, x, y - r); path.lineTo(x, -y + r); path.quadraticCurveTo(x, -y, x - r, -y);
-        path.lineTo(-x + r, -y);
-      }
-    };
-    const shape = new THREE.Shape();
-    traceRoundRect(shape, width, height, radius);
-    const opening = new THREE.Path();
-    traceRoundRect(opening, innerWidth, innerHeight, innerRadius, true);
-    shape.holes.push(opening);
-    return new THREE.ExtrudeGeometry(shape, {
-      depth: 0.012, bevelEnabled: true, bevelSegments: 2, steps: 1,
-      bevelSize: 0.002, bevelThickness: 0.002, curveSegments: 8,
-    });
-  };
-  const torso = new THREE.Group(); torso.position.set(0, 1.1, 0); torso.scale.x = 0.9; person.add(torso);
-  // A single softly bevelled silhouette gives the blazer shoulders and waist a tailored shape.
-  const blazerShape = new THREE.Shape();
-  blazerShape.moveTo(-0.32, -0.54); blazerShape.lineTo(0.32, -0.54);
-  blazerShape.quadraticCurveTo(0.4, -0.54, 0.4, -0.43); blazerShape.lineTo(0.37, -0.12);
-  blazerShape.quadraticCurveTo(0.38, 0.02, 0.43, 0.16); blazerShape.lineTo(0.51, 0.34);
-  blazerShape.quadraticCurveTo(0.53, 0.43, 0.4, 0.47); blazerShape.lineTo(0.19, 0.51);
-  blazerShape.lineTo(0.13, 0.35); blazerShape.lineTo(-0.13, 0.35); blazerShape.lineTo(-0.19, 0.51);
-  blazerShape.lineTo(-0.4, 0.47); blazerShape.quadraticCurveTo(-0.53, 0.43, -0.51, 0.34);
-  blazerShape.lineTo(-0.43, 0.16); blazerShape.quadraticCurveTo(-0.38, 0.02, -0.37, -0.12);
-  blazerShape.lineTo(-0.4, -0.43); blazerShape.quadraticCurveTo(-0.4, -0.54, -0.32, -0.54);
-  addMesh(new THREE.ExtrudeGeometry(blazerShape, {
-    depth: 0.38, bevelEnabled: true, bevelSegments: 4, bevelSize: 0.045,
-    bevelThickness: 0.045, curveSegments: 10,
-  }), materials.blazer, torso, { position: [0, 0, -0.19] });
-  // The shirt panel and collar are separate, softly rounded layers beneath the lapels.
-  const shirtPanel = new THREE.Shape();
-  shirtPanel.moveTo(-0.13, -0.42); shirtPanel.lineTo(0.13, -0.42);
-  shirtPanel.lineTo(0.12, 0.33); shirtPanel.lineTo(-0.12, 0.33); shirtPanel.closePath();
-  addMesh(new THREE.ExtrudeGeometry(shirtPanel, {
-    depth: 0.025, bevelEnabled: true, bevelSegments: 3, bevelSize: 0.025,
-    bevelThickness: 0.018, curveSegments: 8,
-  }), materials.shirt, torso, { position: [0, 0, 0.205], cast: false });
-  const collarPoint = (side) => {
-    const shape = new THREE.Shape();
-    shape.moveTo(0, 0.4); shape.lineTo(side * 0.16, 0.35);
-    shape.lineTo(side * 0.055, 0.17); shape.lineTo(0, 0.25); shape.closePath();
-    addMesh(new THREE.ExtrudeGeometry(shape, {
-      depth: 0.035, bevelEnabled: true, bevelSegments: 2, bevelSize: 0.012,
-      bevelThickness: 0.012, curveSegments: 6,
-    }), materials.shirt, torso, { position: [0, 0, 0.26], cast: false });
-  };
-  collarPoint(-1); collarPoint(1);
-  ellipsoid(materials.accent, [0.035, 0.2, 0.018], [0, 0.02, 0.25], torso);
-  // Layered lapels keep the navy blazer structured without widening its silhouette.
-  const lapel = (side) => {
-    const shape = new THREE.Shape();
-    shape.moveTo(0, 0.45); shape.lineTo(side * 0.18, 0.4); shape.lineTo(side * 0.075, -0.03);
-    shape.lineTo(side * 0.015, 0.12); shape.closePath();
-    const mesh = addMesh(new THREE.ExtrudeGeometry(shape, { depth: 0.024, bevelEnabled: true, bevelSegments: 3, bevelSize: 0.012, bevelThickness: 0.009 }),
-      materials.blazer, torso, { position: [0, 0, 0.278] });
-    mesh.castShadow = false;
-  };
-  lapel(-1); lapel(1);
-  for (const y of [-0.14, -0.32]) {
-    ellipsoid(materials.darkWood, [0.016, 0.016, 0.009], [0.2, y, 0.287], torso);
-  }
-  // The neck sits just below the jaw, inside the shirt collar.
-  cylinder(0.078, 0.078, 0.21, materials.skin, [0, 1.36, 0.13], 20);
-
-  // Seated sleeves bend onto the desktop; the wrists, palms and fingers remain visible above it.
-  const arms = [];
-  for (const side of [-1, 1]) {
-    const shoulder = new THREE.Group(); shoulder.position.set(side * 0.385, 1.47, 0.045); person.add(shoulder);
-    const upperArm = ellipsoid(materials.blazer, [0.124, 0.19, 0.15], [side * 0.02, -0.075, 0.09], shoulder);
-    upperArm.rotation.z = side * -0.1;
-    ellipsoid(materials.blazer, [0.108, 0.105, 0.12], [side * 0.035, -0.17, 0.19], shoulder);
-    const forearm = new THREE.Group(); forearm.position.set(side * 0.045, -0.105, 0.215); shoulder.add(forearm);
-    const sleeve = ellipsoid(materials.blazer, [0.097, 0.083, 0.28], [0, -0.028, 0.265], forearm);
-    sleeve.rotation.x = -0.015;
-    // The sleeve slightly overlaps the wrist so the hand joins cleanly without a bulky cuff shape.
-    const hand = new THREE.Group(); hand.position.set(-side * 0.13, -0.075, 0.565); forearm.add(hand);
-    ellipsoid(materials.skin, [0.074, 0.039, 0.08], [0, 0, 0], hand);
-    for (const [fingerX, fingerLength] of [[-0.045, 0.061], [-0.015, 0.07], [0.015, 0.069], [0.044, 0.059]]) {
-      const finger = addMesh(new THREE.CapsuleGeometry(0.013, fingerLength, 3, 7), materials.skin, hand,
-        { position: [fingerX, -0.003, 0.068], rotation: [Math.PI / 2, 0, 0] });
-      finger.scale.x = 0.94;
-    }
-    const thumb = addMesh(new THREE.CapsuleGeometry(0.02, 0.045, 4, 8), materials.skin, hand,
-      { position: [side * 0.075, -0.002, 0.006], rotation: [Math.PI / 2, 0, side * 0.72] });
-    thumb.scale.set(0.92, 1, 1);
-    arms.push({ shoulder, forearm, side });
-  }
-
-  const head = new THREE.Group(); head.position.set(0, 1.9, 0.14); person.add(head);
-  const createSculptedHair = () => {
-    // A partial sphere forms the back and crown; a few broad tapered locks
-    // create a swept hairstyle without reading as a separate helmet.
-    const cap = new THREE.SphereGeometry(1, 32, 24, 0, Math.PI * 2, 0, Math.PI * 0.52);
-    addMesh(cap, materials.hair, head, { position: [0, 0.025, 0.025] }).scale.set(0.295, 0.35, 0.215);
-    const locks = [
-      { points: [[-0.245, 0.12, 0.19], [-0.21, 0.24, 0.235], [-0.13, 0.315, 0.25], [-0.035, 0.315, 0.255]], radius: 0.066, material: materials.hair },
-      { points: [[-0.15, 0.22, 0.235], [-0.105, 0.32, 0.25], [0.005, 0.355, 0.245], [0.105, 0.305, 0.23]], radius: 0.068, material: materials.hairLight },
-      { points: [[-0.025, 0.27, 0.255], [0.065, 0.335, 0.24], [0.17, 0.285, 0.215], [0.235, 0.19, 0.175]], radius: 0.061, material: materials.hair },
-    ];
-    const swept = locks.map(({ points, radius, material }) => taperedTube(points, radius, material, head, { tubularSegments: 16 }));
-    for (const side of [-1, 1]) swept.push(taperedTube([
-      [side * 0.22, 0.18, 0.1], [side * 0.275, 0.08, 0.135], [side * 0.275, -0.055, 0.135], [side * 0.235, -0.16, 0.095],
-    ], 0.059, materials.hair, head, { tubularSegments: 16, taper: 0.16 }));
-    return swept;
-  };
-  const createStylizedHead = () => {
-    // features the photo face already has (its own hairline among them); hidden once it loads
-    const drawn = createSculptedHair();
-    const face = addMesh(taperedFaceGeometry(), materials.skin, head, { position: [0, 0.01, 0.18] });
-    face.scale.set(0.205, 0.32, 0.205);  // as wide as the photo's face, cheek to cheek
-    // Ears sit behind the cheek silhouette so their join remains soft.
-    for (const side of [-1, 1]) {
-      ellipsoid(materials.skin, [0.036, 0.062, 0.03], [side * 0.2, -0.018, 0.165], head);
-      drawn.push(ellipsoid(materials.cheek, [0.031, 0.014, 0.006], [side * 0.145, -0.066, 0.35], head));
-    }
-    const eyes = [];
-    for (const x of [-0.087, 0.087]) {
-      const eye = new THREE.Group(); eye.position.set(x, 0.052, 0.36); head.add(eye);
-      ellipsoid(materials.eyes, [0.035, 0.036, 0.019], [0, 0, 0], eye);
-      ellipsoid(materials.iris, [0.0155, 0.018, 0.011], [0, -0.002, 0.017], eye);
-      ellipsoid(materials.pupil, [0.008, 0.010, 0.006], [0, -0.002, 0.026], eye);
-      ellipsoid(materials.eyes, [0.0055, 0.007, 0.004], [-0.006, 0.007, 0.031], eye);
-      const upperLid = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(-0.035, 0.003, 0.014), new THREE.Vector3(-0.025, 0.026, 0.019),
-        new THREE.Vector3(0, 0.034, 0.021), new THREE.Vector3(0.025, 0.026, 0.019),
-        new THREE.Vector3(0.035, 0.003, 0.014),
-      ]);
-      const lowerLid = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(-0.034, -0.004, 0.014), new THREE.Vector3(-0.023, -0.025, 0.019),
-        new THREE.Vector3(0, -0.032, 0.02), new THREE.Vector3(0.023, -0.025, 0.019),
-        new THREE.Vector3(0.034, -0.004, 0.014),
-      ]);
-      addMesh(new THREE.TubeGeometry(upperLid, 12, 0.0055, 6, false), materials.skin, eye);
-      addMesh(new THREE.TubeGeometry(lowerLid, 12, 0.0035, 6, false), materials.skin, eye);
-      drawn.push(...eye.children);
-      eyes.push(eye);
-    }
-    const brows = [];
-    for (const x of [-0.087, 0.087]) {
-      const browGroup = new THREE.Group(); browGroup.position.set(x, 0.113, 0.36); head.add(browGroup);
-      taperedTube([[-0.039, -0.003, 0.004], [-0.02, 0.016, 0.012], [0.008, 0.018, 0.013], [0.039, 0.002, 0.004]],
-        0.007, materials.hair, browGroup, { tubularSegments: 10, radialSegments: 6, taper: 0.22 });
-      brows.push({ mesh: browGroup, side: x < 0 ? -1 : 1 }); drawn.push(browGroup);
-    }
-    // Narrow bridge and rounded tip overlap slightly to read as one soft nose.
-    drawn.push(ellipsoid(materials.skin, [0.021, 0.05, 0.021], [0, -0.003, 0.365], head),
-      ellipsoid(materials.skin, [0.029, 0.023, 0.027], [0, -0.045, 0.384], head));
-    const mouth = ellipsoid(materials.mouth, [0.052, 0.012, 0.011], [0, -0.139, 0.371], head);
-    mouth.scale.y = 0.001;
-    const smileCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-0.052, -0.143, 0.365), new THREE.Vector3(-0.029, -0.158, 0.373),
-      new THREE.Vector3(0, -0.163, 0.376), new THREE.Vector3(0.029, -0.158, 0.373),
-      new THREE.Vector3(0.052, -0.143, 0.365),
-    ]);
-    const smile = addMesh(new THREE.TubeGeometry(smileCurve, 18, 0.005, 6, false), materials.smile, head);
-    drawn.push(smile);
-    // Rounded frames now sit close to the smaller eyes; the bridge and temples stay intact.
-    for (const x of [-0.087, 0.087]) {
-      drawn.push(addMesh(roundedFrameGeometry(0.15, 0.132, 0.042, 0.119, 0.101, 0.031), materials.darkWood, head,
-        { position: [x, 0.052, 0.378] }));
-    }
-    const glassesBridge = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-0.016, 0.052, 0.384), new THREE.Vector3(0, 0.04, 0.397), new THREE.Vector3(0.016, 0.052, 0.384),
-    ]);
-    drawn.push(addMesh(new THREE.TubeGeometry(glassesBridge, 10, 0.01, 8, false), materials.darkWood, head));
-    for (const side of [-1, 1]) {
-      const temple = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(side * 0.16, 0.068, 0.374), new THREE.Vector3(side * 0.205, 0.06, 0.34), new THREE.Vector3(side * 0.235, 0.04, 0.28),
-      ]);
-      drawn.push(addMesh(new THREE.TubeGeometry(temple, 10, 0.008, 6, false), materials.darkWood, head));
-    }
-    return { face, eyes, brows, mouth, smile, drawn };
-  };
-  const { face, eyes, brows, mouth, smile, drawn } = createStylizedHead();
-  // Face, eye and hand details (< 9 cm) cast no visible shadow; skipping them roughly halves the shadow pass.
-  person.traverse((node) => {
-    if (!node.isMesh) return;
-    node.geometry.computeBoundingSphere();
-    if (node.geometry.boundingSphere.radius * Math.max(node.scale.x, node.scale.y, node.scale.z) < 0.09) node.castShadow = false;
-  });
-
-  // The generated photo face: drawn features step aside, skin and hair take the photo's colours, eyelids blink over
-  // the photo's eyes and longer hair frames it (as the photo does). The mouth opening still shows when speaking.
-  let photoFace = false;
-  if (faceUrl) new THREE.TextureLoader().load(faceUrl, (map) => {
-    if (disposed) { map.dispose(); return; }
-    map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
-    const canvas = document.createElement("canvas"); canvas.width = map.image.width; canvas.height = map.image.height;
-    const pen = canvas.getContext("2d", { willReadFrequently: true }); pen.drawImage(map.image, 0, 0);
-    const k = canvas.width / 1024;
-    const pick = (x, y) => {  // the average colour of a small patch, in 1024-square photo coordinates
-      const d = pen.getImageData(Math.round(x * k) - 4, Math.round(y * k) - 4, 8, 8).data;
-      const sum = [0, 0, 0]; for (let i = 0; i < d.length; i += 4) { sum[0] += d[i]; sum[1] += d[i + 1]; sum[2] += d[i + 2]; }
-      return `rgb(${sum.map((v) => Math.round(v / (d.length / 4))).join(",")})`;
-    };
-    face.material = materials.photo = new THREE.MeshPhysicalMaterial({ ...SKIN, map });
-    drawn.forEach((mesh) => { mesh.visible = false; });
-    // speaking opens a small gap between the photo's lips rather than drawing a cartoon mouth over them
-    photoFace = true; mouth.position.y = -0.13; mouth.scale.x = 0.032; materials.mouth.color.set("#3f2124");
-    // neck, ears and hands share the photo's skin; the hair cap takes its hair colour
-    materials.skin.setValues({ ...SKIN, color: pick(300, 640) });
-    materials.hair.color.set(pick(200, 120));  // hair beside the parting, above the hairline
-    materials.hairLight.color.copy(materials.hair.color).offsetHSL(0, 0, 0.04);
-    materials.lid = new THREE.MeshPhysicalMaterial({ ...SKIN, color: pick(330, 350) });
-    eyes.forEach((eye) => {
-      eye.userData.lid = ellipsoid(materials.lid, [0.043, 0.03, 0.01], [0, 0.002, 0.004], eye);
-      eye.userData.lid.scale.y = 0.001;
-    });
-    ellipsoid(materials.hair, [0.12, 0.11, 0.1], [0, 0.0, -0.21], head);  // the photo's hair is pulled back into a low bun
-    if (still) drawStill();
-  });
-
+  // Mina sits in the chair across the desk; the desk hides everything below her waist. 2.45 is the office's scale.
   let mina = null;
-  if (useMina) import("./mina.js").then(({ loadMina }) => loadMina({ envMap: studio, height: 2.45 })).then((m) => {  // 2.45: the office's scale
+  import("./mina.js").then(({ loadMina }) => loadMina({ envMap: studio, height: 2.45 })).then((m) => {
     if (disposed) return;
-    // her head where the built avatar's head is; the desk hides everything below her waist
-    const want = head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.0, -0.02));
     m.root.updateMatrixWorld(true);
-    m.root.position.add(want.sub(m.head.getWorldPosition(new THREE.Vector3())));
-    scene.add(m.root); person.visible = false; mina = m;
-    if (still) drawStill();
-  }).catch((error) => console.warn("Mina could not load; keeping the built interviewer.", error));
+    m.root.position.add(new THREE.Vector3(0, 1.65, 0.34).sub(m.head.getWorldPosition(new THREE.Vector3())));
+    scene.add(m.root); mina = m;
+    if (still) drawStill(); else draw();
+  }).catch((error) => {
+    if (disposed) return;
+    onFailure?.(error instanceof Error ? error : new Error("The interviewer could not load."));
+    unmount();
+  });
 
   const still = reduceMotion();
   let avatarState = "idle";
@@ -469,8 +169,11 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
     const phase = (time - blinkStartedAt) / 0.16;
     return phase >= 0 && phase <= 1 ? Math.sin(phase * Math.PI) : 0;
   };
+  // Mina's head eases toward these each frame: nods while listening, small turns while speaking, drift when idle.
+  const look = { x: 0, y: 0, z: 0 };
   let previousFrameTime = 0;
   const animateAvatar = (timeMs) => {
+    if (!mina) return;
     const time = timeMs / 1000;
     const delta = previousFrameTime ? Math.min(0.05, Math.max(0.001, time - previousFrameTime)) : 1 / 60;
     previousFrameTime = time;
@@ -482,54 +185,24 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
     const thinking = listening ? thoughtPulse * quiet : 0;
     const nod = listening && time % 4.8 > 0.25 && time % 4.8 < 0.58
       ? Math.sin((time % 4.8 - 0.25) / 0.33 * Math.PI) * 0.045 : 0;
-    const breathing = Math.sin(time * 1.3);
-    torso.scale.y = 1 + breathing * 0.007 + (listening ? microphoneLevel * 0.012 : 0);
-    torso.rotation.x = ease(torso.rotation.x, -0.025 + breathing * 0.004, 2.4);
-    head.rotation.x = ease(head.rotation.x, (listening ? -0.035 : 0) + nod + thinking * 0.026
-      + (speaking ? Math.sin(time * 3.2) * 0.014 : 0), 5);
     // layered sines read as organic drift rather than a metronome (after HoloHuman's behaviour.js)
     const drift = (Math.sin(time * 0.55) + Math.sin(time * 1.49 + 1.3) * 0.5 + Math.sin(time * 0.17 + 4.1) * 0.8) / 2.3;
-    head.rotation.y = ease(head.rotation.y, (speaking ? Math.sin(time * 1.8) : drift) * (listening ? 0.018 : 0.03)
+    look.x = ease(look.x, (listening ? -0.035 : 0) + nod + thinking * 0.026 + (speaking ? Math.sin(time * 3.2) * 0.014 : 0), 5);
+    look.y = ease(look.y, (speaking ? Math.sin(time * 1.8) : drift) * (listening ? 0.018 : 0.03)
       + (listening ? microphoneLevel * 0.075 : 0) + thinking * 0.03, 3);
-    head.rotation.z = ease(head.rotation.z, (listening ? -0.018 : 0) + thinking * 0.04, 4);
-    head.position.y = 1.9 + Math.sin(time * 1.3) * 0.006;
-    let speechOpen = 0.018;
+    look.z = ease(look.z, (listening ? -0.018 : 0) + thinking * 0.04, 4);
+    // SpeechSynthesis word-boundary cues open the jaw by letter: vowels wide, m/n/b/p nearly closed.
+    let jaw = 0;
     if (speaking && speechCue?.word) {
       const word = String(speechCue.word);
       const secondsPerCharacter = Number.isFinite(speechCue.secondsPerCharacter) ? speechCue.secondsPerCharacter : 0.1;
-      const elapsed = Math.max(0, (performance.now() - speechCue.startedAt) / 1000);
-      const characterIndex = Math.floor(elapsed / secondsPerCharacter);
-      const character = word[Math.min(characterIndex, word.length - 1)]?.toLowerCase() || "";
-      if (characterIndex < word.length) {
-        // SpeechSynthesis word-boundary cues drive simple vowel/consonant jaw shapes.
-        speechOpen = /[aeo]/.test(character) ? 0.064
-          : /[iu]/.test(character) ? 0.043
-            : /[mnbp]/.test(character) ? 0.014 : 0.027;
-        speechOpen += Math.sin(time * 18 + characterIndex) * 0.004;
-      }
-    } else if (listening) speechOpen = 0.022 + microphoneLevel * 0.006;
-    mouth.scale.y = ease(mouth.scale.y, speaking ? speechOpen * (photoFace ? 0.3 : 1) : 0.001, speaking ? 18 : 9);
-    materials.mouth.opacity = ease(materials.mouth.opacity, speaking ? (photoFace ? 0.82 : 0.96) : 0, 13);
-    materials.smile.opacity = ease(materials.smile.opacity, speaking ? 0 : 1, 11);
-    const blink = blinkAmount(time);
-    eyes.forEach((eye, index) => {
-      if (eye.userData.lid) { eye.userData.lid.scale.y = Math.max(0.001, blink); return; }
-      eye.scale.y = 1 - blink * (index === 0 ? 0.95 : 0.93);
-      eye.rotation.x = ease(eye.rotation.x, -thinking * 0.055, 5);
-    });
-    brows.forEach(({ mesh, side }) => {
-      mesh.position.y = ease(mesh.position.y, 0.112 + thinking * 0.009, 6);
-      mesh.rotation.z = ease(mesh.rotation.z, side * (0.08 + thinking * 0.045), 6);
-    });
-    mina?.set({ blink, jaw: speaking ? Math.min(1, speechOpen / 0.064) * 0.55 : 0, smile: speaking ? 0.15 : 0.32,
-      headX: head.rotation.x, headY: head.rotation.y, headZ: head.rotation.z, breath: breathing });
-    arms.forEach(({ shoulder, forearm, side }) => {
-      const gesture = speaking ? Math.max(0, Math.sin(time * 1.35 + (side > 0 ? 0 : Math.PI))) * 0.06 : 0;
-      shoulder.position.y = ease(shoulder.position.y, 1.48 + breathing * 0.004, 2.2);
-      shoulder.rotation.z = ease(shoulder.rotation.z, side * gesture + (listening ? Math.sin(time * 1.1 + side) * 0.006 : 0), 4);
-      forearm.rotation.x = ease(forearm.rotation.x, speaking ? Math.sin(time * 1.35) * 0.045
-        : listening ? Math.sin(time * 0.85 + side) * 0.008 : 0, 4);
-    });
+      const index = Math.floor(Math.max(0, (performance.now() - speechCue.startedAt) / 1000) / secondsPerCharacter);
+      const character = word[Math.min(index, word.length - 1)]?.toLowerCase() || "";
+      if (index < word.length) jaw = (/[aeo]/.test(character) ? 1 : /[iu]/.test(character) ? 0.67 : /[mnbp]/.test(character) ? 0.22 : 0.42)
+        + Math.sin(time * 18 + index) * 0.06;
+    }
+    mina.set({ blink: blinkAmount(time), jaw: Math.max(0, jaw) * 0.55, smile: speaking ? 0.15 : 0.32,
+      headX: look.x, headY: look.y, headZ: look.z, breath: Math.sin(time * 1.3) });
   };
 
   // Plant at the left rear corner adds a small natural accent.
@@ -563,7 +236,7 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
   scene.add(key);
   const fill = new THREE.DirectionalLight("#e6edff", 0.65);
   fill.position.set(4.5, 4.2, 2.8); scene.add(fill);
-  // A low-power warm bounce light keeps the face readable without changing the office setup.
+  // A low-power warm bounce light keeps her face readable without changing the office setup.
   const faceBounce = new THREE.PointLight("#ffe5cf", 0.46, 3.8, 2);
   faceBounce.position.set(0.15, 2.3, 1.15); scene.add(faceBounce);
 
@@ -578,7 +251,7 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
     renderer.setSize(w, h, false);
     camera.aspect = w / h; aimCamera(); camera.updateProjectionMatrix();
     renderer.render(scene, camera);
-    host.dataset.ready = "true";
+    if (mina) host.dataset.ready = "true";
   };
   const unmount = () => {
     if (disposed) return;
@@ -591,7 +264,7 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
       if (!node.isMesh) return;
       node.geometry.dispose();
     });
-    materials.photo?.map.dispose(); studio.dispose();
+    studio.dispose();
     mina?.root.traverse((node) => {
       for (const m of [node.material].flat()) if (m) { for (const v of Object.values(m)) if (v?.isTexture) v.dispose(); m.dispose(); }
     });
@@ -614,7 +287,6 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
     lastAnimationFrame = time;
     animateAvatar(time);
     renderer.render(scene, camera);
-    host.dataset.ready = "true";
   });
   if (window.ResizeObserver) {
     resizeObserver = new ResizeObserver(draw);
