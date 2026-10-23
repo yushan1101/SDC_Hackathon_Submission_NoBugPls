@@ -52,7 +52,7 @@ async function boot() {
 }
 
 // ---------------------------------------------------------------- sign in
-const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build: "the plan builder", report: "chat", plans: "your plans", interview: "mock interview" };
+const FEATURE = { quiz: "the quick match game", resume: "resume analysis", build: "the plan builder", report: "your report", plans: "your plans", interview: "mock interview" };
 
 function cleanDestination(next) {
   return ["start", "today", "quiz", "resume", "build", "report", "plans", "interview"].includes(next) ||
@@ -127,7 +127,7 @@ function shell() {
       // guests: the home page and the AI-trends page, and one action: sign in
       guest ? null : S.me.role !== "employee" ? h("nav", { class: "pub-nav", "aria-label": "Primary" }, h("a", { href: "enterprise.html" }, icon("back"), h("span", {}, "Back to console")))
         : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/agents", "Agent", "ask"), nav("#/today", "AI trends", "pulse"),
-          nav("#/report", "Chat", "report"), nav("#/plans", "My plans", "plans")),
+          nav("#/report", "Report", "report"), nav("#/plans", "My plans", "plans")),
       guest ? null : S.status.el,
       guest
         ? h("div", { class: "top-actions" }, h("a", { class: "btn sm top-plans", href: "#/today" }, "AI trends"), h("a", { class: "btn sm top-plans", href: "#/pricing" }, "Plans"),
@@ -378,10 +378,10 @@ function start(query) {
 function reportView(main, openId) {
   if (!S.reportEl) {
     S.threadEl = h("div", { class: "thread", "aria-live": "off" });
-    S.input = h("input", { class: "input", placeholder: "Ask for a change, e.g. “I only have 3 hours a week”", maxlength: 500, "aria-label": "Message" });
-    S.sendBtn = h("button", { class: "btn primary", type: "submit", "aria-label": "Send" }, icon("send"));
+    S.input = h("input", { class: "input", placeholder: "Request a report update, e.g. “I only have 3 hours a week”", maxlength: 500, "aria-label": "Report update request" });
+    S.sendBtn = h("button", { class: "btn primary", type: "submit", "aria-label": "Submit report request" }, icon("send"));
     S.composer = h("form", { class: "composer", onsubmit: (e) => { e.preventDefault(); composerSend(); } },
-      S.quick = h("div", { class: "quick", "aria-label": "Suggested next messages" }),
+      S.quick = h("div", { class: "quick", "aria-label": "Suggested report updates" }),
       h("div", { class: "row" }, S.input, micButton(S.input), S.sendBtn));
     // follow the answer as it streams, unless the reader scrolled up to read something
     S.stick = true;
@@ -397,12 +397,12 @@ function reportView(main, openId) {
           }, icon("back"), "Back to home")
         ),
         h("div", { style: { display: "flex", "justify-content": "space-between", "align-items": "end", gap: "12px", "flex-wrap": "wrap" } },
-          h("h1", { class: "page-title" }, "Chat"),
+          h("h1", { class: "page-title" }, "Report"),
           h("div", { class: "row-actions" },
-            h("button", { class: "btn sm", type: "button", onclick: newChat }, icon("spark"), "New chat"),
-            h("button", { class: "btn sm", type: "button", popovertarget: "history-menu" }, icon("history"), "History"),
+            h("button", { class: "btn sm", type: "button", onclick: newChat }, icon("spark"), "New report"),
+            h("button", { class: "btn sm", type: "button", popovertarget: "history-menu" }, icon("history"), "Report history"),
             h("button", { class: "btn sm only-narrow", type: "button", onclick: () => S.sheet.showModal() }, icon("sources"), "Sources"))),
-        S.history = h("div", { id: "history-menu", popover: "auto", class: "core-menu history-menu", "aria-label": "Past chats" }),
+        S.history = h("div", { id: "history-menu", popover: "auto", class: "core-menu history-menu", "aria-label": "Past reports" }),
         S.threadEl, S.composer),
       S.sources);
   }
@@ -421,14 +421,14 @@ async function loadHistory() {
   if (!S.history) return;
   let plans = [];
   try { plans = (await api("/api/plans")).filter((p) => p.audience === "individual").slice(0, 12); } catch { /* history is optional */ }
-  S.history.replaceChildren(h("p", { class: "history-head" }, icon("history"), "Past chats"),
+  S.history.replaceChildren(h("p", { class: "history-head" }, icon("history"), "Past reports"),
     ...(plans.length ? plans.map((p) => h("a", { class: "core-item", href: `#/report/${p.plan_id}`, onclick: () => S.history.hidePopover?.() },
       h("span", { class: "core-ic" }, icon("report")),
       h("span", { class: "core-t" }, h("b", {}, p.target_role || "Plan"),
         h("span", {}, `${p.scenario === "agentic" ? "Agentic" : "Assistive"} AI · ${fmtTime(p.created_utc)} · v${p.version}`),
         h("span", { class: "mono" }, `Plan ID: ${p.plan_reference || p.plan_id}`)),
       h("span", { class: `tag ${p.status}` }, p.status)))
-      : [h("p", { class: "muted", style: { padding: "8px 12px" } }, "No chats yet.")]));  // spread: replaceChildren does not flatten
+      : [h("p", { class: "muted", style: { padding: "8px 12px" } }, "No reports yet.")]));  // spread: replaceChildren does not flatten
 }
 
 /** Job search used inside the chat (empty chat, and "Try a different job"): pick any ESCO occupation. */

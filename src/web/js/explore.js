@@ -43,7 +43,7 @@ function guestHome(main) {
   const pill = h("div", { class: "lp-pill", "aria-hidden": "true" }, owl.el, say,
     h("span", { class: "lp-pill-btn" }, icon("mic")), h("span", { class: "lp-pill-btn" }, icon("volume")));
   const mock = h("div", { class: "lp-window", "aria-hidden": "true" },
-    h("div", { class: "lp-bar" }, h("i"), h("i"), h("i"), h("span", {}, "Chat")),
+    h("div", { class: "lp-bar" }, h("i"), h("i"), h("i"), h("span", {}, "Report")),
     h("div", { class: "lp-chat" },
       h("p", { class: "lp-ask" }, "Plan for Data analyst · 6 h a week"),
       h("div", { class: "lp-answer" },
