@@ -15,7 +15,9 @@ const ROOM_AIM = (w) => (w >= 1024 ? 0.34 : w <= 760 ? 0.12 : 0);
 // face: a generated photo (scripts/generate_interviewer_face.py: front-facing, eyes at ~(336|686, 426), nose tip
 // ~(512, 650), mouth ~(514, 794) on a 1024 square) projected onto a head carved to the same features; without it,
 // or until it loads, the drawn face shows.
-export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: faceUrl = "img/interviewer-face.jpg" } = {}) {
+// mina: load HoloHuman's Mina (js/mina.js) and seat her in place of the built avatar once she arrives; the built
+// avatar (with the photo face) shows until then, and stays if she can't load.
+export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: faceUrl = "img/interviewer-face.jpg", mina: useMina = true } = {}) {
   const width = host.clientWidth;
   const height = host.clientHeight;
   if (!width || !height) throw new Error("The interview office has no visible size.");
@@ -427,6 +429,17 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
     if (still) drawStill();
   });
 
+  let mina = null;
+  if (useMina) import("./mina.js").then(({ loadMina }) => loadMina({ envMap: studio, height: 2.45 })).then((m) => {  // 2.45: the office's scale
+    if (disposed) return;
+    // her head where the built avatar's head is; the desk hides everything below her waist
+    const want = head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.0, -0.02));
+    m.root.updateMatrixWorld(true);
+    m.root.position.add(want.sub(m.head.getWorldPosition(new THREE.Vector3())));
+    scene.add(m.root); person.visible = false; mina = m;
+    if (still) drawStill();
+  }).catch((error) => console.warn("Mina could not load; keeping the built interviewer.", error));
+
   const still = reduceMotion();
   let avatarState = "idle";
   let microphoneLevel = 0;
@@ -508,6 +521,8 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
       mesh.position.y = ease(mesh.position.y, 0.112 + thinking * 0.009, 6);
       mesh.rotation.z = ease(mesh.rotation.z, side * (0.08 + thinking * 0.045), 6);
     });
+    mina?.set({ blink, jaw: speaking ? Math.min(1, speechOpen / 0.064) * 0.55 : 0, smile: speaking ? 0.15 : 0.32,
+      headX: head.rotation.x, headY: head.rotation.y, headZ: head.rotation.z, breath: breathing });
     arms.forEach(({ shoulder, forearm, side }) => {
       const gesture = speaking ? Math.max(0, Math.sin(time * 1.35 + (side > 0 ? 0 : Math.PI))) * 0.06 : 0;
       shoulder.position.y = ease(shoulder.position.y, 1.48 + breathing * 0.004, 2.2);
@@ -577,6 +592,9 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: fac
       node.geometry.dispose();
     });
     materials.photo?.map.dispose(); studio.dispose();
+    mina?.root.traverse((node) => {
+      for (const m of [node.material].flat()) if (m) { for (const v of Object.values(m)) if (v?.isTexture) v.dispose(); m.dispose(); }
+    });
     for (const material of Object.values(materials)) material.dispose();
     renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
     delete host.dataset.ready;
