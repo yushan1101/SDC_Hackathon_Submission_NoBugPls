@@ -220,6 +220,14 @@ class Act:
 
 
 # ---------------------------------------------------------------- the three acts
+def nav(a: Act, href: str, folder: str | None = None, after: float = 1.4) -> None:
+    """Click a link in the HR sidebar, opening its folder first when it's closed."""
+    link = a.page.locator(f'.hr-rail a[href="{href}"]')
+    if folder and not link.first.is_visible():
+        a.click(a.page.locator(".hr-rail .rail-group-btn", has_text=folder), after=0.6)
+    a.click(link, after=after)
+
+
 def act_hr(a: Act) -> None:
     p = a.page
     a.go("enterprise.html#/overview")
@@ -228,8 +236,7 @@ def act_hr(a: Act) -> None:
 
     def analyse():
         a.say("Upload a team file. Eight AI agents analyse every employee.")
-        a.click(p.get_by_role("button", name="Team"), after=0.6) if not p.locator('a[href="#/run"]').is_visible() else None
-        a.click('a[href="#/run"]')
+        nav(a, "#/run", "Team")
         a.click(p.get_by_role("button", name="Use sample CSV"))
         a.click(p.get_by_role("button", name="Run analysis"), after=2)
         a.say("Every skill gap, every step and every source, checked before HR sees it.", hold=1)
@@ -238,6 +245,8 @@ def act_hr(a: Act) -> None:
     a.beat("analyse team", analyse)
 
     def review():
+        if "#/review" not in p.url:
+            nav(a, "#/review", "Team")
         a.say("One queue. Search, filter, open any plan.")
         a.click(".queue-item", after=1.8)
         a.say("Each plan is personal: their strengths, their pace, concrete weekly steps.")
@@ -251,7 +260,7 @@ def act_hr(a: Act) -> None:
 
     def agent():
         a.say("Ask the agent in plain words, even to post a job.")
-        a.click('a[href="#/agents"]', after=1.2)
+        nav(a, "#/agents", after=1.2)
         a.click("textarea.ag-input", after=0.4)
         a.type("Send the newest opening to our Telegram channel")
         p.keyboard.press("Enter")
@@ -263,9 +272,7 @@ def act_hr(a: Act) -> None:
 
     def team():
         a.say("See how each employee is progressing on their own plan.")
-        if not p.locator('a[href="#/people"]').is_visible():
-            a.click(p.get_by_role("button", name="Team"), after=0.6)
-        a.click('a[href="#/people"]', after=1.4)
+        nav(a, "#/people", "Team")
         if p.locator(".own-plan-chip").count():
             a.click(".own-plan-chip", after=2.4)
             a.scroll(3, after=1.6)
@@ -274,7 +281,7 @@ def act_hr(a: Act) -> None:
 
     def trends():
         a.say("And what's moving in AI today, for every role.")
-        a.click('a[href="#/signals"]', after=2.4)
+        nav(a, "#/signals", after=2.4)
         a.scroll(3, after=1.8)
     a.beat("ai trends", trends)
     a.say("")
@@ -307,15 +314,20 @@ def act_employee(a: Act) -> None:
         a.say("Steps that use what you already know, at the hours you have.")
         a.scroll(5, after=1.6)
         a.click(".phase summary", after=1.4)
-        a.click(".act-done input", after=1.2)
+        a.click(".act-done", after=1.2)
         a.say("Tick it off: your progress is saved, and your HR advisor sees it.", hold=2.4)
     a.beat("personal plan", plan)
 
     def interview():
         a.go("index.html#/quiz")
-        answer_quiz(quick=True)  # the matches don't survive leaving the page; trim this in Cap's editor
+        answer_quiz(quick=True)  # the matches don't survive leaving the page; trim this in the edit
         a.say("Practise the interview with Mina, by voice.")
-        a.click(p.get_by_role("button", name="Practice interview"), after=2)
+        practice = p.get_by_role("button", name="Practice interview")
+        if not practice.count():
+            a.go("index.html#/interview")
+            a.say("Mina, your AI interviewer, greets you and asks about the role you're aiming for.", hold=6)
+            return
+        a.click(practice, after=2)
         a.click("input[type=checkbox]", after=0.6)
         a.click(p.get_by_role("button", name="Start mock interview"), after=3)
         if p.locator('.room-mode [data-mode="focus"]').count():
