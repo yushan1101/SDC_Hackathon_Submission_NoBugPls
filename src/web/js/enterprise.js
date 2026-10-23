@@ -41,6 +41,15 @@ function shell() {
   let shellEl, sidebar, sidebarToggle;
   const link = (href, label, ic) => h("a", { href, "data-route": href, "aria-label": label, title: label }, icon(ic),
     h("span", { class: "lbl" }, label), h("span", { class: "tip", "aria-hidden": "true" }, label));
+  // A folder of related links: click to open; in the icon-only rail it pops out to the side.
+  const group = (label, ic, ...links) => {
+    const el = h("div", { class: "rail-group" });
+    const btn = h("button", { type: "button", class: "rail-group-btn", "aria-expanded": "false", "aria-label": label, title: label,
+      onclick: () => btn.setAttribute("aria-expanded", String(el.classList.toggle("open"))) },
+      icon(ic), h("span", { class: "lbl" }, label), h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
+    el.append(btn, h("div", { class: "rail-sub", role: "group", "aria-label": label }, ...links));
+    return el;
+  };
   const tab = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), label);
   S.badge = h("span", { class: "badge", hidden: true });
   S.seg = h("div", { class: "seg scenario-switch", role: "group", "aria-label": "AI scenario" },
@@ -77,12 +86,14 @@ function shell() {
   sidebar = h("nav", { class: "rail hr-rail", "aria-label": "Primary" },
       h("div", { class: "hr-rail-head" },
         h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }, S.logo = h("span", { class: "logo-owl" }), h("span", { class: "lbl wordmark" }, "AiversePulse")), sidebarToggle),
-      link("#/overview", "Overview", "grid"), link("#/agents", "Agent", "ask"), link("#/run", "Analyse team", "upload"), review, link("#/plans", "Plans", "history"),
-      link("#/openings", "Hiring", "people"), link("#/plugins", "Hiring plugins", "plug"), link("#/people", "Team members", "user"), link("#/models", "AI models", "model"),
+      link("#/overview", "Overview", "grid"), link("#/agents", "Agent", "ask"),
+      group("Team", "people", link("#/run", "Analyse team", "upload"), review, link("#/plans", "Plans", "history"), link("#/people", "Team members", "user")),
+      group("Hiring", "job", link("#/openings", "Openings", "people"), link("#/plugins", "Hiring plugins", "plug")),
       link("#/signals", "AI trends", "pulse"),
       h("div", { style: { flex: 1 } }),
-      h("a", { class: "hr-nav-link", href: "./#/account", "aria-label": "Plan & billing", title: "Plan & billing" }, icon("user"), h("span", { class: "lbl" }, "Plan & billing"), h("span", { class: "tip", "aria-hidden": "true" }, "Plan & billing")),
-      h("a", { class: "hr-nav-link", href: "#", "aria-label": "Sign out", title: "Sign out", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "lbl" }, "Sign out"), h("span", { class: "tip", "aria-hidden": "true" }, "Sign out")));
+      group("Settings", "sliders", link("#/models", "AI models", "model"),
+        h("a", { class: "hr-nav-link", href: "./#/account", "aria-label": "Plan & billing", title: "Plan & billing" }, icon("user"), h("span", { class: "lbl" }, "Plan & billing"), h("span", { class: "tip", "aria-hidden": "true" }, "Plan & billing")),
+        h("a", { class: "hr-nav-link", href: "#", "aria-label": "Sign out", title: "Sign out", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "lbl" }, "Sign out"), h("span", { class: "tip", "aria-hidden": "true" }, "Sign out"))));
   shellEl = h("div", { class: "hr-shell" },
     sidebar,
     h("header", { class: "hr-top" }, S.crumb, S.status.el,
@@ -155,6 +166,11 @@ function route() {
     const active = dest === "#/more" ? ["openings", "signals", "plugins", "people", "models", "agents"].includes(page) :
       hash === dest || hash.startsWith(dest + "/");
     if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  });
+  document.querySelectorAll(".rail-group").forEach((g) => {  // the folder holding this page opens itself
+    const here = !!g.querySelector('[aria-current="page"]');
+    g.classList.toggle("has-current", here);
+    if (here) { g.classList.add("open"); g.firstChild.setAttribute("aria-expanded", "true"); }
   });
   crumb(page);
   S.capsule.hidden = page === "agents";  // the agent page is the same chat, full size

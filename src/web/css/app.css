@@ -3260,3 +3260,31 @@ body {
   .rv-progress-card { grid-template-columns: 1fr; justify-items: start; }
   .rv-phases li { grid-template-columns: 82px minmax(0, 1fr) 36px; }
 }
+
+/* HR rail folders: related pages fold under one header; in the icon-only rail the folder pops out to the side. */
+.hr-rail .rail-group { position: relative; display: flex; flex-direction: column; gap: 2px; }
+.hr-rail .rail-group-btn { position: relative; height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 14px; border: 0; border-radius: 16px;
+  background: transparent; color: var(--ink-2); font: inherit; font-size: 16px; font-weight: 500; cursor: pointer; text-align: left; transition: background var(--t-fast), color var(--t-fast); }
+.hr-rail .rail-group-btn > svg { width: 22px; height: 22px; flex: none; }
+.hr-rail .rail-group-btn:hover, .hr-rail .rail-group-btn:focus-visible { color: var(--ink); background: oklch(1 0 0 / 0.75); }
+.hr-rail .rail-group.has-current > .rail-group-btn { color: var(--ink); }
+.hr-rail .rail-caret { margin-left: auto; display: grid; transition: transform var(--t-fast); }
+.hr-rail .rail-caret svg { width: 16px; height: 16px; }
+.hr-rail .rail-group.open .rail-caret { transform: rotate(180deg); }
+.hr-rail .rail-sub { display: none; flex-direction: column; gap: 2px; }
+.hr-rail .rail-group.open > .rail-sub { display: flex; }
+[data-product="hr"] .hr-rail .rail-sub a { height: 42px; padding-left: 26px; font-size: 15px; }
+.hr-rail .rail-group:has(.badge:not([hidden])) > .rail-group-btn::after { content: ""; position: absolute; top: 12px; left: 32px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+.hr-shell:not(.admin-shell):not(.is-sidebar-collapsed) .hr-rail .rail-group.open > .rail-group-btn::after { display: none; }
+.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group-btn { width: 52px; height: 52px; justify-content: center; padding: 0; }
+.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group-btn::after { left: auto; top: 10px; right: 10px; }
+.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group.has-current > .rail-group-btn { color: var(--accent); background: oklch(1 0 0 / 0.95); box-shadow: 0 1px 2px oklch(0.3 0.05 262 / 0.1); }
+.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-caret { display: none; }
+.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-sub { display: none; position: absolute; left: calc(100% + 10px); top: 0; z-index: var(--z-dialog); min-width: 200px; padding: 6px;
+  border: 1px solid var(--rule); border-radius: 16px; background: var(--surface); box-shadow: 0 10px 30px oklch(0.3 0.05 262 / 0.16); }
+.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group:last-child .rail-sub { top: auto; bottom: 0; }
+.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group::after { content: ""; position: absolute; left: 100%; top: 0; width: 12px; height: 52px; }
+.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group:hover > .rail-sub,
+.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group:focus-within > .rail-sub { display: flex; }
+.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-sub a { padding-left: 12px; }
+.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-sub .lbl { display: inline; }
