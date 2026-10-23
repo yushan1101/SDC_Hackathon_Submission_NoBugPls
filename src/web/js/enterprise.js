@@ -607,7 +607,7 @@ async function plansView(main, id) {
   }
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "Plans register"), h("div", { class: "filters" }, q, st)),
-    h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "data" },
+    h("section", { class: "panel" }, h("div", { class: "table-wrap plans-wrap" }, h("table", { class: "data plans-table" },
       h("thead", {}, h("tr", {}, h("th", {}, "Plan ID"), h("th", {}, "Employee"), h("th", {}, "Role"), h("th", { class: "hide-sm" }, "Scenario"),
         h("th", { class: "n" }, "Version"), h("th", {}, "Plan status"), h("th", { class: "hide-sm" }, "Created"))), tbody))),
     drawer));
