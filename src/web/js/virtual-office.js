@@ -12,7 +12,10 @@ const makeClayMaterial = (color, roughness) => new THREE.MeshPhysicalMaterial({
 // the landing stage (interview.js) leaves its left side to the page heading.
 const ROOM_AIM = (w) => (w >= 1024 ? 0.34 : w <= 760 ? 0.12 : 0);
 
-export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
+// face: a generated photo (scripts/generate_interviewer_face.py: front-facing, eyes at ~(336|686, 426), nose tip
+// ~(512, 650), mouth ~(514, 794) on a 1024 square) projected onto a head carved to the same features; without it,
+// or until it loads, the drawn face shows.
+export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM, face: faceUrl = "img/interviewer-face.jpg" } = {}) {
   const width = host.clientWidth;
   const height = host.clientHeight;
   if (!width || !height) throw new Error("The interview office has no visible size.");
@@ -30,6 +33,23 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.setSize(width, height, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // After HoloHuman's Mina, simplified: filmic tone mapping, and a soft studio reflection that only skin picks up
+  // (MeshPhysical skin with sheen and a light clearcoat), so the face has real highlights instead of looking printed.
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.3;
+  const studio = (() => {
+    const room = new THREE.Scene();
+    room.add(new THREE.Mesh(new THREE.BoxGeometry(10, 6, 10), new THREE.MeshBasicMaterial({ color: "#6f6862", side: THREE.BackSide })));
+    for (const [x, y, z, size] of [[0, 2.5, 4, 3], [-4, 1, 1, 2], [4, 1.5, 0, 1.5]]) {  // key softbox in front, two side cards
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ color: "#ffffff" }));
+      panel.position.set(x, y, z); panel.lookAt(0, 0, 0); room.add(panel);
+    }
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const texture = pmrem.fromScene(room, 0.04).texture;
+    pmrem.dispose(); room.traverse((node) => { if (node.isMesh) { node.geometry.dispose(); node.material.dispose(); } });
+    return texture;
+  })();
+  const SKIN = { roughness: 0.62, ior: 1.4, sheen: 0.18, sheenRoughness: 0.55, sheenColor: new THREE.Color("#ffd9c8"),
+    clearcoat: 0.18, clearcoatRoughness: 0.45, envMap: studio, envMapIntensity: 0.7 };
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.domElement.setAttribute("aria-hidden", "true");
@@ -158,16 +178,30 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
     return addMesh(geometry, material, parent);
   };
   const taperedFaceGeometry = () => {
-    const geometry = new THREE.SphereGeometry(1, 32, 24);
-    const positions = geometry.attributes.position;
+    const geometry = new THREE.SphereGeometry(1, 72, 54);
+    const positions = geometry.attributes.position, uv = geometry.attributes.uv;
+    // Relief where the photo's features are (unit-sphere x, y): a flat photo on a ball reads as a sticker, while the
+    // same photo on a nose, brow and lips catches the light like a face (as Mina's sculpted head does).
+    const bump = (x, y, cx, cy, sx, sy) => Math.exp(-(((x - cx) / sx) ** 2) - (((y - cy) / sy) ** 2));
+    const RELIEF = [[0, -0.07, 0.07, 0.2, 0.15], [0, -0.24, 0.12, 0.08, 0.07], [0, -0.3, 0.16, 0.05, -0.03],  // nose bridge, tip, under it
+      [-0.43, 0.13, 0.17, 0.09, -0.07], [0.43, 0.13, 0.17, 0.09, -0.07], [0, 0.29, 0.6, 0.07, 0.035],           // eye sockets, brow
+      [0, -0.43, 0.24, 0.07, 0.05], [0, -0.58, 0.2, 0.05, -0.025], [0, -0.82, 0.24, 0.13, 0.04],               // lips, under them, chin
+      [-0.6, -0.08, 0.16, 0.13, 0.03], [0.6, -0.08, 0.16, 0.13, 0.03]];                                        // cheekbones
     for (let i = 0; i < positions.count; i++) {
-      const y = positions.getY(i);
-      const jaw = THREE.MathUtils.smoothstep(-y, -0.04, 0.85);
-      const cheek = Math.exp(-((y + 0.06) ** 2) / 0.12) * Math.exp(-(positions.getX(i) ** 2) / 0.3);
-      positions.setX(i, positions.getX(i) * (1 - jaw * 0.13) * (1 + cheek * 0.025));
-      positions.setZ(i, positions.getZ(i) * (1 - jaw * 0.045) + cheek * 0.018);
+      const x0 = positions.getX(i), y = positions.getY(i), z0 = positions.getZ(i);
+      // the jaw narrows to the photo's jawline (two thirds as wide at the chin), so the head is the face's own shape
+      // rather than a ball with a face printed on it
+      const jaw = THREE.MathUtils.smoothstep(-y, 0.4, 0.85);
+      const cheek = Math.exp(-((y + 0.06) ** 2) / 0.12) * Math.exp(-(x0 ** 2) / 0.3);
+      const x = x0 * (1 - jaw * 0.35) * (1 + cheek * 0.025);
+      // projected straight from the front, from the final outline, cheek to cheek (the photo's ears would stretch
+      // round the sides; the head keeps sculpted ears): the photo's eyes land on the eyelids, its lips on the mouth
+      uv.setXY(i, 0.499 + 0.4 * x, 0.506 + 0.602 * y);
+      const relief = z0 > 0 ? z0 * RELIEF.reduce((sum, [cx, cy, sx, sy, h]) => sum + h * bump(x, y, cx, cy, sx, sy), 0) : 0;
+      positions.setX(i, x);
+      positions.setZ(i, z0 * (1 - jaw * 0.12) + cheek * 0.018 + relief);
     }
-    positions.needsUpdate = true;
+    positions.needsUpdate = true; uv.needsUpdate = true;
     geometry.computeVertexNormals();
     return geometry;
   };
@@ -280,19 +314,21 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
       { points: [[-0.15, 0.22, 0.235], [-0.105, 0.32, 0.25], [0.005, 0.355, 0.245], [0.105, 0.305, 0.23]], radius: 0.068, material: materials.hairLight },
       { points: [[-0.025, 0.27, 0.255], [0.065, 0.335, 0.24], [0.17, 0.285, 0.215], [0.235, 0.19, 0.175]], radius: 0.061, material: materials.hair },
     ];
-    locks.forEach(({ points, radius, material }) => taperedTube(points, radius, material, head, { tubularSegments: 16 }));
-    for (const side of [-1, 1]) taperedTube([
+    const swept = locks.map(({ points, radius, material }) => taperedTube(points, radius, material, head, { tubularSegments: 16 }));
+    for (const side of [-1, 1]) swept.push(taperedTube([
       [side * 0.22, 0.18, 0.1], [side * 0.275, 0.08, 0.135], [side * 0.275, -0.055, 0.135], [side * 0.235, -0.16, 0.095],
-    ], 0.059, materials.hair, head, { tubularSegments: 16, taper: 0.16 });
+    ], 0.059, materials.hair, head, { tubularSegments: 16, taper: 0.16 }));
+    return swept;
   };
   const createStylizedHead = () => {
-    createSculptedHair();
+    // features the photo face already has (its own hairline among them); hidden once it loads
+    const drawn = createSculptedHair();
     const face = addMesh(taperedFaceGeometry(), materials.skin, head, { position: [0, 0.01, 0.18] });
-    face.scale.set(0.265, 0.32, 0.205);
+    face.scale.set(0.205, 0.32, 0.205);  // as wide as the photo's face, cheek to cheek
     // Ears sit behind the cheek silhouette so their join remains soft.
     for (const side of [-1, 1]) {
-      ellipsoid(materials.skin, [0.044, 0.067, 0.034], [side * 0.25, -0.018, 0.165], head);
-      ellipsoid(materials.cheek, [0.031, 0.014, 0.006], [side * 0.145, -0.066, 0.35], head);
+      ellipsoid(materials.skin, [0.036, 0.062, 0.03], [side * 0.2, -0.018, 0.165], head);
+      drawn.push(ellipsoid(materials.cheek, [0.031, 0.014, 0.006], [side * 0.145, -0.066, 0.35], head));
     }
     const eyes = [];
     for (const x of [-0.087, 0.087]) {
@@ -313,6 +349,7 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
       ]);
       addMesh(new THREE.TubeGeometry(upperLid, 12, 0.0055, 6, false), materials.skin, eye);
       addMesh(new THREE.TubeGeometry(lowerLid, 12, 0.0035, 6, false), materials.skin, eye);
+      drawn.push(...eye.children);
       eyes.push(eye);
     }
     const brows = [];
@@ -320,11 +357,11 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
       const browGroup = new THREE.Group(); browGroup.position.set(x, 0.113, 0.36); head.add(browGroup);
       taperedTube([[-0.039, -0.003, 0.004], [-0.02, 0.016, 0.012], [0.008, 0.018, 0.013], [0.039, 0.002, 0.004]],
         0.007, materials.hair, browGroup, { tubularSegments: 10, radialSegments: 6, taper: 0.22 });
-      brows.push({ mesh: browGroup, side: x < 0 ? -1 : 1 });
+      brows.push({ mesh: browGroup, side: x < 0 ? -1 : 1 }); drawn.push(browGroup);
     }
     // Narrow bridge and rounded tip overlap slightly to read as one soft nose.
-    ellipsoid(materials.skin, [0.021, 0.05, 0.021], [0, -0.003, 0.365], head);
-    ellipsoid(materials.skin, [0.029, 0.023, 0.027], [0, -0.045, 0.384], head);
+    drawn.push(ellipsoid(materials.skin, [0.021, 0.05, 0.021], [0, -0.003, 0.365], head),
+      ellipsoid(materials.skin, [0.029, 0.023, 0.027], [0, -0.045, 0.384], head));
     const mouth = ellipsoid(materials.mouth, [0.052, 0.012, 0.011], [0, -0.139, 0.371], head);
     mouth.scale.y = 0.001;
     const smileCurve = new THREE.CatmullRomCurve3([
@@ -333,29 +370,61 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
       new THREE.Vector3(0.052, -0.143, 0.365),
     ]);
     const smile = addMesh(new THREE.TubeGeometry(smileCurve, 18, 0.005, 6, false), materials.smile, head);
+    drawn.push(smile);
     // Rounded frames now sit close to the smaller eyes; the bridge and temples stay intact.
     for (const x of [-0.087, 0.087]) {
-      addMesh(roundedFrameGeometry(0.15, 0.132, 0.042, 0.119, 0.101, 0.031), materials.darkWood, head,
-        { position: [x, 0.052, 0.378] });
+      drawn.push(addMesh(roundedFrameGeometry(0.15, 0.132, 0.042, 0.119, 0.101, 0.031), materials.darkWood, head,
+        { position: [x, 0.052, 0.378] }));
     }
     const glassesBridge = new THREE.CatmullRomCurve3([
       new THREE.Vector3(-0.016, 0.052, 0.384), new THREE.Vector3(0, 0.04, 0.397), new THREE.Vector3(0.016, 0.052, 0.384),
     ]);
-    addMesh(new THREE.TubeGeometry(glassesBridge, 10, 0.01, 8, false), materials.darkWood, head);
+    drawn.push(addMesh(new THREE.TubeGeometry(glassesBridge, 10, 0.01, 8, false), materials.darkWood, head));
     for (const side of [-1, 1]) {
       const temple = new THREE.CatmullRomCurve3([
         new THREE.Vector3(side * 0.16, 0.068, 0.374), new THREE.Vector3(side * 0.205, 0.06, 0.34), new THREE.Vector3(side * 0.235, 0.04, 0.28),
       ]);
-      addMesh(new THREE.TubeGeometry(temple, 10, 0.008, 6, false), materials.darkWood, head);
+      drawn.push(addMesh(new THREE.TubeGeometry(temple, 10, 0.008, 6, false), materials.darkWood, head));
     }
-    return { eyes, brows, mouth, smile };
+    return { face, eyes, brows, mouth, smile, drawn };
   };
-  const { eyes, brows, mouth, smile } = createStylizedHead();
+  const { face, eyes, brows, mouth, smile, drawn } = createStylizedHead();
   // Face, eye and hand details (< 9 cm) cast no visible shadow; skipping them roughly halves the shadow pass.
   person.traverse((node) => {
     if (!node.isMesh) return;
     node.geometry.computeBoundingSphere();
     if (node.geometry.boundingSphere.radius * Math.max(node.scale.x, node.scale.y, node.scale.z) < 0.09) node.castShadow = false;
+  });
+
+  // The generated photo face: drawn features step aside, skin and hair take the photo's colours, eyelids blink over
+  // the photo's eyes and longer hair frames it (as the photo does). The mouth opening still shows when speaking.
+  let photoFace = false;
+  if (faceUrl) new THREE.TextureLoader().load(faceUrl, (map) => {
+    if (disposed) { map.dispose(); return; }
+    map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
+    const canvas = document.createElement("canvas"); canvas.width = map.image.width; canvas.height = map.image.height;
+    const pen = canvas.getContext("2d", { willReadFrequently: true }); pen.drawImage(map.image, 0, 0);
+    const k = canvas.width / 1024;
+    const pick = (x, y) => {  // the average colour of a small patch, in 1024-square photo coordinates
+      const d = pen.getImageData(Math.round(x * k) - 4, Math.round(y * k) - 4, 8, 8).data;
+      const sum = [0, 0, 0]; for (let i = 0; i < d.length; i += 4) { sum[0] += d[i]; sum[1] += d[i + 1]; sum[2] += d[i + 2]; }
+      return `rgb(${sum.map((v) => Math.round(v / (d.length / 4))).join(",")})`;
+    };
+    face.material = materials.photo = new THREE.MeshPhysicalMaterial({ ...SKIN, map });
+    drawn.forEach((mesh) => { mesh.visible = false; });
+    // speaking opens a small gap between the photo's lips rather than drawing a cartoon mouth over them
+    photoFace = true; mouth.position.y = -0.13; mouth.scale.x = 0.032; materials.mouth.color.set("#3f2124");
+    // neck, ears and hands share the photo's skin; the hair cap takes its hair colour
+    materials.skin.setValues({ ...SKIN, color: pick(300, 640) });
+    materials.hair.color.set(pick(200, 120));  // hair beside the parting, above the hairline
+    materials.hairLight.color.copy(materials.hair.color).offsetHSL(0, 0, 0.04);
+    materials.lid = new THREE.MeshPhysicalMaterial({ ...SKIN, color: pick(330, 350) });
+    eyes.forEach((eye) => {
+      eye.userData.lid = ellipsoid(materials.lid, [0.043, 0.03, 0.01], [0, 0.002, 0.004], eye);
+      eye.userData.lid.scale.y = 0.001;
+    });
+    ellipsoid(materials.hair, [0.12, 0.11, 0.1], [0, 0.0, -0.21], head);  // the photo's hair is pulled back into a low bun
+    if (still) drawStill();
   });
 
   const still = reduceMotion();
@@ -381,7 +450,8 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
   const blinkAmount = (time) => {
     if (time >= nextBlinkAt) {
       blinkStartedAt = time;
-      nextBlinkAt = time + 3.2 + (Math.sin(time * 1.31) + 1) * 0.9;
+      // about one blink in five is a quick double blink, as people do
+      nextBlinkAt = time + (Math.sin(time * 7.3) > 0.6 ? 0.3 : 2.4 + (Math.sin(time * 1.31) + 1) * 1.3);
     }
     const phase = (time - blinkStartedAt) / 0.16;
     return phase >= 0 && phase <= 1 ? Math.sin(phase * Math.PI) : 0;
@@ -404,7 +474,9 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
     torso.rotation.x = ease(torso.rotation.x, -0.025 + breathing * 0.004, 2.4);
     head.rotation.x = ease(head.rotation.x, (listening ? -0.035 : 0) + nod + thinking * 0.026
       + (speaking ? Math.sin(time * 3.2) * 0.014 : 0), 5);
-    head.rotation.y = ease(head.rotation.y, Math.sin(time * (speaking ? 1.8 : 0.55)) * (listening ? 0.018 : 0.024)
+    // layered sines read as organic drift rather than a metronome (after HoloHuman's behaviour.js)
+    const drift = (Math.sin(time * 0.55) + Math.sin(time * 1.49 + 1.3) * 0.5 + Math.sin(time * 0.17 + 4.1) * 0.8) / 2.3;
+    head.rotation.y = ease(head.rotation.y, (speaking ? Math.sin(time * 1.8) : drift) * (listening ? 0.018 : 0.03)
       + (listening ? microphoneLevel * 0.075 : 0) + thinking * 0.03, 3);
     head.rotation.z = ease(head.rotation.z, (listening ? -0.018 : 0) + thinking * 0.04, 4);
     head.position.y = 1.9 + Math.sin(time * 1.3) * 0.006;
@@ -423,11 +495,12 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
         speechOpen += Math.sin(time * 18 + characterIndex) * 0.004;
       }
     } else if (listening) speechOpen = 0.022 + microphoneLevel * 0.006;
-    mouth.scale.y = ease(mouth.scale.y, speaking ? speechOpen : 0.001, speaking ? 18 : 9);
-    materials.mouth.opacity = ease(materials.mouth.opacity, speaking ? 0.96 : 0, 13);
+    mouth.scale.y = ease(mouth.scale.y, speaking ? speechOpen * (photoFace ? 0.3 : 1) : 0.001, speaking ? 18 : 9);
+    materials.mouth.opacity = ease(materials.mouth.opacity, speaking ? (photoFace ? 0.82 : 0.96) : 0, 13);
     materials.smile.opacity = ease(materials.smile.opacity, speaking ? 0 : 1, 11);
     const blink = blinkAmount(time);
     eyes.forEach((eye, index) => {
+      if (eye.userData.lid) { eye.userData.lid.scale.y = Math.max(0.001, blink); return; }
       eye.scale.y = 1 - blink * (index === 0 ? 0.95 : 0.93);
       eye.rotation.x = ease(eye.rotation.x, -thinking * 0.055, 5);
     });
@@ -503,6 +576,7 @@ export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
       if (!node.isMesh) return;
       node.geometry.dispose();
     });
+    materials.photo?.map.dispose(); studio.dispose();
     for (const material of Object.values(materials)) material.dispose();
     renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
     delete host.dataset.ready;
