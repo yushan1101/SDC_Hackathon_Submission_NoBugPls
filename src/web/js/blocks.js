@@ -245,11 +245,12 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     const activityList = mine.length ? h("div", { class: "phase-activities" }, activityCards)
       : h("p", { class: "note" }, "No activities in this phase.");
     const phaseSummary = h("summary", { class: "phase-toggle" },
-      h("span", { class: "phase-step", "aria-hidden": "true" }, phaseIndex + 1),
       h("div", { class: "phase-intro" }, heading, h("p", { class: "phase-summary" }, summary)),
       icon("chevron"));
     const content = h("div", { class: "phase-content" }, budget, activityList);
-    return h("details", { class: "phase", "data-phase": p }, phaseSummary, content);
+    return h("div", { class: "phase-row", "data-phase": p },
+      h("span", { class: "phase-step", "aria-hidden": "true" }, phaseIndex + 1),
+      h("details", { class: "phase" }, phaseSummary, content));
   });
   const progressEl = h("div", { class: "plan-progress" });
   function drawProgress() {
