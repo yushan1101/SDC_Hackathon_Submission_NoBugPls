@@ -339,7 +339,7 @@ def who(ctx) -> dict | None:
         return None
 
 
-USERS = {"admin": "demo_admin", "hr": "demo_hr", "employee": "demo_employee"}
+USERS = {"admin": os.environ.get("AIVERSEPULSE_DEMO_ADMIN", "adminby2233"), "hr": "demo_hr", "employee": "demo_employee"}
 
 
 def credentials() -> dict[str, str]:
