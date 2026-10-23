@@ -328,18 +328,35 @@ def browser(pw, role: str, kiosk: bool):
         return pw.chromium.launch_persistent_context(**kw)  # Playwright's own Chromium
 
 
-def setup(pw) -> None:
-    """Open each role's profile at its sign-in page and wait until you've signed in (the script never sees passwords)."""
-    for role, (path, want) in ROLES.items():
+def who(ctx) -> dict | None:
+    """The account this profile is signed in as (the profile's cookies, no page needed, so redirects can't break it)."""
+    try:
+        r = ctx.request.get(f"{BASE}/api/me")
+        return r.json() if r.ok else None
+    except Exception:
+        return None
+
+
+def setup(pw, roles: list[str]) -> None:
+    """Open each role's profile at its sign-in page and wait until you've signed in (the script never sees passwords).
+    A role already signed in with the right kind of account is skipped."""
+    for role in roles:
+        path, want = ROLES[role]
         ctx = browser(pw, role, kiosk=False)
+        me = who(ctx)
+        if me and me.get("role") == want:
+            print(f"  {role}: already signed in as {me.get('username')}")
+            ctx.close(); continue
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(f"{BASE}/{path}")
-        print(f"Sign in as the {role} demo account in the window that opened…")
+        print(f"Sign in as the {role} demo account ({want}) in the window that opened...")
         while True:
-            me = page.evaluate("() => fetch('/api/me', {credentials: 'include'}).then(r => r.ok ? r.json() : null).catch(() => null)")
+            me = who(ctx)
             if me and me.get("role") == want:
                 print(f"  {role}: signed in as {me.get('username')}")
                 break
+            if me:
+                print(f"  that's a {me.get('role')} account; sign out and use a {want} account", end="\r")
             time.sleep(2)
         ctx.close()
 
@@ -357,17 +374,21 @@ def main() -> int:
     PACE, BASE = args.pace, args.url.rstrip("/")
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
+        acts = [a.strip() for a in args.acts.split(",") if a.strip()]
         if args.setup:
-            setup(pw)
+            setup(pw, acts)
             return 0
-        for name in [a.strip() for a in args.acts.split(",") if a.strip()]:
+        for name in acts:
             print(f"Act: {name}")
             ctx = browser(pw, name, kiosk=True)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.add_init_script(OVERLAY)
+            me = who(ctx)
+            if not me or me.get("role") != ROLES[name][1]:
+                print(f"  not signed in as {name}: run  python src/scripts/ad_demo.py --setup --acts {name}"); ctx.close(); continue
+            print(f"  as {me.get('username')}")
             page.goto(f"{BASE}/{ROLES[name][0]}", wait_until="domcontentloaded")
-            if "sign" in page.url.lower() or page.evaluate("() => fetch('/api/me').then(r => !r.ok)"):
-                print(f"  not signed in as {name}: run with --setup first"); ctx.close(); continue
+            page.wait_for_load_state("networkidle", timeout=30000)
             page.bring_to_front(); time.sleep(1.5)
             recording = False
             if args.record:
