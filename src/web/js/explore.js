@@ -156,7 +156,18 @@ export async function quizView(main, ctx) {
   const bar = h("i");
   const count = h("span", { class: "num" });
   const stage = h("div", { class: "quiz-stage", "aria-live": "polite" });
-  const back = h("button", { class: "btn ghost sm", type: "button", onclick: () => go(st.i - 1) }, icon("back"), "Back");
+  const back = h("button", {
+    class: "btn ghost sm flow-back-btn",
+    type: "button",
+    onclick: () => {
+      if (st.i < 0) {
+        location.hash = "#/start";
+      } else {
+        go(st.i - 1);
+      }
+    }
+  }, icon("back"), "Back to home");
+
   main.replaceChildren(h("div", { class: "quiz" },
     h("div", { class: "quiz-top" }, back, h("div", { class: "quiz-progress", role: "progressbar", "aria-label": "Quiz progress",
       "aria-valuemin": "0", "aria-valuemax": String(q.questions.length) }, bar), count),
@@ -171,10 +182,21 @@ export async function quizView(main, ctx) {
 
   function progress() {
     const done = Math.max(0, st.i);
+
     bar.style.transform = `scaleX(${done / q.questions.length})`;
     bar.parentElement.setAttribute("aria-valuenow", String(done));
-    count.textContent = st.i < 0 ? "" : `${Math.min(st.i + 1, q.questions.length)} / ${q.questions.length}`;
-    back.hidden = st.i < 0;
+
+    count.textContent =
+      st.i < 0
+        ? ""
+        : `${Math.min(st.i + 1, q.questions.length)} / ${q.questions.length}`;
+
+    back.hidden = false;
+
+    back.replaceChildren(
+      icon("back"),
+      st.i < 0 ? "Back to home" : "Back"
+    );
   }
 
   function go(i) {
@@ -266,10 +288,22 @@ export function resumeView(main, ctx) {
     input, icon("upload"), h("b", {}, "Drop your resume here, or choose a file"), h("span", { class: "note" }, "PDF, Word (.docx), .txt or .md · up to 2 MB"));
   const out = h("div", { class: "cv-out" });
   main.replaceChildren(
+    h("div", { class: "flow-back-row" },
+      h("a", {
+        href: "#/start",
+        class: "btn ghost sm flow-back-btn"
+      }, icon("back"), "Back to home")
+    ),
+
     h("div", { class: "start-head" }, h("div", {},
       h("h1", { class: "page-title" }, "Analyse your resume"),
-      h("p", { class: "lede" }, "We don't store your file. Each skill shows the line it came from, and you can edit any of them.")), owl.el),
-    drop, out);
+      h("p", { class: "lede" },
+        "We don't store your file. Each skill shows the line it came from, and you can edit any of them."
+      )), owl.el),
+
+    drop,
+    out
+  );
 
   async function send(file) {
     if (file.size > 2_000_000) { toast("That file is over 2 MB.", "err"); return; }

@@ -2624,7 +2624,7 @@ body {
 }
 
 /* =========================================
-   SAVED 90-DAY PLAN — SEPARATE FULL CARD
+    SAVED 90-DAY PLAN — SEPARATE FULL CARD
    ========================================= */
 
 .plan-focus {
@@ -2904,3 +2904,33 @@ body {
 }
 @media (prefers-reduced-motion: reduce) { .interview-takeover .interview-office-host, .room-mode-thumb { transition: none; } }
 .interview-takeover[data-mode="card"] .dock-view, .interview-takeover[data-mode="card"] .interview-dock .dock-gap:first-of-type { display: none; }  /* one view switch at a time */
+
+.flow-back-row {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.flow-back-row .btn {
+  width: fit-content;
+}
+
+.flow-back-btn {
+  color: var(--link);
+
+  transition:
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.flow-back-btn:hover {
+  color: var(--link);
+  background: #fff;
+
+  box-shadow:
+    0 8px 20px rgba(30, 55, 90, 0.12),
+    0 2px 6px rgba(30, 55, 90, 0.08);
+
+  transform: translateY(-1px);
+}

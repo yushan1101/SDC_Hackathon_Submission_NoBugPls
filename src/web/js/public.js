@@ -390,6 +390,12 @@ function reportView(main, openId) {
       .observe(S.threadEl, { childList: true, subtree: true, characterData: true });
     S.reportEl = h("div", { class: "report" },
       h("div", { class: "thread-col", style: { display: "grid", gap: "24px", "min-width": 0 } },
+        h("div", { class: "flow-back-row" },
+          h("a", {
+            href: "#/start",
+            class: "btn ghost sm flow-back-btn"
+          }, icon("back"), "Back to home")
+        ),
         h("div", { style: { display: "flex", "justify-content": "space-between", "align-items": "end", gap: "12px", "flex-wrap": "wrap" } },
           h("h1", { class: "page-title" }, "Chat"),
           h("div", { class: "row-actions" },
