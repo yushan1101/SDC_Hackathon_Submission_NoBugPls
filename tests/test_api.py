@@ -1037,6 +1037,18 @@ def test_hr_invites_team_members_who_join_without_signing_up(client, monkeypatch
     ok = guest.post("/api/invite/accept", json={"username": "joiner.one", "token": link, "password": PW, "accept_terms": True}, headers=H)
     assert ok.json()["status"] == "active" and guest.get("/api/me").json()["effective_plan"] == "org"
     assert guest.post("/api/invite/accept", json={"username": "joiner.one", "token": link, "password": PW, "accept_terms": True}, headers=H).status_code == 422
+    # the employee's own plan: their HR advisor sees it and its progress, read-only; another advisor doesn't
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}
+    own = events(guest.post("/api/analyze", json=body, headers=H))[-1]["plan_id"]
+    login(client, "hr2")
+    assert client.get(f"/api/plans/{own}").status_code == 404
+    login(client, "hr1")
+    seen = client.get(f"/api/plans/{own}").json()
+    assert seen["read_only"] and "review" not in seen and seen["plan"]["activities"][0]["steps"]
+    member = next(p for p in client.get("/api/org/users").json() if p["username"] == "joiner.one")
+    assert [m["plan_id"] for m in member["plans"]] == [own] and "done" in member["plans"][0]["progress"]
+    assert client.post(f"/api/plans/{own}/progress", json={"item": "1-30:x", "done": True}, headers=H).status_code == 404
+    assert client.post(f"/api/plans/{own}/status", json={"status": "approved"}, headers=H).status_code in (404, 422)
     # HR disables (signed out at once), enables, then removes
     login(client, "hr1")
     assert client.post("/api/org/users/joiner.one/status", json={"status": "disabled"}, headers=H).status_code == 200

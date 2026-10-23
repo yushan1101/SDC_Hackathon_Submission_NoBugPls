@@ -3,11 +3,31 @@
 import { api, h, icon, toast, fmtTime } from "./lib.js";
 import { Owl } from "./owl.js";
 import { brandMark as mark } from "./brands.js";
+import { planBlock } from "./blocks.js";
 
 const STATUS_TAG = { active: "approved", invited: "draft", disabled: "flagged" };
 
 
 // ---------------------------------------------------------------- team members
+const PACE = { done: "Completed", ahead: "Ahead", on_track: "On track", behind: "Behind", not_started: "Not started" };
+
+/** A plan an employee made for themself, opened read-only in a side panel: HR sees it and the progress, never edits. */
+async function openOwnPlan(drawer, person, planId) {
+  drawer.replaceChildren(h("p", { class: "pad muted" }, "Loading…"));
+  drawer.showModal();
+  try {
+    const d = await api(`/api/plans/${planId}`);
+    const s = d.progress_summary || {};
+    drawer.replaceChildren(h("div", { class: "panel own-plan" },
+      h("header", {}, h("h2", {}, `${person} · ${d.plan.target_role}`), h("button", { class: "btn sm", type: "button", onclick: () => drawer.close() }, "Close")),
+      h("div", { class: "pad own-plan-body" },
+        h("p", { class: "note" }, icon("user"), `${person} made this plan for themself. You can see it and their progress; only they can change it.`),
+        h("p", {}, h("b", {}, `${s.done || 0} of ${s.total || 0} activities done`), ` · ${PACE[s.pace] || ""}${s.day ? ` · day ${s.day} of 90` : ""}`),
+        planBlock({ planId, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null,
+          progress: d.progress, evidence: d.report?.evidence, title: "90-day plan", readOnly: true }))));
+  } catch (e) { drawer.replaceChildren(h("p", { class: "pad error" }, e.message)); }
+}
+
 export async function peopleView(main, status) {
   const people = await api("/api/org/users");
   const err = h("p", { class: "error", role: "alert" });
@@ -15,8 +35,12 @@ export async function peopleView(main, status) {
   const name = h("input", { class: "input", maxlength: 60, placeholder: "Display name (optional)" });
   const send = h("button", { class: "btn primary", type: "submit" }, icon("mail"), "Send invite");
   const act = (fn, done) => async () => { try { await fn(); toast(done); peopleView(main, status); } catch (e) { toast(e.message, "err"); } };
+  const drawer = h("dialog", { class: "drawer", "aria-label": "Employee plan" });
+  const plansOf = (p) => p.plans?.length ? h("div", { class: "own-plans" }, p.plans.map((pl) => h("button", { class: "own-plan-chip", type: "button",
+    title: `Open ${p.display_name}'s plan for ${pl.target_role} (read-only)`, onclick: () => openOwnPlan(drawer, p.display_name, pl.plan_id) },
+    icon("history"), h("span", {}, pl.target_role), h("span", { class: "num" }, `${pl.progress?.pct ?? 0}%`)))) : null;
   const row = (p) => h("tr", {},
-    h("td", {}, h("b", {}, p.display_name), h("div", { class: "muted mono" }, p.username)),
+    h("td", {}, h("b", {}, p.display_name), h("div", { class: "muted mono" }, p.username), plansOf(p)),
     h("td", { class: "hide-sm" }, p.email),
     h("td", {}, h("span", { class: `tag ${STATUS_TAG[p.status] || "draft"}` }, p.status === "invited" ? "invite sent" : p.status)),
     h("td", { class: "mono hide-sm" }, fmtTime(p.created_utc)),
@@ -51,7 +75,8 @@ export async function peopleView(main, status) {
           h("label", { class: "field" }, h("span", {}, "Work email"), email),
           h("label", { class: "field" }, h("span", {}, "Name"), name),
           err, send,
-          h("p", { class: "note" }, "They get an email with a link (valid 7 days) to choose a password. Their account is on your organisation's plan. You can disable or remove it at any time."))))));
+          h("p", { class: "note" }, "They get an email with a link (valid 7 days) to choose a password. Their account is on your organisation's plan. You can disable or remove it at any time. You can see the learning plans they make for themselves, read-only.")))),
+    drawer));
 }
 
 // ---------------------------------------------------------------- hiring plugins

@@ -133,6 +133,16 @@ def can_act(con, plan_id: str, user: dict) -> bool:
     return user["role"] == "hr_advisor" and audience == "hr"
 
 
+def can_view(con, plan_id: str, user: dict) -> bool:
+    """can_act, plus read-only for HR: the plans an employee of their organisation (someone they invited) made for
+    themself. Every change still goes through can_act, so HR can look at those plans but never edit or approve them."""
+    if can_act(con, plan_id, user):
+        return True
+    return user["role"] == "hr_advisor" and bool(con.execute(
+        "SELECT 1 FROM plans p JOIN users u ON u.employee_id=p.subject_id WHERE p.plan_id=? AND p.audience='individual' "
+        "AND u.role='employee' AND u.invited_by=?", (plan_id, user["username"])).fetchone())
+
+
 def require(con, plan_id: str, user: dict):
     if not can_act(con, plan_id, user):
         raise TransitionError("not authorised for this plan")

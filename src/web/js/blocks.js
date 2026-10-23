@@ -158,7 +158,8 @@ export function issuesBlock(issues) {
 
 /** Editable 30/60/90 plan with approval. Talks to /api/plans/:id. Calls onChange(status) after saves. */
 export function planBlock({ planId, planReference, plan, version, status, weeklyHours, onChange, approverLabel = "I have reviewed this plan and approve it", title = "Your 90-day plan",
-  progress = [], evidence = null }) {
+  progress = [], evidence = null, readOnly = false }) {
+  // readOnly: HR looking at a plan an employee made for themself: no hours, ticks, saving or approval
   // progress: activities ticked off as done ("<days>:<skill>", saved on the server); evidence: id -> {title, url} for course links
   const done = new Set(progress);
   const key = (a) => `${a.day_range}:${a.skill_id}`;
@@ -174,7 +175,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     const used = mine.reduce((s, a) => s + a.estimated_hours, 0);
     const activityCards = mine.map((a, i) => {
       const input = h("input", { class: "input hrs", type: "number", min: "0.5", max: "200", step: "0.5", value: a.estimated_hours,
-        disabled: status === "approved" ? true : null,
+        disabled: status === "approved" || readOnly ? true : null,
         oninput: (e) => { a.estimated_hours = Number(e.target.value); saveBtn.disabled = false; } });
       const description = a.activity.length > 150
         ? h("details", { class: "activity-details" }, h("summary", {}, `${a.activity.slice(0, 135).trimEnd()}… Show details`), h("p", {}, a.activity))
@@ -183,7 +184,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
         const n = String(s).replace(/\D/g, "");
         return h("span", { class: "sdg-n", style: { "--sdg": SDG_COLORS[n] || "#888" }, title: `UN SDG ${n}`, "aria-label": `UN SDG ${n}` }, n);
       });
-      const tick = planId ? h("label", { class: "act-done", title: "Mark this activity as done" },
+      const tick = planId && !readOnly ? h("label", { class: "act-done", title: "Mark this activity as done" },
         h("input", { type: "checkbox", checked: done.has(key(a)) ? true : null, onchange: (e) => mark(a, e.target.checked, e.target) }), "Done") : null;
       const links = courses(a);
       const main = h("div", { class: "act-main" },
@@ -280,7 +281,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     plan.deferred_skills?.length ? h("details", { class: "note deferred" },
       h("summary", {}, `${plan.deferred_skills.length} more skills don't fit in ${weeklyHours ? weeklyHours + " h/week" : "the weekly hours"}; the plan covers the highest-priority gaps first.`),
       h("p", {}, plan.deferred_skills.join(", "))) : null,
-    sdgGuide, planEl, errBox, bar), RISE, { duration: 420 });
+    sdgGuide, planEl, errBox, readOnly ? null : bar), RISE, { duration: 420 });
 }
 
 export function historyBlock(hist) {

@@ -3358,3 +3358,33 @@ body {
 .ag-action-btns { display: flex; flex-wrap: wrap; gap: 8px; }
 .ag-action .ag-result { margin: 0; font-size: 14px; }
 .ag-action .ag-result.failed { color: var(--danger); }
+
+/* Team members: each employee's own plans, opened read-only. */
+.own-plans { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.own-plan-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px; border: 1px solid var(--rule); border-radius: 999px;
+  background: var(--surface); color: var(--ink-2); font: 500 13px var(--font-ui); cursor: pointer; }
+.own-plan-chip:hover { color: var(--accent); border-color: var(--accent); }
+.own-plan-chip svg { width: 14px; height: 14px; flex: none; }
+.own-plan-chip span:first-of-type { min-width: 0; text-align: left; }
+.own-plan { border: 0; height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.own-plan-body { overflow: auto; display: grid; gap: 14px; align-content: start; }
+
+/* Openings: on a narrow panel each opening is a card (role and status, then the counts), never a squeezed column. */
+.openings-wrap { container: openings / inline-size; }
+.openings-table .job-line b { overflow-wrap: normal; word-break: normal; }
+@container openings (max-width: 560px) {
+  .openings-table thead { display: none; }
+  .openings-table, .openings-table tbody { display: block; }
+  .openings-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 12px; padding: 12px 14px; border-bottom: 1px solid var(--rule); }
+  [data-product="hr"] .openings-table td { padding: 0; border: 0; text-align: left; }
+  .openings-table td:nth-child(1) { grid-area: 1 / 1; min-width: 0; }
+  .openings-table td:nth-child(4) { grid-area: 1 / 2; justify-self: end; }
+  .openings-table td:nth-child(2) { grid-area: 2 / 1; color: var(--ink-2); font: 14px var(--font-ui); }
+  .openings-table td:nth-child(3) { grid-area: 2 / 2; justify-self: end; color: var(--ink-2); font: 14px var(--font-ui); }
+  .openings-table td:nth-child(3)::after { content: " recommended"; }
+  .openings-table td:nth-child(5) { display: none; }
+  .openings-table td:nth-child(2)::after { content: " applicants"; }
+  .openings-table .job-line { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .openings-table .job-line b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+.row-actions { flex-wrap: wrap; justify-content: flex-end; }

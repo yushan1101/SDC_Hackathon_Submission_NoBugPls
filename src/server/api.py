@@ -285,7 +285,8 @@ def me(user: dict = Depends(current_user)):
     with DB_LOCK:
         a = accounts.account(db, user["username"]) or {}
     return user | {k: a.get(k) for k in ("email", "status", "plan", "plan_until", "effective_plan", "account_type")} \
-        | {"terms_version": a.get("terms_version"), "terms_current": accounts.TERMS_VERSION}
+        | {"terms_version": a.get("terms_version"), "terms_current": accounts.TERMS_VERSION,
+           "hr_can_view": bool(a.get("invited_by")) and user["role"] == "employee"}  # their HR advisor sees their own plans (read-only)
 
 
 @app.post("/api/challenge")
@@ -1404,8 +1405,10 @@ def _progress_summary(plan: dict, done_rows, created_utc: str) -> dict:
 
 @app.get("/api/plans/{pid}")
 def plan(pid: str, user: dict = Depends(current_user)):
-    _guard(pid, user)
     with DB_LOCK:
+        if not approval.can_view(db, pid, user):
+            raise HTTPException(404, "plan not found")
+        read_only = not approval.can_act(db, pid, user)  # HR viewing an employee's own plan
         cur, hist = approval.latest(db, pid), approval.history(db, pid)
         audience = db.execute("SELECT audience, subject_id FROM plans WHERE plan_id=?", (pid,)).fetchone()
     with DB_LOCK:
@@ -1415,10 +1418,11 @@ def plan(pid: str, user: dict = Depends(current_user)):
         created = db.execute("SELECT created_utc FROM plans WHERE plan_id=?", (pid,)).fetchone()[0]
         review = {"review": reviews.get(db, pid), "review_history": reviews.history(db, pid),
                   "original_employee_id": (db.execute("SELECT original_id FROM plan_original_ids WHERE plan_id=?", (pid,))
-                                           .fetchone() or [None])[0]} if user["role"] == "hr_advisor" else {}
+                                           .fetchone() or [None])[0]} if user["role"] == "hr_advisor" and not read_only else {}
     report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else None
     return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], **cur, "history": hist, "report": report,
-            "progress": done, "progress_summary": _progress_summary(cur.get("plan") or {}, done_rows, created), **review}
+            "progress": done, "progress_summary": _progress_summary(cur.get("plan") or {}, done_rows, created),
+            "read_only": read_only, **review}
 
 
 class ProgressIn(BaseModel):
@@ -2022,7 +2026,18 @@ def org_users(user: dict = Depends(need("hr_advisor"))):
         rows = db.execute(f"SELECT {','.join(accounts.KEYS)} FROM users WHERE invited_by=? ORDER BY created_utc DESC",
                           (user["username"],)).fetchall()
     keep = ("username", "display_name", "email", "status", "created_utc")
-    return [{k: v for k, v in zip(accounts.KEYS, r) if k in keep} for r in rows]
+    out = [dict(zip(accounts.KEYS, r)) for r in rows]
+    with DB_LOCK:  # each employee's own plans and how far they've got (HR can open these read-only)
+        for m in out:
+            plans_ = db.execute("SELECT p.plan_id, p.created_utc, json_extract(v.snapshot,'$.target_role'), v.snapshot FROM plans p "
+                                "JOIN plan_versions v ON v.plan_id=p.plan_id WHERE p.subject_id=? AND p.audience='individual' "
+                                "AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id) "
+                                "ORDER BY p.created_utc DESC LIMIT 10", (m["employee_id"],)).fetchall() if m["employee_id"] else []
+            m["plans"] = [{"plan_id": pid, "created_utc": c, "target_role": (occupation(role) or {}).get("title", role),
+                           "progress": _progress_summary(json.loads(snap or "{}"), db.execute(
+                               "SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (pid,)).fetchall(), c)}
+                          for pid, c, role, snap in plans_]
+    return [{k: v for k, v in m.items() if k in keep + ("plans",)} for m in out]
 
 
 class OrgInviteIn(BaseModel):

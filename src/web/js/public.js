@@ -712,7 +712,8 @@ function planHolder(planId, plan, hours, status, progress = [], planReference) {
 
 // ---------------------------------------------------------------- plans
 async function plansView(main) {
-  main.replaceChildren(h("h1", { class: "page-title" }, "My plans"), h("p", { class: "lede" }, "Your plans, including any your HR advisor prepared for you."));
+  main.replaceChildren(h("h1", { class: "page-title" }, "My plans"), h("p", { class: "lede" }, "Your plans, including any your HR advisor prepared for you."),
+    ...(S.me?.hr_can_view ? [h("p", { class: "note" }, icon("user"), "Your HR advisor can see the plans you make here and how far you've got. Only you can change them.")] : []));
   const list = await api("/api/plans");
   if (!list.length) {
     main.append(h("div", { class: "empty" }, new Owl({ size: 96, state: "sleeping" }).el,

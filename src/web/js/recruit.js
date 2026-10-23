@@ -88,7 +88,7 @@ export async function openingsView(main, status) {
       h("span", { class: "muted", style: { "font-size": "14px" } }, "Create openings, share them and review ranked applicants.")),
     h("div", { class: "overview" },
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Open roles"), h("span", { class: "muted num", style: { "font-size": "14px" } }, `${list.length}`)),
-        list.length ? h("div", { class: "table-wrap" }, h("table", { class: "data" },
+        list.length ? h("div", { class: "table-wrap openings-wrap" }, h("table", { class: "data openings-table" },
           h("thead", {}, h("tr", {}, h("th", {}, "Role"), h("th", { class: "n" }, "Applicants"), h("th", { class: "n" }, "Recommended"), h("th", {}, "Status"), h("th", { class: "hide-sm" }, "Created"))),
           h("tbody", {}, list.map((o) => h("tr", { "data-href": "1", tabindex: "0", onclick: () => { location.hash = `#/openings/${o.id}`; },
             onkeydown: (e) => e.key === "Enter" && (location.hash = `#/openings/${o.id}`) },
