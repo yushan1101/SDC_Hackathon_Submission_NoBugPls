@@ -12,6 +12,7 @@ import { termsView, privacyView } from "./legal.js";
 import { watchForm } from "./risk.js";
 import { micButton, readAloudButton, setVoice } from "./voice.js";
 import { agentView, agentSwitch } from "./agents.js";
+import { reportAssistant } from "./report-assistant.js";
 
 const app = $("#app");
 const store = {
@@ -378,16 +379,18 @@ function start(query) {
 function reportView(main, openId) {
   if (!S.reportEl) {
     S.threadEl = h("div", { class: "thread", "aria-live": "off" });
-    S.input = h("input", { class: "input", placeholder: "Request a report update, e.g. “I only have 3 hours a week”", maxlength: 500, "aria-label": "Report update request" });
+    S.input = h("textarea", { class: "input", rows: 2, placeholder: "Ask about your report or request a plan update…", maxlength: 500, "aria-label": "Report update request",
+      onkeydown: (event) => {
+        if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+          event.preventDefault();
+          if (!S.busy) composerSend();
+        }
+      } });
     S.sendBtn = h("button", { class: "btn primary", type: "submit", "aria-label": "Submit report request" }, icon("send"));
     S.composer = h("form", { class: "composer", onsubmit: (e) => { e.preventDefault(); composerSend(); } },
       S.quick = h("div", { class: "quick", "aria-label": "Suggested report updates" }),
       h("div", { class: "row" }, S.input, micButton(S.input), S.sendBtn));
-    // follow the answer as it streams, unless the reader scrolled up to read something
-    S.stick = true;
-    addEventListener("scroll", () => { S.stick = innerHeight + scrollY >= document.documentElement.scrollHeight - 160; }, { passive: true });
-    new MutationObserver(() => { if (S.busy && S.stick && S.reportEl.isConnected) scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }); })
-      .observe(S.threadEl, { childList: true, subtree: true, characterData: true });
+    S.assistant = reportAssistant({ thread: S.threadEl, composer: S.composer, input: S.input, onCite: highlight });
     S.reportEl = h("div", { class: "report" },
       h("div", { class: "thread-col", style: { display: "grid", gap: "24px", "min-width": 0 } },
         h("div", { class: "flow-back-row" },
@@ -403,10 +406,12 @@ function reportView(main, openId) {
             h("button", { class: "btn sm", type: "button", popovertarget: "history-menu" }, icon("history"), "Report history"),
             h("button", { class: "btn sm only-narrow", type: "button", onclick: () => S.sheet.showModal() }, icon("sources"), "Sources"))),
         S.history = h("div", { id: "history-menu", popover: "auto", class: "core-menu history-menu", "aria-label": "Past reports" }),
-        S.threadEl, S.composer),
-      S.sources);
+        S.threadEl),
+      S.sources, S.assistant.el);
   }
+  if (!S.reportEl.isConnected) S.assistant.hide(false);
   main.replaceChildren(S.reportEl);
+  S.assistant.position();
   loadHistory();
   if (S.pending) { const q = S.pending; S.pending = null; runTurn(q); }
   else if (openId && openId !== S.openId) openConversation(openId);
@@ -463,19 +468,17 @@ async function pickJob(o) {
 
 /** An owl message in the thread with a job search: choosing a job continues this same conversation. */
 function askForJob() {
-  const card = h("article", { class: "turn-owl" }, new Owl({ size: 44, state: "idle" }).el,
+  const card = h("article", { class: "report-assistant-job" },
     h("div", { class: "body" }, h("div", { class: "who" }, "AiversePulse"), h("p", {}, "Which job should I look at?"),
       jobPicker((o) => { card.remove(); pickJob(o); })));
-  S.threadEl.append(card);
-  card.scrollIntoView({ behavior: "smooth", block: "center" });
-  card.querySelector("input").focus({ preventScroll: true });
+  S.assistant.showTool(card);
 }
 
 /** Empty chat: the owl asks which job. A saved target job runs in one click. */
 function briefingStarter() {
   const p = S.profile;
   const ready = p.target_role && p.skills.length;
-  return h("div", { class: "brief-start" }, new Owl({ size: 96, state: "idle" }).el,
+  return h("div", { class: "brief-start" },
     h("h2", {}, "Which job are you aiming for?"),
     h("p", { class: "muted" }, "Pick a job. We'll compare it with your skills and draft a 90-day plan."),
     ready ? h("button", { type: "button", class: "btn primary brief-go", onclick: () => start() },
@@ -486,6 +489,8 @@ function briefingStarter() {
 
 function newChat() {
   if (S.busy) S.busy.abort();
+  setBusy(null);
+  S.assistant.reset();
   S.thread = []; S.lastPlanId = null; S.openId = null;
   S.threadEl.replaceChildren(briefingStarter());
   S.composer.hidden = true;
@@ -494,10 +499,18 @@ function newChat() {
 
 /** Reopen a past conversation in the chat, every turn, with the latest plan; typing continues it. */
 async function openConversation(id) {
+  if (S.busy) S.busy.abort();
+  setBusy(null);
+  S.assistant.reset();
+  S.composer.hidden = true;
   S.openId = id;
   S.threadEl.replaceChildren(h("p", { class: "muted" }, "Opening your conversation…"));
   let d;
-  try { d = await api(`/api/plans/${id}`); } catch (e) { S.threadEl.replaceChildren(h("div", { class: "issue error" }, e.message)); return; }
+  try { d = await api(`/api/plans/${id}`); } catch (e) {
+    if (S.openId === id) S.threadEl.replaceChildren(h("div", { class: "issue error" }, e.message));
+    return;
+  }
+  if (S.openId !== id) return;
   const r = d.report || {};
   const title = r.occupation?.title || d.plan.target_role;
   // older plans saved no conversation: show their briefing as one turn
@@ -511,7 +524,9 @@ async function openConversation(id) {
   S.lastPlanId = id;
   setSources(r.evidence || []);
   S.threadEl.replaceChildren(...turns.flatMap((t, i) => {
-    const body = h("div", { class: "body" }, t.a ? staticText(t.a, highlight) : null);
+    const narrative = t.a ? staticText(t.a, highlight) : null;
+    if (narrative) narrative.dataset.assistantReply = "true";
+    const body = h("div", { class: "body" }, narrative);
     if (i === turns.length - 1) {  // the latest turn carries the full analysis and the plan
       let insights = null;
       const add = (el, small) => { if (!el) return; if (small) (insights ??= body.appendChild(h("div", { class: "insights" }))).append(el); else body.append(el); };
@@ -524,13 +539,12 @@ async function openConversation(id) {
       body.append(planHolder(id, d.plan, r.request?.weekly_learning_hours ?? S.profile.weekly_learning_hours, d.status, d.progress, d.plan_reference));
     }
     return [h("div", { class: "turn-user" }, h("p", { class: "q" }, t.q || `Plan for ${t.title || title}`)),
-      h("article", { class: "turn-owl" }, new Owl({ size: 44, state: "idle" }).el,
+      h("article", { class: "turn-owl" },
         h("div", { class: "body" }, h("div", { class: "who" }, "AiversePulse", t.at ? h("span", { class: "muted" }, fmtTime(t.at)) : null), body))];
   }));
   S.ctx = { gaps: r.gaps, outlook: r.outlook };
   drawSuggestions();
   S.composer.hidden = false;
-  S.threadEl.lastElementChild?.scrollIntoView({ block: "start" });
 }
 
 /** What this person would most likely ask next, from their latest answer: their biggest gap, a skill in rising
@@ -574,6 +588,7 @@ function composerSend() {
 
 function setBusy(ctrl) {
   S.busy = ctrl;
+  S.assistant.setBusy(!!ctrl);
   S.sendBtn.replaceChildren(icon(ctrl ? "stop" : "send"));
   S.sendBtn.setAttribute("aria-label", ctrl ? "Stop generating" : "Send");
 }
@@ -604,20 +619,20 @@ async function runTurn(params) {
       h("span", { class: "meta-pill" }, icon("spark"), p.scenario === "agentic" ? "Agentic AI" : "Assistive AI"),
       h("span", { class: "meta-pill" }, icon("clock"), `${p.weekly_learning_hours} h/week`),
       h("span", { class: "meta-pill", title: p.skills.map((s) => `${s.name}: ${s.level}`).join("\n") }, icon("check"), `${p.skills.length} skills`)));
-  const owl = new Owl({ size: 44, state: "thinking" });
+  const owl = S.assistant.owl;
+  owl.set("thinking");
   const say = h("span", { class: "muted" }, "Reading your request");
   const traceList = h("ol");
   const running = h("li", { class: "run" }, h("span", { class: "dot" }), h("span", {}, "Working"), h("span", { class: "ms" }));
   traceList.append(running);
   const sumText = h("span", {}, "Analysing…");
   const trace = h("details", { class: "trace", open: true }, h("summary", {}, h("span", { class: "spinner", "aria-hidden": "true" }), sumText), traceList);
-  const prose = h("p", { class: "prose", "aria-live": "polite" });
+  const prose = h("p", { class: "prose", "aria-live": "polite", "data-assistant-reply": "true" });
   const body = h("div", { class: "body" }, trace, prose);
-  const turn = h("article", { class: "turn-owl", "aria-label": "AiversePulse reply" }, owl.el,
+  const turn = h("article", { class: "turn-owl", "aria-label": "AiversePulse reply" },
     h("div", { class: "body" }, h("div", { class: "who" }, "AiversePulse", say, readAloudButton(() => prose.textContent)), body));
   S.threadEl.querySelector(".empty, .brief-start")?.remove();
   S.threadEl.append(reveal(userTurn, RISE), reveal(turn, RISE, { delay: 120 }));
-  S.stick = true;  // a new message: follow it
 
   S.ctx = {};  // what this answer finds (gaps, outlook) shapes the suggested next messages
   S.quick.replaceChildren();
@@ -625,7 +640,7 @@ async function runTurn(params) {
   const ctrl = new AbortController();
   setBusy(ctrl);
   let steps = 0, reused = 0, t0 = performance.now(), planId = null, meta = null, insights = null;
-  const mood = (state, text) => { owl.set(state); S.status.set(state, text || say.textContent); if (text) say.textContent = text; };
+  const mood = (state, text) => { owl.set(state); S.status.set(state, text || say.textContent); if (text) { say.textContent = text; S.assistant.setStatus(text); } };
   try {
     await stream("/api/analyze", {
       target_role: p.target_role, scenario: p.scenario, weekly_learning_hours: p.weekly_learning_hours,
@@ -673,7 +688,7 @@ async function runTurn(params) {
     }
     else { mood("confused", "Something went wrong"); body.append(h("div", { class: "issue error" }, e.message)); }
   } finally {
-    setBusy(null);
+    if (S.busy === ctrl) { drawSuggestions(); setBusy(null); }
   }
 }
 
