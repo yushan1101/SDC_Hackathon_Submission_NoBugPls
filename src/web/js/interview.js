@@ -186,13 +186,34 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     h("option", { value: "zh-CN" }, "Chinese (Simplified)"));
   const micBars = Array.from({ length: 7 }, () => h("i", { "aria-hidden": "true" }));
   const meter = h("div", { class: "interview-mic-meter", role: "img", "aria-label": "Live microphone sound level" }, micBars);
-  const voicePanel = h("div", { class: "interview-voice-panel", dataset: { state: "off" } },
-    h("div", { class: "interview-voice-summary" }, meter,
-      h("div", { class: "interview-voice-copy" }, h("b", {}, "Voice answer"), status), duration),
-    h("details", { class: "interview-voice-settings" }, h("summary", {}, "Microphone & language"),
-      h("label", { class: "interview-voice-field" }, h("span", {}, "Microphone"), deviceSelect),
-      h("label", { class: "interview-voice-field" }, h("span", {}, "Transcription language"), languageSelect)),
-    h("div", { class: "interview-voice-controls" }, startBtn, stopBtn, retryBtn, muteBtn));
+  // Tesla-style room: the interviewer fills the screen; one status line and an icon dock carry everything else.
+  const voicePanel = h("div", { class: "interview-voice-panel", dataset: { state: "off" } }, meter, status, duration);
+  const dockIcon = (btn, name, label, extra = "") => {
+    btn.className = `dock-btn ${extra}`.trim(); btn.replaceChildren(icon(name));
+    btn.setAttribute("aria-label", label); btn.title = label;
+    return btn;
+  };
+  dockIcon(startBtn, "mic", "Start answering", "dock-mic is-start");
+  dockIcon(stopBtn, "stop", "Stop recording", "dock-mic is-stop");
+  dockIcon(retryBtn, "replay", "Record again");
+  dockIcon(muteBtn, "micOff", "Mute microphone"); muteBtn.setAttribute("aria-pressed", "false");
+  dockIcon(answerBtn, "send", "Send answer", "dock-send");
+  const settings = h("div", { id: "interview-settings", class: "interview-settings", popover: "auto", "aria-label": "Microphone and language" },
+    h("label", { class: "interview-voice-field" }, h("span", {}, "Microphone"), deviceSelect),
+    h("label", { class: "interview-voice-field" }, h("span", {}, "Language"), languageSelect),
+    h("p", { class: "fine" }, "Only your reviewed transcript is saved. Browser speech recognition may process microphone audio; AiversePulse does not store audio."));
+  const settingsBtn = dockIcon(h("button", { type: "button", popovertarget: "interview-settings" }), "sliders", "Microphone, language and privacy");
+  // Voice | Type, like a car's view switch: talking shows the live caption, typing shows the answer box.
+  let view = "voice";
+  const viewSwitch = h("div", { class: "dock-view", role: "group", "aria-label": "Answer by" },
+    h("span", { class: "dock-view-thumb", "aria-hidden": "true" }),
+    ...[["voice", "mic", "Voice"], ["type", "keyboard", "Type"]].map(([key, ic, label]) => h("button", { type: "button", "data-view": key,
+      "aria-label": `Answer by ${label.toLowerCase()}`, title: label, onclick: () => setView(key) }, icon(ic))));
+  const setView = (next) => {
+    view = next; form.dataset.view = next;
+    viewSwitch.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === next)));
+    if (next === "type") requestAnimationFrame(() => transcript.focus({ preventScroll: true }));
+  };
   const livePreview = h("p", { class: "interview-live-preview", "aria-live": "polite", hidden: true });
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
   const speechAvailable = Boolean(Speech);
@@ -270,8 +291,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     micBars.forEach((bar) => { bar.style.height = "5px"; });
     microphoneLevel = 0;
     updateAvatarPresentation();
-    muteBtn.textContent = "Mute";
-    muteBtn.setAttribute("aria-label", "Mute microphone");
+    muteBtn.setAttribute("aria-pressed", "false"); muteBtn.setAttribute("aria-label", "Mute microphone");
   };
   const watchAudio = () => {
     if (!analyser) return;
@@ -379,8 +399,9 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       releaseAudio(); interimText = ""; livePreview.textContent = ""; livePreview.hidden = true;
       if (announce) {
         const hasAnswer = Boolean(transcript.value.trim());
+        if (hasAnswer) setView("type");
         setMicState(hasAnswer ? "captured" : "error", hasAnswer
-          ? "Answer captured · review or edit the transcript before sending"
+          ? "Captured · review, then send"
           : speechAvailable ? "No speech was transcribed · check the language, retry, or type your answer"
             : "Speech recognition is unavailable in this browser · type your answer instead");
       }
@@ -390,6 +411,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   };
   const startRecording = async () => {
     if (recording || starting || paused || interviewerSpeaking) return;
+    setMode("focus");  // like shifting into Drive: answering switches to the focused view
     starting = true;
     speechError = null;
     recordingAttempted = true; updateControls(); setMicState("processing", "Requesting microphone access…");
@@ -433,7 +455,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
         analyser = audioContext.createAnalyser(); analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.75;
         audioSource = audioContext.createMediaStreamSource(micStream); audioSource.connect(analyser); watchAudio();
       }
-      starting = false; recording = true; muted = false; muteBtn.textContent = "Mute"; muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration(); updateControls();
+      starting = false; recording = true; muted = false; muteBtn.setAttribute("aria-pressed", "false"); muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration(); updateControls();
       if (recognizer) {
         if (speechError) setMicState("error", speechError);
         else if (recognitionActive) setMicState("listening", "Listening · speak your answer");
@@ -467,10 +489,10 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     if (!micStream) return;
     muted = !muted; micStream.getAudioTracks().forEach((track) => { track.enabled = !muted; });
     if (muted) {
-      pauseDuration(); await stopRecognition(); muteBtn.textContent = "Unmute"; muteBtn.setAttribute("aria-label", "Unmute microphone");
+      pauseDuration(); await stopRecognition(); muteBtn.setAttribute("aria-pressed", "true"); muteBtn.setAttribute("aria-label", "Unmute microphone");
       setMicState("off", "Microphone muted · unmute to continue recording");
     } else {
-      muteBtn.textContent = "Mute"; muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration();
+      muteBtn.setAttribute("aria-pressed", "false"); muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration();
       if (recognizer && recording) {
         try { recognitionRequested = true; recognizer.start(); setMicState("listening", "Listening · speak your answer"); }
         catch { recognitionRequested = false; setMicState("error", "Could not resume speech recognition. Stop and retry, or type your answer."); }
@@ -525,9 +547,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   const questionStage = h("span");
   const questionLabel = (question) => {
     const mainNumber = Math.min(total, Math.max(1, stageIndex + 1));
-    return question?.is_follow_up || question?.parent_question_id
-      ? `Follow-up to Question ${mainNumber}`
-      : `Main Question ${mainNumber} of ${total}`;
+    return question?.is_follow_up || question?.parent_question_id ? `Q${mainNumber} · follow-up` : `Q${mainNumber} / ${total}`;
   };
   const counter = h("span", { class: "interview-counter", role: "status", "aria-live": "polite" }, questionLabel(current));
   const setQuestion = (q, src) => {
@@ -561,9 +581,9 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       setQuestion(result.question, result.source);
     } catch (e) { setMicState("captured", "Answer captured · review or edit before sending"); toast(e.message, "err"); }
     answerBtn.disabled = false; pause.disabled = false; updateControls();
-  } }, h("label", { class: "field" }, h("span", {}, "Your answer"), transcript),
-    voicePanel, livePreview, h("div", { class: "row-actions interview-submit-row" }, answerBtn));
-  const repeat = h("button", { class: "btn sm", type: "button", onclick: () => { void playQuestion(); } }, "Replay question");
+  } }, h("label", { class: "field interview-type-sheet" }, h("span", { class: "sr-only" }, "Your answer"), transcript),
+    livePreview, voicePanel);
+  const repeat = dockIcon(h("button", { type: "button", onclick: () => { void playQuestion(); } }), "volume", "Replay question");
   const pause = h("button", { class: "btn sm", type: "button", onclick: () => {
     paused = !paused;
     if (paused) {
@@ -574,13 +594,17 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       window.speechSynthesis?.resume();
       if (!interviewerSpeaking) setMicState("off", "Microphone off");
     }
-    pause.textContent = paused ? "Resume" : "Pause";
+    pause.replaceChildren(icon(paused ? "play" : "pause"));
+    pause.setAttribute("aria-label", paused ? "Resume interview" : "Pause interview"); pause.title = pause.getAttribute("aria-label");
     answerBtn.disabled = paused; updateControls();
-  } }, "Pause");
-  repeat.textContent = "Replay question";
-  voicePanel.querySelector(".interview-voice-controls").append(repeat, pause);
+  } });
+  dockIcon(pause, "pause", "Pause interview");
+  form.append(h("nav", { class: "interview-dock", "aria-label": "Interview controls" }, viewSwitch,
+    h("span", { class: "dock-gap" }), repeat, pause, retryBtn, muteBtn, startBtn, stopBtn, answerBtn,
+    h("span", { class: "dock-gap" }), settingsBtn), settings);
+  setView(transcript.value || !speechAvailable ? "type" : "voice");
   const end = h("button", { class: "interview-exit-button", type: "button", onclick: async () => {
-    end.disabled = true; end.textContent = "Saving…";
+    end.disabled = true; end.setAttribute("aria-busy", "true");
     try {
       const pendingTranscript = interimText.trim();
       if (recording || micStream) await finishRecording(false, false);
@@ -593,10 +617,11 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       dispose(); location.hash = destination;
       toast("Progress saved. Resume this interview from Interview History when you’re ready.");
     } catch (e) {
-      end.disabled = false; end.textContent = "Exit";
+      end.disabled = false; end.removeAttribute("aria-busy");
       toast(`Could not save your interview progress. You are still in the interview. ${e.message}`, "err");
     }
-  } }, "Exit");
+  } }, icon("close"));
+  end.setAttribute("aria-label", "Save and exit"); end.title = "Save and exit";
   const onEscape = (event) => { if (event.key === "Escape") { event.preventDefault(); end.click(); } };
   document.addEventListener("keydown", onEscape);
   setQuestion(current, source);
@@ -615,17 +640,28 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     } }, "−");
   const questionOverlay = h("aside", { class: "interview-question-overlay", "aria-label": "Current interview question" },
     questionToggle, h("div", { class: "interview-question-copy" },
-      h("p", { class: "interview-question-label" }, "QUESTION · ", questionStage), qText, skillChips));
+      h("p", { class: "interview-question-label" }, questionStage), qText, skillChips));
+  qText.title = "Tap to show the whole question";
+  qText.addEventListener("click", () => questionOverlay.classList.toggle("is-open"));
+  // Two views, like a car's parked and driving screens: Card shows the interviewer in a card beside the question and
+  // your answer; Focus fills the screen with the interviewer and keeps only a caption and the answer bar.
+  const modeSwitch = h("div", { class: "room-mode", role: "group", "aria-label": "View" },
+    h("span", { class: "room-mode-thumb", "aria-hidden": "true" }),
+    ...[["card", "Card"], ["focus", "Focus"]].map(([key, label]) => h("button", { type: "button", "data-mode": key, onclick: () => setMode(key) }, label)));
+  function setMode(next) {
+    room.dataset.mode = next;
+    modeSwitch.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === next)));
+  }
   const topbar = h("header", { class: "interview-topbar" },
     h("div", { class: "interview-role-name" }, detail.role_title),
-    h("div", { class: "interview-topbar-progress" }, counter, progress), end);
+    h("div", { class: "interview-topbar-progress" }, counter, progress), modeSwitch, end);
   const room = h("section", { class: `interview-takeover${officeEnabled ? " interview-room-office-pending" : ""}`, "aria-label": "Live mock interview" },
-    officeHost, topbar, questionOverlay, responseFeedback, form,
-    h("p", { class: "interview-room-disclaimer" }, "Only your reviewed transcript is sent to AiversePulse and saved with this interview. Browser speech recognition may process microphone audio; AiversePulse does not store audio."));
+    officeHost, topbar, questionOverlay, responseFeedback, form);
+  setMode(officeEnabled ? "card" : "focus");
   main.replaceChildren(room);
   if (officeHost) {
     const fallbackOffice = (error) => {
-      officeHost.remove(); room.classList.remove("interview-room-office-pending", "interview-room-virtual");
+      officeHost.remove(); room.classList.remove("interview-room-office-pending", "interview-room-virtual"); setMode("focus");
       officeDisposer?.(); officeDisposer = null;
       console.warn("Virtual interview office unavailable; using the standard interview room.", error);
     };
