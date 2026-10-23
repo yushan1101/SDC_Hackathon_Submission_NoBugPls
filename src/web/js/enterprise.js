@@ -352,7 +352,13 @@ async function reviewView(main, id) {
   const selected = new Set();
   const redraw = () => reviewView(main).catch((e) => toast(e.message, "err"));
   const navigate = () => { if (location.hash === "#/review") return redraw(); else location.hash = "#/review"; };
-  const search = h("input", { class: "input rv-search", type: "search", value: S.reviewSearch || "", placeholder: "Search people, roles or plan IDs", "aria-label": "Search reviews" });
+  const search = h("input", { class: "input rv-search", type: "search", value: S.reviewSearch || "", placeholder: "Search people, roles or plan IDs", "aria-label": "Search reviews",
+    onsearch: () => clearReviewSearch(search, S.reviewSearch, () => { S.reviewSearch = ""; navigate(); }),
+    oninput: () => {
+      // The browser's native search-field X clears the visible value and fires input/search.
+      // Clear the applied query too, while leaving the current status filter untouched.
+      clearReviewSearch(search, S.reviewSearch, () => { S.reviewSearch = ""; navigate(); });
+    } });
   const chips = h("div", { class: "rv-filters", role: "group", "aria-label": "Review status" },
     FILTERS.map(([k, l]) => h("button", { type: "button", class: "rv-chip", "aria-pressed": String(k === filter),
       onclick: () => { S.reviewFilter = k; navigate(); } }, l)));
@@ -410,6 +416,12 @@ const progressBar = (pr) => pr && pr.total ? h("span", { class: `rv-progress pac
 function reviewBadge(review) {
   const status = review.archived ? "archived" : review.review_status;
   return h("span", { class: `tag ${status}` }, status[0].toUpperCase() + status.slice(1));
+}
+
+function clearReviewSearch(input, appliedQuery, clear) {
+  if (input.value.trim() || !appliedQuery) return false;
+  clear();
+  return true;
 }
 
 function planStatusControl(main, plan, done) {

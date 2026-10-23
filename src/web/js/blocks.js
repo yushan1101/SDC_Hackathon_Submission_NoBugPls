@@ -83,21 +83,26 @@ export function gapsBlock(gaps) {
 }
 
 export function comparisonBlock(cmp, scenario) {
-  const changed = cmp.filter((c) => c.assistive_required !== c.agentic_required);
-  const shown = (changed.length ? changed : cmp).slice(0, 5);
-  const side = (name, key, note) => {
-    const current = scenario === key.split("_")[0];
-    return h("div", { class: `cmp-side ${current ? "current" : ""}` },
-      h("span", { class: "cmp-tag" }, icon(current ? "check" : "flat"), current ? "Your scenario" : "Compare"),
-      h("b", { class: "cmp-name" }, name), h("p", {}, note),
-      h("ul", {}, shown.map((c) => h("li", {}, h("span", {}, c.skill_id), h("b", { class: "num" }, `level ${c[key]}`)))));
-  };
+  const level = (value) => value !== null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
+  const rows = Array.isArray(cmp) ? cmp.filter((c) => c && c.skill_id).map((c) => ({ ...c,
+    assistive_required: level(c.assistive_required), agentic_required: level(c.agentic_required) })) : [];
+  const changed = rows.filter((c) => c.assistive_required !== null && c.agentic_required !== null
+    && c.assistive_required !== c.agentic_required);
+  const shown = (changed.length ? changed : rows).slice(0, 5);
+  const activeScenario = String(scenario || "").toLowerCase().replace(/[_\s-]+ai$/, "");
+  const th = (name, key) => h("th", { scope: "col", class: activeScenario === key ? "current" : null },
+    name, activeScenario === key ? h("span", { class: "cmp-current" }, "Your scenario") : null);
+  const body = shown.length ? shown.map((c) => h("tr", {},
+    h("th", { scope: "row" }, c.skill_id),
+    h("td", { class: activeScenario === "assistive" ? "current" : null }, c.assistive_required === null ? "Not available" : `Level ${c.assistive_required}`),
+    h("td", { class: activeScenario === "agentic" ? "current" : null }, c.agentic_required === null ? "Not available" : `Level ${c.agentic_required}`)))
+    : [h("tr", {}, h("td", { colspan: 3, class: "cmp-empty" }, "No skill comparison was saved in this report."))];
   return card("Assistive versus agentic AI", "spark", "Assistive vs agentic AI",
     { figure: changed.length, unit: changed.length === 1 ? "skill changes" : "skills change",
       note: "Agentic levels are our assumption, not measured data. Assistive levels are the model's estimates." },
-    h("div", { class: "cmp-sides" },
-      side("Assistive AI", "assistive_required", "AI helps you do today's work."),
-      side("Agentic AI", "agentic_required", "AI agents take over routine tool work.")));
+    h("div", { class: "cmp-table-wrap" }, h("table", { class: "cmp-table" },
+      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Skill"), th("Assistive AI", "assistive"), th("Agentic AI", "agentic"))),
+      h("tbody", {}, body))));
 }
 
 export function outlookBlock(o) {
@@ -557,8 +562,10 @@ export function boardView(b, { onRefresh, preview = false } = {}) {
   if (!b?.available) return h("div", { class: "empty" }, h("h2", {}, "No trend board yet"),
     h("p", { class: "muted" }, b?.message || "The board is built once a day from public news, research and job-posting signals."),
     onRefresh ? h("button", { class: "btn primary", onclick: onRefresh }, "Build today's board") : null);
-  const evid = new Map(b.evidence.map((e) => [e.id, e]));
-  const label = (id) => b.topics.find((t) => t.id === id)?.label;
+  const topics = Array.isArray(b.topics) ? b.topics : [];
+  const evidence = Array.isArray(b.evidence) ? b.evidence : [];
+  const evid = new Map(evidence.map((e) => [e.id, e]));
+  const label = (id) => topics.find((t) => t.id === id)?.label;
   const pill = (ic, text, title) => h("span", { class: "meta-pill", title }, icon(ic), text);
   const meta = h("div", { class: "board-meta" },
     pill("clock", fmtTime(b.created_utc), `Board for ${b.day}`),
@@ -596,13 +603,13 @@ export function boardView(b, { onRefresh, preview = false } = {}) {
           h("ul", {}, links.map((e) => h("li", {}, h("a", { href: e.url, target: "_blank", rel: "noopener noreferrer" }, e.title))))) : null)),
       DROP, { delay: Math.min(i, 12) * 30 });
   };
-  const topics = [...b.topics].sort((a, z) => Math.abs(z.z) - Math.abs(a.z));
-  const grid = h("div", { class: "topic-grid" }, (preview ? topics.slice(0, 5) : topics).map(card));
+  const orderedTopics = [...topics].sort((a, z) => Math.abs(z.z) - Math.abs(a.z));
+  const grid = h("div", { class: "topic-grid" }, (preview ? orderedTopics.slice(0, 5) : orderedTopics).map(card));
   if (preview) return h("div", { class: "board board-preview" }, meta, grid);
   // filter by type of topic, or by a skill / topic word
   let kind = "all";
   const q = h("input", { class: "input sm", type: "search", placeholder: "Filter by skill, e.g. programming, writing", "aria-label": "Filter topics by skill", oninput: filter });
-  const empty = h("p", { class: "muted", hidden: true }, "No topic matches this filter.");
+  const empty = h("p", { class: "muted", hidden: true }, "No trends match your current filters.");
   function filter() {
     const term = q.value.trim().toLowerCase();
     let shown = 0;
@@ -616,6 +623,7 @@ export function boardView(b, { onRefresh, preview = false } = {}) {
     [["all", "All"], ["moving", "Rising or falling"], ["capability", "New skills"], ["automation", "Automation"]].map(([k, l]) =>
       h("button", { type: "button", "aria-pressed": String(k === kind), onclick: (e) => {
         kind = k; seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === e.currentTarget))); filter(); } }, l)));
+  filter();
   // radar + what changed since the previous board, once the history has loaded
   const radarHost = h("div", { class: "radar-host" }, radar(b.topics, null));
   const changes = h("div", { class: "trend-changes" });
