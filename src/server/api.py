@@ -2438,19 +2438,48 @@ class AgentChatIn(BaseModel):
 
 
 def _my_plans(user: dict) -> list[dict]:
-    """The person's own plans, as the coaches see them: job, status, the skill steps and hours. No ids or names."""
+    """The person's own plans and report evidence for the coaches. No other employees' data or plan ids."""
     with DB_LOCK:
         rows = approval.list_plans(db, user)[:6]
         snaps = {pid: json.loads(s or "{}") for pid, s in db.execute(
             "SELECT p.plan_id, v.snapshot FROM plans p JOIN plan_versions v ON v.plan_id=p.plan_id WHERE p.plan_id IN ({}) "
             "AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)".format(",".join("?" * len(rows))),
             [r["plan_id"] for r in rows])} if rows else {}
+        reports = {pid: report for pid, report in db.execute(
+            "SELECT plan_id, report FROM plan_reports WHERE plan_id IN ({})".format(",".join("?" * len(rows))),
+            [r["plan_id"] for r in rows])} if rows else {}
     out = []
     for r in rows:
         acts = snaps.get(r["plan_id"], {}).get("activities", [])
+        try:
+            report = json.loads(reports.get(r["plan_id"]) or "{}")
+        except (TypeError, json.JSONDecodeError):
+            report = {}
+        gaps = report.get("gaps") or []
+        if not isinstance(gaps, list):
+            gaps = []
+        report_outlook = report.get("outlook") or {}
+        outlook = report_outlook.get("items") or [] if isinstance(report_outlook, dict) else []
+        comparison = report.get("comparison") or []
         out.append({"target_job": (occupation(r["target_role"]) or {}).get("title", r["target_role"]), "status": r["status"],
-                    "made": r["created_utc"][:10], "learning_hours": round(sum(a.get("estimated_hours", 0) for a in acts)),
-                    "steps": [f"days {a.get('day_range')}: {a.get('activity')}" for a in acts[:8]]})
+                    "scenario": r.get("scenario"), "made": r["created_utc"][:10],
+                    "learning_hours": round(sum(a.get("estimated_hours", 0) for a in acts)),
+                    "steps": [f"days {a.get('day_range')}: {a.get('activity')}" for a in acts[:8]],
+                    "report": {"summary": str(report.get("narrative") or report.get("answer") or "")[:1200],
+                               "skill_gaps": [{"skill": str(g.get("skill_id") or "")[:100],
+                                               "current_level": g.get("current_level"),
+                                               "required_level": g.get("required_level"),
+                                               "gap": g.get("gap"), "outlook": g.get("outlook"), "hot": g.get("hot")}
+                                              for g in gaps[:10] if isinstance(g, dict)],
+                               "skill_outlook": [{"skill": str(o.get("skill_id") or "")[:100],
+                                                  "direction": o.get("direction")}
+                                                 for o in outlook[:10] if isinstance(o, dict)],
+                               "scenario_comparison": [{"skill": str(c.get("skill_id") or "")[:100],
+                                                        "current": c.get("current"),
+                                                        "assistive_required": c.get("assistive_required"),
+                                                        "agentic_required": c.get("agentic_required"),
+                                                        "outlook": c.get("outlook")}
+                                                       for c in comparison[:8] if isinstance(c, dict)]}})
     return out
 
 
