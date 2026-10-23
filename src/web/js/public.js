@@ -719,35 +719,72 @@ async function plansView(main) {
       h("p", {}, "No plans yet. Build your first one in about two minutes."), h("a", { class: "btn primary", href: "#/start" }, "Get started")));
     return;
   }
-  const selectable = list.filter((pl) => pl.audience === "individual");
   const selected = new Set();
+  const nameOf = (pl) => String(pl.target_title || pl.target_role || "Plan").trim();
+  const idOf = (pl) => String(pl.plan_id || "");
+  const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+  const createdAt = (pl) => { const ts = Date.parse(pl.created_utc || ""); return Number.isFinite(ts) ? ts : 0; };
+  let query = "", sortBy = "date-desc", visiblePlans = list.slice();
   const count = h("span", { class: "muted", "aria-live": "polite" }, "No plans selected");
-  const selectAll = h("input", { type: "checkbox", "aria-label": "Select all your plans", disabled: !selectable.length,
+  const search = h("input", { class: "plans-search-input", type: "search", autocomplete: "off", placeholder: "Search by job title or plan name",
+    "aria-label": "Search plans by job title or plan name", oninput: () => { query = search.value.trim().toLocaleLowerCase(); clear.hidden = !query; draw(); } });
+  const clear = h("button", { class: "plans-search-clear", type: "button", "aria-label": "Clear search", title: "Clear search", hidden: true,
+    onclick: () => { search.value = ""; query = ""; clear.hidden = true; draw(); search.focus(); } }, "×");
+  const searchControl = h("label", { class: "plans-search" }, icon("search"), search, clear);
+  const sort = h("select", { class: "input plans-sort-select", "aria-label": "Sort plans", onchange: () => { sortBy = sort.value; draw(); } },
+    h("option", { value: "name-asc" }, "Name (A–Z)"),
+    h("option", { value: "name-desc" }, "Name (Z–A)"),
+    h("option", { value: "date-desc", selected: true }, "Date (Newest First)"),
+    h("option", { value: "date-asc" }, "Date (Oldest First)"));
+  const sortControl = h("label", { class: "plans-sort" }, h("span", {}, "Sort by"), sort);
+  const selectAllText = h("span", {}, "Select all your plans");
+  const selectAll = h("input", { type: "checkbox", "aria-label": "Select all your plans", disabled: !list.some((pl) => pl.audience === "individual"),
     onchange: () => {
-      selectable.forEach((pl) => selectAll.checked ? selected.add(pl.plan_id) : selected.delete(pl.plan_id));
+      visiblePlans.filter((pl) => pl.audience === "individual").forEach((pl) => selectAll.checked ? selected.add(pl.plan_id) : selected.delete(pl.plan_id));
       listEl.querySelectorAll(".plan-select").forEach((checkbox) => { checkbox.checked = selectAll.checked; });
       syncToolbar();
     } });
   const remove = h("button", { class: "btn sm plan-delete", type: "button", disabled: true, onclick: async () => {
-    const ids = selectable.filter((pl) => selected.has(pl.plan_id)).map((pl) => pl.plan_id);
+    const ids = visiblePlans.filter((pl) => pl.audience === "individual" && selected.has(pl.plan_id)).map((pl) => pl.plan_id);
     if (!ids.length || !window.confirm(`Delete ${ids.length} selected plan${ids.length === 1 ? "" : "s"}? This permanently removes the plan and its learning progress. Related interview history will be kept.`)) return;
     remove.disabled = true;
     try {
       await api("/api/plans", { method: "DELETE", body: { plan_ids: ids } });
       toast(`${ids.length} plan${ids.length === 1 ? "" : "s"} deleted`);
-      plansView(main);
+      await plansView(main);
     } catch (e) { toast(e.message, "err"); remove.disabled = false; }
   } }, "Delete selected");
   const listEl = h("div", { class: "plan-list" });
+  const noResults = h("div", { class: "empty plan-search-empty", hidden: true },
+    h("p", {}, "No matching plans found. Try searching with a different job title."),
+    h("button", { class: "btn sm", type: "button", onclick: () => { search.value = ""; query = ""; clear.hidden = true; draw(); search.focus(); } }, "Clear search"));
+  const manage = h("div", { class: "plan-manage" }, h("label", { class: "plan-select-all" }, selectAll, selectAllText), count, remove,
+    h("span", { class: "plan-delete-note" }, "Plans from your HR advisor can't be deleted."));
   function syncToolbar() {
-    const n = selected.size;
+    const visibleSelectable = visiblePlans.filter((pl) => pl.audience === "individual");
+    const n = visibleSelectable.filter((pl) => selected.has(pl.plan_id)).length;
     count.textContent = n ? `${n} selected` : "No plans selected";
     remove.disabled = n === 0;
-    selectAll.checked = selectable.length > 0 && n === selectable.length;
-    selectAll.indeterminate = n > 0 && n < selectable.length;
+    selectAll.disabled = visibleSelectable.length === 0;
+    selectAll.checked = visibleSelectable.length > 0 && n === visibleSelectable.length;
+    selectAll.indeterminate = n > 0 && n < visibleSelectable.length;
   }
   function draw() {
-    listEl.replaceChildren(...list.map((pl) => h("div", { class: "plan-item-row" },
+    visiblePlans = list.filter((pl) => !query || [pl.target_title, pl.target_role].some((name) => String(name || "").toLocaleLowerCase().includes(query)));
+    const compareName = (a, b) => collator.compare(nameOf(a), nameOf(b));
+    visiblePlans.sort((a, b) => {
+      if (sortBy === "name-asc" || sortBy === "name-desc") {
+        const names = compareName(a, b) * (sortBy === "name-asc" ? 1 : -1);
+        return names || createdAt(b) - createdAt(a) || idOf(a).localeCompare(idOf(b));
+      }
+      const dates = (createdAt(a) - createdAt(b)) * (sortBy === "date-asc" ? 1 : -1);
+      return dates || compareName(a, b) || idOf(a).localeCompare(idOf(b));
+    });
+    selectAllText.textContent = query ? "Select all matching plans" : "Select all your plans";
+    selectAll.setAttribute("aria-label", query ? "Select all matching plans" : "Select all your plans");
+    noResults.hidden = visiblePlans.length > 0;
+    listEl.hidden = visiblePlans.length === 0;
+    listEl.replaceChildren(...visiblePlans.map((pl) => h("div", { class: "plan-item-row" },
       pl.audience === "individual" ? h("input", { class: "plan-select", type: "checkbox", checked: selected.has(pl.plan_id),
         "aria-label": `Select ${pl.target_title || pl.target_role || "plan"}, plan ID ${pl.plan_reference || pl.plan_id}`,
         onchange: (e) => { if (e.target.checked) selected.add(pl.plan_id); else selected.delete(pl.plan_id); syncToolbar(); } }) : h("span", { class: "plan-select-spacer", "aria-hidden": "true" }),
@@ -758,8 +795,7 @@ async function plansView(main) {
         h("span", { class: `tag ${pl.status}` }, pl.status)))));
     syncToolbar();
   }
-  main.append(h("div", { class: "plan-manage" }, h("label", { class: "plan-select-all" }, selectAll, "Select all your plans"), count, remove,
-    h("span", { class: "plan-delete-note" }, "Plans from your HR advisor can't be deleted.")), listEl);
+  main.append(h("div", { class: "plans-tools" }, searchControl, sortControl), manage, noResults, listEl);
   draw();
 }
 
