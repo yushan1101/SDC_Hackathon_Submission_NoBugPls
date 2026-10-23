@@ -281,12 +281,60 @@ def test_team_stream_ticks_and_validation(client):
     pid = done[0]["plan_id"]
     d = client.get(f"/api/plans/{pid}").json()
     assert d["audience"] == "hr" and d["report"]["gaps"]
-    login(client, "ana")  # E-001 sees the HR plan made for them, not the others
+    login(client, "ana")  # generated analysis IDs do not automatically match this account
     mine = {p["subject_id"] for p in client.get("/api/plans").json()}
-    assert mine == {"E-001"}
+    assert not mine & set(roster)  # new analysis IDs aren't assigned to an account until HR edits them
 
 
 H = {"X-AP": "1"}
+
+
+def test_analysis_assigns_new_employee_ids_each_run(client):
+    login(client, "hr1")
+    csv = "employee_id,target_role,weekly_hours,skill,level\nE-001,electrician,5,troubleshooting,3"
+    body = {"csv": csv, "scenario": "assistive"}
+    first = events(client.post("/api/team", json=body, headers=H))
+    second = events(client.post("/api/team", json=body, headers=H))
+    first_ids = next(e["ids"] for e in first if e["t"] == "roster")
+    second_ids = next(e["ids"] for e in second if e["t"] == "roster")
+    assert len(first_ids) == len(second_ids) == 1
+    assert not set(first_ids) & set(second_ids)
+    assert "E-001" not in first_ids + second_ids
+    result = next(e for e in second if e["t"] == "employee")
+    assert result["id"] == second_ids[0] and not result.get("error")
+    saved = client.get(f"/api/plans/{result['plan_id']}").json()
+    assert saved["subject_id"] == result["id"]
+
+
+def test_hr_can_edit_employee_id_with_validation_and_audit(client):
+    import server.api as api
+    from governance import accounts, approval
+
+    with api.DB_LOCK:
+        accounts.create_user(api.db, "id_editor", PW, "employee", "EDIT-ACCOUNT")
+        plan = {"target_role": "electrician", "activities": [], "status": "draft"}
+        pid = approval.create(api.db, plan, "EDIT-OLD", "hr")
+        other = approval.create(api.db, plan, "EDIT-TAKEN", "hr")
+    login(client, "hr1")
+    original = client.get(f"/api/plans/{pid}").json()
+    change = {"employee_id": "EDIT-ACCOUNT", "review_status": "pending", "revision": 0}
+    for invalid in ["", "has spaces", "name@example.org", "x" * 33]:
+        assert client.post(f"/api/reviews/{pid}/edit", json=change | {"employee_id": invalid}, headers=H).status_code == 422
+    assert client.post(f"/api/reviews/{pid}/edit", json=change | {"employee_id": "EDIT-TAKEN"}, headers=H).status_code == 409
+    assert client.post(f"/api/reviews/{pid}/edit", json=change, headers=H).status_code == 200
+    updated = client.get(f"/api/plans/{pid}").json()
+    assert updated["subject_id"] == "EDIT-ACCOUNT"
+    assert updated["plan_id"] == pid and updated["plan_reference"] == original["plan_reference"]
+    assert updated["plan"] == original["plan"] and updated["history"] == original["history"]
+    assert updated["review_history"][-1]["before"]["employee_id"] == "EDIT-OLD"
+    assert updated["review_history"][-1]["after"]["employee_id"] == "EDIT-ACCOUNT"
+    assert client.post(f"/api/reviews/{pid}/edit", json=change, headers=H).status_code == 409
+    login(client, "id_editor")
+    assert client.get(f"/api/plans/{pid}").status_code == 200
+    assert client.post(f"/api/reviews/{pid}/edit", json=change, headers=H).status_code == 403
+    assert client.get(f"/api/plans/{other}").status_code == 404
+
+
 RESUME = open("data/samples/sample_resume_nurse.md", "rb").read()
 
 

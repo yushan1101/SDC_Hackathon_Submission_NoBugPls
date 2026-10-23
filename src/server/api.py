@@ -40,6 +40,7 @@ from config.settings import get_settings
 from core import graph, screening
 from core.state import Pathway, Profile, Request, Skill
 from core.team_import import parse_team
+from governance.employee_ids import allocate_ids
 from core.usage import summarize
 from governance import accounts, approval, billing, challenge, deletion, otp, plugins, recruiting, reviews, risk
 from mcp_server import signals
@@ -1143,7 +1144,9 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
             with DB_LOCK:
                 pid = approval.create(db, out["plan"], user["employee_id"], "individual", out["issues"])
             remember(pid, final, thread)
-        yield sse({"t": "meta", "route": out["route"], "status": out["status"], "plan_id": pid,
+        with DB_LOCK:
+            plan_reference = approval.reference(db, pid) if pid else None
+        yield sse({"t": "meta", "route": out["route"], "status": out["status"], "plan_id": pid, "plan_reference": plan_reference,
                    "usage": out["usage"], "retrieval": out["retrieval"], "evidence": out["evidence"],
                    "target_role": req.target_role, "occupation": out["occupation"], "scenario": req.scenario})
         yield sse({"t": "owl", "state": "update", "say": "Writing your briefing"})
@@ -1200,6 +1203,7 @@ def review_list(q: str = "", status: str = "active", user: dict = Depends(need("
 
 class ReviewEditIn(BaseModel):
     model_config = {"extra": "forbid"}
+    employee_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,32}$")
     candidate_name: str = Field(default="", max_length=120)
     candidate_email: str = Field(default="", max_length=254)
     candidate_phone: str = Field(default="", max_length=50)
@@ -1213,7 +1217,7 @@ def review_edit(pid: str, body: ReviewEditIn, user: dict = Depends(need("hr_advi
     _guard(pid, user)
     try:
         with DB_LOCK:
-            return reviews.edit(db, pid, user, body.model_dump(exclude={"revision"}), body.revision)
+            return reviews.edit(db, pid, user, body.model_dump(exclude={"revision"}, exclude_none=True), body.revision)
     except approval.TransitionError as e:
         raise HTTPException(409, str(e))
 
@@ -1396,6 +1400,11 @@ def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", 
     reqs, errs = _parse(body)
     if errs:
         return JSONResponse({"detail": "invalid team file", "errors": errs}, status_code=422)
+
+    with DB_LOCK:
+        account_ids = [r[0] for r in db.execute("SELECT employee_id FROM users WHERE employee_id IS NOT NULL")]
+        fresh_ids = allocate_ids(db, [r.employee_id for r in reqs], account_ids)
+    reqs = [r.model_copy(update={"employee_id": eid, "request_id": eid}) for r, eid in zip(reqs, fresh_ids)]
 
     def gen():
         yield sse({"t": "owl", "state": "searching", "say": f"Analysing {len(reqs)} employees in parallel"})

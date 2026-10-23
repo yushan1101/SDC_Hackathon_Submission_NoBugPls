@@ -1,5 +1,6 @@
-"""HR-only review metadata. AI snapshots/reports and subject access IDs are never edited here."""
+"""HR review metadata and audited employee ID corrections; AI snapshots remain immutable."""
 import json
+import re
 
 from governance import approval
 from governance.audit import now
@@ -45,10 +46,28 @@ def edit(con, pid, user, changes, revision):
         before = get(con, pid)
         if before["revision"] != revision:
             raise approval.TransitionError("Review changed. Reload before saving.")
+        changes = dict(changes)
+        employee_id = changes.pop("employee_id", None)
         allowed = set(FIELDS[:5])
         if set(changes) - allowed or changes.get("review_status") not in {"pending", "approved", "rejected"}:
             raise approval.TransitionError("Invalid review fields or status")
-        return _save(con, pid, user, "edited", before, before | changes)
+        after = before | changes
+        if employee_id is not None:
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", employee_id):
+                raise approval.TransitionError("Employee ID must contain 1–32 letters, numbers, hyphens or underscores")
+            previous_id = con.execute("SELECT subject_id FROM plans WHERE plan_id=?", (pid,)).fetchone()[0]
+            if employee_id != previous_id and con.execute(
+                    "SELECT 1 FROM plans WHERE subject_id=? AND plan_id<>?", (employee_id, pid)).fetchone():
+                raise approval.TransitionError("Employee ID is already used by another plan")
+            before = before | {"employee_id": previous_id}
+            after = after | {"employee_id": employee_id}
+            con.execute("UPDATE plans SET subject_id=? WHERE plan_id=?", (employee_id, pid))
+            # Reserve numeric IDs so a later analysis cannot reuse an edited ID.
+            if match := re.fullmatch(r"E-(\d+)", employee_id):
+                number = int(match.group(1))
+                if number <= 9223372036854775806:
+                    con.execute("INSERT OR IGNORE INTO analysis_employee_ids(number) VALUES(?)", (number,))
+        return _save(con, pid, user, "edited", before, after)
 
 
 def bulk(con, ids, user, action, confirmed=False):

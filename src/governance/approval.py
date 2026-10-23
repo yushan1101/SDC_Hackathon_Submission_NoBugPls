@@ -40,6 +40,7 @@ def create(con, plan: dict, subject_id: str, audience: str, issues: list | None 
     pid = uuid.uuid4().hex[:12]
     with con:
         con.execute("INSERT INTO plans VALUES(?,?,?,?)", (pid, subject_id, audience, now()))
+        con.execute("INSERT INTO plan_references(plan_id) VALUES(?)", (pid,))
         _add_version(con, pid, 1, status, plan)
         con.execute("INSERT INTO validation_events(plan_id,version,issues,at_utc) VALUES(?,?,?,?)",
                     (pid, 1, json.dumps(issues or [], default=str), now()))
@@ -138,13 +139,14 @@ def list_plans(con, user: dict) -> list[dict]:
     else:
         return []
     rows = con.execute(f"""SELECT p.plan_id, p.subject_id, p.audience, p.created_utc, v.version, v.status,
-                               json_extract(v.snapshot,'$.target_role'), json_extract(v.snapshot,'$.scenario')
+                               json_extract(v.snapshot,'$.target_role'), json_extract(v.snapshot,'$.scenario'),
+                               (SELECT printf('PLAN-%06d', r.number) FROM plan_references r WHERE r.plan_id=p.plan_id)
                            FROM plans p JOIN plan_versions v ON v.plan_id=p.plan_id
                            WHERE {q} AND NOT EXISTS (SELECT 1 FROM hr_reviews r WHERE r.plan_id=p.plan_id
                                AND r.deleted_utc IS NOT NULL)
                            AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)
                            ORDER BY p.created_utc DESC""", (arg,))
-    cols = ["plan_id", "subject_id", "audience", "created_utc", "version", "status", "target_role", "scenario"]
+    cols = ["plan_id", "subject_id", "audience", "created_utc", "version", "status", "target_role", "scenario", "plan_reference"]
     return [dict(zip(cols, r)) for r in rows]
 
 
@@ -173,9 +175,16 @@ def delete_employee_plans(con, plan_ids: list[str], user: dict) -> list[str]:
     return ids
 
 
+def reference(con, plan_id: str) -> str:
+    row = con.execute("SELECT number FROM plan_references WHERE plan_id=?", (plan_id,)).fetchone()
+    if not row:
+        raise TransitionError(f"unknown plan {plan_id}")
+    return f"PLAN-{row[0]:06d}"
+
+
 def latest(con, plan_id: str) -> dict:
     v, st, snap = _latest(con, plan_id)
-    return {"version": v, "status": st, "plan": json.loads(snap)}
+    return {"version": v, "status": st, "plan": json.loads(snap), "plan_reference": reference(con, plan_id)}
 
 
 def acknowledge(con, plan_id: str, user: dict) -> None:
