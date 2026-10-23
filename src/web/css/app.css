@@ -2547,8 +2547,7 @@ body {
 
   overflow: hidden;
 }
-/* ---------- Agents: gallery (find) and chat (use) ---------- */
-  text-decoration: none; box-shadow: var(--card-shadow); transition: box-shadow var(--t-slow) var(--ease-out), translate var(--t-slow) var(--ease-out); }
+/* ---------- Agent: one chat ---------- */
 
 .ag-main { display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: minmax(0, 1fr); min-width: 0; min-height: calc(100dvh - 200px); }
 .ag-head { display: flex; justify-content: flex-end; align-items: center; gap: 12px; width: min(760px, 100%); min-height: 44px; margin: 0 auto; }
