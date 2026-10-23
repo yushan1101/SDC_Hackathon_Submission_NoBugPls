@@ -49,6 +49,11 @@ function shell() {
     const btn = h("button", { type: "button", class: "rail-group-btn", "aria-expanded": "false", "aria-label": label, title: label,
       onclick: () => btn.setAttribute("aria-expanded", String(el.classList.toggle("open"))) },
       icon(ic), h("span", { class: "lbl" }, label), h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
+    links.forEach((item) => item.addEventListener("click", () => {
+      if (sidebarExpanded) return;
+      el.classList.remove("open");
+      btn.setAttribute("aria-expanded", "false");
+    }));
     el.append(btn, h("div", { class: "rail-sub", role: "group", "aria-label": label }, ...links));
     return el;
   };
@@ -78,6 +83,7 @@ function shell() {
     } }, icon("chevron"));
   const updateSidebar = () => {
     if (!shellEl) return;
+    S.sidebarExpanded = sidebarExpanded;
     shellEl.classList.toggle("is-sidebar-expanded", sidebarExpanded);
     shellEl.classList.toggle("is-sidebar-collapsed", !sidebarExpanded);
     sidebarToggle.setAttribute("aria-expanded", String(sidebarExpanded));
@@ -175,7 +181,9 @@ function route() {
   document.querySelectorAll(".rail-group").forEach((g) => {  // only the folder holding this page stays open
     const here = !!g.querySelector('[aria-current="page"]');
     g.classList.toggle("has-current", here);
-    g.classList.toggle("open", here); g.firstChild.setAttribute("aria-expanded", String(here));
+    const expanded = S.sidebarExpanded && here;
+    g.classList.toggle("open", expanded);
+    g.firstChild.setAttribute("aria-expanded", String(expanded));
   });
   document.querySelector(".hr-account-btn")?.classList.toggle("is-current", !!document.querySelector('#hr-account [aria-current="page"]'));
   S.capsule.hidden = page === "agents";  // the agent page is the same chat, full size

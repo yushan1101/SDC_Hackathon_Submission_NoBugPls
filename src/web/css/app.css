@@ -3290,8 +3290,7 @@ body {
   border: 1px solid var(--rule); border-radius: 16px; background: var(--surface); box-shadow: 0 10px 30px oklch(0.3 0.05 262 / 0.16); }
 .hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group:last-child .rail-sub { top: auto; bottom: 0; }
 .hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group::after { content: ""; position: absolute; left: 100%; top: 0; width: 12px; height: 52px; }
-.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group:hover > .rail-sub,
-.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group:focus-within > .rail-sub { display: flex; }
+.hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group.open > .rail-sub { display: flex; }
 .hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-sub a { padding-left: 12px; }
 .hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-sub .lbl { display: inline; }
 
