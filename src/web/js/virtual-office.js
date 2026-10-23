@@ -148,7 +148,7 @@ export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX 
   const still = reduceMotion();
   let avatarState = "idle";
   let microphoneLevel = 0;
-  let speechCue = null, speechLevel = null;  // speechLevel: loudness of the voice being played, when known
+  let speechCue = null, speechLevel = null, speechBands = null;  // the voice being played: loudness and spectrum
   const setAvatarState = (next) => {
     if (!["idle", "listening", "speaking"].includes(next) || next === avatarState) return;
     avatarState = next;
@@ -162,6 +162,7 @@ export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX 
     microphoneLevel = Number.isFinite(detail.microphoneLevel) ? THREE.MathUtils.clamp(detail.microphoneLevel, 0, 1) : 0;
     speechCue = detail.state === "speaking" ? detail.speechCue || null : null;
     speechLevel = detail.state === "speaking" && Number.isFinite(detail.speechLevel) ? detail.speechLevel : null;
+    speechBands = detail.state === "speaking" ? detail.speechBands || null : null;
   };
   window.addEventListener("aiversepulse:interview-avatar-state", avatarStateEvent);
   let blinkStartedAt = -10;
@@ -177,6 +178,14 @@ export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX 
   };
   // Mina's head eases toward these each frame: nods while listening, small turns while speaking, drift when idle.
   const look = { x: 0, y: 0, z: 0 };
+  // a listener nods when the speaker pauses: after ~1 s of the candidate's voice, a drop in it starts one small nod
+  let heard = 0, nodAt = -10;
+  const listenReaction = (time, listening) => {
+    if (!listening) { heard = 0; return 0; }
+    if (microphoneLevel > 0.08) heard += 1 / 30; else if (heard > 1 && time - nodAt > 2.5) { nodAt = time; heard = 0; }
+    const t = time - nodAt;
+    return t >= 0 && t < 0.7 ? Math.sin(t / 0.7 * Math.PI) * (0.05 + 0.03 * Math.sin(nodAt * 7)) : 0;
+  };
   let previousFrameTime = 0;
   const animateAvatar = (timeMs) => {
     if (!mina) return;
@@ -189,8 +198,7 @@ export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX 
     const thoughtPhase = time % 8.4;
     const thoughtPulse = thoughtPhase > 6.5 ? Math.sin((thoughtPhase - 6.5) / 1.9 * Math.PI) : 0;
     const thinking = listening ? thoughtPulse * quiet : 0;
-    const nod = listening && time % 4.8 > 0.25 && time % 4.8 < 0.58
-      ? Math.sin((time % 4.8 - 0.25) / 0.33 * Math.PI) * 0.045 : 0;
+    const nod = listenReaction(time, listening);
     // layered sines read as organic drift rather than a metronome (after HoloHuman's behaviour.js)
     const drift = (Math.sin(time * 0.55) + Math.sin(time * 1.49 + 1.3) * 0.5 + Math.sin(time * 0.17 + 4.1) * 0.8) / 2.3;
     look.x = ease(look.x, (listening ? -0.035 : 0) + nod + thinking * 0.026 + (speaking ? Math.sin(time * 3.2) * 0.014 : 0), 5);
@@ -209,6 +217,8 @@ export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX 
         + Math.sin(time * 18 + index) * 0.06;
     }
     mina.set({ time, speaking, listening, blink: blinkAmount(time), jaw: Math.max(0, jaw) * 0.55, smile: speaking ? 0.15 : 0.32,
+      voice: speaking && speechLevel !== null ? { level: speechLevel, ...(speechBands || { low: 0.3, high: 0.25 }) } : null,
+      reaction: nod * 10,  // 0..~0.8 while she nods: a small smile and raised brows go with it
       headX: look.x, headY: look.y, headZ: look.z, breath: Math.sin(time * 1.3) });
   };
 

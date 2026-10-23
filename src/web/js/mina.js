@@ -114,7 +114,16 @@ export async function loadMina({ envMap, height = 1.6, onProgress } = {}) {
     return (value) => targets.forEach(([m, i]) => { m.morphTargetInfluences[i] = value; });
   };
   const blink = morph(/eyeBlink/i), jaw = morph(/jawOpen/i), smile = morph(/mouthSmile(Left|Right)/i),
-    brows = morph(/browInnerUp/i);
+    brows = morph(/browInnerUp/i), browOuter = morph(/browOuterUp/i);
+  // HoloHuman's viseme channels on Mina's ARKit-52 face: jaw, rounded lips (o/u), spread lips (e/i), closing lips
+  const funnel = morph(/mouthFunnel|mouthPucker/i), stretch = morph(/mouthStretch(Left|Right)/i),
+    press = morph(/mouthPress(Left|Right)|mouthClose/i), upperLip = morph(/mouthUpperUp(Left|Right)/i),
+    lowerLip = morph(/mouthLowerDown(Left|Right)/i);
+  const lookL = morph(/eyeLookOutLeft|eyeLookInRight/i), lookR = morph(/eyeLookOutRight|eyeLookInLeft/i),
+    lookU = morph(/eyeLookUp/i), lookD = morph(/eyeLookDown/i);
+  const mouth = { jaw: 0, funnel: 0, stretch: 0, low: 0, high: 0 };
+  const gaze = { x: 0, y: 0, tx: 0, ty: 0, next: 0 };
+  let energy = 0, leadHand = 1, lull = 0;
 
   // Body motion, as small world-space turns on top of the rest pose (parents first), so the FBX's own bone axes never
   // matter: the same trick as aim(). X tips forward (+) / back, Y turns, Z leans toward her left (+).
@@ -143,25 +152,67 @@ export async function loadMina({ envMap, height = 1.6, onProgress } = {}) {
       // ease in and out of talking / listening so gestures never snap
       talk += ((p.speaking ? 1 : 0) - talk) * Math.min(1, dt * 3);
       attend += ((p.listening ? 1 : 0) - attend) * Math.min(1, dt * 2);
-      blink(p.blink); jaw(p.jaw); smile(p.smile); brows(talk * Math.max(0, Math.sin(t * 2.3)) * 0.35 + attend * 0.12);
+      blink(p.blink);
+      // lips follow the words: the jaw opens with loudness; low-heavy sound rounds the lips, high-heavy sound spreads them;
+      // between words they close again (after HoloHuman's lipsync + behaviour)
+      const k = 1 - Math.exp(-dt * 20);
+      const lip = p.voice ? p.voice.level : 0;
+      mouth.low += ((p.voice ? p.voice.low * lip : 0) - mouth.low) * Math.min(1, dt * 12);
+      mouth.high += ((p.voice ? p.voice.high * lip : 0) - mouth.high) * Math.min(1, dt * 12);
+      mouth.jaw += ((p.voice ? Math.min(1, lip * 1.55) * 0.75 : p.jaw) - mouth.jaw) * k;
+      mouth.funnel += (Math.min(1, mouth.low * 2.6 + lip * 0.25) - mouth.funnel) * k;
+      mouth.stretch += (Math.min(1, mouth.high * 2.8 + lip * 0.15) - mouth.stretch) * k;
+      jaw(mouth.jaw); funnel(p.voice ? mouth.funnel * 0.7 : 0); stretch(p.voice ? mouth.stretch * 0.6 : 0);
+      upperLip(p.voice ? Math.min(1, mouth.jaw * 0.65 + mouth.low * 0.45) * 0.32 : 0);
+      lowerLip(p.voice ? Math.min(1, mouth.jaw * 0.55 + mouth.funnel * 0.4) * 0.36 : 0);
+      press(p.voice && lip < 0.08 ? 0.25 : 0);  // m/b/p and the gaps between words
+      smile(p.smile + (p.reaction || 0) * 0.25);
+      brows(talk * Math.max(0, Math.sin(t * 2.3)) * 0.35 + attend * 0.12 + (p.reaction || 0) * 0.2);
+      browOuter(talk * Math.max(0, wobble(t, 0.9)) * 0.25);
+
+      // eyes: quick saccades; mostly eye contact while talking or listening, a glance away now and then (thinking)
+      if (t >= gaze.next) {
+        const engaged = p.speaking || p.listening;
+        gaze.next = t + 0.6 + Math.random() * (engaged ? 2.6 : 1.8);
+        if (engaged && Math.random() < 0.7) { gaze.tx = 0; gaze.ty = 0; }
+        else { const amp = engaged ? 0.35 : 0.7; gaze.tx = (Math.random() * 2 - 1) * amp; gaze.ty = (Math.random() * 2 - 1) * amp * 0.5 + (p.speaking ? 0.12 : 0); }
+      }
+      const gk = 1 - Math.exp(-dt * 14);  // saccades are fast
+      gaze.x += (gaze.tx - gaze.x) * gk; gaze.y += (gaze.ty - gaze.y) * gk;
+      lookL(Math.max(0, -gaze.x)); lookR(Math.max(0, gaze.x)); lookU(Math.max(0, gaze.y)); lookD(Math.max(0, -gaze.y));
+
+      // emphasis: a slower envelope of her voice; gestures rise with it and the leading hand changes at each pause
+      energy += ((p.voice ? p.voice.level : 0) - energy) * Math.min(1, dt * (p.voice && p.voice.level > energy ? 5 : 2));
+      lull = p.voice && p.voice.level < 0.06 ? lull + dt : 0;
+      if (lull > 0.35 && lull - dt <= 0.35) leadHand = -leadHand;
 
       const breath = p.breath, sway = wobble(t, 0.13);
       // torso: breathing, a slow weight shift, leaning in a little while listening
       pose(bones.spine, [X, 0.02 + attend * 0.045 + breath * 0.006], [Z, sway * 0.018], [Y, wobble(t + 3, 0.09) * 0.02]);
       pose(bones.chest, [X, breath * 0.014 + talk * Math.sin(t * 1.9) * 0.012], [Y, talk * wobble(t, 0.7) * 0.03]);
       pose(bones.neck, [X, p.headX * 0.4], [Y, p.headY * 0.4], [Z, p.headZ * 0.4]);
-      pose(bones.head, [X, p.headX * 0.6 + talk * Math.sin(t * 3.1) * 0.02], [Y, p.headY * 0.6], [Z, p.headZ * 0.6 + sway * 0.02]);
+      pose(bones.head, [X, p.headX * 0.6 + talk * Math.sin(t * 3.1) * 0.02 + energy * 0.03], [Y, p.headY * 0.6 + gaze.x * 0.08],
+        [Z, p.headZ * 0.6 + sway * 0.02]);  // the head follows the eyes a little, and dips on emphasis
 
       // arms: shoulders rise with each breath; while talking the hands lift and open in turn, on the beat of speech
-      for (const [side, clav, up, lo, hand, phase] of [[1, "clavicleL", "upperArmL", "lowerArmL", "handL", 0],
+      for (const [hs, clav, up, lo, hand, phase] of [[1, "clavicleL", "upperArmL", "lowerArmL", "handL", 0],
         [-1, "clavicleR", "upperArmR", "lowerArmR", "handR", 2.1]]) {
-        const beat = Math.max(0, Math.sin(t * 1.7 + phase)), g = talk * beat * beat * (0.65 + 0.35 * wobble(t + phase, 0.8));
+        const lead = hs === leadHand ? 1 : 0.45;  // one hand leads each phrase, the other follows softly
+        const beat = 0.55 + 0.45 * Math.sin(t * 1.7 + phase);
+        const g = talk * Math.min(1, (p.voice ? energy * 2.2 : beat * beat) * lead) * (0.7 + 0.3 * wobble(t + phase, 0.8));
         const idle = wobble(t + phase * 5, 0.35);
+        const side = hs;
         pose(bones[clav], [Z, side * (breath * 0.012 + g * 0.05)]);
         pose(bones[up], [X, -g * 0.22 - attend * 0.04], [Z, side * g * 0.12]);
         pose(bones[lo], [X, -g * 0.55 + idle * 0.02], [Y, side * g * 0.35]);
         pose(bones[hand], [Z, side * (g * 0.5 + idle * 0.04)], [X, -g * 0.2]);
-        for (const f of fingers) if (f.name.endsWith(side > 0 ? "_l" : "_r")) f.rotation.z = f.userData.curl * (1 - g * 0.7) + idle * 0.03;
+        // fingers: each its own small drift; while listening the index finger taps now and then
+        const tapT = (t + phase * 3) % 7.3, tap = p.listening && tapT < 0.5 ? Math.sin(tapT / 0.5 * Math.PI * 2) * 0.12 : 0;
+        for (const f of fingers) if (f.name.endsWith(side > 0 ? "_l" : "_r")) {
+          const seed = f.name.charCodeAt(0) * 0.37 + f.name.length;
+          f.rotation.z = f.userData.curl * (1 - g * 0.7) + idle * 0.03 + wobble(t + seed, 0.45) * 0.035
+            + (f.name.startsWith("index") ? Math.max(0, tap) : 0);
+        }
       }
     },
   };

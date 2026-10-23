@@ -263,7 +263,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   let elapsedMs = 0, timerStartedAt = null, durationTimer = null;
   let deviceEnumeration = 0;
   let interviewerSpeaking = false, currentUtterance = null, paused = false;
-  let microphoneLevel = 0, speechCue = null, speechLevel = 0, lastAvatarSignalAt = 0;
+  let microphoneLevel = 0, speechCue = null, speechLevel = 0, speechBands = null, lastAvatarSignalAt = 0;
   let officeDisposer = null;
   // The interviewer speaks (and the microphone opens) only once Mina is fully in the room, so there is no voice from an
   // empty chair and no half-loaded model on screen. Without the 3D office there is nothing to wait for.
@@ -280,7 +280,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     const state = voicePlaying ? "speaking" : interviewerSpeaking ? "idle"
       : ["ready", "listening", "speaking", "captured"].includes(micState) ? "listening" : "idle";
     window.dispatchEvent(new CustomEvent("aiversepulse:interview-avatar-state", { detail: {
-      state, microphoneLevel, speechCue, speechLevel,
+      state, microphoneLevel, speechCue, speechLevel, speechBands,
     } }));
   };
   const setMicState = (state, message, present = true) => {
@@ -567,7 +567,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       interviewerSpeaking = true; voicePlaying = true; updateControls(); setMicState("processing", "Interviewer speaking");
       const follow = () => {
         if (currentUtterance !== voice) { speechLevel = 0; return; }
-        speechLevel = voice.level(); updateAvatarPresentation();
+        speechLevel = voice.level(); speechBands = voice.bands(); updateAvatarPresentation();
         lips = requestAnimationFrame(follow);
       };
       follow();

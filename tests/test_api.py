@@ -1325,3 +1325,26 @@ def test_read_aloud_speaks_in_the_server_voice_once_per_text(client, monkeypatch
     api._prepared_question({"employee_id": "E-001"}, {"recommendation_id": rec, "role_id": "2221.2", "profile": []}, "foundational").result(timeout=10)
     api._SPEECH.submit(lambda: None).result(timeout=10)  # let the speech pool catch up
     assert "Why nursing?" in spoken
+
+
+def test_interview_order_shuffles_after_the_warm_up_and_next_questions_follow_it(monkeypatch):
+    from interview import service
+    monkeypatch.setattr(service, "_generate_initial", lambda context, difficulty: {"stage": "behavioral"})
+    orders = {tuple(service.prepare_create("2221.2", [], "intermediate")[1]["stage_order"]) for _ in range(12)}
+    assert all(o[0] == "behavioral" and sorted(o) == sorted(service.STAGES) for o in orders)
+    assert len(orders) > 1  # 24 possible orders: twelve interviews don't all match
+    seen = {}
+    def llm(prompt, system, max_tokens=900):
+        import json
+        seen.update(json.loads(prompt))
+        return {"evaluation": {}, "action": "advance", "next_question": {"text": "Thanks, that helps. What would you do next?",
+                "type": "technical", "target_skills": [], "criteria": ["c"]}}, None
+    monkeypatch.setattr(service, "_llm", llm)
+    monkeypatch.setattr(service, "_validate_evaluation", lambda raw, answer, targets: {})  # scoring is tested elsewhere
+    context = service.build_context("2221.2", [])
+    context["stage_order"] = ["behavioral", "workplace_scenario", "technical", "situational", "problem_solving"]
+    sess = {"stage_index": 0, "role_title": "Nurse", "context": context, "difficulty": "intermediate"}
+    current = {"question_text": "Q", "stage": "behavioral", "target_skills": [], "criteria": [], "parent_question_id": None}
+    _, nq, index, done = service.evaluate_and_choose(sess, current, "My answer.", [])
+    assert seen["next_stage"] == "workplace_scenario" and nq["stage"] == "workplace_scenario" and index == 1 and not done
+    assert seen["suggested_focus_for_next_question"] and any("reaction" in r for r in seen["rules"])

@@ -111,11 +111,12 @@ export function preloadSpeech(text) {
 }
 
 let current = null;
-/** Read `text` aloud; one speaker at a time. -> { done: Promise, stop(), pause(), resume(), level(): 0..1 loudness now }.
+/** Read `text` aloud; one speaker at a time. -> { done, stop(), pause(), resume(), level(): 0..1 loudness now,
+ *  bands(): { low, high } share of the voice in 100-600 Hz (rounded vowels) and 1.8-6 kHz (spread vowels, s/sh) }.
  *  onStart fires when sound begins. */
 export function speak(text, { onStart } = {}) {
   current?.stop();
-  let audio = null, utter = null, stopped = false, ctx = null, analyser = null, samples = null;
+  let audio = null, utter = null, stopped = false, ctx = null, analyser = null, samples = null, spectrum = null;
   const browserVoice = () => new Promise((resolve) => {
     if (!("speechSynthesis" in window)) { resolve(); return; }
     utter = new SpeechSynthesisUtterance(text.slice(0, 6000)); utter.lang = lang();
@@ -135,7 +136,8 @@ export function speak(text, { onStart } = {}) {
           ctx = new AC();
           await Promise.race([ctx.resume(), new Promise((r) => setTimeout(r, 300))]);
           if (ctx.state === "running") {
-            analyser = ctx.createAnalyser(); analyser.fftSize = 512; samples = new Uint8Array(analyser.fftSize);
+            analyser = ctx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0.35;
+            samples = new Uint8Array(analyser.fftSize); spectrum = new Uint8Array(analyser.frequencyBinCount);
             const source = ctx.createMediaElementSource(audio); source.connect(analyser); analyser.connect(ctx.destination);
           } else { ctx.close().catch(() => {}); ctx = null; }
         } catch { ctx = null; analyser = null; }
@@ -162,7 +164,18 @@ export function speak(text, { onStart } = {}) {
       if (!analyser) return 0.3 + 0.25 * Math.abs(Math.sin(performance.now() / 85));  // no measurement: a speaking rhythm
       analyser.getByteTimeDomainData(samples);
       let sum = 0; for (const s of samples) sum += ((s - 128) / 128) ** 2;
-      return Math.min(1, Math.sqrt(sum / samples.length) * 4);
+      return Math.min(1, Math.sqrt(sum / samples.length) * 11);  // HoloHuman's lip envelope scale
+    },
+    bands() {
+      if (!analyser || !audio || audio.paused) {  // no measurement: a gentle, plausible drift
+        const t = performance.now() / 1000;
+        return { low: 0.3 + Math.sin(t * 3.1) * 0.15, high: 0.25 - Math.sin(t * 3.1 + 0.7) * 0.12 };
+      }
+      analyser.getByteFrequencyData(spectrum);
+      const hz = ctx.sampleRate / 2 / spectrum.length;
+      const band = (a, b) => { let s = 0; for (let i = Math.floor(a / hz); i < Math.min(spectrum.length, Math.ceil(b / hz)); i++) s += spectrum[i]; return s; };
+      const total = band(100, 6000) + 1;
+      return { low: band(100, 600) / total, high: band(1800, 6000) / total };
     },
   };
   current = handle;
