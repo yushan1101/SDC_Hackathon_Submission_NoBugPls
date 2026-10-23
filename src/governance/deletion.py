@@ -3,7 +3,7 @@
 Policy (web/js/legal.js) describes exactly this, so change both together.
 
 Deleted:    login, email, password hash, sessions, pending email codes, the person's own plans (reports, chat
-            conversations, versions, progress), interview sessions/answers/reports/access records, briefing count.
+            conversations, versions, progress), interview sessions/answers/reports/access records, briefing and agent-message counts.
 Anonymised: payments, risk/security events, sign-in events, AI token-use records, approval history entries.
 Kept as-is: plans HR made about a pseudonymous employee id and job openings (the organisation's records; an
             HR advisor's openings lose their owner name).
@@ -57,7 +57,7 @@ def delete_account(con, username: str) -> dict:
         for t, col, val in (("sessions", "username", username), ("email_otp", "username", username),
                             ("email_otp", "username", "reset:" + username), ("email_otp", "username", "invite:" + username),
                             ("signup_waits", "username", username), ("signup_waits", "username", "reset:" + username),
-                            ("briefing_log", "username", username)):
+                            ("briefing_log", "username", username), ("agent_log", "username", username)):
             if t in have:
                 con.execute(f"DELETE FROM {t} WHERE {col}=?", (val,))
         # records kept for accounting, security and cost: no longer linked to the person

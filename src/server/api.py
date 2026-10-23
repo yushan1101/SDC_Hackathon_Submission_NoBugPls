@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field, ValidationError
 from agents.gap_analyst import SCENARIO_NOTES
 from agents.pathway import HOURS_PER_LEVEL
 from agents.sdg import goal_meta, role_sdgs
-from agents import criteria, llm, matcher, quiz, resume
+from agents import catalog, criteria, llm, matcher, quiz, resume
 from agents.knowledge import learning_resources, occupation, resolve_occupation, role_requirements, search_occupations
 from config.settings import get_settings
 from core import graph, screening
@@ -71,6 +71,7 @@ with DB_LOCK:
                         CREATE TABLE IF NOT EXISTS frontend_sites(origin TEXT PRIMARY KEY, label TEXT, added_by TEXT,
                         created_utc TEXT);
                         CREATE TABLE IF NOT EXISTS model_catalog(spec TEXT PRIMARY KEY, label TEXT, created_utc TEXT);
+                        CREATE TABLE IF NOT EXISTS agent_log(username TEXT, agent TEXT, at_utc TEXT);
                         CREATE TABLE IF NOT EXISTS org_models(owner TEXT, task TEXT, spec TEXT, PRIMARY KEY(owner, task));
                         CREATE TABLE IF NOT EXISTS plan_progress(plan_id TEXT, item TEXT, done_utc TEXT,
                         PRIMARY KEY(plan_id, item));""")  # activities ticked off as done ("<days>:<skill>")
@@ -2146,6 +2147,9 @@ async def speech_transcribe(file: UploadFile = File(...), lang: str = Form(""), 
     return {"text": text[:4000]}
 
 
+SKILL_STEP = re.compile(r"([^:()]+?)\s*\(level (\d+)\s*(?:->|→)\s*(\d+)\)")  # "...: sql (level 2 -> 4)" or "(level 0 → 5)"
+
+
 def _org_snapshot(hr: str) -> dict:
     """What "ask your data" may use: this advisor's team plans, openings and team members. Pseudonymous ids only."""
     with DB_LOCK:
@@ -2161,7 +2165,7 @@ def _org_snapshot(hr: str) -> dict:
     team = []
     for sid, p in list(latest.items())[:200]:
         acts = snaps.get(p["plan_id"], {}).get("activities", [])
-        steps = sorted({re.sub(r"^.*?:\s*", "", a.get("activity", "")) for a in acts if "->" in a.get("activity", "")})[:8]
+        steps = sorted({f"{m[1].strip()} {m[2]}→{m[3]}" for a in acts if (m := SKILL_STEP.search(a.get("activity", "")))})[:8]
         team.append({"employee": sid, "target_role": (occupation(p["target_role"]) or {}).get("title", p["target_role"]),
                      "plan_status": p["status"], "learning_hours": round(sum(a.get("estimated_hours", 0) for a in acts)),
                      "skill_steps": steps})
@@ -2225,6 +2229,91 @@ def opening_draft(body: DraftIn, user: dict = Depends(paid_feature("hr_advisor",
     parsed = criteria.parse(crit, hits[0]["soc"] if hits else None) if crit else {}
     return {"title": title, "occupations": hits, "criteria_text": crit, "summary": criteria.describe(parsed) if crit else [],
             "ai": bool(text)}
+
+
+# --- agents people can find and talk to (the Agents page; like a GPT/Project gallery) -----------------------
+AGENT_DAILY = {"free": 20}  # agent messages per day on the free plan; paid and organisation plans: AGENT_DAILY_MAX
+AGENT_DAILY_MAX = 300       # ponytail: a plain abuse cap per account and day; per-plan limits if costs need it
+
+
+@app.get("/api/agents")
+def agents_list(user: dict = Depends(current_user)):
+    return {"agents": catalog.for_role(user["role"])}
+
+
+class ChatMsg(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class AgentChatIn(BaseModel):
+    messages: list[ChatMsg] = Field(min_length=1, max_length=24)
+    profile: dict | None = None  # the skills and target job this browser keeps (public app), for the coaches
+
+
+def _my_plans(user: dict) -> list[dict]:
+    """The person's own plans, as the coaches see them: job, status, the skill steps and hours. No ids or names."""
+    with DB_LOCK:
+        rows = approval.list_plans(db, user)[:6]
+        snaps = {pid: json.loads(s or "{}") for pid, s in db.execute(
+            "SELECT p.plan_id, v.snapshot FROM plans p JOIN plan_versions v ON v.plan_id=p.plan_id WHERE p.plan_id IN ({}) "
+            "AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)".format(",".join("?" * len(rows))),
+            [r["plan_id"] for r in rows])} if rows else {}
+    out = []
+    for r in rows:
+        acts = snaps.get(r["plan_id"], {}).get("activities", [])
+        out.append({"target_job": (occupation(r["target_role"]) or {}).get("title", r["target_role"]), "status": r["status"],
+                    "made": r["created_utc"][:10], "learning_hours": round(sum(a.get("estimated_hours", 0) for a in acts)),
+                    "steps": [f"days {a.get('day_range')}: {a.get('activity')}" for a in acts[:8]]})
+    return out
+
+
+def _agent_context(agent: dict, user: dict, profile: dict | None) -> dict:
+    if agent["id"] == "trends":
+        b = _board()
+        if not b:
+            return {"board": "No trend board yet."}
+        return {"day": b["day"], "topics": [{"topic": t["label"], "direction": t.get("direction"), "strength": t["z"],
+                                             "kind": t["kind"], "skills": t.get("skills", [])} for t in b["topics"]],
+                "roles_pulled_forward": [{"role": r["title"], "score": r["score"]} for r in b["emerging_roles"][:10]],
+                "roles_under_pressure": [{"role": r["title"], "pressure": r["pressure"]} for r in b["declining_roles"][:10]]}
+    if agent["id"] == "team":
+        return _org_snapshot(user["username"])
+    if agent["id"] in ("hiring", "posts"):
+        with DB_LOCK:
+            rows = recruiting.list_openings(db)[:15]
+        return {"openings": [{"title": o["title"], "status": o["status"], "applicants": o["applications"][0],
+                              "recommended": o["applications"][1] or 0, "requirements": criteria.describe(o["criteria"])}
+                             for o in rows]}
+    p = profile or {}
+    skills = [{"skill": str(s.get("name", ""))[:60], "level": s.get("level")} for s in (p.get("skills") or [])[:30] if isinstance(s, dict)]
+    return {"target_job": str(p.get("target_title") or "")[:80] or None, "my_skills": skills, "my_plans": _my_plans(user)}
+
+
+@app.post("/api/agents/{agent_id}/chat")
+def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_user)):
+    agent = catalog.BY_ID.get(agent_id)
+    if not agent or agent["kind"] != "chat" or agent not in [catalog.BY_ID[a["id"]] for a in catalog.for_role(user["role"])]:
+        raise HTTPException(404, "No such agent for your account.")
+    if body.messages[-1].role != "user":
+        raise HTTPException(422, "The last message must be yours.")
+    limit = AGENT_DAILY.get(_plan(user), AGENT_DAILY_MAX)
+    today = datetime.now(timezone.utc).date().isoformat()
+    with DB_LOCK, db:
+        used = db.execute("SELECT COUNT(*) FROM agent_log WHERE username=? AND substr(at_utc,1,10)=?", (user["username"], today)).fetchone()[0]
+        if used >= limit:
+            raise HTTPException(402 if limit < AGENT_DAILY_MAX else 429,
+                                f"You've used today's {limit} agent messages. " + ("Pro has more. See plans to upgrade." if limit < AGENT_DAILY_MAX else "Try again tomorrow."))
+        db.execute("INSERT INTO agent_log VALUES(?,?,?)", (user["username"], agent_id, datetime.now(timezone.utc).isoformat()))
+    context = _agent_context(agent, user, body.profile)
+    talk = "\n".join(f"{'Person' if m.role == 'user' else 'You'}: {m.content}" for m in body.messages[-12:])
+    text, usage = llm.generate(f"<CONTEXT>\n{json.dumps(context, ensure_ascii=False)[:24000]}\n</CONTEXT>\n<CONVERSATION>\n{talk}\n</CONVERSATION>\n"
+                               "Reply to the person's last message.", catalog.system_prompt(agent), max_tokens=700, agent=agent["task"])
+    if usage:
+        _record_usage(user["username"], f"agent:{agent_id}", usage)
+    if not text:
+        raise HTTPException(503, "The agent can't answer right now. Please try again in a moment.")
+    return {"reply": text.strip()[:6000], "model": (usage or {}).get("model")}
 
 
 # --- public application link (no account; consent required) --------------------------------------------------

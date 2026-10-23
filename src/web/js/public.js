@@ -11,6 +11,7 @@ import { registerView, pricingView, accountView, planName, verifyLinkView, forgo
 import { termsView, privacyView } from "./legal.js";
 import { watchForm } from "./risk.js";
 import { micButton, readAloudButton, setVoice } from "./voice.js";
+import { agentsView, agentChatView } from "./agents.js";
 
 const app = $("#app");
 const store = {
@@ -125,7 +126,7 @@ function shell() {
       h("a", { class: "wordmark", href: "#/start" }, "AiversePulse"),
       // guests: the home page and the AI-trends page, and one action: sign in
       guest ? null : S.me.role !== "employee" ? h("nav", { class: "pub-nav", "aria-label": "Primary" }, h("a", { href: "enterprise.html" }, icon("back"), h("span", {}, "Back to console")))
-        : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/today", "AI trends", "pulse"),
+        : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/agents", "Agents", "ask"), nav("#/today", "AI trends", "pulse"),
           nav("#/report", "Chat", "report"), nav("#/interview", "Interview", "quiz"), nav("#/plans", "My plans", "plans")),
       guest ? null : S.status.el,
       guest
@@ -135,7 +136,7 @@ function shell() {
             icon("user"), planName(S.me.effective_plan || "org")),
           h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out"))),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
-    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/today", "AI trends", "pulse"), tab("#/interview", "Interview", "quiz"), tab("#/plans", "Plans", "plans")),
+    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/agents", "Agents", "ask"), tab("#/today", "AI trends", "pulse"), tab("#/interview", "Interview", "quiz"), tab("#/plans", "Plans", "plans")),
     S.sheet].filter(Boolean));  // replaceChildren would print a null as the text "null"
 }
 
@@ -158,12 +159,12 @@ history.scrollRestoration = "manual";
 function route() {
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "register", "pricing", "account", "verify", "forgot", "reset", "invite", "terms", "privacy"]);
+  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "agents", "register", "pricing", "account", "verify", "forgot", "reset", "invite", "terms", "privacy"]);
   const interviewStart = requested === "interview" && id === "start" && rest.length === 1 && /^[A-Za-z0-9_-]+$/.test(rest[0]);
   // Unknown routes and malformed nested routes return home instead of showing the wrong page.
   const verifyLink = ["verify", "reset", "invite"].includes(requested) && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
   if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart && !verifyLink) || (["verify", "reset", "invite"].includes(requested) && !verifyLink) ||
-      (id && !["signin", "plans", "report", "interview", "verify", "reset", "invite"].includes(requested))) {
+      (id && !["signin", "plans", "report", "interview", "agents", "verify", "reset", "invite"].includes(requested)) || (requested === "agents" && id && !/^[a-z-]{2,20}$/.test(id))) {
     location.replace("#/start");
     return;
   }
@@ -224,6 +225,9 @@ function route() {
   else if (page === "pricing") pricingView(main, { me: S.me }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "account") accountView(main, { refreshMe }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "sdgs") sdgsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
+  else if (page === "agents" && id) agentChatView(main, id, { getProfile: () => ({ target_title: S.profile.target_title, skills: S.profile.skills }) })
+    .catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
+  else if (page === "agents") agentsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "today") todayView(main, { guest: !S.me }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else startView(main, { name: S.me?.display_name?.split(" ")[0], guest: !S.me });
   reveal(main, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 200 });

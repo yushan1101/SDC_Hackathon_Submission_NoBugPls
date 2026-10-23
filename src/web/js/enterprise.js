@@ -6,6 +6,7 @@ import { Owl, OwlStatus } from "./owl.js";
 import { gapsBlock, comparisonBlock, outlookBlock, planBlock, historyBlock, sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { openingsView, openingDetail, signalsView } from "./recruit.js";
 import { askPanel, modelsView, peopleView, pluginsView } from "./org.js";
+import { agentsView, agentChatView } from "./agents.js";
 import { setVoice } from "./voice.js";
 
 const app = $("#app");
@@ -45,6 +46,7 @@ function shell() {
   S.crumb = h("div", { class: "crumb" });
   const review = link("#/review", "Review", "review"); review.append(S.badge);
   const more = h("div", { id: "hr-more", class: "hr-more", popover: "auto", "aria-label": "Additional pages" },
+    h("a", { href: "#/agents", onclick: () => more.hidePopover?.() }, icon("ask"), "Agents"),
     h("a", { href: "#/openings", onclick: () => more.hidePopover?.() }, icon("people"), "Hiring"),
     h("a", { href: "#/plugins", onclick: () => more.hidePopover?.() }, icon("plug"), "Hiring plugins"),
     h("a", { href: "#/people", onclick: () => more.hidePopover?.() }, icon("user"), "Team members"),
@@ -55,7 +57,7 @@ function shell() {
   app.replaceChildren(h("div", { class: "hr-shell" },
     h("nav", { class: "rail", "aria-label": "Primary" },
       h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }, S.logo = h("span", { class: "logo-owl" }), h("span", { class: "lbl wordmark" }, "AiversePulse")),
-      link("#/overview", "Overview", "grid"), link("#/run", "Analyse team", "upload"), review, link("#/plans", "Plans", "history"),
+      link("#/overview", "Overview", "grid"), link("#/agents", "Agents", "ask"), link("#/run", "Analyse team", "upload"), review, link("#/plans", "Plans", "history"),
       link("#/openings", "Hiring", "people"), link("#/plugins", "Hiring plugins", "plug"), link("#/people", "Team members", "user"), link("#/models", "AI models", "model"),
       link("#/signals", "AI trends", "pulse"),
       h("div", { style: { flex: 1 } }),
@@ -79,7 +81,7 @@ function shell() {
 }
 
 function crumb(page = (location.hash.split("/")[1] || "overview")) {
-  const names = { overview: "Overview", run: "Analyse team", review: "Review queue", plans: "Plans register", openings: "Openings & screening", signals: "AI trends", plugins: "Hiring plugins", people: "Team members", models: "AI models" };
+  const names = { overview: "Overview", run: "Analyse team", review: "Review queue", plans: "Plans register", openings: "Openings & screening", signals: "AI trends", plugins: "Hiring plugins", people: "Team members", models: "AI models", agents: "Agents" };
   S.crumb.replaceChildren(names[page] || "Overview");
 }
 
@@ -95,14 +97,14 @@ async function refreshPlans() {
 function route() {
   const hash = location.hash || "#/overview";
   const [page = "overview", id, ...extra] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const pages = new Set(["overview", "run", "review", "plans", "openings", "signals", "plugins", "people", "models"]);
-  if (!pages.has(page) || extra.length || (id && !["review", "plans", "openings", "plugins"].includes(page))) {
+  const pages = new Set(["overview", "run", "review", "plans", "openings", "signals", "plugins", "people", "models", "agents"]);
+  if (!pages.has(page) || extra.length || (id && !["review", "plans", "openings", "plugins", "agents"].includes(page))) {
     location.replace("#/overview");
     return;
   }
   document.querySelectorAll("[data-route]").forEach((a) => {
     const dest = a.dataset.route;
-    const active = dest === "#/more" ? ["openings", "signals", "plugins", "people", "models"].includes(page) :
+    const active = dest === "#/more" ? ["openings", "signals", "plugins", "people", "models", "agents"].includes(page) :
       hash === dest || hash.startsWith(dest + "/");
     if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
@@ -113,7 +115,7 @@ function route() {
   main.scrollTop = 0;
   const views = { run: runView, review: () => reviewView(main, id), plans: () => plansView(main, id),
     openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status),
-    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status) };
+    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? agentChatView(main, id) : agentsView(main)) };
   Promise.resolve((views[page] || overview)(main)).catch((e) => {
     main.replaceChildren(h("div", { class: "view" }, h("div", { class: "issue error", role: "alert" }, e.message)));
   });

@@ -1140,3 +1140,44 @@ def test_hr_asks_about_the_team_and_drafts_openings_in_plain_words(client, monke
     assert d["title"] == "Ward nurse" and d["occupations"] and d["criteria_text"].startswith("Top 5") and d["summary"]
     login(client, "ana")
     assert client.post("/api/hr/ask", json={"question": "anything?"}, headers=H).status_code == 403
+
+
+def test_agents_gallery_and_chat_answer_from_the_persons_own_context(client, monkeypatch):
+    import server.api as api
+    H = {"X-AP": "1"}
+    login(client, "ana")
+    mine = {a["id"]: a for a in client.get("/api/agents").json()["agents"]}
+    assert {"coach", "trends", "interview", "planner"} <= set(mine) and "team" not in mine and "system" not in mine["coach"]
+    seen = {}
+    def fake(prompt, system, **k):
+        seen.update(prompt=prompt, system=system, agent=k.get("agent"))
+        return "Start with **SQL**.\n- one\n- two", None
+    monkeypatch.setattr(api.llm, "generate", fake)
+    body = {"messages": [{"role": "user", "content": "What first?"}], "profile": {"target_title": "Data analyst", "skills": [{"name": "Excel", "level": 3}]}}
+    r = client.post("/api/agents/coach/chat", json=body, headers=H)
+    assert r.json()["reply"].startswith("Start with") and seen["agent"] == "coach"
+    assert '"target_job": "Data analyst"' in seen["prompt"] and "Never invent" in seen["system"]
+    assert client.post("/api/agents/team/chat", json=body, headers=H).status_code == 404       # an HR agent
+    assert client.post("/api/agents/planner/chat", json=body, headers=H).status_code == 404    # a guided tool, not a chat
+    assert client.post("/api/agents/coach/chat", json={"messages": [{"role": "assistant", "content": "hi"}]}, headers=H).status_code == 422
+    monkeypatch.setattr(api.llm, "generate", lambda *a, **k: (None, None))
+    assert client.post("/api/agents/coach/chat", json=body, headers=H).status_code == 503
+    # HR advisors get the HR agents, answering from their own team
+    login(client, "hr1")
+    hr = {a["id"] for a in client.get("/api/agents").json()["agents"]}
+    assert {"team", "hiring", "posts", "run", "trends"} <= hr and "coach" not in hr
+    monkeypatch.setattr(api.llm, "generate", fake)
+    assert client.post("/api/agents/team/chat", json=body, headers=H).status_code == 200 and '"team"' in seen["prompt"]
+
+
+def test_free_accounts_have_a_daily_agent_message_limit(client, monkeypatch):
+    import server.api as api
+    H = {"X-AP": "1"}
+    client.cookies.clear()
+    _register(client, username="chatty1", email="chatty1@example.com")  # free plan
+    monkeypatch.setattr(api.llm, "generate", lambda *a, **k: ("ok", None))
+    body = {"messages": [{"role": "user", "content": "hi"}]}
+    for _ in range(api.AGENT_DAILY["free"]):
+        assert client.post("/api/agents/trends/chat", json=body, headers=H).status_code == 200
+    r = client.post("/api/agents/trends/chat", json=body, headers=H)
+    assert r.status_code == 402 and "Pro" in r.json()["detail"]
