@@ -3045,3 +3045,24 @@ body {
 @keyframes room-ring-glow { to { box-shadow: 0 0 60px #8fb2ff66; } }
 .interview-takeover.is-office-ready .room-loading { opacity: 0; visibility: hidden; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .room-loading-ring { animation: none; } .room-loading { transition: none; } }
+/* My plans: lightweight in-memory search and sorting controls. */
+.plans-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: end; margin: 28px 0 4px; }
+.plans-search { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 44px; padding: 0 12px;
+  border: 1px solid var(--rule-strong); border-radius: var(--radius); background: var(--surface); transition: border-color var(--t-fast), box-shadow var(--t-fast); }
+.plans-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.plans-search > svg { width: 18px; height: 18px; flex: none; color: var(--ink-2); }
+.plans-search-input { min-width: 0; width: 100%; flex: 1; padding: 8px 0; border: 0; outline: 0; background: transparent; }
+.plans-search-input:focus { outline: 0; }
+.plans-search-input::-webkit-search-cancel-button { display: none; }
+.plans-search-clear { display: grid; place-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--ink-2); cursor: pointer; font-size: 22px; line-height: 1; }
+.plans-search-clear:hover { background: var(--sunken); color: var(--ink); }
+.plans-sort { display: grid; gap: 5px; min-width: 220px; font-size: 13px; font-weight: 600; }
+.plans-sort-select { min-width: 220px; }
+.plans-tools + .plan-manage { margin-top: 8px; }
+.plan-search-empty { max-width: none; padding: 28px 0; }
+@media (max-width: 699px) {
+  .plans-tools { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .plans-sort { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; min-width: 0; }
+  .plans-sort-select { min-width: 0; }
+}
