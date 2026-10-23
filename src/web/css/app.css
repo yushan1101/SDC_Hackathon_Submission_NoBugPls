@@ -1668,6 +1668,7 @@ details.more summary::-webkit-details-marker { display: none; }
 
 /* trends: future skills radar, what changed, filters, 30-day lines */
 .radar-row { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 24px; align-items: center; margin: 8px 0 20px; }
+.trend-changes { min-width: 0; }
 .radar { width: 100%; height: auto; overflow: visible; }
 .radar .rd-ring { fill: none; stroke: var(--rule); }
 .radar .rd-zero { fill: none; stroke: var(--rule-strong); stroke-dasharray: 3 3; }
@@ -3164,8 +3165,8 @@ body {
 }
 
 /* HR advisor sidebar: click to resize the rail; collapsed labels appear as tooltips. */
-.hr-shell:not(.admin-shell) { grid-template-columns: 224px minmax(0, 1fr); transition: grid-template-columns 220ms var(--ease-out); }
-.hr-shell:not(.admin-shell).is-sidebar-collapsed { grid-template-columns: 84px minmax(0, 1fr); }
+.hr-shell:not(.admin-shell) { --hr-rail-width: 224px; grid-template-columns: var(--hr-rail-width) minmax(0, 1fr); transition: grid-template-columns 220ms var(--ease-out); }
+.hr-shell:not(.admin-shell).is-sidebar-collapsed { --hr-rail-width: 84px; grid-template-columns: var(--hr-rail-width) minmax(0, 1fr); }
 .hr-shell:not(.admin-shell) .hr-main > .view { width: 100%; max-width: none; min-width: 0; }
 .hr-shell:not(.admin-shell) .hr-main > .view > * { min-width: 0; max-width: 100%; }
 .hr-shell:not(.admin-shell) .hr-rail { position: relative; overflow: visible; }
@@ -3195,7 +3196,7 @@ body {
 .hr-shell:not(.admin-shell) .drop:hover,
 .hr-shell:not(.admin-shell) .drop:focus-within { border-color: var(--accent); background: var(--accent-soft); }
 @media (max-width: 767px) {
-  .hr-shell:not(.admin-shell) { grid-template-columns: 1fr; }
+  .hr-shell:not(.admin-shell) { --hr-rail-width: 0px; grid-template-columns: 1fr; }
   .hr-shell:not(.admin-shell) .hr-sidebar-toggle { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -3307,7 +3308,7 @@ body {
 /* HR review: the queue takes the page; each plan floats over it in its own panel. */
 [data-product="hr"] .review, [data-product="hr"] .review[data-pane] { grid-template-columns: minmax(0, 1fr); }
 [data-product="hr"] .review .queue { display: flex; }
-[data-product="hr"] .review .detail { display: none; position: fixed; z-index: var(--z-drawer); top: 10px; right: 10px; bottom: 10px; width: min(860px, calc(100vw - 20px));
+[data-product="hr"] .review .detail { display: none; position: fixed; z-index: var(--z-drawer); top: 10px; right: 24px; bottom: 10px; width: min(860px, calc(100vw - var(--hr-rail-width, 224px) - 48px));
   border: 1px solid var(--rule); border-radius: 26px; background: var(--surface); box-shadow: -18px 0 48px oklch(0.25 0.04 262 / 0.18); overflow: hidden;
   animation: rv-panel-in var(--t-base) var(--ease-out); }
 [data-product="hr"] .review[data-pane="detail"] .detail { display: grid; }
@@ -3322,6 +3323,14 @@ body {
   .rv-tabs { border-radius: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { [data-product="hr"] .review .detail { animation: none; } }
+
+/* The Review queue bypasses the shared .view wrapper, so give its workspace the same breathing room explicitly. */
+.hr-shell:not(.admin-shell) .hr-main:has(> .review) { padding: 24px; }
+.hr-shell:not(.admin-shell) .hr-main:has(> .review) > .review { height: calc(100dvh - 48px); }
+@media (max-width: 767px) {
+  .hr-shell:not(.admin-shell) .hr-main:has(> .review) { padding: 16px; }
+  .hr-shell:not(.admin-shell) .hr-main:has(> .review) > .review { height: auto; }
+}
 
 /* Plan activities: the person's steps, in order, and what they'll have at the end. */
 .phase .act-steps { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; color: var(--ink-2); font-size: 14px; line-height: 1.5; }

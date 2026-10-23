@@ -15,6 +15,7 @@ const app = $("#app");
 const AGENTS = ["supervisor", "profiler", "knowledge_search", "gap_analysis", "market_analyst", "pathway", "coach", "reviewer"];
 const HR_SIDEBAR_EXPANDED_KEY = "ap.hr.sidebar.expanded";
 const S = { me: null, meta: null, scenario: "assistive", status: null, rows: new Map(), needs: [], csv: null, plans: [], sel: null };
+let closeFloatingSidebarMenus = () => {};
 
 // ---------------------------------------------------------------- boot / sign in
 async function boot() {
@@ -41,18 +42,37 @@ function shell() {
   let sidebarExpanded = true;
   try { sidebarExpanded = localStorage.getItem(HR_SIDEBAR_EXPANDED_KEY) !== "false"; } catch { /* use the expanded default */ }
   let shellEl, sidebar, sidebarToggle;
+  let openMenu = null;
+  closeFloatingSidebarMenus = () => {
+    openMenu = null;
+    sidebar?.querySelectorAll(".rail-group").forEach((group) => {
+      group.classList.remove("open");
+      group.querySelector(".rail-group-btn")?.setAttribute("aria-expanded", "false");
+    });
+  };
   const link = (href, label, ic) => h("a", { href, "data-route": href, "aria-label": label, title: label }, icon(ic),
     h("span", { class: "lbl" }, label), h("span", { class: "tip", "aria-hidden": "true" }, label));
   // A folder of related links: click to open; in the icon-only rail it pops out to the side.
   const group = (label, ic, ...links) => {
     const el = h("div", { class: "rail-group" });
     const btn = h("button", { type: "button", class: "rail-group-btn", "aria-expanded": "false", "aria-label": label, title: label,
-      onclick: () => btn.setAttribute("aria-expanded", String(el.classList.toggle("open"))) },
+      onclick: () => {
+        if (sidebarExpanded) {
+          const expanded = !el.classList.contains("open");
+          el.classList.toggle("open", expanded);
+          btn.setAttribute("aria-expanded", String(expanded));
+          return;
+        }
+        if (openMenu === el) { closeFloatingSidebarMenus(); return; }
+        closeFloatingSidebarMenus();
+        openMenu = el;
+        el.classList.add("open");
+        btn.setAttribute("aria-expanded", "true");
+      } },
       icon(ic), h("span", { class: "lbl" }, label), h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
     links.forEach((item) => item.addEventListener("click", () => {
       if (sidebarExpanded) return;
-      el.classList.remove("open");
-      btn.setAttribute("aria-expanded", "false");
+      closeFloatingSidebarMenus();
     }));
     el.append(btn, h("div", { class: "rail-sub", role: "group", "aria-label": label }, ...links));
     return el;
@@ -78,6 +98,7 @@ function shell() {
     "aria-label": sidebarExpanded ? "Collapse sidebar" : "Expand sidebar", title: sidebarExpanded ? "Collapse sidebar" : "Expand sidebar",
     onclick: () => {
       sidebarExpanded = !sidebarExpanded;
+      closeFloatingSidebarMenus();
       try { localStorage.setItem(HR_SIDEBAR_EXPANDED_KEY, String(sidebarExpanded)); } catch { /* keep the preference for this page */ }
       updateSidebar();
     } }, icon("chevron"));
@@ -124,6 +145,10 @@ function shell() {
         "aria-haspopup": "true", "aria-label": "More pages" }, icon("grid"), "More")),
     more, S.capsule = capsule());
   app.replaceChildren(shellEl);
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!sidebarExpanded && !(target instanceof Element && target.closest(".hr-rail .rail-group"))) closeFloatingSidebarMenus();
+  });
   updateSidebar();
   // the owl lives in the rail's logo spot; on phones (no rail) it moves back next to the status text
   S.logo.append(S.status.owl.el);
@@ -164,6 +189,7 @@ async function refreshPlans() {
 }
 
 function route() {
+  closeFloatingSidebarMenus();
   const hash = location.hash || "#/overview";
   const [page = "overview", id, ...extra] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
   if (page === "plans") { location.replace(`#/review${id ? `/${id}` : ""}`); return; }  // the plans register is part of the review page now

@@ -675,7 +675,7 @@ export function boardView(b, { onRefresh, preview = false } = {}) {
   // radar + what changed since the previous board, once the history has loaded
   const radarHost = h("div", { class: "radar-host" }, radar(b.topics, null));
   const changes = h("div", { class: "trend-changes" });
-  api("/api/signals/history").then(({ days }) => {
+  api("/api/signals/history").then(({ days = [] }) => {
     const prev = days.filter((d) => d.day < b.day).at(-1);
     let selectedBoard = "today";
     const todayButton = h("button", { class: "k-now", type: "button", "aria-pressed": "true", onclick: () => selectBoard("today") }, "Today");
@@ -698,13 +698,15 @@ export function boardView(b, { onRefresh, preview = false } = {}) {
           flips.map((m) => h("li", {}, h("b", {}, m.t.label), ` is now ${m.t.direction} (was ${m.was})`)),
           big.map((m) => h("li", {}, h("b", {}, m.t.label), ` ${m.dz > 0 ? "strengthened" : "weakened"} by ${Math.abs(m.dz).toFixed(1)}`)))
           : h("p", { class: "muted" }, "No topic changed direction."));
-    }
+    } else changes.replaceChildren(h("h3", {}, icon("history"), "Trend comparison"),
+      h("p", { class: "muted" }, "No previous trend board is available yet."));
     if (days.length >= 3) grid.querySelectorAll(".topic-card").forEach((el) => {
       const vals = days.map((d) => d.z[el.dataset.topic]).filter((v) => v != null);
       if (vals.length >= 3) el.querySelector(".tc-charts").append(h("div", { class: "tc-chart-item tc-history", title: `Trend strength over the last ${vals.length} boards` },
         zLine(vals), h("span", { class: "tc-chart-caption" }, `${vals.length}-day strength`)));
     });
-  }).catch(() => { /* history is optional: the board stands on its own */ });
+  }).catch(() => changes.replaceChildren(h("h3", {}, icon("history"), "Trend comparison"),
+    h("p", { class: "muted" }, "Trend history could not be loaded. The current board is still available.")));
   // the roles: a bar against the strongest score, the topics driving it (with their pictures), and a note when a role
   // is pulled both ways (growth already nets off half the automation pressure, so both can be true)
   const growing = new Set(b.emerging_roles.map((r) => r.soc)), pressed = new Set(b.declining_roles.map((r) => r.soc));
