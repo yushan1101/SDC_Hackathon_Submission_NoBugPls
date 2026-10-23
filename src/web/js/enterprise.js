@@ -189,6 +189,7 @@ function route() {
 
 function keys(e) {
   if (!location.hash.startsWith("#/review") || e.target.closest("dialog") || /input|textarea|select/i.test(e.target.tagName)) return;
+  if (e.key === "Escape" && location.hash.startsWith("#/review/")) { location.hash = "#/review"; return; }
   if (e.key !== "j" && e.key !== "k") return;
   const items = [...document.querySelectorAll(".queue-item")];
   const i = items.findIndex((x) => x.getAttribute("aria-current") === "true");
@@ -379,7 +380,9 @@ async function reviewView(main, id) {
       reviewMenu(main, p.plan_id, p.review, () => editReview(main, p.plan_id, p.review, navigate, p.subject_id, p.plan_reference), navigate)); })
       : h("div", { class: "empty" }, h("p", { class: "muted" }, "Nothing here yet.")));
   const detail = h("section", { class: "detail", "aria-label": "Plan detail" });
-  const wrap = h("div", { class: "review", "data-pane": location.hash.split("/")[2] ? "detail" : "list" }, queue, detail);
+  // Each plan opens in a floating panel over the queue; the scrim (or Escape) closes it.
+  const scrim = h("a", { class: "rv-scrim", href: "#/review", "aria-label": "Close plan", tabindex: "-1" });
+  const wrap = h("div", { class: "review", "data-pane": location.hash.split("/")[2] ? "detail" : "list" }, queue, scrim, detail);
   // Keep the list's position when selecting a plan or returning from detail on phones.
   const previousQueue = main.querySelector(".queue");
   if (previousQueue?.getClientRects().length) S.reviewQueueScroll = previousQueue.scrollTop;
@@ -554,7 +557,7 @@ async function loadDetail(id, detail, wrap) {
     paneHost.replaceChildren(...[panes[key]()].flat().filter(Boolean));
   }
   const body = h("div", { class: "detail-body" },
-    h("a", { class: "btn ghost sm back", href: "#/review" }, icon("back"), "Queue"),
+    h("a", { class: "btn ghost sm back", href: "#/review" }, icon("back"), "Back to queue"),
     h("header", { class: "rv-card rv-person" },
       h("span", { class: "rv-avatar lg", "aria-hidden": "true" }, initials(name)),
       h("div", { class: "rv-person-main" },

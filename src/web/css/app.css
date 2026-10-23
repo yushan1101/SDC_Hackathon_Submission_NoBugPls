@@ -3295,3 +3295,22 @@ body {
 .rv-tabs [role="tab"] { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .rv-tabs .rv-count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--rule); color: var(--ink-2); font: 600 11px/18px var(--font-mono); text-align: center; }
 .rv-sources { display: grid; gap: 6px; }
+
+/* HR review: the queue takes the page; each plan floats over it in its own panel. */
+[data-product="hr"] .review, [data-product="hr"] .review[data-pane] { grid-template-columns: minmax(0, 1fr); }
+[data-product="hr"] .review .queue { display: flex; }
+[data-product="hr"] .review .detail { display: none; position: fixed; z-index: var(--z-drawer); top: 10px; right: 10px; bottom: 10px; width: min(860px, calc(100vw - 20px));
+  border: 1px solid var(--rule); border-radius: 26px; background: var(--surface); box-shadow: -18px 0 48px oklch(0.25 0.04 262 / 0.18); overflow: hidden;
+  animation: rv-panel-in var(--t-base) var(--ease-out); }
+[data-product="hr"] .review[data-pane="detail"] .detail { display: grid; }
+.rv-scrim { display: none; }
+[data-product="hr"] .review[data-pane="detail"] .rv-scrim { display: block; position: fixed; inset: 0; z-index: var(--z-drawer); background: oklch(0.25 0.03 262 / 0.22); }
+@keyframes rv-panel-in { from { transform: translateX(32px); opacity: 0; } }
+[data-product="hr"] .review .back { display: inline-flex; justify-self: start; }
+.rv-filters { flex-wrap: wrap; overflow: visible; }
+.rv-tabs { flex-wrap: wrap; overflow: visible; position: sticky; top: 0; z-index: 2; box-shadow: 0 0 0 8px var(--surface); }
+@media (max-width: 767px) {
+  [data-product="hr"] .review .detail { inset: 0; width: auto; border: 0; border-radius: 0; }
+  .rv-tabs { border-radius: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { [data-product="hr"] .review .detail { animation: none; } }
