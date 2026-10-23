@@ -2992,3 +2992,37 @@ body {
   .report-assistant-trigger { transition: none; }
 }
 @media print { .report-assistant { display: none !important; } }
+
+/* Keep Chat / Interview reachable while browsing the long agent conversation. */
+.ag-switch-slot { display: contents; }
+.ag-switch-sentinel { display: block; height: 1px; margin-bottom: -1px; pointer-events: none; }
+.agent-switcher-wrapper {
+  position: sticky; top: var(--agent-switch-top, 84px); z-index: 19;
+  display: flex; justify-content: center; width: fit-content; max-width: 100%;
+  margin: 0 auto 20px; padding: 8px 16px; border: 1px solid transparent; border-radius: 999px;
+  background: transparent; -webkit-backdrop-filter: blur(0); backdrop-filter: blur(0);
+  transition: background 240ms ease, backdrop-filter 240ms ease, -webkit-backdrop-filter 240ms ease,
+    box-shadow 240ms ease, border-color 240ms ease;
+}
+.agent-switcher-wrapper .ag-modes { margin: 0; }
+.agent-switcher-wrapper .ag-pill a { transition: color var(--t-base) var(--ease-out), min-width 200ms ease, min-height 200ms ease, padding 200ms ease; }
+.agent-switcher-wrapper .ag-pill-label { transition: opacity 160ms ease, max-width 200ms ease; max-width: 100px; white-space: nowrap; }
+.agent-switcher-wrapper.is-scrolled {
+  border-color: oklch(0.85 0.025 262 / 0.55); background: oklch(0.99 0.01 262 / 0.78);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  box-shadow: 0 6px 24px oklch(0.25 0.06 262 / 0.08);
+  padding: 4px 8px;
+}
+.agent-switcher-wrapper.is-scrolled .ag-pill { grid-template-columns: 36px 36px; }
+.agent-switcher-wrapper.is-scrolled .ag-pill a { min-width: 36px; min-height: 36px; padding: 0; gap: 0; }
+.agent-switcher-wrapper.is-scrolled .ag-pill-label { max-width: 0; opacity: 0; overflow: hidden; }
+.agent-switcher-wrapper.is-scrolled .ag-pill a svg { flex: none; }
+.agent-switcher-wrapper .ag-pill { background: var(--sunken); }
+.agent-switcher-wrapper .ag-pill-thumb { background: var(--surface); }
+@media (max-width: 699px) {
+  .agent-switcher-wrapper { padding: 6px 10px; margin-bottom: 16px; }
+  .agent-switcher-wrapper .ag-pill a { min-width: 112px; min-height: 38px; padding-inline: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-switcher-wrapper, .agent-switcher-wrapper .ag-pill a, .agent-switcher-wrapper .ag-pill-label { transition: none; }
+}

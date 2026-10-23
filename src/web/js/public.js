@@ -11,7 +11,7 @@ import { registerView, pricingView, accountView, planName, verifyLinkView, forgo
 import { termsView, privacyView } from "./legal.js";
 import { watchForm } from "./risk.js";
 import { micButton, readAloudButton, setVoice } from "./voice.js";
-import { agentView, agentSwitch } from "./agents.js";
+import { agentView, agentSwitch, disposeAgentSwitch } from "./agents.js";
 import { reportAssistant } from "./report-assistant.js";
 
 const app = $("#app");
@@ -158,6 +158,7 @@ let homeScrollTop = 0;
 // Hash routes render their own content; restore after that content exists.
 history.scrollRestoration = "manual";
 function route() {
+  disposeAgentSwitch();
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
   const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "agents", "register", "pricing", "account", "verify", "forgot", "reset", "invite", "terms", "privacy"]);
