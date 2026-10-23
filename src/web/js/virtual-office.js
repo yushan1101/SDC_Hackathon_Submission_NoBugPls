@@ -148,7 +148,7 @@ export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX 
   const still = reduceMotion();
   let avatarState = "idle";
   let microphoneLevel = 0;
-  let speechCue = null;
+  let speechCue = null, speechLevel = null;  // speechLevel: loudness of the voice being played, when known
   const setAvatarState = (next) => {
     if (!["idle", "listening", "speaking"].includes(next) || next === avatarState) return;
     avatarState = next;
@@ -161,6 +161,7 @@ export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX 
     setAvatarState(detail.state);
     microphoneLevel = Number.isFinite(detail.microphoneLevel) ? THREE.MathUtils.clamp(detail.microphoneLevel, 0, 1) : 0;
     speechCue = detail.state === "speaking" ? detail.speechCue || null : null;
+    speechLevel = detail.state === "speaking" && Number.isFinite(detail.speechLevel) ? detail.speechLevel : null;
   };
   window.addEventListener("aiversepulse:interview-avatar-state", avatarStateEvent);
   let blinkStartedAt = -10;
@@ -198,7 +199,8 @@ export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX 
     look.z = ease(look.z, (listening ? -0.018 : 0) + thinking * 0.04, 4);
     // SpeechSynthesis word-boundary cues open the jaw by letter: vowels wide, m/n/b/p nearly closed.
     let jaw = 0;
-    if (speaking && speechCue?.word) {
+    if (speaking && speechLevel !== null) jaw = Math.min(1, speechLevel * 1.6);  // the real audio: lips follow it
+    else if (speaking && speechCue?.word) {
       const word = String(speechCue.word);
       const secondsPerCharacter = Number.isFinite(speechCue.secondsPerCharacter) ? speechCue.secondsPerCharacter : 0.1;
       const index = Math.floor(Math.max(0, (performance.now() - speechCue.startedAt) / 1000) / secondsPerCharacter);

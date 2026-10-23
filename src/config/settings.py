@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     recruiter_model: str = ""  # job posts, "ask your data" and voice job drafts for HR
     # speech-to-text for voice input: "openai:<model>" on the gateway or "gemini:<model>"; if its provider has no key, the
     # Gemini fast model is used, else browsers fall back to their own speech recognition
+    # text-to-speech: one voice for read-aloud and the interviewer, whatever the browser has installed
+    # 3.1 follows a "Say in ...:" style without reading it aloud (the 3.8 TTS models speak it)
+    tts_model: str = "gemini:gemini-3.1-flash-tts-preview"   # or "openai:<model>" on the gateway's /audio/speech
+    tts_voice: str = "Leda"   # Gemini's youthful voice
+    tts_style: str = "a cute, bright, high-pitched anime girl voice, cheerful and friendly"  # empty: plain reading
     stt_model: str = "openai:mimo-v2.6-flash"  # an audio chat model on the gateway; whisper-style ids use /audio/transcriptions
     llm_resume: bool = False  # opt-in: send the REDACTED resume to the LLM to propose extra skills (quotes verified)
     llm_usd_per_1m_input: float = 0.0   # set from the provider's current price sheet; 0 = cost not estimated

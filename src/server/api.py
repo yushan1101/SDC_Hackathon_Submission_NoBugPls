@@ -134,7 +134,7 @@ async def headers(request: HttpRequest, call_next):
     resp.headers.update({
         "Content-Security-Policy": f"default-src 'self'; script-src 'self' '{_assets()[2]}' https://js.stripe.com; style-src 'self' 'unsafe-inline' "
                                    "https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.stripe.com; "
-                                   "frame-src https://js.stripe.com https://hooks.stripe.com; "
+                                   "frame-src https://js.stripe.com https://hooks.stripe.com; media-src 'self' blob:; "  # blob: the read-aloud voice
                                    f"connect-src 'self' https://api.stripe.com; frame-ancestors {cfg.frame_ancestors}; base-uri 'none'; form-action 'self'",
         "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin",
         "Permissions-Policy": "camera=(), microphone=(self), geolocation=()"})
@@ -800,7 +800,8 @@ def meta(user: dict = Depends(current_user)):
     return {"occupations": len(snapshot()["occupations"]), "scenarios": SCENARIO_NOTES,
             "outlook": _outlook_meta(),
             "llm": llm.model_for("coach") or None if cfg.llm_enabled else None,
-            "voice": bool(llm.stt_model()) and _plan(user) in VOICE_PLANS}  # server speech-to-text for this account
+            "voice": bool(llm.stt_model()) and _plan(user) in VOICE_PLANS,  # server speech-to-text for this account
+            "tts": bool(llm.tts_model())}  # read-aloud and the interviewer use the server voice
 
 
 # --- serialisation ----------------------------------------------------------------------------------
@@ -942,8 +943,11 @@ def _prepared_question(user: dict, recommendation: dict, difficulty: str, take: 
             _prepared.pop(k)
         at, job = _prepared.get(key) or (now, None)
         if job is None:
-            job = _PREPARE.submit(_in_context(interview_service.prepare_create), recommendation["role_id"],
-                                  recommendation["profile"], difficulty)
+            def prepare(role_id, profile):
+                prepared = interview_service.prepare_create(role_id, profile, difficulty)
+                _speech(prepared[2]["text"])  # the interviewer's voice is ready when the room opens
+                return prepared
+            job = _PREPARE.submit(_in_context(prepare), recommendation["role_id"], recommendation["profile"])
             _prepared[key] = (at, job)
         if take:
             _prepared.pop(key, None)
@@ -1083,6 +1087,8 @@ def interview_answer(interview_id: str, body: InterviewAnswer, user: dict = Depe
         if not latest or latest["active_question_id"] != body.question_id or latest["status"] != "in_progress":
             raise HTTPException(409, "This answer was already submitted. Refresh the interview.")
         result = interview_service.persist_answer(db, latest, current, answer_text, prepared)
+    if (result.get("question") or {}).get("text"):
+        _speech(result["question"]["text"])
     if result["status"] == "completed":
         report = result["report"]
         for recommendation in report.get("recommendations", [])[:3]:
@@ -2226,6 +2232,43 @@ def org_models_set(body: OrgModelIn, user: dict = Depends(need("hr_advisor"))):
 # --- voice and plain-language features (paid plans) -------------------------------------------------------
 VOICE_PLANS = {"pro", "team", "org"}
 AUDIO_TYPES = ("audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/aac")
+
+
+# Text-to-speech in one server voice, so read-aloud and the interviewer sound the same in every browser. Each text is
+# spoken once and kept (the interview asks for its question before the room needs it). ~48 KB of WAV per second.
+_SPEECH = ThreadPoolExecutor(max_workers=3)
+_spoken: dict = {}
+_spoken_lock = threading.Lock()
+SPEECH_KEEP = 200  # recent texts kept in memory
+
+
+def _speech(text: str):
+    text = " ".join(text.split())[:4000]
+    key = hashlib.sha256(f"{cfg.tts_model}|{cfg.tts_voice}|{cfg.tts_style}|{text}".encode()).hexdigest()
+    with _spoken_lock:
+        job = _spoken.pop(key, None)
+        if job is None or (job.done() and job.result()[0] is None):  # a failed attempt is retried
+            job = _SPEECH.submit(llm.speak, text)
+        _spoken[key] = job  # most recently used last
+        while len(_spoken) > SPEECH_KEEP:
+            _spoken.pop(next(iter(_spoken)))
+    return job
+
+
+class SpeakIn(BaseModel):
+    text: str = Field(min_length=1, max_length=6000)
+
+
+@app.post("/api/speech/say")
+def speech_say(body: SpeakIn, user: dict = Depends(current_user)):
+    """The text read aloud in the server voice (WAV). 503 when no speech model is set up: the page then uses the
+    browser's own voice."""
+    if not llm.tts_model():
+        raise HTTPException(503, "Read-aloud voice is not set up.")
+    audio, _ = _speech(body.text).result(timeout=90)  # llm.speak records the model call, once per text
+    if audio is None:
+        raise HTTPException(503, "The read-aloud voice is unavailable right now.")
+    return Response(audio, media_type="audio/wav", headers={"Cache-Control": "private, max-age=86400"})
 
 
 @app.post("/api/speech/transcribe")

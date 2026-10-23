@@ -1299,3 +1299,29 @@ def test_interview_first_question_is_prefetched_and_answers_use_server_asr(clien
     assert client.post(f"/api/interviews/{iid}/transcribe", files={"file": ("a.txt", b"x" * 2000, "text/plain")}, headers=H).status_code == 415
     login(client, "hr1")
     assert client.post(f"/api/interviews/{iid}/transcribe", files={"file": wav}, headers=H).status_code == 403
+
+
+def test_read_aloud_speaks_in_the_server_voice_once_per_text(client, monkeypatch):
+    import server.api as api
+    login(client, "ana")
+    monkeypatch.setattr(api.llm, "tts_model", lambda: "")
+    assert client.post("/api/speech/say", json={"text": "Hello"}, headers=H).status_code == 503  # browser voice then
+    spoken = []
+    monkeypatch.setattr(api.llm, "tts_model", lambda: "gemini:gemini-3.8-flash-lite-tts")
+    monkeypatch.setattr(api.llm, "speak", lambda text: (spoken.append(text), (b"RIFF0000WAVE", {"ms": 1}))[1])
+    for _ in range(2):
+        r = client.post("/api/speech/say", json={"text": "Tell me  about a project."}, headers=H)
+        assert r.status_code == 200 and r.headers["content-type"] == "audio/wav" and r.content == b"RIFF0000WAVE"
+    assert spoken == ["Tell me about a project."]  # one generation, then the kept clip
+    assert client.get("/api/meta").json()["tts"] is True
+    # the interview's first question is spoken while the set-up page is open
+    q = client.get("/api/quiz").json()
+    monkeypatch.setattr(api, "_matches", lambda *a, **k: [{"soc": "2221.2", "title": "Nurse"}])
+    rec = client.post("/api/quiz/score", json={"answers": {x["id"]: 2 for x in q["questions"]}}, headers=H).json()["matches"][0]["recommendation_id"]
+    monkeypatch.setattr(api.interview_service, "prepare_create", lambda role, skills, difficulty: ("iv-tts", {"title": "Nurse", "source": {}}, {
+        "question_id": "q-tts", "text": "Why nursing?", "stage": "behavioral", "type": "behavioral", "difficulty": difficulty,
+        "target_skills": [], "source_refs": [], "criteria": []}))
+    client.post("/api/interviews/prefetch", json={"recommendation_id": rec, "difficulty": "foundational"}, headers=H)
+    api._prepared_question({"employee_id": "E-001"}, {"recommendation_id": rec, "role_id": "2221.2", "profile": []}, "foundational").result(timeout=10)
+    api._SPEECH.submit(lambda: None).result(timeout=10)  # let the speech pool catch up
+    assert "Why nursing?" in spoken

@@ -1,5 +1,5 @@
 import { api, h, icon, toast, fmtTime, ApiError, upload } from "./lib.js";
-import { lang, toWav } from "./voice.js";
+import { preloadSpeech, speak, toWav } from "./voice.js";
 import { Owl } from "./owl.js";
 
 const LABELS = {
@@ -256,7 +256,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   let elapsedMs = 0, timerStartedAt = null, durationTimer = null;
   let deviceEnumeration = 0;
   let interviewerSpeaking = false, currentUtterance = null, paused = false;
-  let microphoneLevel = 0, speechCue = null, lastAvatarSignalAt = 0;
+  let microphoneLevel = 0, speechCue = null, speechLevel = 0, lastAvatarSignalAt = 0;
   let officeDisposer = null;
   // The interviewer speaks (and the microphone opens) only once Mina is fully in the room, so there is no voice from an
   // empty chair and no half-loaded model on screen. Without the 3D office there is nothing to wait for.
@@ -270,7 +270,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     const state = interviewerSpeaking ? "speaking"
       : ["ready", "listening", "speaking", "captured"].includes(micState) ? "listening" : "idle";
     window.dispatchEvent(new CustomEvent("aiversepulse:interview-avatar-state", { detail: {
-      state, microphoneLevel, speechCue,
+      state, microphoneLevel, speechCue, speechLevel,
     } }));
   };
   const setMicState = (state, message, present = true) => {
@@ -543,42 +543,35 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     }
     updateControls();
   });
+  // The interviewer reads each question in the app's own voice (the same as Read aloud in chat), whatever voices the
+  // browser has. Her lips follow the loudness of that audio.
   const playQuestion = async () => {
-    if (!window.speechSynthesis) { setMicState("ready", "Ready to answer · microphone off"); toast("Speech playback is unavailable in this browser."); return; }
+    const text = qText.textContent;
+    if (!text) return;
     interviewerSpeaking = true; updateControls(); setMicState("processing", "Preparing interviewer question…");
     if (recording || micStream) await finishRecording(false, false);
-    const utterance = new SpeechSynthesisUtterance(qText.textContent); currentUtterance = utterance;
-    utterance.lang = lang();  // the same voice as "Read aloud" in chat: the browser's own for the page language
-    window.speechSynthesis.cancel();
-    utterance.onstart = () => {
-      if (currentUtterance !== utterance) return;
-      speechCue = { word: utterance.text, startedAt: performance.now(), secondsPerCharacter: 0.095 / Math.max(0.5, utterance.rate || 1) };
-      interviewerSpeaking = true; updateControls(); setMicState("processing", "Interviewer speaking · microphone capture is off");
-    };
-    utterance.onboundary = (event) => {
-      if (currentUtterance !== utterance || !interviewerSpeaking) return;
-      const remaining = utterance.text.slice(Math.max(0, event.charIndex || 0));
-      const word = remaining.match(/^[\p{L}\p{N}'’\-]+/u)?.[0];
-      if (!word) return;
-      speechCue = { word, startedAt: performance.now(), secondsPerCharacter: 0.105 / Math.max(0.5, utterance.rate || 1) };
-      updateAvatarPresentation();
-    };
-    utterance.onend = () => {
-      if (currentUtterance !== utterance) return;
-      currentUtterance = null; interviewerSpeaking = false; speechCue = null; updateControls();
-      setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : "Ready to answer · microphone off");
-    };
-    utterance.onerror = () => {
-      if (currentUtterance !== utterance) return;
-      currentUtterance = null; interviewerSpeaking = false; speechCue = null; updateControls();
-      setMicState("ready", "Ready to answer · microphone off");
-    };
-    window.speechSynthesis.speak(utterance);
+    let lips = 0;
+    const voice = currentUtterance = speak(text, { onStart: () => {
+      if (currentUtterance !== voice) return;
+      speechCue = { word: text, startedAt: performance.now(), secondsPerCharacter: 0.095 };
+      interviewerSpeaking = true; updateControls(); setMicState("processing", "Interviewer speaking");
+      const follow = () => {
+        if (currentUtterance !== voice) { speechLevel = 0; return; }
+        speechLevel = voice.level(); updateAvatarPresentation();
+        lips = requestAnimationFrame(follow);
+      };
+      follow();
+    } });
+    await voice.done;
+    cancelAnimationFrame(lips);
+    if (currentUtterance !== voice) return;
+    currentUtterance = null; interviewerSpeaking = false; speechCue = null; speechLevel = 0; updateControls();
+    setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : "Ready to answer · microphone off");
   };
   const dispose = () => {
     discarded = true; recording = false; muted = false; pauseDuration();
     try { recognizer?.abort(); } catch { /* already stopped */ }
-    recognitionActive = false; recognitionRequested = false; releaseAudio(); window.speechSynthesis?.cancel();
+    recognitionActive = false; recognitionRequested = false; releaseAudio(); currentUtterance?.stop(); currentUtterance = null;
     officeDisposer?.(); officeDisposer = null;
     if (!alreadyInInterviewRoom) document.body.classList.remove("interview-takeover-active");
     document.body.style.overflow = previousBodyOverflow;
@@ -607,7 +600,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     progress.setAttribute("aria-valuenow", String(step));
     progress.querySelector("i").style.width = `${Math.min(100, step / total * 100)}%`;
     setMicState("off", "Microphone off");
-    if (qText.textContent) void officeArrived.then(playQuestion);
+    if (qText.textContent) { void preloadSpeech(qText.textContent); void officeArrived.then(playQuestion); }
   };
   const form = h("form", { class: "interview-answer-form", onsubmit: async (e) => {
     e.preventDefault();
@@ -632,10 +625,10 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     paused = !paused;
     if (paused) {
       if (recording || micStream) void finishRecording();
-      window.speechSynthesis?.pause();
+      currentUtterance?.pause();
       if (!interviewerSpeaking) setMicState("off", "Paused · microphone off");
     } else {
-      window.speechSynthesis?.resume();
+      currentUtterance?.resume();
       if (!interviewerSpeaking) setMicState("off", "Microphone off");
     }
     pause.replaceChildren(icon(paused ? "play" : "pause"));
@@ -655,7 +648,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       if (pendingTranscript && !transcript.value.toLocaleLowerCase().includes(pendingTranscript.toLocaleLowerCase())) {
         transcript.value = [transcript.value.trim(), pendingTranscript].filter(Boolean).join(" ").slice(0, 4000);
       }
-      window.speechSynthesis?.cancel(); currentUtterance = null; interviewerSpeaking = false; speechCue = null;
+      currentUtterance?.stop(); currentUtterance = null; interviewerSpeaking = false; speechCue = null;
       await api(`/api/interviews/${sessionId}/pause`, { method: "POST", body: { draft_answer: transcript.value.slice(0, 4000) } });
       const destination = detail.assessment_source === "questionnaire" ? "#/quiz" : "#/resume";
       dispose(); location.hash = destination;

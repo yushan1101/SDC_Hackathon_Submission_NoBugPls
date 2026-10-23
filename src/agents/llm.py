@@ -126,6 +126,56 @@ def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None 
         return None, record("llm", 1000 * (time.perf_counter() - t), name, error=type(e).__name__)
 
 
+def tts_model() -> str:
+    """Text-to-speech model: TTS_MODEL if its provider is set up, else ''."""
+    from config.settings import get_settings
+    s = get_settings()
+    spec = s.tts_model if ":" in s.tts_model or not s.tts_model else f"gemini:{s.tts_model}"
+    return spec if spec and usable(spec) else ""
+
+
+def speak(text: str):
+    """-> (WAV bytes | None, usage): `text` read in the one configured voice (TTS_VOICE, in the TTS_STYLE manner). None
+    when no model is set up or the call failed; callers fall back to the browser's own voice."""
+    from config.settings import get_settings
+    from core.usage import record
+    s, spec = get_settings(), tts_model()
+    if not spec:
+        return None, None
+    provider, name = spec.split(":", 1)
+    t = time.perf_counter()
+    try:
+        if provider == "openai":
+            import httpx
+            r = httpx.post(api_base(s.llm_base_url) + "/audio/speech", timeout=max(s.llm_timeout_s, 60),
+                           headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"},
+                           json={"model": name, "input": text, "voice": s.tts_voice, "response_format": "wav"})
+            r.raise_for_status()
+            audio = r.content
+        else:
+            global _gemini
+            from google import genai
+            from google.genai import types
+            _gemini = _gemini or genai.Client(api_key=s.gemini_api_key.get_secret_value(),
+                                              http_options=types.HttpOptions(timeout=int(s.llm_timeout_s * 1000)))
+            prompt = f"Say in {s.tts_style}: {text}" if s.tts_style else text  # the style directs, it isn't read out
+            r = _gemini.models.generate_content(model=name, contents=prompt, config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"], speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=s.tts_voice)))))
+            audio = r.candidates[0].content.parts[0].inline_data.data
+            if not audio.startswith(b"RIFF"):  # some models send bare 24 kHz 16-bit mono samples: give them a WAV header
+                import io
+                import wave
+                out = io.BytesIO()
+                with wave.open(out, "wb") as w:
+                    w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000); w.writeframes(audio)
+                audio = out.getvalue()
+        return audio, record("tts", 1000 * (time.perf_counter() - t), name, measured=True)
+    except Exception as e:
+        log.warning("text-to-speech failed (%s %s): %s", provider, name, type(e).__name__)
+        return None, record("tts", 1000 * (time.perf_counter() - t), name, error=type(e).__name__)
+
+
 def stt_model() -> str:
     """Speech-to-text model: STT_MODEL if its provider is set up, else the fast Gemini model (it hears audio), else ''."""
     from config.settings import get_settings

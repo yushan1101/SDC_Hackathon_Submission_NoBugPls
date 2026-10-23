@@ -43,6 +43,17 @@ export async function api(path, { method = "GET", body, signal } = {}) {
 }
 
 /** POST multipart form data (file uploads). */
+/** POST a JSON body and get a binary reply (audio) back as a Blob. */
+export async function postForBlob(path, body, signal) {
+  const res = await fetch(apiUrl(path), { method: "POST", body: JSON.stringify(body), signal, credentials: CREDS,
+    headers: { "X-AP": "1", "Content-Type": "application/json", ...auth() } });
+  if (!res.ok) {
+    const data = res.headers.get("content-type")?.includes("json") ? await res.json().catch(() => null) : null;
+    throw new ApiError(res.status, data?.detail || res.statusText, data);
+  }
+  return res.blob();
+}
+
 export async function upload(path, form, signal) {
   const res = await fetch(apiUrl(path), { method: "POST", body: form, signal, credentials: CREDS, headers: { "X-AP": "1", ...auth() } });
   const data = res.headers.get("content-type")?.includes("json") ? await res.json() : null;

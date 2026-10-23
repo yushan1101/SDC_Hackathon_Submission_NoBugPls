@@ -1,8 +1,9 @@
 // Voice input and read-aloud, shared by every page.
 // Mic: paid plans record in the browser and the server transcribes (works in every browser); otherwise the browser's
 // own speech recognition where it has one (Chrome, Edge, Safari); with neither, no mic button is shown.
-// Read aloud: the browser's built-in speech synthesis (nothing leaves the device).
-import { h, icon, toast, upload } from "./lib.js";
+// Read aloud and the interviewer: one voice from the server (TTS_VOICE), so it sounds the same in every browser
+// whatever voices or language the browser has; the browser's own voice only when the server has none.
+import { ApiError, h, icon, postForBlob, toast, upload } from "./lib.js";
 
 const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
 const canRecord = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
@@ -93,20 +94,94 @@ export function micButton(target, { onText } = {}) {
   return btn;
 }
 
-/** "Read aloud" for some text (a function, so it reads what is there when pressed). null where speech isn't supported. */
+// ---------------------------------------------------------------- speaking: the app's own voice
+let serverVoice = true;  // false once the server says it has no voice: the browser's own is used from then on
+const clips = new Map();  // text -> Promise<object URL>, so a question fetched early plays at once
+/** Start fetching `text` in the server voice now (the interviewer asks for each question before it is read). */
+export function preloadSpeech(text) {
+  text = (text || "").trim().slice(0, 6000);
+  if (!text || !serverVoice) return null;
+  if (!clips.has(text)) {
+    const job = postForBlob("/api/speech/say", { text }).then((blob) => URL.createObjectURL(blob));
+    job.catch(() => clips.delete(text));
+    clips.set(text, job);
+    if (clips.size > 20) { const [old, url] = clips.entries().next().value; clips.delete(old); url.then(URL.revokeObjectURL, () => {}); }
+  }
+  return clips.get(text);
+}
+
+let current = null;
+/** Read `text` aloud; one speaker at a time. -> { done: Promise, stop(), pause(), resume(), level(): 0..1 loudness now }.
+ *  onStart fires when sound begins. */
+export function speak(text, { onStart } = {}) {
+  current?.stop();
+  let audio = null, utter = null, stopped = false, ctx = null, analyser = null, samples = null;
+  const browserVoice = () => new Promise((resolve) => {
+    if (!("speechSynthesis" in window)) { resolve(); return; }
+    utter = new SpeechSynthesisUtterance(text.slice(0, 6000)); utter.lang = lang();
+    utter.onstart = () => onStart?.(); utter.onend = utter.onerror = () => resolve();
+    speechSynthesis.cancel(); speechSynthesis.speak(utter);
+  });
+  const done = (async () => {
+    if (serverVoice) {
+      try {
+        const url = await preloadSpeech(text);
+        if (stopped) return;
+        audio = new Audio(url);
+        // loudness for the interviewer's lips. Only through a running audio graph: a suspended one (no click on the
+        // page yet) would play the clip silently, so then the audio element plays on its own
+        try {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          ctx = new AC();
+          await Promise.race([ctx.resume(), new Promise((r) => setTimeout(r, 300))]);
+          if (ctx.state === "running") {
+            analyser = ctx.createAnalyser(); analyser.fftSize = 512; samples = new Uint8Array(analyser.fftSize);
+            const source = ctx.createMediaElementSource(audio); source.connect(analyser); analyser.connect(ctx.destination);
+          } else { ctx.close().catch(() => {}); ctx = null; }
+        } catch { ctx = null; analyser = null; }
+        await new Promise((resolve, reject) => {
+          audio.onplaying = () => onStart?.(); audio.onended = resolve; audio.onerror = () => reject(new Error("playback failed"));
+          audio.play().catch(reject);
+        });
+        return;
+      } catch (e) {
+        if (stopped) return;
+        if (e instanceof ApiError && e.status === 503) serverVoice = false;  // no server voice: don't ask again
+      }
+    }
+    if (!stopped) await browserVoice();
+  })().finally(() => { ctx?.close().catch(() => {}); if (current === handle) current = null; });
+  const handle = {
+    done,
+    stop() { stopped = true; audio?.pause(); if (utter) speechSynthesis.cancel(); },
+    pause() { audio ? audio.pause() : speechSynthesis.pause(); },
+    resume() { audio ? audio.play().catch(() => {}) : speechSynthesis.resume(); },
+    level() {
+      const playing = audio ? !audio.paused : Boolean(utter && speechSynthesis.speaking);
+      if (!playing) return 0;
+      if (!analyser) return 0.3 + 0.25 * Math.abs(Math.sin(performance.now() / 85));  // no measurement: a speaking rhythm
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0; for (const s of samples) sum += ((s - 128) / 128) ** 2;
+      return Math.min(1, Math.sqrt(sum / samples.length) * 4);
+    },
+  };
+  current = handle;
+  return handle;
+}
+
+/** "Read aloud" for some text (a function, so it reads what is there when pressed). */
 export function readAloudButton(getText) {
-  if (!("speechSynthesis" in window)) return null;
+  if (typeof Audio === "undefined" && !("speechSynthesis" in window)) return null;
   const btn = h("button", { class: "btn ghost sm read-aloud", type: "button", "aria-pressed": "false" }, icon("volume"), "Read aloud");
+  let speaking = null;
+  const idle = () => { speaking = null; btn.setAttribute("aria-pressed", "false"); btn.lastChild.textContent = "Read aloud"; };
   btn.addEventListener("click", () => {
-    if (speechSynthesis.speaking) { speechSynthesis.cancel(); return; }
+    if (speaking) { speaking.stop(); idle(); return; }
     const text = (getText() || "").trim();
     if (!text) return;
-    const u = new SpeechSynthesisUtterance(text.slice(0, 6000));
-    u.lang = lang();
-    u.onstart = () => { btn.setAttribute("aria-pressed", "true"); btn.lastChild.textContent = "Stop reading"; };
-    u.onend = u.onerror = () => { btn.setAttribute("aria-pressed", "false"); btn.lastChild.textContent = "Read aloud"; };
-    speechSynthesis.cancel();
-    speechSynthesis.speak(u);
+    btn.setAttribute("aria-pressed", "true"); btn.lastChild.textContent = "Stop reading";
+    const me = speaking = speak(text);
+    me.done.finally(() => { if (speaking === me) idle(); });
   });
   return btn;
 }
