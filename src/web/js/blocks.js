@@ -250,7 +250,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     const content = h("div", { class: "phase-content" }, budget, activityList);
     return h("div", { class: "phase-row", "data-phase": p },
       h("span", { class: "phase-step", "aria-hidden": "true" }, phaseIndex + 1),
-      h("details", { class: "phase" }, phaseSummary, content));
+      h("details", { class: "phase", open: phaseIndex === 0 ? true : null }, phaseSummary, content));
   });
   const progressEl = h("div", { class: "plan-progress" });
   function drawProgress() {
@@ -271,8 +271,8 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     try { await api(`/api/plans/${planId}/progress`, { method: "POST", body: { item: key(a), done: value } }); }
     catch (e) { value ? done.delete(key(a)) : done.add(key(a)); box.checked = !value; box.closest(".act")?.classList.toggle("is-done", !value); drawProgress(); toast(e.message, "err"); }
   }
-  if (planId) drawProgress();
-  const planEl = h("div", { class: "plan" }, planId ? progressEl : null, phases,
+  drawProgress();
+  const planEl = h("div", { class: "plan" }, phases,
     h("p", { class: "note plan-cost" }, icon("check"), "Cost: free. Every linked resource is official documentation, vendor training or the ESCO skill page."));
   const sdgGuide = h("details", { class: "note sdg-guide" }, h("summary", {}, "How activities connect to the SDGs"),
     h("p", {}, "Goal tags on each activity show its connection: SDG 4 for learning, SDG 8 for decent work, and (when mapped) one additional goal matched to that skill. These are evidence-linked suggestions, not official UN classifications."));
@@ -313,6 +313,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
   return reveal(h("section", { class: "block plan-block", "aria-label": "30, 60, 90 day plan" },
     h("h3", {}, title),
     planId ? h("p", { class: "muted mono" }, `Plan ID: ${planReference || planId}`) : null,
+    progressEl,
     plan.deferred_skills?.length ? h("details", { class: "note deferred" },
       h("summary", {}, `${plan.deferred_skills.length} more skills don't fit in ${weeklyHours ? weeklyHours + " h/week" : "the weekly hours"}; the plan covers the highest-priority gaps first.`),
       h("p", {}, plan.deferred_skills.join(", "))) : null,

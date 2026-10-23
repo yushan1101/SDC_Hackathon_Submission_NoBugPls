@@ -3298,6 +3298,7 @@ body {
 @media (min-width: 768px) { [data-product="hr"] .review { grid-template-columns: 300px minmax(0, 1fr); } }
 .rv-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .rv-tabs [role="tab"] { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.review .plan-progress { position: sticky; top: 56px; z-index: 1; }
 .rv-tabs .rv-count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--rule); color: var(--ink-2); font: 600 11px/18px var(--font-mono); text-align: center; }
 .rv-sources { display: grid; gap: 6px; }
 
