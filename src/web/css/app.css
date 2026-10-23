@@ -1681,6 +1681,11 @@ details.more summary::-webkit-details-marker { display: none; }
 .radar-key { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; color: var(--ink-2); margin: 6px 0 0; }
 .radar-key .k-now::before, .radar-key .k-prev::before { content: ""; display: inline-block; width: 18px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid var(--accent); }
 .radar-key .k-prev::before { border-top: 1.5px dashed var(--ink-2); }
+.radar-key button { appearance: none; border: 0; padding: 0; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.radar-key button[aria-pressed="true"] { color: var(--ink); font-weight: 650; }
+.radar-key button:hover { text-decoration: underline; text-underline-offset: 3px; }
+.radar-key .k-now[aria-pressed="false"]::before { border-top: 1.5px dashed var(--ink-2); }
+.radar-key .k-prev[aria-pressed="true"]::before { border-top: 2px solid var(--accent); }
 .trend-changes h3 { display: flex; align-items: center; gap: 8px; font-size: 18px; margin: 0 0 8px; }
 .trend-changes ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 16px; }
 .board-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; }
