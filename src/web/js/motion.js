@@ -52,6 +52,11 @@ function enhance(root) {
   const all = (sel) => [...(root.matches?.(sel) ? [root] : []), ...root.querySelectorAll(sel)].filter(once);
   all(".home-hero, .intro-hero").forEach(hero);
   all(".lp").forEach(landing);
+  all(".today-title").forEach(todayHeading);
+  all(".board").forEach(board);
+  // "what changed since yesterday" fills in after the board (it needs the history), item by item
+  all(".trend-changes > *").forEach((el) => onView(el, { y: 16, opacity: 0, duration: 0.5, ease: EASE,
+    delay: Math.min([...el.parentElement.children].indexOf(el), 6) * 0.06 }));
   // groups of siblings come in with a short stagger
   all(CARDS).forEach((el) => onView(el, { y: 28, opacity: 0, duration: 0.6, ease: EASE,
     delay: Math.min([...el.parentElement.children].indexOf(el), 6) * 0.06 }));
@@ -59,13 +64,53 @@ function enhance(root) {
     scrollTrigger: ST ? { trigger: p.ownerSVGElement, start: "top 90%", once: true } : undefined }));
   all(".radar .rd-prev, .radar .rd-label").forEach((p) => gsap.from(p, { opacity: 0, duration: 0.6, delay: 0.5 }));
   all(".spark polyline, .zline polyline").forEach(drawLine);
-  all(".pp-bar i, .sb-track i").forEach((i) => onView(i, { width: 0, duration: 0.9, ease: "power2.out", clearProps: "" }));
+  all(".pp-bar i, .sb-track i, .rl-bar i").forEach((i) => onView(i, { width: 0, duration: 0.9, ease: "power2.out", clearProps: "" }));
   all(".tc-figure b, .stat b, .fit .num, .bc-figure b").forEach(countUp);
   all(".btn, .chip").forEach((b) => {  // press feedback (scales in place, so it never moves from under the pointer)
     b.addEventListener("pointerdown", () => gsap.to(b, { scale: 0.96, duration: 0.12, overwrite: true }));
     const up = () => gsap.to(b, { scale: 1, duration: 0.25, ease: "back.out(2)", overwrite: true, clearProps: "transform" });
     b.addEventListener("pointerup", up); b.addEventListener("pointerleave", up);
   });
+}
+
+// ---------------------------------------------------------------- AI trends: the board arrives like the landing page
+function todayHeading(h1) {
+  const tl = gsap.timeline({ defaults: { ease: EASE } });
+  tl.from(words(h1), { yPercent: 110, duration: 0.9, stagger: 0.07, ease: "power4.out" });
+  const lede = h1.nextElementSibling?.matches(".today-lede") ? h1.nextElementSibling : null;
+  if (lede) tl.from(lede, { y: 18, opacity: 0, duration: 0.6, clearProps: "transform,opacity" }, "-=0.55");
+}
+
+function board(b) {
+  const $$ = (sel) => [...b.querySelectorAll(sel)];
+  const pills = $$(".board-meta .meta-pill");
+  if (pills.length) gsap.from(pills, { y: 10, scale: 0.9, opacity: 0, duration: 0.5, stagger: 0.07, ease: "back.out(2)", clearProps: "transform,opacity" });
+  // section headings and their one-line explanations rise as each section comes up
+  $$(".board-head, .board-section > h2, .board-section > h3, .rl-why").filter(once).forEach((el) =>
+    onView(el, { y: 22, opacity: 0, duration: 0.6, ease: EASE }));
+  // topic cards come in by rows (one batch per scroll step, so a row lands together); each photo settles from a slow zoom
+  const cards = $$(".topic-card").filter(once);
+  if (cards.length) {
+    gsap.set(cards, { opacity: 0, y: 36 });
+    const show = (batch) => {
+      gsap.to(batch, { opacity: 1, y: 0, duration: 0.75, stagger: 0.09, ease: EASE, overwrite: true, clearProps: "transform,opacity" });
+      batch.forEach((card, i) => {
+        const img = card.querySelector(".tc-media img");
+        if (img) gsap.fromTo(img, { scale: 1.12, transition: "none" }, { scale: 1, duration: 1.4, delay: i * 0.09, ease: "power2.out",
+          clearProps: "transform,transition" });
+      });
+    };
+    if (ST) ST.batch(cards, { start: "top 92%", once: true, onEnter: show, interval: 0.12, batchMax: 6 });
+    else show(cards);
+    triggersAdded = true;
+  }
+  // the two role lists: rows slide in from their side
+  $$(".role-list").filter(once).forEach((list, i) => {
+    const rows = list.querySelectorAll(":scope > li");
+    if (rows.length) gsap.from(rows, { x: i % 2 ? 24 : -24, opacity: 0, duration: 0.5, stagger: 0.06, ease: EASE, clearProps: "transform,opacity",
+      scrollTrigger: ST ? { trigger: list, start: "top 88%", once: true } : undefined });
+  });
+  triggersAdded = true;
 }
 
 // ---------------------------------------------------------------- the guest landing page: one authored moment per section
