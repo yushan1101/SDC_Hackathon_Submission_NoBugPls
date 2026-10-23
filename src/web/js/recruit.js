@@ -223,18 +223,37 @@ export async function signalsView(main, status) {
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "AI trends"),
       h("span", { class: "muted", style: { "font-size": "14px" } }, "Updated daily")), host));
-  const draw = async () => host.replaceChildren(boardView(await api("/api/signals/today"), { onRefresh: refresh }));
-  async function refresh() {
-    const before = (await api("/api/signals/today")).created_utc;
-    await api("/api/signals/refresh", { method: "POST" });
-    status.set("searching", "Fetching today's signals");
-    toast("Fetching news, research and job-posting signals. This takes about a minute.");
-    for (let i = 0; i < 30; i++) {
-      await sleep(8000);
-      const b = await api("/api/signals/today");
-      if (b.created_utc && b.created_utc !== before) { status.set("update", `Board ${b.day} ready`); return draw(); }
+  async function draw() {
+    host.replaceChildren(h("p", { class: "muted", role: "status" }, "Loading AI trends…"));
+    try {
+      const board = await api("/api/signals/today");
+      host.replaceChildren(boardView(board, { onRefresh: refresh }));
+    } catch (error) {
+      host.replaceChildren(h("div", { class: "empty error", role: "alert" },
+        h("h2", {}, "AI trends could not be loaded"),
+        h("p", { class: "muted" }, error.message || "Check your connection and try again."),
+        h("button", { class: "btn primary", type: "button", onclick: draw }, "Retry")));
     }
-    status.set("confused", "Refresh is taking longer than expected");
+  }
+  async function refresh() {
+    try {
+      const before = (await api("/api/signals/today")).created_utc;
+      await api("/api/signals/refresh", { method: "POST" });
+      status.set("searching", "Fetching today's signals");
+      toast("Fetching news, research and job-posting signals. This takes about a minute.");
+      for (let i = 0; i < 30; i++) {
+        await sleep(8000);
+        const b = await api("/api/signals/today");
+        if (b.created_utc && b.created_utc !== before) { status.set("update", `Board ${b.day} ready`); return draw(); }
+      }
+      status.set("confused", "Refresh is taking longer than expected");
+    } catch (error) {
+      status.set("confused", "AI trends refresh failed");
+      host.replaceChildren(h("div", { class: "empty error", role: "alert" },
+        h("h2", {}, "AI trends could not be refreshed"),
+        h("p", { class: "muted" }, error.message || "Check your connection and try again."),
+        h("button", { class: "btn primary", type: "button", onclick: draw }, "Retry")));
+    }
   }
   await draw();
 }

@@ -8,11 +8,14 @@ import { openingsView, openingDetail, signalsView } from "./recruit.js";
 import { modelsView, peopleView, pluginsView } from "./org.js";
 import { agentView, hrCapsule } from "./agents.js";
 import { setVoice } from "./voice.js";
+import { accountView, pricingView } from "./account.js";
+import { termsView, privacyView } from "./legal.js";
 
 const app = $("#app");
 const AGENTS = ["supervisor", "profiler", "knowledge_search", "gap_analysis", "market_analyst", "pathway", "coach", "reviewer"];
 const HR_SIDEBAR_EXPANDED_KEY = "ap.hr.sidebar.expanded";
 const S = { me: null, meta: null, scenario: "assistive", status: null, rows: new Map(), needs: [], csv: null, plans: [], sel: null };
+let closeFloatingSidebarMenus = () => {};
 
 // ---------------------------------------------------------------- boot / sign in
 async function boot() {
@@ -39,14 +42,38 @@ function shell() {
   let sidebarExpanded = true;
   try { sidebarExpanded = localStorage.getItem(HR_SIDEBAR_EXPANDED_KEY) !== "false"; } catch { /* use the expanded default */ }
   let shellEl, sidebar, sidebarToggle;
+  let openMenu = null;
+  closeFloatingSidebarMenus = () => {
+    openMenu = null;
+    sidebar?.querySelectorAll(".rail-group").forEach((group) => {
+      group.classList.remove("open");
+      group.querySelector(".rail-group-btn")?.setAttribute("aria-expanded", "false");
+    });
+  };
   const link = (href, label, ic) => h("a", { href, "data-route": href, "aria-label": label, title: label }, icon(ic),
     h("span", { class: "lbl" }, label), h("span", { class: "tip", "aria-hidden": "true" }, label));
   // A folder of related links: click to open; in the icon-only rail it pops out to the side.
   const group = (label, ic, ...links) => {
     const el = h("div", { class: "rail-group" });
     const btn = h("button", { type: "button", class: "rail-group-btn", "aria-expanded": "false", "aria-label": label, title: label,
-      onclick: () => btn.setAttribute("aria-expanded", String(el.classList.toggle("open"))) },
+      onclick: () => {
+        if (sidebarExpanded) {
+          const expanded = !el.classList.contains("open");
+          el.classList.toggle("open", expanded);
+          btn.setAttribute("aria-expanded", String(expanded));
+          return;
+        }
+        if (openMenu === el) { closeFloatingSidebarMenus(); return; }
+        closeFloatingSidebarMenus();
+        openMenu = el;
+        el.classList.add("open");
+        btn.setAttribute("aria-expanded", "true");
+      } },
       icon(ic), h("span", { class: "lbl" }, label), h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
+    links.forEach((item) => item.addEventListener("click", () => {
+      if (sidebarExpanded) return;
+      closeFloatingSidebarMenus();
+    }));
     el.append(btn, h("div", { class: "rail-sub", role: "group", "aria-label": label }, ...links));
     return el;
   };
@@ -65,17 +92,19 @@ function shell() {
     h("a", { href: "#/people", onclick: () => more.hidePopover?.() }, icon("user"), "Team members"),
     h("a", { href: "#/models", onclick: () => more.hidePopover?.() }, icon("model"), "AI models"),
     h("a", { href: "#/signals", onclick: () => more.hidePopover?.() }, icon("pulse"), "AI trends"),
-    h("a", { href: "./#/account" }, icon("user"), "Plan & billing"),
+    h("a", { href: "#/account", "data-route": "#/account" }, icon("user"), "Plan & billing"),
     h("button", { type: "button", onclick: signOut }, icon("out"), "Sign out"));
   sidebarToggle = h("button", { class: "hr-sidebar-toggle", type: "button", "aria-expanded": String(sidebarExpanded),
     "aria-label": sidebarExpanded ? "Collapse sidebar" : "Expand sidebar", title: sidebarExpanded ? "Collapse sidebar" : "Expand sidebar",
     onclick: () => {
       sidebarExpanded = !sidebarExpanded;
+      closeFloatingSidebarMenus();
       try { localStorage.setItem(HR_SIDEBAR_EXPANDED_KEY, String(sidebarExpanded)); } catch { /* keep the preference for this page */ }
       updateSidebar();
     } }, icon("chevron"));
   const updateSidebar = () => {
     if (!shellEl) return;
+    S.sidebarExpanded = sidebarExpanded;
     shellEl.classList.toggle("is-sidebar-expanded", sidebarExpanded);
     shellEl.classList.toggle("is-sidebar-collapsed", !sidebarExpanded);
     sidebarToggle.setAttribute("aria-expanded", String(sidebarExpanded));
@@ -89,7 +118,7 @@ function shell() {
     h("div", { class: "hr-account-who" }, h("span", { class: "rv-avatar", "aria-hidden": "true" }, name.slice(0, 2).toUpperCase()),
       h("div", {}, h("b", {}, name), h("span", { class: "muted" }, "HR advisor"))),
     h("a", { href: "#/models", "data-route": "#/models", onclick: close }, icon("model"), "AI models"),
-    h("a", { href: "./#/account", onclick: close }, icon("user"), "Plan & billing"),
+    h("a", { href: "#/account", "data-route": "#/account", onclick: close }, icon("user"), "Plan & billing"),
     h("button", { type: "button", onclick: () => { close(); signOut(); } }, icon("out"), "Sign out"));
   const accountBtn = h("button", { type: "button", class: "rail-group-btn hr-account-btn", popovertarget: "hr-account", "aria-haspopup": "true", title: name },
     icon("user"), h("span", { class: "lbl" }, name), h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
@@ -116,6 +145,10 @@ function shell() {
         "aria-haspopup": "true", "aria-label": "More pages" }, icon("grid"), "More")),
     more, S.capsule = capsule());
   app.replaceChildren(shellEl);
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!sidebarExpanded && !(target instanceof Element && target.closest(".hr-rail .rail-group"))) closeFloatingSidebarMenus();
+  });
   updateSidebar();
   // the owl lives in the rail's logo spot; on phones (no rail) it moves back next to the status text
   S.logo.append(S.status.owl.el);
@@ -133,7 +166,7 @@ function capsule() {
       page("#/openings", "Hiring", "people", "openings jobs applicants"),
       page("#/plugins", "Hiring plugins", "plug", "linkedin post share"), page("#/people", "Team members", "user", "invite users"),
       page("#/models", "AI models", "model", "llm settings"), page("#/signals", "AI trends", "pulse", "signals news"),
-      page("./#/account", "Plan & billing", "user", "pricing subscription")],
+      page("#/account", "Plan & billing", "user", "pricing subscription")],
     actions: [{ label: "Analyse a team CSV", icon: "upload", words: "start new run import", run: () => { location.hash = "#/run"; } },
       { label: "Review the next pending plan", icon: "review", words: "approve open next", run: () => {
         const p = S.plans.find((x) => x.audience === "hr" && !x.review?.archived && x.review?.review_status === "pending");
@@ -156,10 +189,11 @@ async function refreshPlans() {
 }
 
 function route() {
+  closeFloatingSidebarMenus();
   const hash = location.hash || "#/overview";
   const [page = "overview", id, ...extra] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
   if (page === "plans") { location.replace(`#/review${id ? `/${id}` : ""}`); return; }  // the plans register is part of the review page now
-  const pages = new Set(["overview", "run", "review", "openings", "signals", "plugins", "people", "models", "agents"]);
+  const pages = new Set(["overview", "run", "review", "openings", "signals", "plugins", "people", "models", "agents", "account", "pricing", "privacy", "terms"]);
   if (!pages.has(page) || extra.length || (id && !["review", "openings", "plugins", "agents"].includes(page))) {
     location.replace("#/overview");
     return;
@@ -173,7 +207,9 @@ function route() {
   document.querySelectorAll(".rail-group").forEach((g) => {  // only the folder holding this page stays open
     const here = !!g.querySelector('[aria-current="page"]');
     g.classList.toggle("has-current", here);
-    g.classList.toggle("open", here); g.firstChild.setAttribute("aria-expanded", String(here));
+    const expanded = S.sidebarExpanded && here;
+    g.classList.toggle("open", expanded);
+    g.firstChild.setAttribute("aria-expanded", String(expanded));
   });
   document.querySelector(".hr-account-btn")?.classList.toggle("is-current", !!document.querySelector('#hr-account [aria-current="page"]'));
   S.capsule.hidden = page === "agents";  // the agent page is the same chat, full size
@@ -183,7 +219,10 @@ function route() {
   if (page !== "review" || !main.querySelector(".review")) main.scrollTop = 0;
   const views = { run: runView, review: () => reviewView(main, id),
     openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status),
-    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)) };
+    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)),
+    account: () => accountView(main, { refreshMe: async () => { S.me = await api("/api/me"); return S.me; }, hrLayout: true }),
+    pricing: () => pricingView(main, { me: S.me }),
+    terms: () => termsView(main, { hrLayout: true }), privacy: () => privacyView(main, { hrLayout: true }) };
   Promise.resolve((views[page] || overview)(main)).catch((e) => {
     main.replaceChildren(h("div", { class: "view" }, h("div", { class: "issue error", role: "alert" }, e.message)));
   });
@@ -311,7 +350,7 @@ function runView(main) {
     } catch (e) {
       S.status.set("confused", "Run failed");
       errors.replaceChildren(...(e.body?.errors || [e.message]).map((x) => h("li", {}, x)),
-        ...(e.status === 402 ? [h("li", {}, h("a", { class: "btn sm primary", href: "./#/pricing" }, "See the Team plan"))] : []));
+        ...(e.status === 402 ? [h("li", {}, h("a", { class: "btn sm primary", href: "#/pricing" }, "See the Team plan"))] : []));
     } finally { S.running = false; }
   }
 
@@ -348,7 +387,13 @@ async function reviewView(main, id) {
   const selected = new Set();
   const redraw = () => reviewView(main).catch((e) => toast(e.message, "err"));
   const navigate = () => { if (location.hash === "#/review") return redraw(); else location.hash = "#/review"; };
-  const search = h("input", { class: "input rv-search", type: "search", value: S.reviewSearch || "", placeholder: "Search people, roles or plan IDs", "aria-label": "Search reviews" });
+  const search = h("input", { class: "input rv-search", type: "search", value: S.reviewSearch || "", placeholder: "Search people, roles or plan IDs", "aria-label": "Search reviews",
+    onsearch: () => clearReviewSearch(search, S.reviewSearch, () => { S.reviewSearch = ""; navigate(); }),
+    oninput: () => {
+      // The browser's native search-field X clears the visible value and fires input/search.
+      // Clear the applied query too, while leaving the current status filter untouched.
+      clearReviewSearch(search, S.reviewSearch, () => { S.reviewSearch = ""; navigate(); });
+    } });
   const chips = h("div", { class: "rv-filters", role: "group", "aria-label": "Review status" },
     FILTERS.map(([k, l]) => h("button", { type: "button", class: "rv-chip", "aria-pressed": String(k === filter),
       onclick: () => { S.reviewFilter = k; navigate(); } }, l)));
@@ -406,6 +451,12 @@ const progressBar = (pr) => pr && pr.total ? h("span", { class: `rv-progress pac
 function reviewBadge(review) {
   const status = review.archived ? "archived" : review.review_status;
   return h("span", { class: `tag ${status}` }, status[0].toUpperCase() + status.slice(1));
+}
+
+function clearReviewSearch(input, appliedQuery, clear) {
+  if (input.value.trim() || !appliedQuery) return false;
+  clear();
+  return true;
 }
 
 function planStatusControl(main, plan, done) {
@@ -525,6 +576,7 @@ async function loadDetail(id, detail, wrap) {
   try { d = await api(`/api/plans/${id}`); } catch (e) { detail.replaceChildren(h("div", { class: "detail-body" }, h("div", { class: "issue error" }, e.message))); return; }
   if (!detail.isConnected) return;
   const r = d.report;
+  const scenario = d.plan?.scenario || r?.request?.scenario;
   const name = d.review.candidate_name || d.subject_id;
   const cite = (cid) => { show("evidence"); document.getElementById(`src-${cid}`)?.scrollIntoView({ block: "nearest" }); };
   const contact = [[d.review.candidate_email, "mail"], [d.review.candidate_phone, "user"]].filter(([v]) => v);
@@ -536,7 +588,10 @@ async function loadDetail(id, detail, wrap) {
         await reviewView($("#main"), id);
       } }),
     analysis: () => r ? [h("section", { class: "block" }, h("h3", {}, "Summary"), staticText(r.narrative, cite)),
-      r.gaps?.length ? gapsBlock(r.gaps) : null, r.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null,
+      r.gaps?.length ? gapsBlock(r.gaps) : null,
+      r.comparison?.length ? comparisonBlock(r.comparison, scenario) : scenario ? h("section", { class: "block" },
+        h("h3", {}, `${scenario === "agentic" ? "Agentic" : "Assistive"} AI comparison`),
+        h("p", { class: "muted" }, "No Assistive versus Agentic comparison was saved for this report.")) : null,
       r.outlook ? outlookBlock(r.outlook) : null, r.signals ? signalsBlock(r.signals) : null, r.sdgs?.length ? sdgBlock(r.sdgs) : null]
       : h("p", { class: "muted" }, "No analysis was saved for this plan."),
     notes: () => h("section", { class: "block" }, h("h3", {}, "Reviewer notes"), h("p", { class: "review-notes" }, d.review.reviewer_notes || "No notes yet."),
@@ -564,7 +619,7 @@ async function loadDetail(id, detail, wrap) {
       h("span", { class: "rv-avatar lg", "aria-hidden": "true" }, initials(name)),
       h("div", { class: "rv-person-main" },
         h("div", { class: "rv-person-name" }, h("h2", {}, name), reviewBadge(d.review), h("span", { class: `tag ${d.status}` }, d.status)),
-        h("p", { class: "muted" }, [d.subject_id, sentence(d.plan.target_role), d.plan_reference, `v${d.version}`].filter(Boolean).join(" · ")),
+        h("p", { class: "muted" }, [d.subject_id, sentence(d.plan.target_role), scenario ? `${scenario === "agentic" ? "Agentic" : "Assistive"} AI` : null, d.plan_reference, `v${d.version}`].filter(Boolean).join(" · ")),
         contact.length ? h("p", { class: "rv-contact" }, contact.map(([v, ic]) => h("span", {}, icon(ic), v))) : null),
       h("div", { class: "rv-person-actions" }, planStatusControl($("#main"), d, () => reviewView($("#main"), id)),
         reviewMenu($("#main"), id, d.review, () => editReview($("#main"), id, d.review, () => reviewView($("#main"), id), d.subject_id, d.plan_reference), () => {
