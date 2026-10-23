@@ -3329,3 +3329,24 @@ body {
 }
 .hr-shell:not(.admin-shell):not(.is-sidebar-collapsed) .hr-rail > a:not(.logo) { justify-content: flex-start; padding: 0 14px; }
 .hr-shell:not(.admin-shell):not(.is-sidebar-collapsed) .hr-rail .rail-sub a { justify-content: flex-start; padding: 0 14px 0 26px; }
+
+/* AI trends: the radar and its "what changed" list stack by the width the page actually has (the sidebar takes some). */
+.board-section { container: board / inline-size; }
+@container board (max-width: 860px) { .radar-row { grid-template-columns: minmax(0, 1fr); } }
+
+/* The person's menu pops up from their name at the foot of the HR rail. */
+.hr-rail .hr-account-btn .rail-caret { transform: rotate(180deg); }
+.hr-rail .hr-account-btn.is-current { color: var(--accent); }
+.hr-account-menu { position: fixed; inset: auto; margin: 0; width: 248px; padding: 8px; border: 1px solid var(--rule); border-radius: 18px;
+  background: var(--surface); color: var(--ink); box-shadow: 0 16px 40px oklch(0.25 0.04 262 / 0.18); }
+.hr-account-menu:popover-open { display: grid; gap: 2px; animation: rv-panel-in var(--t-fast) var(--ease-out); }
+.hr-account-who { display: flex; align-items: center; gap: 10px; padding: 8px 10px 12px; margin-bottom: 4px; border-bottom: 1px solid var(--rule); }
+.hr-account-who > div { display: grid; line-height: 1.3; min-width: 0; }
+.hr-account-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr-account-who .muted { font-size: 13px; }
+[data-product="hr"] .hr-rail .hr-account-menu :is(a, button) { display: flex; align-items: center; justify-content: flex-start; gap: 12px; width: 100%; height: 42px; padding: 0 12px; border: 0; border-radius: 12px;
+  background: none; color: var(--ink-2); font: 500 15px var(--font-ui); text-decoration: none; cursor: pointer; }
+[data-product="hr"] .hr-account-menu :is(a, button):hover, [data-product="hr"] .hr-account-menu :is(a, button):focus-visible { background: var(--sunken); color: var(--ink); }
+[data-product="hr"] .hr-account-menu a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
+.hr-account-menu svg { width: 20px; height: 20px; }
+@media (prefers-reduced-motion: reduce) { .hr-account-menu:popover-open { animation: none; } }

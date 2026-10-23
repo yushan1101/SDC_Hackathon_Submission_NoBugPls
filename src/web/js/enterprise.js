@@ -82,6 +82,22 @@ function shell() {
     sidebarToggle.setAttribute("aria-label", sidebarExpanded ? "Collapse sidebar" : "Expand sidebar");
     sidebarToggle.title = sidebarExpanded ? "Collapse sidebar" : "Expand sidebar";
   };
+  // The person's menu: a small window that pops up from their name at the foot of the rail.
+  const name = S.me.display_name || "Account";
+  const close = () => account.hidePopover?.();
+  const account = h("div", { id: "hr-account", class: "hr-account-menu", popover: "auto", "aria-label": "Account" },
+    h("div", { class: "hr-account-who" }, h("span", { class: "rv-avatar", "aria-hidden": "true" }, name.slice(0, 2).toUpperCase()),
+      h("div", {}, h("b", {}, name), h("span", { class: "muted" }, "HR advisor"))),
+    h("a", { href: "#/models", "data-route": "#/models", onclick: close }, icon("model"), "AI models"),
+    h("a", { href: "./#/account", onclick: close }, icon("user"), "Plan & billing"),
+    h("button", { type: "button", onclick: () => { close(); signOut(); } }, icon("out"), "Sign out"));
+  const accountBtn = h("button", { type: "button", class: "rail-group-btn hr-account-btn", popovertarget: "hr-account", "aria-haspopup": "true", title: name },
+    icon("user"), h("span", { class: "lbl" }, name), h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
+  account.addEventListener("beforetoggle", (e) => {  // pop up above the button, or beside it when the rail is icon-only
+    if (e.newState !== "open") return;
+    const r = accountBtn.getBoundingClientRect(), side = shellEl.classList.contains("is-sidebar-collapsed");
+    Object.assign(account.style, side ? { left: `${r.right + 10}px`, bottom: `${innerHeight - r.bottom}px` } : { left: `${r.left}px`, bottom: `${innerHeight - r.top + 8}px` });
+  });
   sidebar = h("nav", { class: "rail hr-rail", "aria-label": "Primary" },
       h("div", { class: "hr-rail-head" },
         h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }, S.logo = h("span", { class: "logo-owl" }), h("span", { class: "lbl wordmark" }, "AiversePulse")), sidebarToggle),
@@ -90,9 +106,7 @@ function shell() {
       group("Hiring", "job", link("#/openings", "Openings", "people"), link("#/plugins", "Hiring plugins", "plug")),
       link("#/signals", "AI trends", "pulse"),
       h("div", { style: { flex: 1 } }),
-      group(S.me.display_name || "Account", "user", link("#/models", "AI models", "model"),
-        h("a", { class: "hr-nav-link", href: "./#/account", "aria-label": "Plan & billing", title: "Plan & billing" }, icon("user"), h("span", { class: "lbl" }, "Plan & billing"), h("span", { class: "tip", "aria-hidden": "true" }, "Plan & billing")),
-        h("a", { class: "hr-nav-link", href: "#", "aria-label": "Sign out", title: "Sign out", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "lbl" }, "Sign out"), h("span", { class: "tip", "aria-hidden": "true" }, "Sign out"))));
+      accountBtn, account);
   shellEl = h("div", { class: "hr-shell" },
     sidebar,
     h("main", { id: "main", class: "hr-main", tabindex: "-1" }),
@@ -161,6 +175,7 @@ function route() {
     g.classList.toggle("has-current", here);
     g.classList.toggle("open", here); g.firstChild.setAttribute("aria-expanded", String(here));
   });
+  document.querySelector(".hr-account-btn")?.classList.toggle("is-current", !!document.querySelector('#hr-account [aria-current="page"]'));
   S.capsule.hidden = page === "agents";  // the agent page is the same chat, full size
   S.onScenarioChange = null;
   const main = $("#main");
