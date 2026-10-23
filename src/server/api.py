@@ -49,7 +49,7 @@ from validation.document_guard import fingerprint, fraud_signals, risk as doc_ri
 from governance.audit import connect
 from validation.revision import validate
 from interview import service as interview_service, store as interview_store
-from interview.schemas import InterviewAnswer, InterviewCreate, InterviewEnd, InterviewPause
+from interview.schemas import InterviewAnswer, InterviewCreate, InterviewEnd, InterviewPause, InterviewPrefetch
 
 log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
@@ -927,17 +927,51 @@ class AnalyzeIn(BaseModel):
 
 
 # --- individual mock interviews (isolated from the reskilling graph) -------------------------------------
+# The first question is written while the person reads the set-up page (prefetch), so Start doesn't wait on the
+# model. One prepared question per (person, recommendation, difficulty), used once, kept 15 minutes.
+_PREPARE = ThreadPoolExecutor(max_workers=4)
+_prepared: dict = {}
+_prepared_lock = threading.Lock()
+
+
+def _prepared_question(user: dict, recommendation: dict, difficulty: str, take: bool = False):
+    key = (user["employee_id"], recommendation["recommendation_id"], difficulty)
+    now = time.time()
+    with _prepared_lock:
+        for k in [k for k, (at, _) in _prepared.items() if now - at > 900]:
+            _prepared.pop(k)
+        at, job = _prepared.get(key) or (now, None)
+        if job is None:
+            job = _PREPARE.submit(_in_context(interview_service.prepare_create), recommendation["role_id"],
+                                  recommendation["profile"], difficulty)
+            _prepared[key] = (at, job)
+        if take:
+            _prepared.pop(key, None)
+    return job
+
+
+def _interview_recommendation(recommendation_id: str, user: dict) -> dict:
+    with DB_LOCK:
+        recommendation = interview_store.recommendation(db, recommendation_id, user["employee_id"])
+    if not recommendation:
+        raise HTTPException(404, "Career recommendation not found.")
+    if not resolve_occupation(recommendation["role_id"]):
+        raise HTTPException(404, "The recommended role is no longer available.")
+    return recommendation
+
+
+@app.post("/api/interviews/prefetch")
+def interview_prefetch(body: InterviewPrefetch, user: dict = Depends(paid_feature("employee", billing.FULL, "AI mock interviews"))):
+    _prepared_question(user, _interview_recommendation(body.recommendation_id, user), body.difficulty)
+    return {"ok": True}
+
+
 @app.post("/api/interviews")
 def interview_create(body: InterviewCreate, user: dict = Depends(paid_feature("employee", billing.FULL, "AI mock interviews"))):
     if not body.transcript_consent:
         raise HTTPException(422, "Consent is required to save interview answers and generate a personalized assessment.")
-    with DB_LOCK:
-        recommendation = interview_store.recommendation(db, body.recommendation_id, user["employee_id"])
-    if not recommendation:
-        raise HTTPException(404, "Career recommendation not found.")
+    recommendation = _interview_recommendation(body.recommendation_id, user)
     role_id, skills = recommendation["role_id"], recommendation["profile"]
-    if not resolve_occupation(role_id):
-        raise HTTPException(404, "The recommended role is no longer available.")
     if body.plan_id:
         with DB_LOCK:
             if not approval.can_act(db, body.plan_id, user):
@@ -946,7 +980,7 @@ def interview_create(body: InterviewCreate, user: dict = Depends(paid_feature("e
             if resolve_occupation(planned.get("target_role", "")) != role_id:
                 raise HTTPException(422, "Choose a learning plan for the same role.")
     try:
-        interview_id, context, question = interview_service.prepare_create(role_id, skills, body.difficulty)
+        interview_id, context, question = _prepared_question(user, recommendation, body.difficulty, take=True).result(timeout=90)
     except interview_service.InterviewError as e:
         raise HTTPException(e.status, e.message) from None
     with DB_LOCK, db:
@@ -991,7 +1025,32 @@ def interview_detail(interview_id: str, user: dict = Depends(need("employee"))):
             "created_utc": sess["created_utc"],
             "question_number": min(len(interview_service.STAGES), max(1, sess["stage_index"] + 1)),
             "is_follow_up": bool(active and active["parent_question_id"]),
-            "total_stages": len(interview_service.STAGES), "draft_answer": sess.get("draft_answer", "")}
+            "total_stages": len(interview_service.STAGES), "draft_answer": sess.get("draft_answer", ""),
+            "asr": bool(llm.stt_model())}  # answers by voice go to the server speech model (STT_MODEL, e.g. MiMo)
+
+
+@app.post("/api/interviews/{interview_id}/transcribe")
+async def interview_transcribe(interview_id: str, file: UploadFile = File(...), lang: str = Form(""),
+                               user: dict = Depends(need("employee"))):
+    """A spoken interview answer -> text, with the server speech model. The audio is not stored."""
+    with DB_LOCK:
+        sess = interview_store.session(db, interview_id, user["employee_id"])
+    if not sess or sess["status"] not in ("in_progress", "paused"):
+        raise HTTPException(404, "Interview not found.")
+    mime = (file.content_type or "").split(";")[0]
+    if mime not in AUDIO_TYPES:
+        raise HTTPException(415, "Unsupported audio format.")
+    audio = await file.read(10 * 1024 * 1024 + 1)
+    if len(audio) > 10 * 1024 * 1024:
+        raise HTTPException(413, "That answer is too long to transcribe at once: keep it under 5 minutes.")
+    if len(audio) < 800:
+        raise HTTPException(422, "Nothing was recorded. Check your microphone and try again.")
+    text, usage = await run_in_threadpool(llm.transcribe, audio, mime, lang[:10])
+    if usage:
+        _record_usage(user["username"], "interview-voice", usage)
+    if text is None:
+        raise HTTPException(503, "Transcription is unavailable right now. Please type your answer.")
+    return {"text": text[:4000]}
 
 
 @app.post("/api/interviews/{interview_id}/answer")
@@ -2515,7 +2574,8 @@ app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
 
 
 def _warm():
-    """Fast path first (MCP knowledge tools + role list), then the slow MiniLM load."""
+    """Fast path first (the model client, MCP knowledge tools, role list), then the slow MiniLM load."""
+    llm.warm()  # ~5 s of client start-up that would otherwise land on the first interview question
     try:
         for soc in ("2221.2", "7411.1", "2411.1", "2512.3"):
             role_requirements(soc)

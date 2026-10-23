@@ -1263,3 +1263,39 @@ def test_free_accounts_have_a_daily_agent_message_limit(client, monkeypatch):
         assert client.post("/api/agents/trends/chat", json=body, headers=H).status_code == 200
     r = client.post("/api/agents/trends/chat", json=body, headers=H)
     assert r.status_code == 402 and "Pro" in r.json()["detail"]
+
+
+def test_interview_first_question_is_prefetched_and_answers_use_server_asr(client, monkeypatch):
+    import server.api as api
+    login(client, "ana")
+    q = client.get("/api/quiz").json()
+    monkeypatch.setattr(api, "_matches", lambda *a, **k: [{"soc": "2221.2", "title": "Nurse responsible for general care"}])
+    rec = client.post("/api/quiz/score", json={"answers": {x["id"]: 2 for x in q["questions"]}}, headers=H).json()["matches"][0]["recommendation_id"]
+    calls = []
+    def prepare(role_id, skills, difficulty):
+        calls.append(difficulty)
+        return f"prefetched-{len(calls)}", {"title": "Nurse", "source": {"url": "https://example.test"}}, {
+            "question_id": f"q-{len(calls)}", "text": "Tell me about a shift.", "stage": "behavioral", "type": "behavioral",
+            "difficulty": difficulty, "target_skills": [], "source_refs": [], "criteria": []}
+    monkeypatch.setattr(api.interview_service, "prepare_create", prepare)
+    body = {"recommendation_id": rec, "difficulty": "advanced"}
+    assert client.post("/api/interviews/prefetch", json=body, headers=H).status_code == 200
+    assert client.post("/api/interviews/prefetch", json=body, headers=H).status_code == 200  # one job per difficulty
+    started = client.post("/api/interviews", json=body | {"transcript_consent": True}, headers=H)
+    assert started.status_code == 200 and started.json()["interview_id"] == "prefetched-1" and calls == ["advanced"]
+    iid = started.json()["interview_id"]
+    assert client.get(f"/api/interviews/{iid}").json()["asr"] is False  # no speech model: the browser recogniser
+    monkeypatch.setattr(api.llm, "stt_model", lambda: "openai:mimo-v2.6-flash")
+    assert client.get(f"/api/interviews/{iid}").json()["asr"] is True
+
+    heard = {}
+    def transcribe(audio, mime, lang):
+        heard.update(mime=mime, lang=lang, size=len(audio))
+        return "I escalated using SBAR.", {"ms": 1}
+    monkeypatch.setattr(api.llm, "transcribe", transcribe)
+    wav = ("answer.wav", b"RIFF" + b"\0" * 2000, "audio/wav")
+    r = client.post(f"/api/interviews/{iid}/transcribe", files={"file": wav}, data={"lang": "en-GB"}, headers=H)
+    assert r.status_code == 200 and r.json()["text"] == "I escalated using SBAR." and heard["lang"] == "en-GB"
+    assert client.post(f"/api/interviews/{iid}/transcribe", files={"file": ("a.txt", b"x" * 2000, "text/plain")}, headers=H).status_code == 415
+    login(client, "hr1")
+    assert client.post(f"/api/interviews/{iid}/transcribe", files={"file": wav}, headers=H).status_code == 403

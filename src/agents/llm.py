@@ -91,6 +91,22 @@ def _gemini_call(model: str, prompt: str, system: str, max_tokens: int, json: bo
     return r.text, um.prompt_token_count or 0, um.candidates_token_count or 0
 
 
+def warm():
+    """Import and connect the Gemini client ahead of the first request (the import alone takes seconds)."""
+    global _gemini
+    from config.settings import get_settings
+    s = get_settings()
+    if not providers()["gemini"]:
+        return
+    try:
+        from google import genai
+        from google.genai import types
+        _gemini = _gemini or genai.Client(api_key=s.gemini_api_key.get_secret_value(),
+                                          http_options=types.HttpOptions(timeout=int(s.llm_timeout_s * 1000)))
+    except Exception as e:
+        log.warning("model client warm-up failed: %s", type(e).__name__)
+
+
 def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None = None, json: bool = False,
              agent: str = "router"):
     """-> (text | None, usage dict). None means disabled or failed; callers must fall back."""
@@ -143,7 +159,10 @@ def transcribe(audio: bytes, mime: str, lang: str = ""):
                 raise ValueError(f"audio format {mime} not accepted by {name}")
             r = httpx.post(api_base(s.llm_base_url) + "/chat/completions", timeout=max(s.llm_timeout_s, 60),
                            headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"},
-                           json={"model": name, "temperature": 0, "max_tokens": 1200, "messages": [{"role": "user", "content": [
+                           # MiMo reasons by default and then returns the words as "reasoning"; transcription needs none
+                           json={"model": name, "temperature": 0, "max_tokens": 1200,
+                                 **({"thinking": {"type": "disabled"}} if "mimo" in name.lower() else {}),
+                                 "messages": [{"role": "user", "content": [
                                {"type": "text", "text": "Transcribe this audio exactly, in the language spoken. Reply with only the transcript."},
                                {"type": "input_audio", "input_audio": {"data": base64.b64encode(audio).decode(), "format": fmt}}]}]})
             r.raise_for_status()

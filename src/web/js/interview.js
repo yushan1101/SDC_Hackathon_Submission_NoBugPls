@@ -1,4 +1,5 @@
-import { api, h, icon, toast, fmtTime, ApiError } from "./lib.js";
+import { api, h, icon, toast, fmtTime, ApiError, upload } from "./lib.js";
+import { toWav } from "./voice.js";
 import { Owl } from "./owl.js";
 
 const LABELS = {
@@ -118,6 +119,11 @@ function renderLaunch(main, recommendation, plans) {
   const difficulty = h("select", { class: "input", "aria-label": "Interview difficulty" },
     h("option", { value: "foundational" }, "Foundational"), h("option", { value: "intermediate", selected: true }, "Intermediate"),
     h("option", { value: "advanced" }, "Advanced"));
+  // The agent starts writing the first question now, so Start opens the room almost at once.
+  const prepare = () => api("/api/interviews/prefetch", { method: "POST",
+    body: { recommendation_id: recommendation.recommendation_id, difficulty: difficulty.value } }).catch(() => {});
+  difficulty.addEventListener("change", prepare);
+  void prepare();
   const planOptions = [h("option", { value: "" }, "No plan selected"), ...plans
     .filter((x) => x.audience === "individual" && x.target_role === recommendation.role_id)
     .map((x) => h("option", { value: x.plan_id }, `${x.target_role || "Role plan"} · ${x.status} · ${fmtTime(x.created_utc)}`))];
@@ -216,8 +222,27 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   };
   const livePreview = h("p", { class: "interview-live-preview", "aria-live": "polite", hidden: true });
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const speechAvailable = Boolean(Speech);
-  const recognizer = speechAvailable ? new Speech() : null;
+  // Server ASR (the configured speech model, MiMo) whenever the interview offers it: the answer is recorded here and
+  // transcribed when you stop. The browser's own recogniser is only the fallback.
+  const asr = Boolean(detail.asr) && typeof MediaRecorder !== "undefined";
+  const speechAvailable = asr || Boolean(Speech);
+  const recognizer = Speech && !asr ? new Speech() : null;
+  let recorder = null, chunks = [];
+  const stopRecorder = () => new Promise((resolve) => {
+    if (!recorder || recorder.state === "inactive") { resolve(null); return; }
+    recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
+    recorder.stop();
+  });
+  const transcribe = async (blob) => {
+    if (!blob || blob.size < 2000) return;
+    const form = new FormData();
+    form.append("file", await toWav(blob), "answer.wav"); form.append("lang", languageSelect.value);
+    const { text } = await upload(`/api/interviews/${encodeURIComponent(sessionId)}/transcribe`, form);
+    const piece = (text || "").trim();
+    if (!piece) return;
+    recordedText = piece;
+    const base = transcript.value.trimEnd(); transcript.value = `${base}${base ? " " : ""}${piece}`.slice(0, 4000);
+  };
   if (recognizer) {
     recognizer.lang = languageSelect.value;
     recognizer.continuous = true;
@@ -311,8 +336,8 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       });
       if (recording && !muted && !interviewerSpeaking && !speechError) {
         // Touch the DOM only on a change; the throttled branch below tells the avatar.
-        const [state, message] = volume > 0.025 ? ["speaking", "Speaking detected · keep answering"]
-          : ["listening", speechAvailable ? "Listening · speak your answer" : "Listening · browser transcription unavailable; type your answer"];
+        const [state, message] = volume > 0.025 ? ["speaking", "Speaking"]
+          : ["listening", speechAvailable ? "Listening" : "Listening · no transcription here; type your answer"];
         if (voicePanel.dataset.state !== state || status.textContent !== message) setMicState(state, message, false);
       }
       // The avatar uses the same measured input as the visible microphone meter.
@@ -395,14 +420,19 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     finishPromise = (async () => {
       if (announce) setMicState("processing", "Transcribing your answer…");
       if (!fromRecognizer) await stopRecognition();
+      const audio = await stopRecorder(); recorder = null;
       recording = false; muted = false; pauseDuration();
       releaseAudio(); interimText = ""; livePreview.textContent = ""; livePreview.hidden = true;
+      if (audio) {
+        setMicState("processing", "Transcribing…");
+        try { await transcribe(audio); } catch (e) { speechError = e.message; }
+      }
       if (announce) {
         const hasAnswer = Boolean(transcript.value.trim());
         if (hasAnswer) setView("type");
         setMicState(hasAnswer ? "captured" : "error", hasAnswer
           ? "Captured · review, then send"
-          : speechAvailable ? "No speech was transcribed · check the language, retry, or type your answer"
+          : speechError || speechAvailable ? speechError || "No speech was transcribed · check the language, retry, or type your answer"
             : "Speech recognition is unavailable in this browser · type your answer instead");
       }
     })().finally(() => { finishPromise = null; updateControls(); });
@@ -455,8 +485,14 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
         analyser = audioContext.createAnalyser(); analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.75;
         audioSource = audioContext.createMediaStreamSource(micStream); audioSource.connect(analyser); watchAudio();
       }
+      if (asr) {
+        chunks = []; recorder = new MediaRecorder(micStream);
+        recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+        recorder.start(1000);
+      }
       starting = false; recording = true; muted = false; muteBtn.setAttribute("aria-pressed", "false"); muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration(); updateControls();
-      if (recognizer) {
+      if (asr) setMicState("listening", "Listening");
+      else if (recognizer) {
         if (speechError) setMicState("error", speechError);
         else if (recognitionActive) setMicState("listening", "Listening · speak your answer");
         else setMicState("processing", "Starting speech recognition…");
@@ -496,7 +532,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       if (recognizer && recording) {
         try { recognitionRequested = true; recognizer.start(); setMicState("listening", "Listening · speak your answer"); }
         catch { recognitionRequested = false; setMicState("error", "Could not resume speech recognition. Stop and retry, or type your answer."); }
-      } else setMicState("ready", "Microphone active · type your answer");
+      } else setMicState(asr ? "listening" : "ready", asr ? "Listening" : "Microphone active · type your answer");
     }
     updateControls();
   });
