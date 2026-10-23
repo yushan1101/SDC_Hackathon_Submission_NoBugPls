@@ -3288,3 +3288,10 @@ body {
 .hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-group:focus-within > .rail-sub { display: flex; }
 .hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-sub a { padding-left: 12px; }
 .hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail .rail-sub .lbl { display: inline; }
+
+/* HR review: sources and the audit trail live on the detail's tabs, so the page is two columns. */
+@media (min-width: 768px) { [data-product="hr"] .review { grid-template-columns: 300px minmax(0, 1fr); } }
+.rv-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.rv-tabs [role="tab"] { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.rv-tabs .rv-count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--rule); color: var(--ink-2); font: 600 11px/18px var(--font-mono); text-align: center; }
+.rv-sources { display: grid; gap: 6px; }

@@ -378,14 +378,13 @@ async function reviewView(main, id) {
       reviewMenu(main, p.plan_id, p.review, () => editReview(main, p.plan_id, p.review, navigate, p.subject_id, p.plan_reference), navigate)); })
       : h("div", { class: "empty" }, h("p", { class: "muted" }, "Nothing here yet.")));
   const detail = h("section", { class: "detail", "aria-label": "Plan detail" });
-  const aside = h("aside", { class: "aside", "aria-label": "Evidence and audit" });
-  const wrap = h("div", { class: "review", "data-pane": location.hash.split("/")[2] ? "detail" : "list" }, queue, detail, aside);
+  const wrap = h("div", { class: "review", "data-pane": location.hash.split("/")[2] ? "detail" : "list" }, queue, detail);
   // Keep the list's position when selecting a plan or returning from detail on phones.
   const previousQueue = main.querySelector(".queue");
   if (previousQueue?.getClientRects().length) S.reviewQueueScroll = previousQueue.scrollTop;
   main.replaceChildren(wrap);
   queue.scrollTop = S.reviewQueueScroll || 0;
-  if (id) loadDetail(id, detail, aside, wrap);
+  if (id) loadDetail(id, detail, wrap);
 }
 
 const FILTERS = [["active", "Active"], ["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["archived", "Archived"], ["all", "All"]];
@@ -514,17 +513,16 @@ function progressCard(pr) {
         h("span", { class: "num" }, `${ph.done}/${ph.total}`))))));
 }
 
-async function loadDetail(id, detail, aside, wrap) {
+async function loadDetail(id, detail, wrap) {
   detail.replaceChildren(h("div", { class: "detail-body" }, h("p", { class: "muted" }, "Loading…")));
   let d;
   try { d = await api(`/api/plans/${id}`); } catch (e) { detail.replaceChildren(h("div", { class: "detail-body" }, h("div", { class: "issue error" }, e.message))); return; }
   if (!detail.isConnected) return;
   const r = d.report;
   const name = d.review.candidate_name || d.subject_id;
-  const toggleAside = h("button", { class: "btn sm ev-toggle", type: "button", "aria-expanded": "false", onclick: (e) => { e.currentTarget.setAttribute("aria-expanded", String(aside.classList.toggle("open"))); } }, icon("sources"), "Evidence");
-  const cite = (cid) => { aside.classList.add("open"); document.getElementById(`src-${cid}`)?.scrollIntoView({ block: "nearest" }); };
+  const cite = (cid) => { show("evidence"); document.getElementById(`src-${cid}`)?.scrollIntoView({ block: "nearest" }); };
   const contact = [[d.review.candidate_email, "mail"], [d.review.candidate_phone, "user"]].filter(([v]) => v);
-  // Plan, the analysis behind it, and HR's notes sit on tabs instead of one long page.
+  // Plan, the analysis behind it, HR's notes, the sources and the audit trail sit on tabs instead of one long page.
   const panes = {
     plan: () => planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: d.report?.evidence,
       approverLabel: "I have reviewed this plan", title: "90-day plan", onChange: async (next) => {
@@ -537,11 +535,18 @@ async function loadDetail(id, detail, aside, wrap) {
       : h("p", { class: "muted" }, "No analysis was saved for this plan."),
     notes: () => h("section", { class: "block" }, h("h3", {}, "Reviewer notes"), h("p", { class: "review-notes" }, d.review.reviewer_notes || "No notes yet."),
       d.original_employee_id ? h("p", { class: "muted mono" }, `CSV ID ${d.original_employee_id}`) : null),
+    evidence: () => h("section", { class: "block rv-sources" }, h("h3", {}, "Sources"),
+      r?.evidence?.length ? r.evidence.map(sourceItem) : h("p", { class: "muted" }, "No sources available.")),
+    history: () => [h("section", { class: "block" }, h("h3", {}, "Audit trail ", h("span", { class: "muted" }, "UTC")), historyBlock(d.history)),
+      h("section", { class: "block" }, h("h3", {}, "HR review history"), d.review_history.length ? d.review_history.map((event) => h("details", {},
+        h("summary", {}, `${event.action} by ${event.actor} · ${fmtTime(event.at_utc)}`),
+        h("pre", { class: "review-notes" }, JSON.stringify({ before: event.before, after: event.after }, null, 2)))) : h("p", { class: "muted" }, "No review changes yet."))],
   };
   const paneHost = h("div", { class: "rv-pane" });
   const tabs = h("div", { class: "rv-tabs", role: "tablist", "aria-label": "Plan sections" },
-    [["plan", "Plan"], ["analysis", "Analysis"], ["notes", "Notes"]].map(([key, label]) => h("button", { type: "button", role: "tab", "data-tab": key,
-      "aria-selected": String(key === (S.reviewTab || "plan")), onclick: () => show(key) }, label)));
+    [["plan", "Plan"], ["analysis", "Analysis"], ["notes", "Notes"], ["evidence", "Evidence", r?.evidence?.length], ["history", "History"]].map(([key, label, n]) =>
+      h("button", { type: "button", role: "tab", "data-tab": key, "aria-selected": String(key === (S.reviewTab || "plan")), onclick: () => show(key) },
+        label, n ? h("span", { class: "rv-count" }, n) : null)));
   function show(key) {
     S.reviewTab = key;
     tabs.querySelectorAll("[role=tab]").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === key)));
@@ -555,7 +560,7 @@ async function loadDetail(id, detail, aside, wrap) {
         h("div", { class: "rv-person-name" }, h("h2", {}, name), reviewBadge(d.review), h("span", { class: `tag ${d.status}` }, d.status)),
         h("p", { class: "muted" }, [d.subject_id, sentence(d.plan.target_role), d.plan_reference, `v${d.version}`].filter(Boolean).join(" · ")),
         contact.length ? h("p", { class: "rv-contact" }, contact.map(([v, ic]) => h("span", {}, icon(ic), v))) : null),
-      h("div", { class: "rv-person-actions" }, toggleAside,
+      h("div", { class: "rv-person-actions" },
         reviewMenu($("#main"), id, d.review, () => editReview($("#main"), id, d.review, () => reviewView($("#main"), id), d.subject_id, d.plan_reference), () => {
           if (location.hash === "#/review") return reviewView($("#main"));
           location.hash = "#/review";
@@ -566,15 +571,6 @@ async function loadDetail(id, detail, aside, wrap) {
     tabs, paneHost);
   detail.replaceChildren(body);
   show(S.reviewTab || "plan");
-  aside.replaceChildren(
-    h("header", {}, h("span", {}, "Evidence"), h("span", { class: "num" }, r ? r.evidence.length : 0)),
-    h("section", {}, r ? r.evidence.map(sourceItem) : h("p", { class: "muted" }, "No sources available.")),
-    h("header", {}, h("span", {}, "Audit trail"), h("span", {}, "UTC")),
-    h("section", {}, historyBlock(d.history)),
-    h("header", {}, h("span", {}, "HR review history")),
-    h("section", {}, d.review_history.map((event) => h("details", {},
-      h("summary", {}, `${event.action} by ${event.actor} · ${fmtTime(event.at_utc)}`),
-      h("pre", { class: "review-notes" }, JSON.stringify({ before: event.before, after: event.after }, null, 2))))));
 }
 
 // ---------------------------------------------------------------- plans register
