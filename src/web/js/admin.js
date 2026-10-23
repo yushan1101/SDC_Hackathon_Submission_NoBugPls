@@ -10,6 +10,15 @@ const money = (cents, cur) => new Intl.NumberFormat(undefined, { style: "currenc
 const num = (n) => (n || 0).toLocaleString();
 const PLAN = { free: "Free", pro: "Pro", team: "Team", org: "Organisation" };
 const STATUS = { active: "active", pending_approval: "waiting for approval", pending_email: "email not verified", disabled: "disabled" };
+const SIDEBAR_EXPANDED_KEY = "ap.admin.sidebar.expanded";
+const LEGACY_SIDEBAR_PIN_KEY = "ap.admin.sidebar.pinned";
+
+function storedSidebarExpanded() {
+  try {
+    const saved = localStorage.getItem(SIDEBAR_EXPANDED_KEY) ?? localStorage.getItem(LEGACY_SIDEBAR_PIN_KEY);
+    return saved == null ? true : saved === "true";
+  } catch { return true; }
+}
 
 async function boot() {
   try { S.me = await api("/api/me"); } catch (e) {
@@ -23,22 +32,81 @@ async function boot() {
 }
 
 function shell() {
-  const link = (href, label, ic) => h("a", { href, "data-route": href, "aria-label": label, title: label }, icon(ic), h("span", { class: "lbl" }, label));
+  let sidebarExpanded = storedSidebarExpanded(), mobileOpen = false;
+  let shellEl, sidebar, sidebarToggle, mobileToggle, closeButton;
+  const isMobile = () => matchMedia("(max-width: 767px)").matches;
+  const link = (href, label, ic) => h("a", { class: "admin-nav-link", href, "data-route": href, "aria-label": label, title: label },
+    icon(ic), h("span", { class: "lbl" }, label), h("span", { class: "tip", "aria-hidden": "true" }, label));
+  const updateSidebar = () => {
+    if (!shellEl) return;
+    const small = isMobile();
+    shellEl.classList.toggle("is-sidebar-expanded", sidebarExpanded);
+    shellEl.classList.toggle("is-sidebar-collapsed", !sidebarExpanded);
+    shellEl.classList.toggle("is-mobile-nav-open", small && mobileOpen);
+    sidebarToggle.setAttribute("aria-expanded", String(sidebarExpanded));
+    sidebarToggle.setAttribute("aria-label", sidebarExpanded ? "Collapse sidebar" : "Expand sidebar");
+    sidebarToggle.title = sidebarExpanded ? "Collapse sidebar" : "Expand sidebar";
+    mobileToggle.setAttribute("aria-expanded", String(small && mobileOpen));
+    mobileToggle.setAttribute("aria-label", small && mobileOpen ? "Close navigation" : "Open navigation");
+    mobileToggle.title = small && mobileOpen ? "Close navigation" : "Open navigation";
+    mobileToggle.classList.toggle("is-open", small && mobileOpen);
+  };
+  const closeMobile = (restoreFocus = false) => {
+    mobileOpen = false; updateSidebar();
+    if (restoreFocus) mobileToggle.focus();
+  };
+  const brand = h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Admin home" },
+    new Owl({ size: 32, state: "idle" }).el, h("span", { class: "lbl wordmark" }, "Admin"));
+  sidebarToggle = h("button", { class: "admin-sidebar-toggle", type: "button", "aria-expanded": String(sidebarExpanded),
+    onclick: () => {
+      sidebarExpanded = !sidebarExpanded;
+      try { localStorage.setItem(SIDEBAR_EXPANDED_KEY, String(sidebarExpanded)); } catch { /* keep the preference for this page */ }
+      updateSidebar();
+    } }, icon("chevron"));
+  closeButton = h("button", { class: "admin-mobile-close", type: "button", "aria-label": "Close navigation", title: "Close navigation",
+    onclick: () => closeMobile(true) }, icon("close"));
+  mobileToggle = h("button", { class: "admin-menu-toggle", type: "button", "aria-controls": "admin-sidebar", "aria-expanded": "false",
+    onclick: () => {
+      mobileOpen = !mobileOpen; updateSidebar();
+      if (mobileOpen) sidebar.querySelector("a")?.focus();
+      else mobileToggle.focus();
+    } }, h("span", { class: "admin-menu-glyph", "aria-hidden": "true" }, h("i"), h("i"), h("i")));
+  sidebar = h("nav", { id: "admin-sidebar", class: "rail admin-rail", "aria-label": "Admin navigation",
+    onclick: (event) => { if (isMobile() && event.target.closest("a")) closeMobile(true); } },
+    h("div", { class: "admin-rail-head" }, brand, sidebarToggle, closeButton),
+    link("#/overview", "Overview", "grid"), link("#/accounts", "Accounts", "people"), link("#/usage", "Token use", "pulse"),
+    link("#/fraud", "Fraud monitoring", "flag"), link("#/payments", "Payments", "file"),
+    link("#/models", "AI models", "model"), link("#/sites", "Frontend sites", "globe"),
+    h("div", { class: "admin-rail-spacer" }),
+    h("a", { class: "admin-nav-link admin-signout", href: "#", "aria-label": "Sign out", title: "Sign out", onclick: (e) => { e.preventDefault(); signOut(); } },
+      icon("out"), h("span", { class: "lbl" }, "Sign out"), h("span", { class: "tip", "aria-hidden": "true" }, "Sign out")));
+  let wasMobile = isMobile();
+  addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && mobileOpen) { event.preventDefault(); closeMobile(true); }
+    if (event.key === "Tab" && mobileOpen) {
+      const focusable = [...sidebar.querySelectorAll('a[href], button:not([disabled])')].filter((el) => el.getClientRects().length);
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable.at(-1);
+      if (event.shiftKey && (document.activeElement === first || !sidebar.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || !sidebar.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+    }
+  });
+  addEventListener("resize", () => {
+    const nowMobile = isMobile();
+    if (nowMobile !== wasMobile) { mobileOpen = false; wasMobile = nowMobile; }
+    updateSidebar();
+  });
   const tab = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), label);
-  app.replaceChildren(h("div", { class: "hr-shell" },
-    h("nav", { class: "rail", "aria-label": "Primary" },
-      h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Admin home" }, new Owl({ size: 32, state: "idle" }).el, h("span", { class: "lbl wordmark" }, "Admin")),
-      link("#/overview", "Overview", "grid"), link("#/accounts", "Accounts", "people"), link("#/usage", "Token use", "pulse"),
-      link("#/fraud", "Fraud monitoring", "flag"), link("#/payments", "Payments", "file"),
-      link("#/models", "AI models", "model"), link("#/sites", "Frontend sites", "globe"),
-      h("div", { style: { flex: 1 } }),
-      h("a", { href: "#", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "lbl" }, "Sign out"))),
-    h("header", { class: "hr-top" }, S.crumb = h("div", { class: "crumb" }),
+  const scrim = h("button", { class: "admin-nav-scrim", type: "button", "aria-label": "Close navigation", onclick: () => closeMobile(true) });
+  shellEl = h("div", { class: "hr-shell admin-shell" }, sidebar, scrim,
+    h("header", { class: "hr-top admin-top" }, mobileToggle, S.crumb = h("div", { class: "crumb" }),
       h("div", { class: "who" }, h("div", {}, S.me.display_name || S.me.username), h("div", { class: "muted" }, "Administrator"))),
     h("main", { id: "main", class: "hr-main", tabindex: "-1" }),
     h("nav", { class: "hr-tabbar", "aria-label": "Primary" }, tab("#/overview", "Overview", "grid"), tab("#/accounts", "Accounts", "people"),
       tab("#/usage", "Tokens", "pulse"), tab("#/fraud", "Fraud", "flag"), tab("#/payments", "Payments", "file"),
-      tab("#/models", "Models", "model"), tab("#/sites", "Sites", "globe"))));
+      tab("#/models", "Models", "model"), tab("#/sites", "Sites", "globe")));
+  app.replaceChildren(shellEl);
+  updateSidebar();
 }
 
 async function signOut() { await api("/api/logout", { method: "POST" }).catch(() => {}); location.replace("./"); }
