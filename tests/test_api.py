@@ -1348,3 +1348,23 @@ def test_interview_order_shuffles_after_the_warm_up_and_next_questions_follow_it
     _, nq, index, done = service.evaluate_and_choose(sess, current, "My answer.", [])
     assert seen["next_stage"] == "workplace_scenario" and nq["stage"] == "workplace_scenario" and index == 1 and not done
     assert seen["suggested_focus_for_next_question"] and any("reaction" in r for r in seen["rules"])
+
+
+def test_hr_sees_the_employees_plan_progress(client):
+    import server.api as api
+    from governance import approval
+    acts = [{"day_range": d, "skill_id": s, "activity": "x", "estimated_hours": 2} for d, s in
+            [("1-30", "sql"), ("1-30", "excel"), ("31-60", "python"), ("61-90", "statistics")]]
+    with api.DB_LOCK:
+        pid = approval.create(api.db, {"status": "draft", "target_role": "2511.1", "activities": acts}, "PROG-1", "hr")
+        api.db.execute("UPDATE plans SET created_utc=? WHERE plan_id=?",
+                       ((api.datetime.now(api.timezone.utc) - api.timedelta(days=45)).isoformat(), pid))
+        for item in ("1-30:sql", "1-30:excel", "31-60:python"):
+            api.db.execute("INSERT INTO plan_progress VALUES(?,?,?)", (pid, item, "2026-10-01T09:00:00Z"))
+        api.db.commit()
+    login(client, "hr1")
+    summary = client.get(f"/api/plans/{pid}").json()["progress_summary"]
+    assert summary["done"] == 3 and summary["total"] == 4 and summary["pct"] == 75 and summary["pace"] == "ahead"
+    assert summary["phases"][0] == {"days": "1-30", "done": 2, "total": 2} and summary["last_utc"] == "2026-10-01T09:00:00Z"
+    row = next(p for p in client.get("/api/reviews?status=all").json() if p["plan_id"] == pid)
+    assert row["progress"]["pct"] == 75

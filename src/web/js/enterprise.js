@@ -328,29 +328,39 @@ async function reviewView(main, id) {
   const selected = new Set();
   const redraw = () => reviewView(main).catch((e) => toast(e.message, "err"));
   const navigate = () => { if (location.hash === "#/review") return redraw(); else location.hash = "#/review"; };
-  const search = h("input", { class: "input", type: "search", value: S.reviewSearch || "", placeholder: "Search employees or roles", "aria-label": "Search reviews" });
-  const seg = h("select", { class: "input", "aria-label": "Review status", onchange: (e) => { S.reviewFilter = e.target.value; navigate(); } },
-    [["active", "All active"], ["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["archived", "Archived"], ["all", "All including archived"]].map(([k, l]) => h("option", { value: k, selected: k === filter }, l)));
-  const count = h("span", { role: "status" }, "0 selected");
+  const search = h("input", { class: "input rv-search", type: "search", value: S.reviewSearch || "", placeholder: "Search people or roles", "aria-label": "Search reviews" });
+  const chips = h("div", { class: "rv-filters", role: "group", "aria-label": "Review status" },
+    FILTERS.map(([k, l]) => h("button", { type: "button", class: "rv-chip", "aria-pressed": String(k === filter),
+      onclick: () => { S.reviewFilter = k; navigate(); } }, l)));
+  // bulk actions appear only once something is selected
+  const count = h("b", { role: "status" }, "0");
   const boxes = [];
   const bulkButtons = ["archive", "restore", "delete"].map((action) => h("button", { class: "btn sm", disabled: true,
     onclick: () => reviewAction(main, [...selected], action, navigate) }, action[0].toUpperCase() + action.slice(1)));
-  function selection() { count.textContent = `${selected.size} selected`; bulkButtons.forEach((b) => b.disabled = !selected.size || selected.size > 50); }
-  const all = h("input", { type: "checkbox", "aria-label": "Select visible reviews", onchange: (e) => { boxes.forEach(([box, pid]) => { box.checked = e.target.checked; if (box.checked) selected.add(pid); else selected.delete(pid); }); selection(); } });
+  const bulk = h("div", { class: "rv-bulk", hidden: true }, count, " selected", ...bulkButtons);
+  function selection() {
+    count.textContent = String(selected.size); bulk.hidden = !selected.size;
+    bulkButtons.forEach((b) => b.disabled = !selected.size || selected.size > 50);
+  }
+  const all = h("input", { type: "checkbox", "aria-label": "Select all shown", title: "Select all shown", onchange: (e) => { boxes.forEach(([box, pid]) => { box.checked = e.target.checked; if (box.checked) selected.add(pid); else selected.delete(pid); }); selection(); } });
   const queue = h("nav", { class: "queue", "aria-label": "Review queue" },
-    h("header", {}, h("span", {}, `${shown.length} plans`), h("span", { class: "mono hide-sm" }, "J / K")),
-    h("form", { class: "review-tools", onsubmit: (e) => { e.preventDefault(); S.reviewSearch = search.value; navigate(); } }, search, h("button", { class: "btn sm", type: "submit" }, "Search"), seg),
-    h("div", { class: "review-tools" }, h("label", {}, all, " Select visible"), count, ...bulkButtons, h("small", { class: "muted" }, "Up to 50 per action")),
+    h("header", { class: "rv-head" }, h("label", { class: "rv-all" }, all), h("strong", {}, "Reviews"), h("span", { class: "rv-count" }, String(shown.length)),
+      h("kbd", { class: "hide-sm", title: "Move through the list with J and K" }, "J / K")),
+    h("form", { class: "rv-tools", role: "search", onsubmit: (e) => { e.preventDefault(); S.reviewSearch = search.value; navigate(); } }, search),
+    chips, bulk,
     shown.length ? shown.map((p) => {
-      const box = h("input", { type: "checkbox", "aria-label": `Select ${p.review.candidate_name || p.subject_id}`, onchange: () => { if (box.checked) selected.add(p.plan_id); else selected.delete(p.plan_id); all.checked = selected.size === shown.length; all.indeterminate = selected.size > 0 && selected.size < shown.length; selection(); } });
+      const name = p.review.candidate_name || p.subject_id;
+      const box = h("input", { type: "checkbox", class: "rv-check", "aria-label": `Select ${name}`, onchange: () => { if (box.checked) selected.add(p.plan_id); else selected.delete(p.plan_id); all.checked = selected.size === shown.length; all.indeterminate = selected.size > 0 && selected.size < shown.length; selection(); } });
       boxes.push([box, p.plan_id]);
       return h("div", { class: "review-entry" }, box, h("button", { class: "queue-item", "aria-current": String(p.plan_id === id),
       onclick: () => { location.hash = `#/review/${p.plan_id}`; } },
-      h("span", { class: "l1" }, h("span", { class: "id" }, p.review.candidate_name || p.subject_id), reviewBadge(p.review)),
-      h("span", { class: "l2" }, `${p.subject_id} · ${p.target_role} · v${p.version}`),
-      h("span", { class: "l2 mono" }, `Plan ID: ${p.plan_reference || p.plan_id}`)),
+      h("span", { class: "rv-avatar", "aria-hidden": "true" }, initials(name)),
+      h("span", { class: "rv-main" },
+        h("span", { class: "l1" }, h("span", { class: "id" }, name), reviewBadge(p.review)),
+        h("span", { class: "l2" }, p.review.candidate_name ? `${p.subject_id} · ${sentence(p.target_role)}` : sentence(p.target_role)),
+        progressBar(p.progress))),
       reviewMenu(main, p.plan_id, p.review, () => editReview(main, p.plan_id, p.review, navigate, p.subject_id, p.plan_reference), navigate)); })
-      : h("div", { class: "empty" }, h("p", { class: "muted" }, "No reviews match this search and status.")));
+      : h("div", { class: "empty" }, h("p", { class: "muted" }, "Nothing here yet.")));
   const detail = h("section", { class: "detail", "aria-label": "Plan detail" });
   const aside = h("aside", { class: "aside", "aria-label": "Evidence and audit" });
   const wrap = h("div", { class: "review", "data-pane": location.hash.split("/")[2] ? "detail" : "list" }, queue, detail, aside);
@@ -361,6 +371,16 @@ async function reviewView(main, id) {
   queue.scrollTop = S.reviewQueueScroll || 0;
   if (id) loadDetail(id, detail, aside, wrap);
 }
+
+const FILTERS = [["active", "Active"], ["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["archived", "Archived"], ["all", "All"]];
+const PACE = { done: ["Completed", "ok"], ahead: ["Ahead", "ok"], on_track: ["On track", "ok"], behind: ["Behind", "warn"], not_started: ["Not started", "idle"] };
+// a person's initials; a pseudonymous ID (E-010) shows its last two characters instead
+const initials = (name) => /\d/.test(name || "") && !/\s/.test(name) ? String(name).replace(/[^A-Za-z0-9]/g, "").slice(-2).toUpperCase()
+  : (name || "?").split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?";
+const sentence = (text) => (text ? text[0].toUpperCase() + text.slice(1) : "");
+/** A thin progress bar with its percentage: how much of the 90-day plan the employee has ticked off. */
+const progressBar = (pr) => pr && pr.total ? h("span", { class: `rv-progress pace-${pr.pace}`, title: `${pr.done} of ${pr.total} steps · ${PACE[pr.pace]?.[0] || ""}` },
+  h("i", { style: { width: `${pr.pct}%` } }), h("b", {}, `${pr.pct}%`)) : null;
 
 function reviewBadge(review) {
   const status = review.archived ? "archived" : review.review_status;
@@ -458,38 +478,78 @@ function editReview(main, pid, review, done, employeeId, planReference) {
   dialog.append(form); dialog.showModal();
 }
 
+const ago = (utc) => {
+  if (!utc) return "never";
+  const days = Math.floor((Date.now() - new Date(utc).getTime()) / 864e5);
+  return days <= 0 ? "today" : days === 1 ? "yesterday" : days < 30 ? `${days} days ago` : fmtTime(utc);
+};
+
+/** The employee's progress through their plan, for HR: a ring, pace, last activity and each 30-day phase. */
+function progressCard(pr) {
+  if (!pr?.total) return null;
+  const [paceLabel, paceTone] = PACE[pr.pace] || ["", "idle"];
+  return h("section", { class: "rv-card rv-progress-card", "aria-label": "Employee progress" },
+    h("div", { class: "rv-ring", style: { "--p": pr.pct }, role: "img", "aria-label": `${pr.pct}% of the plan done` }, h("b", {}, `${pr.pct}%`)),
+    h("div", { class: "rv-progress-facts" },
+      h("div", { class: "rv-progress-top" }, h("strong", {}, `${pr.done} of ${pr.total} steps done`), h("span", { class: `rv-pace ${paceTone}` }, paceLabel)),
+      h("p", { class: "muted" }, `Day ${pr.day} of 90 · expected ${pr.expected_pct}% by now · last activity ${ago(pr.last_utc)}`),
+      h("ol", { class: "rv-phases" }, pr.phases.map((ph) => h("li", {},
+        h("span", {}, `Days ${ph.days}`), h("span", { class: "rv-phase-bar" }, h("i", { style: { width: `${ph.total ? (100 * ph.done) / ph.total : 0}%` } })),
+        h("span", { class: "num" }, `${ph.done}/${ph.total}`))))));
+}
+
 async function loadDetail(id, detail, aside, wrap) {
   detail.replaceChildren(h("div", { class: "detail-body" }, h("p", { class: "muted" }, "Loading…")));
   let d;
   try { d = await api(`/api/plans/${id}`); } catch (e) { detail.replaceChildren(h("div", { class: "detail-body" }, h("div", { class: "issue error" }, e.message))); return; }
   if (!detail.isConnected) return;
   const r = d.report;
+  const name = d.review.candidate_name || d.subject_id;
   const toggleAside = h("button", { class: "btn sm ev-toggle", type: "button", "aria-expanded": "false", onclick: (e) => { e.currentTarget.setAttribute("aria-expanded", String(aside.classList.toggle("open"))); } }, icon("sources"), "Evidence");
-  const body = h("div", { class: "detail-body" },
-    h("a", { class: "btn ghost sm back", href: "#/review" }, icon("back"), "Queue"),
-    h("section", { class: "block" }, h("div", { class: "detail-head" }, h("h2", {}, d.review.candidate_name || d.subject_id), d.original_employee_id ? h("span", { class: "muted mono" }, `CSV ID ${d.original_employee_id}`) : null, reviewBadge(d.review),
-      reviewMenu($("#main"), id, d.review, () => editReview($("#main"), id, d.review, () => reviewView($("#main"), id), d.subject_id, d.plan_reference), () => {
-        if (location.hash === "#/review") return reviewView($("#main"));
-        location.hash = "#/review";
-      })),
-      h("p", { class: "muted" }, [d.review.candidate_email, d.review.candidate_phone].filter(Boolean).join(" · ")),
-      h("p", { class: "review-notes" }, d.review.reviewer_notes || "No reviewer notes yet.")),
-    h("div", { class: "detail-head" }, h("h2", {}, h("span", { class: "id" }, d.subject_id), " / ", d.plan.target_role),
-      h("span", { class: `tag ${d.status}` }, d.status), h("span", { class: "num muted" }, `v${d.version}`), h("span", { style: { flex: 1 } }), toggleAside),
-    d.status === "flagged" ? h("div", { class: "banner flag", role: "alert" }, h("strong", {}, "Flagged."), h("span", {}, "Fix the issues below and save a new draft before approval.")) : null,
-    r ? h("section", { class: "block" }, h("h3", {}, "Summary"), staticText(r.narrative, (cid) => { aside.classList.add("open"); document.getElementById(`src-${cid}`)?.scrollIntoView({ block: "nearest" }); })) : h("p", { class: "muted" }, "The full analysis isn't available for this plan. The plan and audit trail below are complete."),
-    r?.issues?.filter((i) => i.severity === "error").map((i) => h("div", { class: "issue error" }, i.message)),
-    r?.gaps?.length ? gapsBlock(r.gaps) : null,
-    r?.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null,
-    r?.outlook ? outlookBlock(r.outlook) : null,
-    r?.signals ? signalsBlock(r.signals) : null,
-    r?.sdgs?.length ? sdgBlock(r.sdgs) : null,
-    planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: d.report?.evidence,
+  const cite = (cid) => { aside.classList.add("open"); document.getElementById(`src-${cid}`)?.scrollIntoView({ block: "nearest" }); };
+  const contact = [[d.review.candidate_email, "mail"], [d.review.candidate_phone, "user"]].filter(([v]) => v);
+  // Plan, the analysis behind it, and HR's notes sit on tabs instead of one long page.
+  const panes = {
+    plan: () => planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: d.report?.evidence,
       approverLabel: "I have reviewed this plan", title: "90-day plan", onChange: async (next) => {
         if (next === "approved") S.status.set("celebrating", `${d.subject_id} approved`);
         await reviewView($("#main"), id);
-      } }));
+      } }),
+    analysis: () => r ? [h("section", { class: "block" }, h("h3", {}, "Summary"), staticText(r.narrative, cite)),
+      r.gaps?.length ? gapsBlock(r.gaps) : null, r.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null,
+      r.outlook ? outlookBlock(r.outlook) : null, r.signals ? signalsBlock(r.signals) : null, r.sdgs?.length ? sdgBlock(r.sdgs) : null]
+      : h("p", { class: "muted" }, "No analysis was saved for this plan."),
+    notes: () => h("section", { class: "block" }, h("h3", {}, "Reviewer notes"), h("p", { class: "review-notes" }, d.review.reviewer_notes || "No notes yet."),
+      d.original_employee_id ? h("p", { class: "muted mono" }, `CSV ID ${d.original_employee_id}`) : null),
+  };
+  const paneHost = h("div", { class: "rv-pane" });
+  const tabs = h("div", { class: "rv-tabs", role: "tablist", "aria-label": "Plan sections" },
+    [["plan", "Plan"], ["analysis", "Analysis"], ["notes", "Notes"]].map(([key, label]) => h("button", { type: "button", role: "tab", "data-tab": key,
+      "aria-selected": String(key === (S.reviewTab || "plan")), onclick: () => show(key) }, label)));
+  function show(key) {
+    S.reviewTab = key;
+    tabs.querySelectorAll("[role=tab]").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === key)));
+    paneHost.replaceChildren(...[panes[key]()].flat().filter(Boolean));
+  }
+  const body = h("div", { class: "detail-body" },
+    h("a", { class: "btn ghost sm back", href: "#/review" }, icon("back"), "Queue"),
+    h("header", { class: "rv-card rv-person" },
+      h("span", { class: "rv-avatar lg", "aria-hidden": "true" }, initials(name)),
+      h("div", { class: "rv-person-main" },
+        h("div", { class: "rv-person-name" }, h("h2", {}, name), reviewBadge(d.review), h("span", { class: `tag ${d.status}` }, d.status)),
+        h("p", { class: "muted" }, [d.subject_id, sentence(d.plan.target_role), d.plan_reference, `v${d.version}`].filter(Boolean).join(" · ")),
+        contact.length ? h("p", { class: "rv-contact" }, contact.map(([v, ic]) => h("span", {}, icon(ic), v))) : null),
+      h("div", { class: "rv-person-actions" }, toggleAside,
+        reviewMenu($("#main"), id, d.review, () => editReview($("#main"), id, d.review, () => reviewView($("#main"), id), d.subject_id, d.plan_reference), () => {
+          if (location.hash === "#/review") return reviewView($("#main"));
+          location.hash = "#/review";
+        }))),
+    d.status === "flagged" ? h("div", { class: "banner flag", role: "alert" }, h("strong", {}, "Flagged."), h("span", {}, "Fix the issues and save a new draft before approval.")) : null,
+    r?.issues?.filter((i) => i.severity === "error").map((i) => h("div", { class: "issue error" }, i.message)),
+    progressCard(d.progress_summary),
+    tabs, paneHost);
   detail.replaceChildren(body);
+  show(S.reviewTab || "plan");
   aside.replaceChildren(
     h("header", {}, h("span", {}, "Evidence"), h("span", { class: "num" }, r ? r.evidence.length : 0)),
     h("section", {}, r ? r.evidence.map(sourceItem) : h("p", { class: "muted" }, "No sources available.")),

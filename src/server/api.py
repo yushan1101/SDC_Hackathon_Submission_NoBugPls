@@ -1295,7 +1295,10 @@ def review_list(q: str = "", status: str = "active", user: dict = Depends(need("
         raise HTTPException(422, "Invalid review status")
     term = q.strip().casefold()
     with DB_LOCK:
-        rows = [p | {"review": reviews.get(db, p["plan_id"])} for p in approval.list_plans(db, user)]
+        rows = [p | {"review": reviews.get(db, p["plan_id"]), "progress": _progress_summary(
+                    (approval.latest(db, p["plan_id"]) or {}).get("plan") or {},
+                    db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (p["plan_id"],)).fetchall(),
+                    p["created_utc"])} for p in approval.list_plans(db, user)]
     return [p for p in rows if (status == "all" or (p["review"]["archived"] if status == "archived" else
             not p["review"]["archived"] and (status == "active" or p["review"]["review_status"] == status)))
             and (not term or term in " ".join(str(x or "") for x in (
@@ -1378,6 +1381,26 @@ def sdgs(request: HttpRequest):
     return {"goals": goals, "mine": {str(k): sorted(set(v)) for k, v in count.items()}}
 
 
+def _progress_summary(plan: dict, done_rows, created_utc: str) -> dict:
+    """How far the employee has got with their 90-day plan: steps done (the boxes they tick), by phase, last activity,
+    and the pace against how far into the 90 days they are."""
+    acts = plan.get("activities", [])
+    keys = {f"{a.get('day_range')}:{a.get('skill_id')}" for a in acts}
+    done = {item: at for item, at in done_rows if item in keys}
+    total, n = len(keys), len(done)
+    phases = [{"days": d, "done": sum(f"{d}:{a.get('skill_id')}" in done for a in acts if a.get("day_range") == d),
+               "total": sum(a.get("day_range") == d for a in acts)} for d in dict.fromkeys(a.get("day_range") for a in acts)]
+    try:
+        elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(created_utc.replace("Z", "+00:00"))).days
+    except (AttributeError, ValueError):
+        elapsed = 0
+    share, expected = (n / total if total else 0), min(1.0, max(0, elapsed) / 90)
+    pace = ("done" if total and n == total else "not_started" if n == 0 else
+            "ahead" if share >= expected + 0.1 else "behind" if share < expected - 0.15 else "on_track")
+    return {"done": n, "total": total, "pct": round(100 * share), "phases": phases, "last_utc": max(done.values(), default=None),
+            "day": min(90, max(0, elapsed) + 1), "expected_pct": round(100 * expected), "pace": pace}
+
+
 @app.get("/api/plans/{pid}")
 def plan(pid: str, user: dict = Depends(current_user)):
     _guard(pid, user)
@@ -1386,13 +1409,15 @@ def plan(pid: str, user: dict = Depends(current_user)):
         audience = db.execute("SELECT audience, subject_id FROM plans WHERE plan_id=?", (pid,)).fetchone()
     with DB_LOCK:
         saved = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
-        done = [r[0] for r in db.execute("SELECT item FROM plan_progress WHERE plan_id=?", (pid,))]
+        done_rows = db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (pid,)).fetchall()
+        done = [r[0] for r in done_rows]
+        created = db.execute("SELECT created_utc FROM plans WHERE plan_id=?", (pid,)).fetchone()[0]
         review = {"review": reviews.get(db, pid), "review_history": reviews.history(db, pid),
                   "original_employee_id": (db.execute("SELECT original_id FROM plan_original_ids WHERE plan_id=?", (pid,))
                                            .fetchone() or [None])[0]} if user["role"] == "hr_advisor" else {}
     report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else None
     return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], **cur, "history": hist, "report": report,
-            "progress": done, **review}
+            "progress": done, "progress_summary": _progress_summary(cur.get("plan") or {}, done_rows, created), **review}
 
 
 class ProgressIn(BaseModel):
