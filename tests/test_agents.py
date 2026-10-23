@@ -10,6 +10,7 @@ def test_parallel_agents_all_ran():
     for n in ("supervisor", "profiler", "knowledge_search", "market_analyst", "gap_analysis", "pathway", "coach", "reviewer"):
         assert n in names
     assert s["scenario_comparison"] and s["narrative"]
+    assert all(a.steps and a.outcome for a in s["draft_pathway"].activities)  # the person's plan: steps and an outcome each
     known = {e.id for e in s["evidence"]}
     assert all(c in known for c in coach.citations(s["narrative"]))
     assert any(e.category == "learning" for e in s["evidence"])

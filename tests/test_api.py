@@ -1105,6 +1105,11 @@ def test_hiring_plugins_post_openings_everywhere_and_keep_tokens_secret(client, 
     sent = [k["json"]["text"] for u, k in FakeHTTP.calls if "sendMessage" in u]
     assert sent and all(f"/apply.html#{o['token']}" in t and "Ward nurse" in t for t in sent)
     assert any(p["status"] == "posted" for p in client.get(f"/api/openings/{o['id']}/posts").json())
+    # the HR agent takes the request in plain words, but only proposes: nothing is sent until the advisor confirms
+    before = len(FakeHTTP.calls)
+    r = client.post("/api/agents/auto/chat", json={"messages": [{"role": "user", "content": "Send the nurse job to our Telegram"}]}, headers=H).json()
+    assert r["proposal"]["opening"]["id"] == o["id"] and [c["platform"] for c in r["proposal"]["connections"]] == ["telegram"]
+    assert len(FakeHTTP.calls) == before
     # someone else's connection can't be touched; X tweets fit in 280 characters with the link
     cid = listed["connections"][0]["id"]
     login(client, "ana")

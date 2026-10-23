@@ -3350,3 +3350,11 @@ body {
 [data-product="hr"] .hr-account-menu a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
 .hr-account-menu svg { width: 20px; height: 20px; }
 @media (prefers-reduced-motion: reduce) { .hr-account-menu:popover-open { animation: none; } }
+
+/* An action the agent proposes: what and where, then Post / Cancel; the outcome replaces the buttons. */
+.ag-action { display: grid; gap: 10px; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 14px; background: var(--sunken); }
+.ag-action-what { display: grid; gap: 2px; }
+.ag-action-what .muted { font-size: 13px; }
+.ag-action-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.ag-action .ag-result { margin: 0; font-size: 14px; }
+.ag-action .ag-result.failed { color: var(--danger); }

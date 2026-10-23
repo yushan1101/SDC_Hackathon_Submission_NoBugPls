@@ -32,6 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 from agents.gap_analyst import SCENARIO_NOTES
+from agents import ops
 from agents.pathway import HOURS_PER_LEVEL
 from agents.sdg import goal_meta, role_sdgs
 from agents import catalog, criteria, llm, matcher, quiz, resume
@@ -2477,6 +2478,12 @@ def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_us
             raise HTTPException(402 if limit < AGENT_DAILY_MAX else 429,
                                 f"You've used today's {limit} agent messages. " + ("Pro has more. See plans to upgrade." if limit < AGENT_DAILY_MAX else "Try again tomorrow."))
         db.execute("INSERT INTO agent_log VALUES(?,?,?)", (user["username"], agent_id, datetime.now(timezone.utc).isoformat()))
+    if user["role"] == "hr_advisor":  # "send the nurse opening to Telegram": an action to confirm, not a chat answer
+        with DB_LOCK:
+            act = ops.publish_intent(body.messages[-1].content, recruiting.list_openings(db), plugins.connections(db, user["username"]))
+        if act:
+            return {"reply": act["reply"], "model": None, "agent": {"id": "posts", "name": catalog.BY_ID["posts"]["name"]},
+                    "proposal": act["proposal"], "link": act.get("link")}
     context = _agent_context(agent, user, body.profile)
     talk = "\n".join(f"{'Person' if m.role == 'user' else 'You'}: {m.content}" for m in body.messages[-12:])
     text, usage = llm.generate(f"<CONTEXT>\n{json.dumps(context, ensure_ascii=False)[:24000]}\n</CONTEXT>\n<CONVERSATION>\n{talk}\n</CONVERSATION>\n"

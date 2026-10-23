@@ -64,7 +64,7 @@ AGENTS = [
     {"id": "posts", "kind": "chat", "audience": "hr", "task": "recruiter", "name": "Job Post Writer",
      "tagline": "Turn a role into posts for LinkedIn, Facebook, X and team channels.",
      "starters": ["Write a LinkedIn post for my newest opening", "Make this job post shorter for X",
-                  "Write a friendly Telegram post for a nurse role", "What should a job post always include?"],
+                  "Send my newest opening to Telegram", "What should a job post always include?"],
      "action": {"label": "Hiring plugins", "href": "#/plugins"},
      "system": "You are the Job Post Writer for an HR advisor in AiversePulse. Write clear, inclusive job posts per "
                "platform (LinkedIn: 3-5 professional lines; Facebook: friendly; X: under 230 characters; chat apps: "

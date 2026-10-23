@@ -23,6 +23,35 @@ const load = async () => (cache ??= (await api("/api/agents")).agents);
 const say = (msgs, profile) => api("/api/agents/auto/chat", { method: "POST",
   body: { messages: msgs.slice(-24).map(({ role, content }) => ({ role, content })), profile } });
 
+/** An action the agent proposes (post an opening to connected accounts). Nothing is sent until the advisor clicks
+ * Post, which calls the same publish endpoint as the Hiring page; the outcome is kept with the message. */
+function actionCard(m, save) {
+  const p = m.proposal;
+  if (!p) return m.link ? h("a", { class: "btn sm", href: m.link.href }, m.link.label, icon("flat")) : null;
+  const box = h("div", { class: "ag-action" });
+  const draw = () => {
+    if (p.results) {
+      box.replaceChildren(...p.results.map((r) => h("p", { class: `ag-result ${r.status}` }, h("b", {}, `${r.platform_name} · ${r.label}: `),
+        r.status === "posted" ? (r.url ? h("a", { href: r.url, target: "_blank", rel: "noopener noreferrer" }, "posted") : "posted") : r.error || "failed")));
+      return;
+    }
+    if (p.cancelled) { box.replaceChildren(h("p", { class: "muted" }, "Cancelled. Nothing was posted.")); return; }
+    const where = p.connections.length === 1 ? p.connections[0].platform_name : `${p.connections.length} accounts`;
+    const go = h("button", { class: "btn primary sm", type: "button", onclick: async () => {
+      go.disabled = true; go.textContent = "Posting…";
+      try {
+        p.results = (await api(`/api/openings/${p.opening.id}/publish`, { method: "POST", body: { connections: p.connections.map((c) => c.id) } })).results;
+        save(); draw();
+      } catch (e) { go.disabled = false; go.textContent = `Post to ${where}`; toast(e.message, "err"); }
+    } }, `Post to ${where}`);
+    box.replaceChildren(h("div", { class: "ag-action-what" }, h("b", {}, p.opening.title),
+      h("span", { class: "muted" }, p.connections.map((c) => `${c.platform_name} · ${c.label}`).join(", "))),
+      h("div", { class: "ag-action-btns" }, go, h("button", { class: "btn ghost sm", type: "button", onclick: () => { p.cancelled = true; save(); draw(); } }, "Cancel")));
+  };
+  draw();
+  return box;
+}
+
 // ---------------------------------------------------------------- Chat | Interview pill (public app)
 let pill = null;
 let disposeSwitch = null;
@@ -129,7 +158,7 @@ export async function agentView(main, { getProfile } = {}) {
     if (m.role === "user") return h("div", { class: "ag-msg me" }, h("p", {}, m.content));
     const next = action(m.agent?.id);  // e.g. the interview coach offers the voice mock interview
     return h("div", { class: "ag-msg them" }, owl(m.agent?.id, 36).el,
-      h("div", { class: "ag-reply" }, m.agent ? h("span", { class: "ag-by" }, m.agent.name) : null, rich(m.content),
+      h("div", { class: "ag-reply" }, m.agent ? h("span", { class: "ag-by" }, m.agent.name) : null, rich(m.content), actionCard(m, () => store.set(msgs)),
         h("div", { class: "ag-reply-tools" }, readAloudButton(() => m.content),
           h("button", { class: "btn ghost sm", type: "button", onclick: () => navigator.clipboard?.writeText(m.content).then(() => toast("Copied")) }, "Copy"),
           next ? h("a", { class: "btn sm", href: next.href }, next.label, icon("flat")) : null)));
@@ -156,7 +185,7 @@ export async function agentView(main, { getProfile } = {}) {
     thread.append(typing); typing.scrollIntoView({ block: "end" });
     try {
       const r = await say(msgs, getProfile?.() || null);
-      msgs.push({ role: "assistant", content: r.reply, agent: r.agent }); store.set(msgs); draw();
+      msgs.push({ role: "assistant", content: r.reply, agent: r.agent, proposal: r.proposal, link: r.link }); store.set(msgs); draw();
     } catch (e) {
       typing.remove();
       msgs.pop(); store.set(msgs);  // not answered: put the question back to send again
@@ -247,12 +276,13 @@ export function hrCapsule({ pages, actions, plans, status }) {
     const msgs = [...store.get(), { role: "user", content: text }];  // the same conversation as the Agent page
     try {
       const r = await say(msgs);
-      msgs.push({ role: "assistant", content: r.reply, agent: r.agent }); store.set(msgs);
+      const reply = { role: "assistant", content: r.reply, agent: r.agent, proposal: r.proposal, link: r.link };
+      msgs.push(reply); store.set(msgs);
       // employee ids in the answer open their plan: the agent's answer becomes a way to drive the console
       const ids = [...new Set(r.reply.match(/\b[A-Z]{1,4}-\d{1,9}\b/g) || [])].map((sid) => plans().find((p) => p.subject_id === sid && p.audience === "hr")).filter(Boolean);
       answer.replaceChildren(h("p", { class: "cap-q" }, text),
         h("div", { class: "cap-who" }, owl(r.agent?.id, 24).el, r.agent?.name || "Agent"),
-        h("div", { class: "ag-reply cap-reply" }, rich(r.reply)),
+        h("div", { class: "ag-reply cap-reply" }, rich(r.reply), actionCard(reply, () => store.set(msgs))),
         h("div", { class: "cap-tools" }, ids.slice(0, 6).map((p) => h("a", { class: "btn sm", href: `#/review/${p.plan_id}`, onclick: fold }, icon("review"), p.subject_id)),
           readAloudButton(() => r.reply), h("a", { class: "btn sm ghost", href: "#/agents", onclick: fold }, "Continue in chat", icon("flat"))));
       bird.set("matched"); status?.set("matched", `${r.agent?.name || "The agent"} answered`);
