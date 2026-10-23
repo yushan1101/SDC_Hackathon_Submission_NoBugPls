@@ -22,6 +22,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from governance.audit import connect, now
+from governance.employee_ids import is_reserved
 
 ROLES = {"employee", "hr_advisor", "admin"}
 SCHEMA = """
@@ -77,6 +78,10 @@ def create_user(con, username: str, password: str, role: str, employee_id: str |
     _check_password(password)
     if role == "employee" and not employee_id:
         raise AuthError("employees need an employee_id (pseudonymous, e.g. E-001)")
+    # HR analyses generate pseudonymous IDs; a new account taking one would inherit those plans.
+    if employee_id and (is_reserved(con, employee_id)
+                        or con.execute("SELECT 1 FROM plans WHERE subject_id=?", (employee_id,)).fetchone()):
+        raise AuthError(f"employee_id {employee_id} is already used by HR analysis plans")
     salt = os.urandom(16)
     with con:
         con.execute("INSERT INTO users(username,pw_hash,salt,role,employee_id,display_name,created_utc) VALUES(?,?,?,?,?,?,?)",
@@ -107,6 +112,10 @@ def register(con, username: str, email: str, password: str, account_type: str, d
     role = "employee" if account_type == "individual" else "hr_advisor"
     employee_id = "U-" + os.urandom(4).hex() if role == "employee" else None  # pseudonymous id for their own plans
     status = "pending_email" if verify_email else ("active" if role == "employee" else "pending_approval")
+    # HR analyses generate pseudonymous IDs; a new account taking one would inherit those plans.
+    if employee_id and (is_reserved(con, employee_id)
+                        or con.execute("SELECT 1 FROM plans WHERE subject_id=?", (employee_id,)).fetchone()):
+        raise AuthError(f"employee_id {employee_id} is already used by HR analysis plans")
     salt = os.urandom(16)
     with con:
         con.execute("INSERT INTO users(username,pw_hash,salt,role,employee_id,display_name,created_utc,email,status,plan,"

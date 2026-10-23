@@ -221,7 +221,9 @@ function route() {
   else if (page === "interview") {
     const pane = h("div");
     main.replaceChildren(agentSwitch("interview"), pane);
-    interviewView(pane, interviewStart ? null : id, interviewStart ? rest[0] : null);
+    interviewView(pane, interviewStart ? null : id, interviewStart ? rest[0] : null, {
+      onPlan: (role, skills, query) => planFor({ soc: role.role_id, title: role.role_title }, skills, query),
+    });
   }
   else if (page === "quiz") quizView(main, { status: S.status, planFor, onInterview: startInterview });
   else if (page === "resume") resumeView(main, { status: S.status, planFor, onInterview: startInterview });
@@ -353,11 +355,11 @@ function buildView(main) {
 }
 
 /** From a role match (quiz or resume): target that occupation with the skills we found, then run the agents. */
-function planFor(m, skills) {
+function planFor(m, skills, query) {
   Object.assign(S.profile, { target_role: m.soc, target_title: m.title,
     skills: skills.slice(0, 40).map(({ name, level }) => ({ name, level })) });
   saveProfile();
-  start();
+  start(query);
 }
 
 function startInterview(m) {

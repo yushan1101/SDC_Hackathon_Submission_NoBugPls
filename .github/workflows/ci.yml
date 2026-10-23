@@ -16,3 +16,4 @@ jobs:
         env:
           WARM_ON_START: "false"
           SIGNALS_DAILY: "false"
+      - run: node tests/review_queue_ui.test.cjs

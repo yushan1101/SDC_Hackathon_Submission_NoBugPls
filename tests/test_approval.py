@@ -44,15 +44,15 @@ def test_plan_references_are_unique_stable_and_not_reused():
     user = {"username": "me", "employee_id": "me", "role": "employee"}
     first = ap.create(con, PLAN, "me", "individual")
     second = ap.create(con, PLAN, "me", "individual")
-    assert ap.reference(con, first) == "PLAN-000001"
-    assert ap.reference(con, second) == "PLAN-000002"
+    assert ap.reference(con, first) == "P000001"
+    assert ap.reference(con, second) == "P000002"
     ap.edit(con, first, PLAN, "me", "employee")
     ap.approve(con, first, 2, "me", "employee", confirmed=True)
-    assert ap.latest(con, first)["plan_reference"] == "PLAN-000001"
-    assert {p["plan_reference"] for p in ap.list_plans(con, user)} == {"PLAN-000001", "PLAN-000002"}
+    assert ap.latest(con, first)["plan_reference"] == "P000001"
+    assert {p["plan_reference"] for p in ap.list_plans(con, user)} == {"P000001", "P000002"}
     ap.delete_employee_plans(con, [second], user)
     third = ap.create(con, PLAN, "me", "individual")
-    assert ap.reference(con, third) == "PLAN-000003"
+    assert ap.reference(con, third) == "P000003"
 
 
 def test_existing_plans_receive_persistent_references(tmp_path):
@@ -66,10 +66,10 @@ def test_existing_plans_receive_persistent_references(tmp_path):
             ("newer", "me", "individual", "2026-02-01"),
         ])
     con = connect(path)
-    assert ap.reference(con, "older") == "PLAN-000001"
-    assert ap.reference(con, "newer") == "PLAN-000002"
+    assert ap.reference(con, "older") == "P000001"
+    assert ap.reference(con, "newer") == "P000002"
     con.close()
     con = connect(path)
-    assert ap.reference(con, "older") == "PLAN-000001"
-    assert ap.reference(con, ap.create(con, PLAN, "me", "individual")) == "PLAN-000003"
+    assert ap.reference(con, "older") == "P000001"
+    assert ap.reference(con, ap.create(con, PLAN, "me", "individual")) == "P000003"
     con.close()

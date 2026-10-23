@@ -137,7 +137,7 @@ function route() {
   S.onScenarioChange = null;
   const main = $("#main");
   S.routeVersion = (S.routeVersion || 0) + 1;
-  main.scrollTop = 0;
+  if (page !== "review" || !main.querySelector(".review")) main.scrollTop = 0;
   const views = { run: runView, review: () => reviewView(main, id), plans: () => plansView(main, id),
     openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status),
     plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)) };
@@ -187,7 +187,7 @@ function rosterTable() {
     h("div", { class: "table-wrap" }, h("table", { class: "data" },
       h("thead", {}, h("tr", {}, h("th", {}, "Employee"), h("th", {}, "Target role"), h("th", { class: "n hide-sm" }, "h/week"), h("th", {}, "Agents"), h("th", { class: "hide-sm" }, "Top gaps"), h("th", {}, "Status"))),
       h("tbody", {}, rows.map((r) => h("tr", { "data-href": r.plan_id ? `#/review/${r.plan_id}` : null, onclick: () => r.plan_id && (location.hash = `#/review/${r.plan_id}`) },
-        h("td", { class: "mono" }, r.id), h("td", {}, h("span", { class: "job-line" }, r.soc ? jobIcon(r.soc, { size: 28, labelled: true }) : null, r.role)), h("td", { class: "n hide-sm" }, r.hours ?? "–"), h("td", {}, strip(r)),
+        h("td", { class: "mono" }, r.id, r.original && r.original !== r.id ? h("span", { class: "muted", title: "ID in the uploaded CSV" }, ` (CSV ${r.original})`) : null), h("td", {}, h("span", { class: "job-line" }, r.soc ? jobIcon(r.soc, { size: 28, labelled: true }) : null, r.role)), h("td", { class: "n hide-sm" }, r.hours ?? "–"), h("td", {}, strip(r)),
         h("td", { class: "hide-sm" }, r.top_gaps?.join(", ") || "–"),
         h("td", {}, r.status === "running" ? h("span", { class: "muted" }, "running") : h("span", { class: `tag ${r.status}` }, r.error ? "error" : r.status))))))));
 }
@@ -255,7 +255,7 @@ function runView(main) {
     try {
       await stream("/api/team", { csv: S.csv, scenario: S.scenario }, (ev) => {
         if (ev.t === "owl") S.status.set(ev.state, ev.say);
-        else if (ev.t === "roster") ev.ids.forEach((id) => S.rows.set(id, { id, role: ev.roles[id], status: "running", ticks: new Set() }));
+        else if (ev.t === "roster") { const orig = Object.fromEntries(Object.entries(ev.original_ids || {}).map(([o, id]) => [id, o])); ev.ids.forEach((id) => S.rows.set(id, { id, original: orig[id], role: ev.roles[id], status: "running", ticks: new Set() })); }
         else if (ev.t === "tick") S.rows.get(ev.id)?.ticks.add(ev.node);
         else if (ev.t === "employee") Object.assign(S.rows.get(ev.id), ev, { status: ev.error ? "flagged" : ev.status, ticks: new Set(AGENTS) });
         else if (ev.t === "needs") S.needs = ev.data;
@@ -325,12 +325,16 @@ async function reviewView(main, id) {
       h("span", { class: "l1" }, h("span", { class: "id" }, p.review.candidate_name || p.subject_id), reviewBadge(p.review)),
       h("span", { class: "l2" }, `${p.subject_id} · ${p.target_role} · v${p.version}`),
       h("span", { class: "l2 mono" }, `Plan ID: ${p.plan_reference || p.plan_id}`)),
-      reviewMenu(main, p.plan_id, p.review, () => editReview(main, p.plan_id, p.review, navigate, p.subject_id), navigate)); })
+      reviewMenu(main, p.plan_id, p.review, () => editReview(main, p.plan_id, p.review, navigate, p.subject_id, p.plan_reference), navigate)); })
       : h("div", { class: "empty" }, h("p", { class: "muted" }, "No reviews match this search and status.")));
   const detail = h("section", { class: "detail", "aria-label": "Plan detail" });
   const aside = h("aside", { class: "aside", "aria-label": "Evidence and audit" });
   const wrap = h("div", { class: "review", "data-pane": location.hash.split("/")[2] ? "detail" : "list" }, queue, detail, aside);
+  // Keep the list's position when selecting a plan or returning from detail on phones.
+  const previousQueue = main.querySelector(".queue");
+  if (previousQueue?.getClientRects().length) S.reviewQueueScroll = previousQueue.scrollTop;
   main.replaceChildren(wrap);
+  queue.scrollTop = S.reviewQueueScroll || 0;
   if (id) loadDetail(id, detail, aside, wrap);
 }
 
@@ -403,27 +407,29 @@ function reviewAction(main, ids, action, done) {
   dialog.showModal();
 }
 
-function editReview(main, pid, review, done, employeeId) {
+function editReview(main, pid, review, done, employeeId, planReference) {
   const dialog = reviewDialog(main, "Edit candidate review");
   const inputs = {};
-  const fields = [["employee_id", "Employee ID", "text", 32], ["candidate_name", "Candidate name", "text", 120], ["candidate_email", "Email", "email", 254], ["candidate_phone", "Phone", "tel", 50], ["reviewer_notes", "Reviewer notes", "textarea", 10000]];
+  const fields = [["employee_id", "Employee ID", "text", 32], ["plan_reference", "Plan ID", "text", 7], ["candidate_name", "Candidate name", "text", 120], ["candidate_email", "Email", "email", 254], ["candidate_phone", "Phone", "tel", 50], ["reviewer_notes", "Reviewer notes", "textarea", 10000]];
   const form = h("form", { class: "review-form" }, h("h2", {}, "Edit candidate review"),
     h("p", { class: "muted" }, "HR review details are saved separately from the original AI analysis and plan approval."),
     fields.map(([key, label, type, max]) => {
-      inputs[key] = type === "textarea" ? h("textarea", { class: "input", rows: 5, maxlength: max }, review[key]) : h("input", { class: "input", type, maxlength: max, value: key === "employee_id" ? employeeId : review[key] });
+      inputs[key] = type === "textarea" ? h("textarea", { class: "input", rows: 5, maxlength: max }, review[key]) : h("input", { class: "input", type, maxlength: max, value: key === "employee_id" ? employeeId : key === "plan_reference" ? planReference : review[key] });
       if (key === "employee_id") { inputs[key].required = true; inputs[key].pattern = "[A-Za-z0-9_-]{1,32}"; }
+      if (key === "plan_reference") { inputs[key].required = true; inputs[key].pattern = "P[0-9]{6}"; inputs[key].placeholder = "P000123"; inputs[key].title = "P followed by six digits, for example P000123"; }
       return h("label", { class: "field" }, h("span", {}, label), inputs[key]);
     }));
   inputs.review_status = h("select", { class: "input" }, ["pending", "approved", "rejected"].map((s) => h("option", { value: s, selected: s === review.review_status }, s[0].toUpperCase() + s.slice(1))));
   const submit = h("button", { class: "btn primary", type: "submit" }, "Save review");
-  form.append(h("p", { class: "muted" }, "The employee ID applies to this plan. Use an existing employee account's ID to share the plan with them. The original analysis keeps its recorded ID."),
+  const error = h("p", { class: "issue error", role: "alert", hidden: true });
+  form.append(h("p", { class: "muted" }, "Previously generated IDs can be reused when no other current plan uses them. Plan IDs use P followed by six digits (P000123). Use an employee account's ID to share this plan with them."), error,
     h("label", { class: "field" }, h("span", {}, "Review status"), inputs.review_status),
     h("div", { class: "filters" }, h("button", { class: "btn", type: "button", onclick: () => dialog.close() }, "Cancel"), submit));
   form.addEventListener("submit", async (e) => {
-    e.preventDefault(); if (submit.disabled) return; submit.disabled = true;
+    e.preventDefault(); if (submit.disabled) return; submit.disabled = true; error.hidden = true;
     try { await api(`/api/reviews/${pid}/edit`, { method: "POST", body: { ...Object.fromEntries(Object.entries(inputs).map(([k, el]) => [k, el.value.trim()])), revision: review.revision } });
       dialog.close(); toast("Review saved"); await done();
-    } catch (err) { toast(err.message, "err"); } finally { submit.disabled = false; }
+    } catch (err) { error.textContent = err.message; error.hidden = false; toast(err.message, "err"); } finally { submit.disabled = false; }
   });
   dialog.append(form); dialog.showModal();
 }
@@ -437,8 +443,8 @@ async function loadDetail(id, detail, aside, wrap) {
   const toggleAside = h("button", { class: "btn sm ev-toggle", type: "button", "aria-expanded": "false", onclick: (e) => { e.currentTarget.setAttribute("aria-expanded", String(aside.classList.toggle("open"))); } }, icon("sources"), "Evidence");
   const body = h("div", { class: "detail-body" },
     h("a", { class: "btn ghost sm back", href: "#/review" }, icon("back"), "Queue"),
-    h("section", { class: "block" }, h("div", { class: "detail-head" }, h("h2", {}, d.review.candidate_name || d.subject_id), reviewBadge(d.review),
-      reviewMenu($("#main"), id, d.review, () => editReview($("#main"), id, d.review, () => reviewView($("#main"), id), d.subject_id), () => {
+    h("section", { class: "block" }, h("div", { class: "detail-head" }, h("h2", {}, d.review.candidate_name || d.subject_id), d.original_employee_id ? h("span", { class: "muted mono" }, `CSV ID ${d.original_employee_id}`) : null, reviewBadge(d.review),
+      reviewMenu($("#main"), id, d.review, () => editReview($("#main"), id, d.review, () => reviewView($("#main"), id), d.subject_id, d.plan_reference), () => {
         if (location.hash === "#/review") return reviewView($("#main"));
         location.hash = "#/review";
       })),

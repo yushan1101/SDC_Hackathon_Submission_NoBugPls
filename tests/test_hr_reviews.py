@@ -4,6 +4,7 @@ import pytest
 
 from governance import approval, reviews
 from governance.audit import connect
+from governance.employee_ids import allocate_ids
 
 HR = {"username": "hr", "role": "hr_advisor"}
 EMPLOYEE = {"username": "employee", "role": "employee", "employee_id": "E1"}
@@ -84,3 +85,67 @@ def test_existing_database_migration_and_approval_default(tmp_path):
     con.close()
     con = connect(path)
     assert reviews.get(con, pid)["review_status"] == "approved"
+    con.close()
+
+
+def test_ids_can_be_reused_after_deletion_or_rename_and_persist(tmp_path):
+    path = str(tmp_path / "reused.sqlite")
+    con = connect(path)
+    old = approval.create(con, PLAN, "E-001", "hr")
+    pid = approval.create(con, PLAN, "E-002", "hr")
+    old_reference = approval.reference(con, old)
+    reviews.bulk(con, [old], HR, "delete", True)
+    # Historical generation reservations must not block manual edits.
+    with con:
+        con.execute("INSERT INTO analysis_employee_ids VALUES(1)")
+    reviews.edit(con, pid, HR, {"employee_id": "E-001", "plan_reference": old_reference, "review_status": "pending"}, 0)
+    assert approval.list_plans(con, HR)[0]["subject_id"] == "E-001"
+    assert approval.latest(con, pid)["plan_reference"] == old_reference
+    assert reviews.history(con, pid)[0]["before"]["plan_reference"] == "P000002"
+    third = approval.create(con, PLAN, "E-003", "hr")
+    # Editing away from an ID frees it for another current plan.
+    reviews.edit(con, pid, HR, {"employee_id": "E-004", "plan_reference": "P000004", "review_status": "pending"}, 1)
+    reviews.edit(con, third, HR, {"employee_id": "E-001", "plan_reference": old_reference, "review_status": "pending"}, 0)
+    # Automatic generation skips a current manually assigned plan ID.
+    fourth = approval.create(con, PLAN, "E-005", "hr")
+    assert approval.reference(con, fourth) == "P000005"
+    con.close()
+    con = connect(path)
+    assert approval.reference(con, pid) == "P000004"
+    assert approval.reference(con, third) == old_reference
+    con.close()
+
+
+def test_duplicate_id_edits_are_atomic_and_unchanged_ids_are_allowed():
+    con = connect(":memory:")
+    first = approval.create(con, PLAN, "E-001", "hr")
+    second = approval.create(con, PLAN, "E-002", "hr")
+    # Archived plans remain current; only deleted plans release their IDs.
+    reviews.bulk(con, [first], HR, "archive")
+    for changes, message in [
+        ({"employee_id": "E-001"}, "Employee ID is already used"),
+        ({"employee_id": "E-003", "plan_reference": "P000001"}, "Plan ID is already used"),
+        ({"plan_reference": "PLAN-000003"}, "six digits"),
+    ]:
+        with pytest.raises(approval.TransitionError, match=message):
+            reviews.edit(con, second, HR, changes | {"review_status": "pending"}, 0)
+        assert reviews.history(con, second) == []
+        assert con.execute("SELECT subject_id FROM plans WHERE plan_id=?", (second,)).fetchone()[0] == "E-002"
+        assert approval.reference(con, second) == "P000002"
+    reviews.edit(con, second, HR, {"employee_id": "E-002", "plan_reference": "P000002", "review_status": "pending"}, 0)
+    assert reviews.get(con, second)["revision"] == 1
+    con.close()
+
+
+def test_employee_accounts_can_receive_plans_without_revealing_private_plans():
+    from governance import accounts
+    con = connect(":memory:")
+    accounts.create_user(con, "worker", "Password123", "employee", "U-worker")
+    approval.create(con, PLAN, "U-worker", "individual")  # the employee's private self-service plan
+    first, second = approval.create(con, PLAN, "E-001", "hr"), approval.create(con, PLAN, "E-002", "hr")
+    reviews.edit(con, first, HR, {"employee_id": "U-worker", "review_status": "pending"}, 0)
+    reviews.edit(con, second, HR, {"employee_id": "U-worker", "review_status": "pending"}, 0)
+    with pytest.raises(approval.TransitionError, match="9 digits"):
+        reviews.edit(con, first, HR, {"employee_id": "E-9223372036854775807", "review_status": "pending"}, 1)
+    reviews.edit(con, first, HR, {"employee_id": "E-123456789", "review_status": "pending"}, 1)
+    assert allocate_ids(con, ["x"], []) == ["E-123456790"]

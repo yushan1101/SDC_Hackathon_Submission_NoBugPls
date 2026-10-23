@@ -304,6 +304,9 @@ def test_analysis_assigns_new_employee_ids_each_run(client):
     assert result["id"] == second_ids[0] and not result.get("error")
     saved = client.get(f"/api/plans/{result['plan_id']}").json()
     assert saved["subject_id"] == result["id"]
+    roster = next(e for e in second if e["t"] == "roster")
+    assert roster["original_ids"] == {"E-001": second_ids[0]}
+    assert saved["original_employee_id"] == "E-001"
 
 
 def test_hr_can_edit_employee_id_with_validation_and_audit(client):
@@ -333,6 +336,33 @@ def test_hr_can_edit_employee_id_with_validation_and_audit(client):
     assert client.get(f"/api/plans/{pid}").status_code == 200
     assert client.post(f"/api/reviews/{pid}/edit", json=change, headers=H).status_code == 403
     assert client.get(f"/api/plans/{other}").status_code == 404
+
+
+def test_hr_can_reuse_deleted_ids_and_edit_plan_id(client):
+    import server.api as api
+    from governance import approval, reviews
+
+    with api.DB_LOCK:
+        plan = {"target_role": "electrician", "activities": [], "status": "draft"}
+        old = approval.create(api.db, plan, "REUSE-OLD", "hr")
+        pid = approval.create(api.db, plan, "REUSE-NEW", "hr")
+        reference = approval.reference(api.db, old)
+    login(client, "hr1")
+    change = {"employee_id": "REUSE-OLD", "plan_reference": reference, "review_status": "pending", "revision": 0}
+    conflict = client.post(f"/api/reviews/{pid}/edit", json=change, headers=H)
+    assert conflict.status_code == 409 and "Employee ID is already used" in conflict.json()["detail"]
+    conflict = client.post(f"/api/reviews/{pid}/edit", json=change | {"employee_id": "REUSE-NEW"}, headers=H)
+    assert conflict.status_code == 409 and "Plan ID is already used" in conflict.json()["detail"]
+    for invalid in ["PLAN-000001", "P123", "P1234567", "p000001", "Pabcdef"]:
+        assert client.post(f"/api/reviews/{pid}/edit", json=change | {"plan_reference": invalid}, headers=H).status_code == 422
+    with api.DB_LOCK:
+        reviews.bulk(api.db, [old], {"username": "hr1", "role": "hr_advisor"}, "delete", True)
+    assert client.post(f"/api/reviews/{pid}/edit", json=change, headers=H).status_code == 200
+    saved = client.get(f"/api/plans/{pid}").json()
+    assert saved["subject_id"] == "REUSE-OLD" and saved["plan_reference"] == reference
+    assert saved["plan_id"] == pid
+    listed = next(p for p in client.get("/api/reviews").json() if p["plan_id"] == pid)
+    assert listed["plan_reference"] == reference
 
 
 RESUME = open("data/samples/sample_resume_nurse.md", "rb").read()
@@ -412,6 +442,39 @@ def test_interview_access_requires_owner_owned_assessment_recommendation(client,
     assert seen["role_id"] == recommendation["role_id"] and seen["skills"] == recommendation["profile"]
     interview_id = started.json()["interview_id"]
 
+    paused = client.post(f"/api/interviews/{interview_id}/pause", json={"draft_answer": "A saved draft"}, headers=H)
+    assert paused.status_code == 200 and paused.json()["status"] == "paused"
+    detail = client.get(f"/api/interviews/{interview_id}").json()
+    assert detail["status"] == "paused" and detail["draft_answer"] == "A saved draft"
+    assert detail["question_number"] == 1 and detail["total_stages"] == 5 and not detail["is_follow_up"]
+    paused_item = next(x for x in client.get("/api/interviews").json()["interviews"] if x["interview_id"] == interview_id)
+    assert paused_item["status"] == "paused" and paused_item["question_number"] == 1
+
+    # Follow-ups retain the parent main-question number instead of incrementing past the denominator.
+    follow_up_id = "mock-follow-up-id"
+    with api.DB_LOCK, api.db:
+        api.db.execute("""INSERT INTO interview_questions VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (follow_up_id, interview_id, 2, "behavioral", "behavioral", "foundational", "[]", "[]", "[]",
+             "Can you give one more detail about that example?", "mock-question-id", api.interview_store.now()))
+        api.db.execute("UPDATE interview_sessions SET stage_index=2, active_question_id=? WHERE interview_id=?",
+                       (follow_up_id, interview_id))
+    follow_up_detail = client.get(f"/api/interviews/{interview_id}").json()
+    assert follow_up_detail["question_number"] == 3 and follow_up_detail["is_follow_up"]
+    follow_up_item = next(x for x in client.get("/api/interviews").json()["interviews"] if x["interview_id"] == interview_id)
+    assert follow_up_item["question_number"] == 3 and follow_up_item["is_follow_up"] and follow_up_item["total_stages"] == 5
+    with api.DB_LOCK, api.db:
+        api.db.execute("UPDATE interview_sessions SET stage_index=0, active_question_id=? WHERE interview_id=?",
+                       ("mock-question-id", interview_id))
+
+    login(client, "bob")
+    assert client.post(f"/api/interviews/{interview_id}/resume", headers=H).status_code == 404
+    assert client.post(f"/api/interviews/{interview_id}/pause", json={"draft_answer": "unauthorized"}, headers=H).status_code == 404
+    login(client, "ana")
+    resumed = client.post(f"/api/interviews/{interview_id}/resume", headers=H)
+    assert resumed.status_code == 200 and resumed.json()["status"] == "in_progress"
+    resumed_detail = client.get(f"/api/interviews/{interview_id}").json()
+    assert resumed_detail["status"] == "in_progress" and resumed_detail["question"]["question_id"] == "mock-question-id"
+
     # Simulate a completed attempt to cover history and report reopening without an LLM call.
     report = {"performance": 81, "readiness": 74, "competitiveness": 70, "role_id": "2221.2"}
     with api.DB_LOCK, api.db:
@@ -423,6 +486,7 @@ def test_interview_access_requires_owner_owned_assessment_recommendation(client,
     item = next(x for x in history if x["interview_id"] == interview_id)
     assert item["status"] == "completed" and item["performance"] == 81 and item["readiness"] == 74
     assert item["assessment_source"] == "questionnaire" and item["interview_type"] == "AI mock interview"
+    assert client.get(f"/api/interviews/{interview_id}").json()["assessment_source"] == "questionnaire"
     assert client.get(f"/api/interviews/{interview_id}/report").json() == report
 
 
@@ -446,6 +510,7 @@ def test_interview_schema_migration_preserves_old_session_and_report():
         ("legacy-id", store.json_dump(old_report), "2026-01-01T00:20:00+00:00"))
     migrated = store.session(con, "legacy-id", "E-001")
     assert migrated["status"] == "completed" and migrated["recommendation_id"] is None
+    assert migrated["draft_answer"] == ""
     assert store.report(con, "legacy-id") == old_report
     history = store.history(con, "E-001")
     assert history[0]["performance"] == 77 and history[0]["readiness"] == 71
