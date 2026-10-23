@@ -1,5 +1,6 @@
-// Mina, the interviewer: the KPOP_Mina character from HoloHuman (OLGTX303/human-multiplatform, holohuman/web/src/
-// mina.js), cut down to what a seated interviewer needs: the casual outfit, her own skin, hair, lashes, eyes and
+// Mina, the interviewer: the KPOP_Mina character from LKZMuZiLi/human (https://github.com/LKZMuZiLi/human, Assets/
+// KPOP_Mina), as loaded in the browser by HoloHuman (OLGTX303/human-multiplatform, holohuman/web/src/mina.js; see
+// web/models/mina/SOURCE.md), cut down to what a seated interviewer needs: the casual outfit, her own skin, hair, lashes, eyes and
 // teeth (textures shrunk for the web), arms posed onto the desk, and her ARKit face morphs for blinks, a smile and
 // the jaw while speaking. No animation clips, hair or skirt physics.
 import * as THREE from "../vendor/three.module.js";
