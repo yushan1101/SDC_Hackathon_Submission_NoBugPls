@@ -109,3 +109,28 @@ export function readAloudButton(getText) {
   });
   return btn;
 }
+
+// ---------------------------------------------------------------- the interviewer's voice
+// Mina is a woman, but nothing chose a voice, so browsers read questions in their default, often a male one
+// ("Microsoft David" in Chrome on Windows). Prefer natural female English voices, best first; the list is matched by
+// name because browsers don't report a voice's gender.
+const FEMALE = [/Aria.*Natural/i, /Jenny.*Natural/i, /(Sonia|Libby|Natasha|Emma|Ava).*Natural/i, /Google UK English Female/i,
+  /Google US English/i, /Samantha/i, /Karen|Moira|Tessa|Serena|Victoria|Fiona/i, /Zira/i, /Hazel|Susan|Catherine|Heera/i, /female|woman/i];
+const synth = typeof speechSynthesis !== "undefined" ? speechSynthesis : null;
+let voices = synth?.getVoices() || [];
+synth?.addEventListener?.("voiceschanged", () => { voices = synth.getVoices(); });  // most browsers list them late
+
+// computers set up for another language may have no English voices at all: a woman's voice still beats a man's
+const FEMALE_OTHER = /Xiaoxiao|Xiaoyi|Huihui|Yaoyao|Yating|HanHan|Tracy|Yasmin|Ting-Ting|Mei-Jia|Sin-ji/i;
+
+/** The interviewer's voice: the best female English voice this browser has, else a female voice in another language,
+ *  else null (the browser's default). */
+export function interviewerVoice() {
+  if (!voices.length && synth) voices = synth.getVoices();
+  const english = voices.filter((v) => /^en([-_]|$)/i.test(v.lang));
+  for (const pattern of FEMALE) {
+    const found = english.find((v) => pattern.test(v.name));
+    if (found) return found;
+  }
+  return voices.find((v) => FEMALE_OTHER.test(v.name)) || null;
+}

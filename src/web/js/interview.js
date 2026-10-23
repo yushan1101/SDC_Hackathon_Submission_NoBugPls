@@ -1,5 +1,5 @@
 import { api, h, icon, toast, fmtTime, ApiError, upload } from "./lib.js";
-import { toWav } from "./voice.js";
+import { interviewerVoice, toWav } from "./voice.js";
 import { Owl } from "./owl.js";
 
 const LABELS = {
@@ -548,6 +548,9 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     interviewerSpeaking = true; updateControls(); setMicState("processing", "Preparing interviewer question…");
     if (recording || micStream) await finishRecording(false, false);
     const utterance = new SpeechSynthesisUtterance(qText.textContent); currentUtterance = utterance;
+    const voice = interviewerVoice();  // Mina speaks with a woman's voice, not the browser's default
+    if (voice) utterance.voice = voice;
+    utterance.lang = /^en/i.test(voice?.lang || "") ? voice.lang : "en-US";  // the questions are English
     window.speechSynthesis.cancel();
     utterance.onstart = () => {
       if (currentUtterance !== utterance) return;
