@@ -2170,7 +2170,6 @@ dialog.checkout form { display: grid; gap: 16px; }
 /* ---------- admin console ---------- */
 .admin-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
 .admin-filters .input { max-width: 320px; }
-.admin-setup { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
 .stat.warn b { color: var(--danger); }
 .day-bars { list-style: none; margin: 0; padding: 0; display: flex; align-items: flex-end; gap: 4px; height: 160px; }
 .day-bars li { flex: 1; display: grid; grid-template-rows: 1fr auto; align-items: end; height: 100%; min-width: 10px; }
@@ -3088,7 +3087,7 @@ body {
   border-radius: 16px; color: var(--ink-2); font-size: 15px; font-weight: 500; text-decoration: none; }
 .admin-shell .admin-nav-link svg { width: 22px; height: 22px; flex: none; }
 .admin-shell .admin-nav-link:hover { color: var(--ink); background: oklch(1 0 0 / 0.75); }
-.admin-shell .admin-nav-link[aria-current="page"] { color: var(--accent); background: oklch(1 0 0 / 0.95); box-shadow: 0 1px 2px oklch(0.3 0.05 262 / 0.1); }
+.admin-shell .admin-nav-link[aria-current="page"] { color: var(--accent); background: var(--accent-soft); box-shadow: 0 1px 2px oklch(0.3 0.05 262 / 0.1); }
 .admin-shell .admin-nav-link[aria-current="page"]::before { display: none; }
 .admin-shell .admin-nav-link .tip { display: none; }
 .admin-shell .admin-rail-spacer { flex: 1; min-height: 16px; }
@@ -3109,6 +3108,16 @@ body {
 .admin-shell .admin-top { gap: 14px; }
 .admin-shell .admin-top .crumb { min-width: 0; }
 .admin-shell .admin-top .who { display: grid; gap: 2px; margin-left: auto; text-align: right; line-height: 1.2; }
+.admin-shell .hr-main { min-width: 0; width: 100%; }
+.admin-shell .view { width: 100%; max-width: none; min-width: 0; }
+.admin-shell .view > * { min-width: 0; max-width: 100%; }
+.admin-shell .admin-usage-layout { display: grid; gap: 24px; min-width: 0; width: 100%; container: admin-usage / inline-size; }
+.admin-shell .admin-usage-layout > * { min-width: 0; }
+.admin-shell .admin-usage-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; background: none; border: 0; }
+.admin-shell .day-bars { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; overflow-x: auto; }
+.admin-shell .admin-speech-model { display: grid; justify-items: start; gap: 4px; }
+.admin-shell .admin-speech-model code { overflow-wrap: anywhere; }
+.admin-shell .admin-speech-model .muted { font-size: 12px; }
 .admin-shell .admin-menu-toggle { display: none; }
 .admin-shell .admin-nav-scrim { display: none; }
 .admin-shell .hr-tabbar { display: none !important; }
@@ -3138,6 +3147,12 @@ body {
   .admin-shell.is-mobile-nav-open .admin-nav-scrim { display: block; }
   .admin-shell .admin-rail-spacer { min-height: 16px; }
   .admin-shell .hr-main { min-width: 0; }
+}
+@container admin-usage (max-width: 760px) {
+  .admin-shell .admin-usage-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+}
+@container admin-usage (max-width: 480px) {
+  .admin-shell .admin-usage-stats { grid-template-columns: minmax(0, 1fr); gap: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .admin-shell.hr-shell, .admin-shell .admin-sidebar-toggle, .admin-shell .admin-menu-glyph i, .admin-shell .admin-rail,

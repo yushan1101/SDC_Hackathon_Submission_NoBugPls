@@ -117,7 +117,10 @@ function route() {
   if (!views[page]) { location.replace("#/overview"); return; }
   const names = { overview: "Overview", accounts: "Accounts", usage: "Token use", fraud: "Fraud monitoring", payments: "Payments", models: "AI models", sites: "Frontend sites" };
   S.crumb.textContent = names[page];
-  document.querySelectorAll("[data-route]").forEach((a) => a.toggleAttribute("aria-current", a.dataset.route === `#/${page}`));
+  document.querySelectorAll("[data-route]").forEach((a) => {
+    if (a.dataset.route === `#/${page}`) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  });
   const main = $("#main");
   main.replaceChildren(h("div", { class: "view" }, h("p", { class: "muted" }, "Loading…")));
   views[page](main).catch((e) => main.replaceChildren(h("div", { class: "view" }, h("div", { class: "issue error", role: "alert" }, e.message))));
@@ -144,9 +147,6 @@ async function overview(main) {
       stat("check", num(s.paid), "on a paid plan"), stat("file", money(s.revenue_30d_cents, s.currency), "revenue, 30 days"),
       stat("pulse", num(s.tokens_30d), `tokens, 30 days (${num(s.llm_calls_30d)} LLM calls)`),
       stat("flag", `${num(s.risk_blocked_7d)} / ${num(s.risk_review_7d)}`, "blocked / flagged, 7 days", s.risk_blocked_7d ? "warn" : "")),
-    h("div", { class: "admin-setup" },
-      h("span", { class: `tag ${s.payments_enabled ? "approved" : "draft"}` }, s.payments_enabled ? "Payments on (Stripe)" : "Payments off: add Stripe keys to .env"),
-      h("span", { class: `tag ${s.email_codes ? "approved" : "draft"}` }, s.email_codes ? "Email codes on" : "Email codes off: add SMTP settings to .env")),
     h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Waiting for approval")),
       h("div", { class: "pad" }, table(["Account", "Type", "Email", "Signed up", "Risk", ""], pending.map((u) => h("tr", {},
         h("td", {}, h("b", {}, u.display_name || u.username), h("div", { class: "muted" }, u.username)),
@@ -192,7 +192,7 @@ async function accounts(main) {
 // ---------------------------------------------------------------- token use: per day, user, model, agent, feature
 async function usage(main) {
   let days = 30;
-  const host = h("div");
+  const host = h("div", { class: "admin-usage-layout" });
   const seg = h("div", { class: "seg", role: "group", "aria-label": "Period" }, [7, 30, 90].map((d) => h("button", { type: "button", "aria-pressed": String(d === days),
     onclick: (e) => { days = d; seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget))); draw(); } }, `${d} days`)));
   const draw = async () => {
@@ -205,7 +205,7 @@ async function usage(main) {
         h("td", {}, h("b", {}, label(r.key) || "–")), h("td", { class: "n" }, num(r.calls)), h("td", { class: "n" }, num(r.input_tokens)),
         h("td", { class: "n" }, num(r.output_tokens)), h("td", { class: "n" }, r.est_usd ? r.est_usd.toFixed(4) : "–"))))));
     host.replaceChildren(
-      h("div", { class: "stats" }, stat("pulse", num(total(u.by_day)), `tokens in ${days} days`),
+      h("div", { class: "stats admin-usage-stats" }, stat("pulse", num(total(u.by_day)), `tokens in ${days} days`),
         stat("people", num(u.by_user.length), "accounts using AI"), stat("spark", num(u.by_model.length), "models")),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Tokens per day")),
         h("div", { class: "pad" }, byDay.length ? h("ol", { class: "day-bars", "aria-label": "Tokens per day" }, byDay.map((r) => {
@@ -258,6 +258,17 @@ async function models(main) {
   const d = await api("/api/admin/models");
   const spec = h("input", { class: "input", required: true, maxlength: 90, placeholder: "gemini:gemini-3.1-flash  or  openai:gpt-5.6-luna" });  // checked on the server
   const label = h("input", { class: "input", maxlength: 60, placeholder: "Name HR advisors see, e.g. Gemini Flash (fast)" });
+  const speechDescription = d.speech
+    ? (/^openai:(?:whisper|.*transcrib)/i.test(d.speech)
+      ? "Dedicated speech-to-text model"
+      : "Audio-capable model used with a transcription prompt")
+    : "Browser speech recognition (no server model configured)";
+  const defaults = Object.entries(d.tasks).map(([task, description]) => h("tr", {},
+    h("td", {}, description), h("td", { class: "mono" }, d.defaults[task] || "none (rule-based)")));
+  defaults.push(h("tr", {}, h("td", {}, "Voice transcription"),
+    h("td", {}, d.speech
+      ? h("div", { class: "admin-speech-model" }, h("code", { class: "mono" }, d.speech), h("span", { class: "muted" }, speechDescription))
+      : h("span", { class: "muted" }, speechDescription))));
   main.replaceChildren(view("AI models",
     h("p", { class: "muted" }, "HR advisors can choose any of these for each task. Providers set up: ",
       Object.entries(d.providers).map(([k, v], i) => [i ? ", " : "", `${k === "openai" ? "OpenAI-compatible gateway" : "Gemini"} ${v ? "✓" : "(no key)"}`]), "."),
@@ -272,8 +283,7 @@ async function models(main) {
       catch (ex) { toast(ex.message, "err"); }
     } }, spec, label, h("button", { class: "btn primary", type: "submit" }, "Add model")),
     h("h2", {}, "Defaults (from .env)"),
-    table(["Task", "Default model"], Object.entries(d.tasks).map(([t, what]) => h("tr", {}, h("td", {}, what), h("td", { class: "mono" }, d.defaults[t] || "none (rule-based)")))),
-    h("p", { class: "muted" }, "Voice input: ", h("span", { class: "mono" }, d.speech || "browser only (no speech model set up)"))));
+    table(["Task", "Default model"], defaults)));
 }
 
 async function sites(main) {
