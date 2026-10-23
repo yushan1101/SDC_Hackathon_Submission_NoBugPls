@@ -4,6 +4,7 @@ import pytest
 
 from governance import approval, reviews
 from governance.audit import connect
+from governance.employee_ids import allocate_ids
 
 HR = {"username": "hr", "role": "hr_advisor"}
 EMPLOYEE = {"username": "employee", "role": "employee", "employee_id": "E1"}
@@ -134,3 +135,17 @@ def test_duplicate_id_edits_are_atomic_and_unchanged_ids_are_allowed():
     reviews.edit(con, second, HR, {"employee_id": "E-002", "plan_reference": "P000002", "review_status": "pending"}, 0)
     assert reviews.get(con, second)["revision"] == 1
     con.close()
+
+
+def test_employee_accounts_can_receive_plans_without_revealing_private_plans():
+    from governance import accounts
+    con = connect(":memory:")
+    accounts.create_user(con, "worker", "Password123", "employee", "U-worker")
+    approval.create(con, PLAN, "U-worker", "individual")  # the employee's private self-service plan
+    first, second = approval.create(con, PLAN, "E-001", "hr"), approval.create(con, PLAN, "E-002", "hr")
+    reviews.edit(con, first, HR, {"employee_id": "U-worker", "review_status": "pending"}, 0)
+    reviews.edit(con, second, HR, {"employee_id": "U-worker", "review_status": "pending"}, 0)
+    with pytest.raises(approval.TransitionError, match="9 digits"):
+        reviews.edit(con, first, HR, {"employee_id": "E-9223372036854775807", "review_status": "pending"}, 1)
+    reviews.edit(con, first, HR, {"employee_id": "E-123456789", "review_status": "pending"}, 1)
+    assert allocate_ids(con, ["x"], []) == ["E-123456790"]

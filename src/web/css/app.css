@@ -1991,7 +1991,7 @@ body.interview-takeover-active #app > .pub-main {
   overflow: hidden; color: #111827; pointer-events: none; animation: interview-question-in 440ms 180ms ease both;
 }
 @keyframes interview-question-in { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
-.interview-question-copy { max-height: 60vh; overflow: hidden; scrollbar-width: none; text-shadow: 0 1px 1px #ffffff, 0 2px 6px #ffffffbb; }
+.interview-question-copy { max-height: 60vh; overflow: hidden auto; scrollbar-width: none; text-shadow: 0 1px 1px #ffffff, 0 2px 6px #ffffffbb; }
 .interview-question-copy::-webkit-scrollbar { display: none; }
 .interview-question-label { margin: 0 0 10px; color: #263347; font: 600 12px/1.3 var(--font-mono); letter-spacing: .065em; text-transform: uppercase; }
 .interview-takeover .interview-question { max-width: none; margin: 0 0 12px; color: #0b1220; font: 500 clamp(20px, 2.25vw, 28px)/1.1 var(--font-display); -webkit-text-stroke: .25px #f8fafcbf; text-shadow: 0 1px 1px #ffffffa6; text-wrap: pretty; }
@@ -2053,8 +2053,8 @@ body.interview-takeover-active #app > .pub-main {
   .interview-question-copy { max-height: min(128px, 15vh); padding-right: 32px; }
   .interview-takeover .interview-question { max-width: none; margin-bottom: 4px; font-size: 14px; line-height: 1.08; }
   .interview-question-label { margin-bottom: 3px; font-size: 9px; }
-  .interview-question-overlay .chips { max-height: 18px; overflow: hidden; flex-wrap: nowrap; }
-  .interview-question-overlay .chip-static { padding: 2px 5px; font-size: 8px; white-space: nowrap; }
+  .interview-question-overlay .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .interview-question-overlay .chip-static { flex: none; padding: 2px 6px; font-size: 11px; white-space: nowrap; }
   .interview-question-toggle { top: 0; right: 0; }
   .interview-answer-form { bottom: max(10px, env(safe-area-inset-bottom)); grid-template-columns: minmax(0, 1fr); gap: 7px; width: calc(100% - 20px); padding: 9px 10px; border-radius: 14px; }
   .interview-answer-form > .field { grid-column: 1; }
@@ -2622,8 +2622,8 @@ body {
   }
 }
 
-.plan-detail-title {
-  margin-left: 28px;
+@media (min-width: 900px) {
+  .plan-detail-title { margin-left: 28px; }
 }
 
 /* =========================================

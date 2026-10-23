@@ -160,7 +160,7 @@ function rosterTable() {
     h("div", { class: "table-wrap" }, h("table", { class: "data" },
       h("thead", {}, h("tr", {}, h("th", {}, "Employee"), h("th", {}, "Target role"), h("th", { class: "n hide-sm" }, "h/week"), h("th", {}, "Agents"), h("th", { class: "hide-sm" }, "Top gaps"), h("th", {}, "Status"))),
       h("tbody", {}, rows.map((r) => h("tr", { "data-href": r.plan_id ? `#/review/${r.plan_id}` : null, onclick: () => r.plan_id && (location.hash = `#/review/${r.plan_id}`) },
-        h("td", { class: "mono" }, r.id), h("td", {}, h("span", { class: "job-line" }, r.soc ? jobIcon(r.soc, { size: 28, labelled: true }) : null, r.role)), h("td", { class: "n hide-sm" }, r.hours ?? "–"), h("td", {}, strip(r)),
+        h("td", { class: "mono" }, r.id, r.original && r.original !== r.id ? h("span", { class: "muted", title: "ID in the uploaded CSV" }, ` (CSV ${r.original})`) : null), h("td", {}, h("span", { class: "job-line" }, r.soc ? jobIcon(r.soc, { size: 28, labelled: true }) : null, r.role)), h("td", { class: "n hide-sm" }, r.hours ?? "–"), h("td", {}, strip(r)),
         h("td", { class: "hide-sm" }, r.top_gaps?.join(", ") || "–"),
         h("td", {}, r.status === "running" ? h("span", { class: "muted" }, "running") : h("span", { class: `tag ${r.status}` }, r.error ? "error" : r.status))))))));
 }
@@ -228,7 +228,7 @@ function runView(main) {
     try {
       await stream("/api/team", { csv: S.csv, scenario: S.scenario }, (ev) => {
         if (ev.t === "owl") S.status.set(ev.state, ev.say);
-        else if (ev.t === "roster") ev.ids.forEach((id) => S.rows.set(id, { id, role: ev.roles[id], status: "running", ticks: new Set() }));
+        else if (ev.t === "roster") { const orig = Object.fromEntries(Object.entries(ev.original_ids || {}).map(([o, id]) => [id, o])); ev.ids.forEach((id) => S.rows.set(id, { id, original: orig[id], role: ev.roles[id], status: "running", ticks: new Set() })); }
         else if (ev.t === "tick") S.rows.get(ev.id)?.ticks.add(ev.node);
         else if (ev.t === "employee") Object.assign(S.rows.get(ev.id), ev, { status: ev.error ? "flagged" : ev.status, ticks: new Set(AGENTS) });
         else if (ev.t === "needs") S.needs = ev.data;
@@ -416,7 +416,7 @@ async function loadDetail(id, detail, aside, wrap) {
   const toggleAside = h("button", { class: "btn sm ev-toggle", type: "button", "aria-expanded": "false", onclick: (e) => { e.currentTarget.setAttribute("aria-expanded", String(aside.classList.toggle("open"))); } }, icon("sources"), "Evidence");
   const body = h("div", { class: "detail-body" },
     h("a", { class: "btn ghost sm back", href: "#/review" }, icon("back"), "Queue"),
-    h("section", { class: "block" }, h("div", { class: "detail-head" }, h("h2", {}, d.review.candidate_name || d.subject_id), reviewBadge(d.review),
+    h("section", { class: "block" }, h("div", { class: "detail-head" }, h("h2", {}, d.review.candidate_name || d.subject_id), d.original_employee_id ? h("span", { class: "muted mono" }, `CSV ID ${d.original_employee_id}`) : null, reviewBadge(d.review),
       reviewMenu($("#main"), id, d.review, () => editReview($("#main"), id, d.review, () => reviewView($("#main"), id), d.subject_id, d.plan_reference), () => {
         if (location.hash === "#/review") return reviewView($("#main"));
         location.hash = "#/review";

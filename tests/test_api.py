@@ -304,6 +304,9 @@ def test_analysis_assigns_new_employee_ids_each_run(client):
     assert result["id"] == second_ids[0] and not result.get("error")
     saved = client.get(f"/api/plans/{result['plan_id']}").json()
     assert saved["subject_id"] == result["id"]
+    roster = next(e for e in second if e["t"] == "roster")
+    assert roster["original_ids"] == {"E-001": second_ids[0]}
+    assert saved["original_employee_id"] == "E-001"
 
 
 def test_hr_can_edit_employee_id_with_validation_and_audit(client):

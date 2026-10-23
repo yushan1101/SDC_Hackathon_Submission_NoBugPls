@@ -1,9 +1,11 @@
 """HR review metadata and audited employee ID corrections; AI snapshots remain immutable."""
 import json
 import re
+import sqlite3
 
 from governance import approval
 from governance.audit import now
+from governance.employee_ids import NUMBERED
 
 FIELDS = ("candidate_name", "candidate_email", "candidate_phone", "reviewer_notes", "review_status",
           "archived", "deleted_utc", "revision")
@@ -16,6 +18,13 @@ def get(con, pid):
         "approved" if approval.status(con, pid) == "approved" else "pending")
     data["archived"] = bool(data["archived"])
     return data
+
+
+def _is_account(con, employee_id):
+    try:
+        return bool(con.execute("SELECT 1 FROM users WHERE employee_id=?", (employee_id,)).fetchone())
+    except sqlite3.OperationalError:  # no accounts table (bare review database)
+        return False
 
 
 def require(con, pid, user):
@@ -57,19 +66,22 @@ def edit(con, pid, user, changes, revision):
             if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", employee_id):
                 raise approval.TransitionError("Employee ID must contain 1–32 letters, numbers, hyphens or underscores")
             previous_id = con.execute("SELECT subject_id FROM plans WHERE plan_id=?", (pid,)).fetchone()[0]
-            if employee_id != previous_id and con.execute(
-                    "SELECT 1 FROM plans p WHERE subject_id=? AND plan_id<>? AND NOT EXISTS "
-                    "(SELECT 1 FROM hr_reviews r WHERE r.plan_id=p.plan_id AND r.deleted_utc IS NOT NULL)",
-                    (employee_id, pid)).fetchone():
-                raise approval.TransitionError("Employee ID is already used by another current plan. Please choose a different ID.")
+            if employee_id != previous_id:
+                if re.fullmatch(r"E-\d{10,}", employee_id):
+                    raise approval.TransitionError("Employee ID numbers can have at most 9 digits")
+                # An employee account's ID may hold many plans (it's how HR shares a plan with them), and
+                # self-service plans are never consulted, so a 409 can't reveal an employee's private plans.
+                if not _is_account(con, employee_id) and con.execute(
+                        "SELECT 1 FROM plans p WHERE subject_id=? AND plan_id<>? AND audience='hr' AND NOT EXISTS "
+                        "(SELECT 1 FROM hr_reviews r WHERE r.plan_id=p.plan_id AND r.deleted_utc IS NOT NULL)",
+                        (employee_id, pid)).fetchone():
+                    raise approval.TransitionError("Employee ID is already used by another current plan. Please choose a different ID.")
             before = before | {"employee_id": previous_id}
             after = after | {"employee_id": employee_id}
             con.execute("UPDATE plans SET subject_id=? WHERE plan_id=?", (employee_id, pid))
             # Reserve numeric IDs so a later analysis cannot reuse an edited ID.
-            if match := re.fullmatch(r"E-(\d+)", employee_id):
-                number = int(match.group(1))
-                if number <= 9223372036854775806:
-                    con.execute("INSERT OR IGNORE INTO analysis_employee_ids(number) VALUES(?)", (number,))
+            if match := NUMBERED.fullmatch(employee_id):
+                con.execute("INSERT OR IGNORE INTO analysis_employee_ids(number) VALUES(?)", (int(match.group(1)),))
         if plan_reference is not None:
             if not re.fullmatch(r"P[0-9]{6}", plan_reference):
                 raise approval.TransitionError("Plan ID must be P followed by six digits, for example P000123")

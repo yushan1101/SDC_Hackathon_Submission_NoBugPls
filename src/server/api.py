@@ -1321,7 +1321,9 @@ def plan(pid: str, user: dict = Depends(current_user)):
     with DB_LOCK:
         saved = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
         done = [r[0] for r in db.execute("SELECT item FROM plan_progress WHERE plan_id=?", (pid,))]
-        review = {"review": reviews.get(db, pid), "review_history": reviews.history(db, pid)} if user["role"] == "hr_advisor" else {}
+        review = {"review": reviews.get(db, pid), "review_history": reviews.history(db, pid),
+                  "original_employee_id": (db.execute("SELECT original_id FROM plan_original_ids WHERE plan_id=?", (pid,))
+                                           .fetchone() or [None])[0]} if user["role"] == "hr_advisor" else {}
     report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else None
     return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], **cur, "history": hist, "report": report,
             "progress": done, **review}
@@ -1441,6 +1443,7 @@ def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", 
     with DB_LOCK:
         account_ids = [r[0] for r in db.execute("SELECT employee_id FROM users WHERE employee_id IS NOT NULL")]
         fresh_ids = allocate_ids(db, [r.employee_id for r in reqs], account_ids)
+    original = {eid: r.employee_id for r, eid in zip(reqs, fresh_ids)}
     reqs = [r.model_copy(update={"employee_id": eid, "request_id": eid}) for r, eid in zip(reqs, fresh_ids)]
 
     def gen():
@@ -1465,7 +1468,8 @@ def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", 
             for r in reqs:
                 pool.submit(_in_context(worker), r)
             yield sse({"t": "roster", "ids": [r.employee_id for r in reqs],
-                       "roles": {r.employee_id: occupation(r.target_role)["title"] for r in reqs}})
+                       "roles": {r.employee_id: occupation(r.target_role)["title"] for r in reqs},
+                       "original_ids": {o: eid for eid, o in original.items()}})
             remaining = len(reqs)
             while remaining:
                 kind, r, payload = events.get()
@@ -1480,6 +1484,8 @@ def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", 
                 out = serialise(s)
                 with DB_LOCK:
                     pid = approval.create(db, out["plan"], r.employee_id, "hr", out["issues"])
+                    with db:
+                        db.execute("INSERT INTO plan_original_ids VALUES(?,?)", (pid, original[r.employee_id]))
                 remember(pid, s)
                 for g in s.get("skill_gaps", []):
                     if g.gap > 0:

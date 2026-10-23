@@ -191,11 +191,11 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       state, microphoneLevel, speechCue,
     } }));
   };
-  const setMicState = (state, message) => {
+  const setMicState = (state, message, present = true) => {
     voicePanel.dataset.state = state;
     status.className = `interview-status is-${state}`;
     status.textContent = message;
-    updateAvatarPresentation();
+    if (present) updateAvatarPresentation();
   };
   const updateControls = () => {
     startBtn.disabled = recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking;
@@ -261,8 +261,10 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
         bar.style.height = `${5 + Math.round((end > start ? sum / (end - start) / 255 : 0) * 24)}px`;
       });
       if (recording && !muted && !interviewerSpeaking && !speechError) {
-        if (volume > 0.025) setMicState("speaking", "Speaking detected · keep answering");
-        else setMicState("listening", speechAvailable ? "Listening · speak your answer" : "Listening · browser transcription unavailable; type your answer");
+        // Touch the DOM only on a change; the throttled branch below tells the avatar.
+        const [state, message] = volume > 0.025 ? ["speaking", "Speaking detected · keep answering"]
+          : ["listening", speechAvailable ? "Listening · speak your answer" : "Listening · browser transcription unavailable; type your answer"];
+        if (voicePanel.dataset.state !== state || status.textContent !== message) setMicState(state, message, false);
       }
       // The avatar uses the same measured input as the visible microphone meter.
       // Limit presentation events to the room's 30 fps render rate.

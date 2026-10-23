@@ -1,6 +1,7 @@
 // Phase 1 virtual interview scene. This module is imported only for an active
 // interview when VIRTUAL_INTERVIEW_3D is enabled.
 import * as THREE from "../vendor/three.module.js";
+import { reduceMotion } from "./lib.js";
 
 const makeMaterial = (color, roughness = 0.82, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, ...extra });
 const makeClayMaterial = (color, roughness) => new THREE.MeshPhysicalMaterial({
@@ -346,7 +347,14 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     return { eyes, brows, mouth, smile };
   };
   const { eyes, brows, mouth, smile } = createStylizedHead();
+  // Face, eye and hand details (< 9 cm) cast no visible shadow; skipping them roughly halves the shadow pass.
+  person.traverse((node) => {
+    if (!node.isMesh) return;
+    node.geometry.computeBoundingSphere();
+    if (node.geometry.boundingSphere.radius * Math.max(node.scale.x, node.scale.y, node.scale.z) < 0.09) node.castShadow = false;
+  });
 
+  const still = reduceMotion();
   let avatarState = "idle";
   let microphoneLevel = 0;
   let speechCue = null;
@@ -354,6 +362,7 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     if (!["idle", "listening", "speaking"].includes(next) || next === avatarState) return;
     avatarState = next;
     host.dataset.avatarState = next;
+    if (still) drawStill();
   };
   host.dataset.avatarState = avatarState;
   const avatarStateEvent = (event) => {
@@ -501,7 +510,9 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     unmount();
   };
   renderer.domElement.addEventListener("webglcontextlost", contextLost);
-  renderer.setAnimationLoop((time) => {
+  // Reduced motion: settle the pose for the current state off-screen and render one static frame.
+  const drawStill = () => { for (let t = 50; t <= 2000; t += 50) animateAvatar(t); previousFrameTime = 0; draw(); };
+  if (!still) renderer.setAnimationLoop((time) => {
     if (disposed) return;
     if (time - lastAnimationFrame < 1000 / 30) return;
     lastAnimationFrame = time;
@@ -516,6 +527,6 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
     resizeListener = draw;
     window.addEventListener("resize", resizeListener);
   }
-  draw();
+  if (still) drawStill(); else draw();
   return unmount;
 }
