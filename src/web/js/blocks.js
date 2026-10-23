@@ -189,7 +189,9 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
       const main = h("div", { class: "act-main" },
         h("div", { class: "top" }, h("b", {}, a.skill_id), tick,
           h("label", {}, h("span", { class: "sr-only" }, `Hours for ${a.skill_id}, days ${p}`), input)),
-        h("div", { class: "act-description" }, description),
+        h("div", { class: "act-description" }, description,
+          a.steps?.length ? h("ol", { class: "act-steps" }, a.steps.map((s) => h("li", {}, s))) : null,
+          a.outcome ? h("p", { class: "act-outcome" }, h("b", {}, "You'll have: "), a.outcome) : null),
         links.length ? h("div", { class: "act-links" }, links.map((e) => h("a", { href: e.url, target: "_blank", rel: "noopener noreferrer" },
           icon("sources"), /esco\.ec\.europa\.eu/.test(e.url) ? "ESCO skill guide" : `Open course: ${e.title}`, h("span", { class: "tag free" }, "free")))) : null,
         goals.length ? h("span", { class: "sdg-nums", "aria-label": "Related Sustainable Development Goals" }, goals) : null);

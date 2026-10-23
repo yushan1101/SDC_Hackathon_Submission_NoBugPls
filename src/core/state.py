@@ -60,6 +60,8 @@ class PathwayActivity(BaseModel):
     skill_id: str
     activity: str
     estimated_hours: float
+    steps: list[Annotated[str, StringConstraints(max_length=400)]] = Field(default=[], max_length=6)  # what to do, in order
+    outcome: Annotated[str, StringConstraints(max_length=400)] = ""  # what the person can show at the end
     evidence_ids: list[str] = []
     sdg_links: list[Annotated[str, StringConstraints(pattern=r"^SDG([1-9]|1[0-7])$")]] = []
 

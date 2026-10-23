@@ -55,3 +55,15 @@ def test_market_analyst_uses_trained_outlook_asset(monkeypatch):
     ids = {e.id for e in s["evidence"]}
     assert all(f"stfkan:7411.1:{k}" in ids for k in rising)
     assert {c["skill_id"] for c in s["scenario_comparison"] if c["outlook"] == "rising"} == rising & {c["skill_id"] for c in s["scenario_comparison"]}
+
+
+def test_plan_activities_are_personal_and_detailed():
+    from agents import pathway
+    from core.state import Gap, Skill
+    gaps = [Gap(skill_id="python", current_level=0, required_level=2, gap=2, rationale_source_ids=["s:1"])]
+    p = pathway.build(gaps, 4, "data analyst", "assistive", None, [Skill(name="excel", level=4), Skill(name="python", level=0)])
+    first = p.activities[0]
+    assert "excel skills" in first.activity and "starting from the basics" in first.activity and "data analyst" in first.activity
+    assert first.activity.startswith('Get started with "python"')
+    assert len(first.steps) == 3 and first.steps[0].startswith("Weeks 1-2") and first.outcome
+    assert {a.day_range for a in p.activities} == {"1-30", "31-60"}

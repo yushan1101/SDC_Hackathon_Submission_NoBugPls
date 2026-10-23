@@ -157,9 +157,10 @@ def n_pathway(s):
     r = s["request"]
     need = [g.skill_id for g in s.get("skill_gaps", []) if g.gap > 0][:8]
     learning = {k: knowledge.learning_resources(k, 1) for k in need}
-    p = pathway.build(s.get("skill_gaps", []), r.profile.weekly_learning_hours,
-                      s.get("occupation", {}).get("title") or r.target_role, r.scenario, learning)
-    return {"draft_pathway": p, "learning_evidence": [e for v in learning.values() for e in v]}
+    role = s.get("occupation", {}).get("title") or r.target_role
+    p = pathway.build(s.get("skill_gaps", []), r.profile.weekly_learning_hours, role, r.scenario, learning, r.profile.skills)
+    p, usage = pathway.personalise(p, role, r.profile.skills, s.get("skill_gaps", []))
+    return {"draft_pathway": p, "learning_evidence": [e for v in learning.values() for e in v], "_usage": [usage]}
 
 
 def _all_evidence(s):

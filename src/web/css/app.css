@@ -3314,3 +3314,8 @@ body {
   .rv-tabs { border-radius: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { [data-product="hr"] .review .detail { animation: none; } }
+
+/* Plan activities: the person's steps, in order, and what they'll have at the end. */
+.phase .act-steps { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+.phase .act-steps li::marker { color: var(--accent); font-weight: 600; }
+.phase .act-description .act-outcome { margin-top: 8px; color: var(--ink); }
