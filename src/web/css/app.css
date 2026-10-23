@@ -3162,6 +3162,8 @@ body {
 /* HR advisor sidebar: click to resize the rail; collapsed labels appear as tooltips. */
 .hr-shell:not(.admin-shell) { grid-template-columns: 224px minmax(0, 1fr); transition: grid-template-columns 220ms var(--ease-out); }
 .hr-shell:not(.admin-shell).is-sidebar-collapsed { grid-template-columns: 84px minmax(0, 1fr); }
+.hr-shell:not(.admin-shell) .hr-main > .view { width: 100%; max-width: none; min-width: 0; }
+.hr-shell:not(.admin-shell) .hr-main > .view > * { min-width: 0; max-width: 100%; }
 .hr-shell:not(.admin-shell) .hr-rail { position: relative; overflow: visible; }
 .hr-shell:not(.admin-shell) .hr-rail-head { display: flex; align-items: center; gap: 6px; min-width: 0; margin-bottom: 8px; }
 .hr-shell:not(.admin-shell) .hr-rail-head .logo { flex: 1; min-width: 0; margin: 0; }
@@ -3185,6 +3187,9 @@ body {
 .hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail > a:not(.logo):hover .tip,
 .hr-shell:not(.admin-shell).is-sidebar-collapsed .hr-rail > a:not(.logo):focus-visible .tip { opacity: 1; visibility: visible; transform: none; }
 .hr-shell:not(.admin-shell):not(.is-sidebar-collapsed) .hr-rail .lbl { display: inline; }
+.hr-shell:not(.admin-shell) .drop { cursor: pointer; }
+.hr-shell:not(.admin-shell) .drop:hover,
+.hr-shell:not(.admin-shell) .drop:focus-within { border-color: var(--accent); background: var(--accent-soft); }
 @media (max-width: 767px) {
   .hr-shell:not(.admin-shell) { grid-template-columns: 1fr; }
   .hr-shell:not(.admin-shell) .hr-sidebar-toggle { display: none; }

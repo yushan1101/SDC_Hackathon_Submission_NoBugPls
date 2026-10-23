@@ -8,6 +8,8 @@ import { openingsView, openingDetail, signalsView } from "./recruit.js";
 import { modelsView, peopleView, pluginsView } from "./org.js";
 import { agentView, hrCapsule } from "./agents.js";
 import { setVoice } from "./voice.js";
+import { accountView, pricingView } from "./account.js";
+import { termsView, privacyView } from "./legal.js";
 
 const app = $("#app");
 const AGENTS = ["supervisor", "profiler", "knowledge_search", "gap_analysis", "market_analyst", "pathway", "coach", "reviewer"];
@@ -65,7 +67,7 @@ function shell() {
     h("a", { href: "#/people", onclick: () => more.hidePopover?.() }, icon("user"), "Team members"),
     h("a", { href: "#/models", onclick: () => more.hidePopover?.() }, icon("model"), "AI models"),
     h("a", { href: "#/signals", onclick: () => more.hidePopover?.() }, icon("pulse"), "AI trends"),
-    h("a", { href: "./#/account" }, icon("user"), "Plan & billing"),
+    h("a", { href: "#/account", "data-route": "#/account" }, icon("user"), "Plan & billing"),
     h("button", { type: "button", onclick: signOut }, icon("out"), "Sign out"));
   sidebarToggle = h("button", { class: "hr-sidebar-toggle", type: "button", "aria-expanded": String(sidebarExpanded),
     "aria-label": sidebarExpanded ? "Collapse sidebar" : "Expand sidebar", title: sidebarExpanded ? "Collapse sidebar" : "Expand sidebar",
@@ -89,7 +91,7 @@ function shell() {
     h("div", { class: "hr-account-who" }, h("span", { class: "rv-avatar", "aria-hidden": "true" }, name.slice(0, 2).toUpperCase()),
       h("div", {}, h("b", {}, name), h("span", { class: "muted" }, "HR advisor"))),
     h("a", { href: "#/models", "data-route": "#/models", onclick: close }, icon("model"), "AI models"),
-    h("a", { href: "./#/account", onclick: close }, icon("user"), "Plan & billing"),
+    h("a", { href: "#/account", "data-route": "#/account", onclick: close }, icon("user"), "Plan & billing"),
     h("button", { type: "button", onclick: () => { close(); signOut(); } }, icon("out"), "Sign out"));
   const accountBtn = h("button", { type: "button", class: "rail-group-btn hr-account-btn", popovertarget: "hr-account", "aria-haspopup": "true", title: name },
     icon("user"), h("span", { class: "lbl" }, name), h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
@@ -133,7 +135,7 @@ function capsule() {
       page("#/openings", "Hiring", "people", "openings jobs applicants"),
       page("#/plugins", "Hiring plugins", "plug", "linkedin post share"), page("#/people", "Team members", "user", "invite users"),
       page("#/models", "AI models", "model", "llm settings"), page("#/signals", "AI trends", "pulse", "signals news"),
-      page("./#/account", "Plan & billing", "user", "pricing subscription")],
+      page("#/account", "Plan & billing", "user", "pricing subscription")],
     actions: [{ label: "Analyse a team CSV", icon: "upload", words: "start new run import", run: () => { location.hash = "#/run"; } },
       { label: "Review the next pending plan", icon: "review", words: "approve open next", run: () => {
         const p = S.plans.find((x) => x.audience === "hr" && !x.review?.archived && x.review?.review_status === "pending");
@@ -159,7 +161,7 @@ function route() {
   const hash = location.hash || "#/overview";
   const [page = "overview", id, ...extra] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
   if (page === "plans") { location.replace(`#/review${id ? `/${id}` : ""}`); return; }  // the plans register is part of the review page now
-  const pages = new Set(["overview", "run", "review", "openings", "signals", "plugins", "people", "models", "agents"]);
+  const pages = new Set(["overview", "run", "review", "openings", "signals", "plugins", "people", "models", "agents", "account", "pricing", "privacy", "terms"]);
   if (!pages.has(page) || extra.length || (id && !["review", "openings", "plugins", "agents"].includes(page))) {
     location.replace("#/overview");
     return;
@@ -183,7 +185,9 @@ function route() {
   if (page !== "review" || !main.querySelector(".review")) main.scrollTop = 0;
   const views = { run: runView, review: () => reviewView(main, id),
     openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status),
-    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)) };
+    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)),
+    account: () => accountView(main, { refreshMe: async () => { S.me = await api("/api/me"); return S.me; } }),
+    pricing: () => pricingView(main, { me: S.me }), terms: () => termsView(main), privacy: () => privacyView(main) };
   Promise.resolve((views[page] || overview)(main)).catch((e) => {
     main.replaceChildren(h("div", { class: "view" }, h("div", { class: "issue error", role: "alert" }, e.message)));
   });
@@ -311,7 +315,7 @@ function runView(main) {
     } catch (e) {
       S.status.set("confused", "Run failed");
       errors.replaceChildren(...(e.body?.errors || [e.message]).map((x) => h("li", {}, x)),
-        ...(e.status === 402 ? [h("li", {}, h("a", { class: "btn sm primary", href: "./#/pricing" }, "See the Team plan"))] : []));
+        ...(e.status === 402 ? [h("li", {}, h("a", { class: "btn sm primary", href: "#/pricing" }, "See the Team plan"))] : []));
     } finally { S.running = false; }
   }
 
@@ -525,6 +529,7 @@ async function loadDetail(id, detail, wrap) {
   try { d = await api(`/api/plans/${id}`); } catch (e) { detail.replaceChildren(h("div", { class: "detail-body" }, h("div", { class: "issue error" }, e.message))); return; }
   if (!detail.isConnected) return;
   const r = d.report;
+  const scenario = d.plan?.scenario || r?.request?.scenario;
   const name = d.review.candidate_name || d.subject_id;
   const cite = (cid) => { show("evidence"); document.getElementById(`src-${cid}`)?.scrollIntoView({ block: "nearest" }); };
   const contact = [[d.review.candidate_email, "mail"], [d.review.candidate_phone, "user"]].filter(([v]) => v);
@@ -536,7 +541,10 @@ async function loadDetail(id, detail, wrap) {
         await reviewView($("#main"), id);
       } }),
     analysis: () => r ? [h("section", { class: "block" }, h("h3", {}, "Summary"), staticText(r.narrative, cite)),
-      r.gaps?.length ? gapsBlock(r.gaps) : null, r.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null,
+      r.gaps?.length ? gapsBlock(r.gaps) : null,
+      r.comparison?.length ? comparisonBlock(r.comparison, scenario) : scenario ? h("section", { class: "block" },
+        h("h3", {}, `${scenario === "agentic" ? "Agentic" : "Assistive"} AI comparison`),
+        h("p", { class: "muted" }, "No Assistive versus Agentic comparison was saved for this report.")) : null,
       r.outlook ? outlookBlock(r.outlook) : null, r.signals ? signalsBlock(r.signals) : null, r.sdgs?.length ? sdgBlock(r.sdgs) : null]
       : h("p", { class: "muted" }, "No analysis was saved for this plan."),
     notes: () => h("section", { class: "block" }, h("h3", {}, "Reviewer notes"), h("p", { class: "review-notes" }, d.review.reviewer_notes || "No notes yet."),
@@ -564,7 +572,7 @@ async function loadDetail(id, detail, wrap) {
       h("span", { class: "rv-avatar lg", "aria-hidden": "true" }, initials(name)),
       h("div", { class: "rv-person-main" },
         h("div", { class: "rv-person-name" }, h("h2", {}, name), reviewBadge(d.review), h("span", { class: `tag ${d.status}` }, d.status)),
-        h("p", { class: "muted" }, [d.subject_id, sentence(d.plan.target_role), d.plan_reference, `v${d.version}`].filter(Boolean).join(" · ")),
+        h("p", { class: "muted" }, [d.subject_id, sentence(d.plan.target_role), scenario ? `${scenario === "agentic" ? "Agentic" : "Assistive"} AI` : null, d.plan_reference, `v${d.version}`].filter(Boolean).join(" · ")),
         contact.length ? h("p", { class: "rv-contact" }, contact.map(([v, ic]) => h("span", {}, icon(ic), v))) : null),
       h("div", { class: "rv-person-actions" }, planStatusControl($("#main"), d, () => reviewView($("#main"), id)),
         reviewMenu($("#main"), id, d.review, () => editReview($("#main"), id, d.review, () => reviewView($("#main"), id), d.subject_id, d.plan_reference), () => {
