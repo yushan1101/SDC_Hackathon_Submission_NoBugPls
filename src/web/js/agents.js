@@ -25,14 +25,67 @@ const say = (msgs, profile) => api("/api/agents/auto/chat", { method: "POST",
 
 // ---------------------------------------------------------------- Chat | Interview pill (public app)
 let pill = null;
+let disposeSwitch = null;
+/** Stop the one active switcher observer when its route is replaced. */
+export function disposeAgentSwitch() { disposeSwitch?.(); disposeSwitch = null; }
 /** One pill shared by the chat and the mock-interview pages, so its bubble slides between them. */
 export function agentSwitch(mode) {
   pill ??= h("nav", { class: "ag-pill", "aria-label": "Agent mode" }, h("span", { class: "ag-pill-thumb", "aria-hidden": "true" }),
-    h("a", { "data-mode": "chat", href: "#/agents" }, icon("ask"), "Chat"), h("a", { "data-mode": "interview", href: "#/interview" }, icon("quiz"), "Interview"));
+    h("a", { "data-mode": "chat", href: "#/agents", "aria-label": "Chat", title: "Chat" }, icon("ask"), h("span", { class: "ag-pill-label" }, "Chat")),
+    h("a", { "data-mode": "interview", href: "#/interview", "aria-label": "Interview", title: "Interview" }, icon("quiz"), h("span", { class: "ag-pill-label" }, "Interview")));
   pill.querySelectorAll("a").forEach((a) => (a.dataset.mode === mode ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
   // the caller inserts the pill first; reading its layout pins the old position so the move animates
   requestAnimationFrame(() => { void pill.offsetWidth; pill.dataset.at = mode; });
-  return h("div", { class: "ag-modes" }, pill);
+  disposeAgentSwitch();
+  const sentinel = h("span", { class: "ag-switch-sentinel", "aria-hidden": "true" });
+  const sticky = h("div", { class: "agent-switcher-wrapper" }, h("div", { class: "ag-modes" }, pill));
+  const slot = h("div", { class: "ag-switch-slot" }, sentinel, sticky);
+  const main = document.querySelector("#main");
+  let observer = null, resize = null, fallbackScroll = null, active = true;
+  const setScrolled = (value) => sticky.classList.toggle("is-scrolled", value);
+  const clearScrollObserver = () => {
+    observer?.disconnect(); observer = null;
+    if (fallbackScroll) { removeEventListener("scroll", fallbackScroll); fallbackScroll = null; }
+  };
+  const measure = () => {
+    if (!active) return;
+    const nav = document.querySelector(".pub-top");
+    const css = nav && getComputedStyle(nav);
+    const stickyTop = (parseFloat(css?.top) || 0) + (nav?.getBoundingClientRect().height || 0) + 8;
+    sticky.style.setProperty("--agent-switch-top", `${stickyTop}px`);
+    clearScrollObserver();
+    if (window.IntersectionObserver) {
+      observer = new IntersectionObserver(([entry]) => setScrolled(!entry.isIntersecting), {
+        rootMargin: `-${stickyTop}px 0px 0px 0px`, threshold: 0,
+      });
+      observer.observe(sentinel);
+    } else {
+      fallbackScroll = () => setScrolled(sentinel.getBoundingClientRect().top < stickyTop);
+      addEventListener("scroll", fallbackScroll, { passive: true });
+      fallbackScroll();
+    }
+  };
+  measure();
+  const nav = document.querySelector(".pub-top");
+  if (nav && window.ResizeObserver) {
+    resize = new ResizeObserver(measure);
+    resize.observe(nav);
+  }
+  addEventListener("resize", measure);
+  const onMainChange = new MutationObserver(() => { if (active && !slot.isConnected) cleanup(); });
+  if (main) onMainChange.observe(main, { childList: true });
+  function cleanup() {
+    if (!active) return;
+    active = false;
+    clearScrollObserver();
+    resize?.disconnect(); resize = null;
+    onMainChange.disconnect();
+    removeEventListener("resize", measure);
+    sticky.classList.remove("is-scrolled");
+    if (disposeSwitch === cleanup) disposeSwitch = null;
+  }
+  disposeSwitch = cleanup;
+  return slot;
 }
 
 // ---------------------------------------------------------------- the chat

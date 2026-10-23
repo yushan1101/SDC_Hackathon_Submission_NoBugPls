@@ -511,23 +511,31 @@ const SVG = "http://www.w3.org/2000/svg";
 const svg = (tag, attrs = {}) => { const e = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
 
 /** Future skills radar: one spoke per AI topic, distance = trend strength (z, clipped to ±3); dashed = the previous board. */
-function radar(topics, prev) {
+function radar(topics, prev, selected = "today") {
   const n = topics.length, R = 120, c = 160, r = (z) => R * (Math.max(-3, Math.min(3, z)) + 3) / 6;
   const pt = (i, z) => { const a = -Math.PI / 2 + (2 * Math.PI * i) / n; return [c + r(z) * Math.cos(a), c + r(z) * Math.sin(a)]; };
+  const strength = (t) => selected === "previous" ? (prev?.z?.[t.id] ?? 0) : t.z;
+  const direction = (t) => selected === "previous"
+    ? (prev?.direction?.[t.id] || (strength(t) >= 2 ? "rising" : strength(t) <= -2 ? "falling" : "stable")) : t.direction;
   const s = svg("svg", { viewBox: "-100 0 520 320", class: "radar", role: "img",
-    "aria-label": `Future skills radar: ${topics.filter((t) => t.direction === "rising").map((t) => t.label).join(", ") || "no topic"} rising` });
+    "aria-label": `Future skills radar: ${topics.filter((t) => strength(t) >= 2).map((t) => t.label).join(", ") || "no topic"} rising${selected === "previous" ? " on the previous board" : " today"}` });
   for (const z of [-2, 0, 2]) s.append(svg("circle", { cx: c, cy: c, r: r(z), class: z === 0 ? "rd-zero" : "rd-ring" }));
   topics.forEach((t, i) => {
     const [x, y] = pt(i, 3);
     s.append(svg("line", { x1: c, y1: c, x2: x, y2: y, class: "rd-spoke" }));
-    const lab = svg("text", { x: c + (x - c) * 1.07, y: c + (y - c) * 1.07, class: `rd-label ${t.direction}`,
+    const lab = svg("text", { x: c + (x - c) * 1.07, y: c + (y - c) * 1.07, class: `rd-label ${direction(t)}`,
       "text-anchor": Math.abs(x - c) < 8 ? "middle" : x > c ? "start" : "end", "dominant-baseline": "middle" });
     lab.textContent = t.label.length > 18 ? t.label.slice(0, 17) + "…" : t.label;
     s.append(lab);
   });
   const poly = (zs, cls) => svg("polygon", { points: zs.map((z, i) => pt(i, z).join(",")).join(" "), class: cls });
-  if (prev) s.append(poly(topics.map((t) => prev[t.id] ?? 0), "rd-prev"));
-  s.append(poly(topics.map((t) => t.z), "rd-now"));
+  if (prev && selected === "previous") {
+    s.append(poly(topics.map((t) => t.z), "rd-prev"));
+    s.append(poly(topics.map((t) => prev.z[t.id] ?? 0), "rd-now"));
+  } else {
+    if (prev) s.append(poly(topics.map((t) => prev.z[t.id] ?? 0), "rd-prev"));
+    s.append(poly(topics.map((t) => t.z), "rd-now"));
+  }
   return s;
 }
 
@@ -610,9 +618,18 @@ export function boardView(b, { onRefresh, preview = false } = {}) {
   const changes = h("div", { class: "trend-changes" });
   api("/api/signals/history").then(({ days }) => {
     const prev = days.filter((d) => d.day < b.day).at(-1);
-    radarHost.replaceChildren(radar(b.topics, prev?.z), h("p", { class: "radar-key" },
-      h("span", { class: "k-now" }, "Today"), prev ? h("span", { class: "k-prev" }, `Previous board (${prev.day})`) : null,
-      h("span", {}, "Further out = stronger trend; the middle ring is no change.")));
+    let selectedBoard = "today";
+    const todayButton = h("button", { class: "k-now", type: "button", "aria-pressed": "true", onclick: () => selectBoard("today") }, "Today");
+    const previousButton = prev ? h("button", { class: "k-prev", type: "button", "aria-pressed": "false", onclick: () => selectBoard("previous") }, `Previous board (${prev.day})`) : null;
+    const selectBoard = (board) => {
+      selectedBoard = board;
+      todayButton.setAttribute("aria-pressed", String(board === "today"));
+      previousButton?.setAttribute("aria-pressed", String(board === "previous"));
+      radarHost.replaceChildren(radar(b.topics, prev, board), key);
+    };
+    const key = h("div", { class: "radar-key", role: "group", "aria-label": "Select trend board" },
+      todayButton, previousButton, h("span", {}, "Further out = stronger trend; the middle ring is no change."));
+    radarHost.replaceChildren(radar(b.topics, prev), key);
     if (prev) {
       const moved = b.topics.map((t) => ({ t, was: prev.direction?.[t.id] ?? (prev.z[t.id] >= 2 ? "rising" : prev.z[t.id] <= -2 ? "falling" : "stable"), dz: t.z - (prev.z[t.id] ?? 0) }));
       const flips = moved.filter((m) => m.was !== m.t.direction);
