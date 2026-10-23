@@ -14,6 +14,7 @@ import argparse
 import json
 import re
 import urllib.request
+from urllib.parse import quote
 from datetime import date
 from pathlib import Path
 
@@ -24,7 +25,15 @@ SOURCE_VERSION, SOURCE_DATE = "ESCO v1.2", "2024-05"
 SOURCE_LICENSE = "ESCO, European Commission; free reuse with attribution (Decision 2011/833/EU)"
 SOURCE_BASE = dict(source_id="esco:1.2", publisher="European Commission (ESCO)",
                    publication_date=SOURCE_DATE, license=SOURCE_LICENSE, jurisdiction="EU")
-ESCO_PAGE = "https://esco.ec.europa.eu/en/classification/{kind}?uri=http://data.europa.eu/esco/{kind}/{id}"
+ESCO_PAGE = "https://esco.ec.europa.eu/en/classification/{page}?uri={uri}"
+ESCO_PAGES = {"occupation": "occupation", "skill": "skill"}
+
+
+def esco_page(kind: str, concept_id: str) -> str:
+    """Build a current ESCO portal link for a concept URI."""
+    page = ESCO_PAGES[kind]
+    uri = quote(f"http://data.europa.eu/esco/{kind}/{concept_id}", safe="")
+    return ESCO_PAGE.format(page=page, uri=uri)
 
 
 LEARNING = {  # official documentation / vendor training only
@@ -83,7 +92,7 @@ def load_snapshot() -> dict:
 
 
 def occupation_url(o: dict) -> str:
-    return ESCO_PAGE.format(kind="occupation", id=o["uri"])
+    return esco_page("occupation", o["uri"])
 
 
 def esco_passages(snap: dict) -> list[dict]:
@@ -116,7 +125,7 @@ def learning_passages(snap: dict, check_urls: bool = True) -> list[dict]:
             else:
                 out.append(SOURCE_BASE | dict(id=f"learn:{name}", role_id="", skill_id=name, category="learning",
                                               title=f"ESCO: {name} (definition, related skills and occupations)",
-                                              url=ESCO_PAGE.format(kind="skill", id=d["id"]), publication_date="living documentation",
+                                              url=esco_page("skill", d["id"]), publication_date="living documentation",
                                               license="link only", text=f"Official ESCO description of {name} and where it is used."))
     if check_urls:  # vendor URLs: check each distinct one once (ESCO pages share one host; check a sample)
         urls = {p["url"] for p in out if p["source_id"].startswith("learn:")} | {next(p["url"] for p in out if p["source_id"] == "esco:1.2")}

@@ -161,6 +161,34 @@ export function issuesBlock(issues) {
     icon(i.severity === "error" ? "flag" : "info"), h("span", {}, i.message))));
 }
 
+function planActivitySteps(activity) {
+  if (activity.steps?.length) return activity.steps;
+  const skill = activity.skill_id || "this skill";
+  if (activity.day_range === "61-90") return [
+    `Weeks 9-10: Build a portfolio piece that demonstrates ${skill}, with a short write-up and relevant files or screenshots.`,
+    "Week 11: Ask your manager or a peer to review the work and give specific feedback.",
+    "Week 12: Apply the feedback and write down how you will keep using this skill after the 90 days.",
+  ];
+  if (activity.day_range === "31-60") return [
+    `Week 5: Choose a practical task where you can use ${skill} and agree on it with your manager.`,
+    `Weeks 6-7: Complete the task and note the results, challenges, and what you would improve.`,
+    "Week 8: Share the result with a colleague and ask for one concrete suggestion.",
+  ];
+  return [
+    `Weeks 1-2: Study a guide or tutorial for ${skill} and note three ideas you can use at work.`,
+    `Weeks 3-4: Complete practice exercises and apply ${skill} to one small, suitable work task.`,
+    "End of month: Review what you learned with your manager and agree on a practical next step.",
+  ];
+}
+
+function planActivityOutcome(activity) {
+  if (activity.outcome) return activity.outcome;
+  const skill = activity.skill_id || "the skill";
+  if (activity.day_range === "61-90") return `A reviewed portfolio piece demonstrating ${skill}.`;
+  if (activity.day_range === "31-60") return `A completed work task using ${skill}, with a short note about the result.`;
+  return `A completed set of practice exercises and an explanation of the basics of ${skill}.`;
+}
+
 /** Editable 30/60/90 plan with approval. Talks to /api/plans/:id. Calls onChange(status) after saves. */
 export function planBlock({ planId, planReference, plan, version, status, weeklyHours, onChange, approverLabel = "I have reviewed this plan and approve it", title = "Your 90-day plan",
   progress = [], evidence = null, readOnly = false }) {
@@ -192,13 +220,14 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
       const tick = planId && !readOnly ? h("label", { class: "act-done", title: "Mark this activity as done" },
         h("input", { type: "checkbox", checked: done.has(key(a)) ? true : null, onchange: (e) => mark(a, e.target.checked, e.target) }), "Done") : null;
       const links = courses(a);
+      const steps = planActivitySteps(a);
       const main = h("div", { class: "act-main" },
         h("div", { class: "top" }, h("b", {}, a.skill_id), tick,
           h("label", {}, h("span", { class: "sr-only" }, `Hours for ${a.skill_id}, days ${p}`), input)),
         h("div", { class: "act-description" }, description,
-          a.steps?.length ? h("ol", { class: "act-steps" }, a.steps.map((s) => h("li", {}, s))) : null,
-          a.outcome ? h("p", { class: "act-outcome" }, h("b", {}, "You'll have: "), a.outcome) : null),
-        links.length ? h("div", { class: "act-links" }, links.map((e) => h("a", { href: e.url, target: "_blank", rel: "noopener noreferrer" },
+          h("ol", { class: "act-steps" }, steps.map((s) => h("li", {}, s))),
+          h("p", { class: "act-outcome" }, h("b", {}, "You'll have: "), planActivityOutcome(a))),
+        links.length ? h("div", { class: "act-links" }, links.map((e) => h("a", { href: currentSourceUrl(e.url), target: "_blank", rel: "noopener noreferrer" },
           icon("sources"), /esco\.ec\.europa\.eu/.test(e.url) ? "ESCO skill guide" : `Open course: ${e.title}`, h("span", { class: "tag free" }, "free")))) : null,
         goals.length ? h("span", { class: "sdg-nums", "aria-label": "Related Sustainable Development Goals" }, goals) : null);
       return reveal(h("article", { class: `act${done.has(key(a)) ? " is-done" : ""}`, "data-key": key(a) }, main,
@@ -297,10 +326,27 @@ export function historyBlock(hist) {
 }
 
 export function sourceItem(e) {
-  return h("a", { class: "src", id: `src-${e.id}`, href: e.url, target: "_blank", rel: "noopener noreferrer" },
+  return h("a", { class: "src", id: `src-${e.id}`, href: currentSourceUrl(e.url), target: "_blank", rel: "noopener noreferrer" },
     h("span", { class: "id" }, citeLabel(e.id)),
     h("span", { class: "t" }, e.title),
     h("span", { class: "m" }, [e.publisher, e.publication_date && `published ${e.publication_date}`, e.access_date && `accessed ${e.access_date}`].filter(Boolean).join(" · ")));
+}
+
+function currentSourceUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (url.hostname !== "esco.ec.europa.eu") return rawUrl;
+    const conceptPages = new Set([
+      "/en/classification/skill",
+      "/en/classification/occupation",
+    ]);
+    if (!conceptPages.has(url.pathname)) return rawUrl;
+    const uri = url.searchParams.get("uri");
+    if (uri) url.searchParams.set("uri", uri);
+    return url.href;
+  } catch {
+    return rawUrl;
+  }
 }
 
 // ---------------------------------------------------------------- document integrity (hidden text, injection, fraud)
