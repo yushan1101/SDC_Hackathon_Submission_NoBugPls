@@ -11,6 +11,7 @@ import { setVoice } from "./voice.js";
 
 const app = $("#app");
 const AGENTS = ["supervisor", "profiler", "knowledge_search", "gap_analysis", "market_analyst", "pathway", "coach", "reviewer"];
+const HR_SIDEBAR_EXPANDED_KEY = "ap.hr.sidebar.expanded";
 const S = { me: null, meta: null, scenario: "assistive", status: null, rows: new Map(), needs: [], csv: null, plans: [], sel: null };
 
 // ---------------------------------------------------------------- boot / sign in
@@ -35,7 +36,11 @@ async function boot() {
 // ---------------------------------------------------------------- shell
 function shell() {
   S.status = new OwlStatus({ size: 32, say: "Ready" });
-  const link = (href, label, ic) => h("a", { href, "data-route": href, "aria-label": label, title: label }, icon(ic), h("span", { class: "lbl" }, label));
+  let sidebarExpanded = true;
+  try { sidebarExpanded = localStorage.getItem(HR_SIDEBAR_EXPANDED_KEY) !== "false"; } catch { /* use the expanded default */ }
+  let shellEl, sidebar, sidebarToggle;
+  const link = (href, label, ic) => h("a", { href, "data-route": href, "aria-label": label, title: label }, icon(ic),
+    h("span", { class: "lbl" }, label), h("span", { class: "tip", "aria-hidden": "true" }, label));
   const tab = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), label);
   S.badge = h("span", { class: "badge", hidden: true });
   S.seg = h("div", { class: "seg scenario-switch", role: "group", "aria-label": "AI scenario" },
@@ -54,15 +59,32 @@ function shell() {
     h("a", { href: "#/signals", onclick: () => more.hidePopover?.() }, icon("pulse"), "AI trends"),
     h("a", { href: "./#/account" }, icon("user"), "Plan & billing"),
     h("button", { type: "button", onclick: signOut }, icon("out"), "Sign out"));
-  app.replaceChildren(h("div", { class: "hr-shell" },
-    h("nav", { class: "rail", "aria-label": "Primary" },
-      h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }, S.logo = h("span", { class: "logo-owl" }), h("span", { class: "lbl wordmark" }, "AiversePulse")),
+  sidebarToggle = h("button", { class: "hr-sidebar-toggle", type: "button", "aria-expanded": String(sidebarExpanded),
+    "aria-label": sidebarExpanded ? "Collapse sidebar" : "Expand sidebar", title: sidebarExpanded ? "Collapse sidebar" : "Expand sidebar",
+    onclick: () => {
+      sidebarExpanded = !sidebarExpanded;
+      try { localStorage.setItem(HR_SIDEBAR_EXPANDED_KEY, String(sidebarExpanded)); } catch { /* keep the preference for this page */ }
+      updateSidebar();
+    } }, icon("chevron"));
+  const updateSidebar = () => {
+    if (!shellEl) return;
+    shellEl.classList.toggle("is-sidebar-expanded", sidebarExpanded);
+    shellEl.classList.toggle("is-sidebar-collapsed", !sidebarExpanded);
+    sidebarToggle.setAttribute("aria-expanded", String(sidebarExpanded));
+    sidebarToggle.setAttribute("aria-label", sidebarExpanded ? "Collapse sidebar" : "Expand sidebar");
+    sidebarToggle.title = sidebarExpanded ? "Collapse sidebar" : "Expand sidebar";
+  };
+  sidebar = h("nav", { class: "rail hr-rail", "aria-label": "Primary" },
+      h("div", { class: "hr-rail-head" },
+        h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }, S.logo = h("span", { class: "logo-owl" }), h("span", { class: "lbl wordmark" }, "AiversePulse")), sidebarToggle),
       link("#/overview", "Overview", "grid"), link("#/agents", "Agent", "ask"), link("#/run", "Analyse team", "upload"), review, link("#/plans", "Plans", "history"),
       link("#/openings", "Hiring", "people"), link("#/plugins", "Hiring plugins", "plug"), link("#/people", "Team members", "user"), link("#/models", "AI models", "model"),
       link("#/signals", "AI trends", "pulse"),
       h("div", { style: { flex: 1 } }),
-      h("a", { href: "./#/account", "aria-label": "Plan & billing", title: "Plan & billing" }, icon("user"), h("span", { class: "lbl" }, "Plan & billing")),
-      h("a", { href: "#", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "lbl" }, "Sign out"))),
+      h("a", { class: "hr-nav-link", href: "./#/account", "aria-label": "Plan & billing", title: "Plan & billing" }, icon("user"), h("span", { class: "lbl" }, "Plan & billing"), h("span", { class: "tip", "aria-hidden": "true" }, "Plan & billing")),
+      h("a", { class: "hr-nav-link", href: "#", "aria-label": "Sign out", title: "Sign out", onclick: (e) => { e.preventDefault(); signOut(); } }, icon("out"), h("span", { class: "lbl" }, "Sign out"), h("span", { class: "tip", "aria-hidden": "true" }, "Sign out")));
+  shellEl = h("div", { class: "hr-shell" },
+    sidebar,
     h("header", { class: "hr-top" }, S.crumb, S.status.el,
       h("div", { class: "who" }, h("div", {}, S.me.display_name), h("div", { class: "muted" }, "HR advisor"))),
     h("main", { id: "main", class: "hr-main", tabindex: "-1" }),
@@ -70,7 +92,9 @@ function shell() {
       tab("#/review", "Review", "review"), tab("#/plans", "Plans", "history"),
       h("button", { type: "button", class: "hr-more-button", popovertarget: "hr-more", "data-route": "#/more",
         "aria-haspopup": "true", "aria-label": "More pages" }, icon("grid"), "More")),
-    more, S.capsule = capsule()));
+    more, S.capsule = capsule());
+  app.replaceChildren(shellEl);
+  updateSidebar();
   // the owl lives in the rail's logo spot; on phones (no rail) it moves back next to the status text
   const narrow = matchMedia("(max-width: 767px)");
   const place = () => (narrow.matches ? S.status.el.prepend(S.status.owl.el) : S.logo.append(S.status.owl.el));
