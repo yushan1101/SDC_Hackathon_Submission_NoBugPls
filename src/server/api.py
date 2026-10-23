@@ -1240,6 +1240,7 @@ def review_list(q: str = "", status: str = "active", user: dict = Depends(need("
 class ReviewEditIn(BaseModel):
     model_config = {"extra": "forbid"}
     employee_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,32}$")
+    plan_reference: str | None = Field(default=None, pattern=r"^P[0-9]{6}$")
     candidate_name: str = Field(default="", max_length=120)
     candidate_email: str = Field(default="", max_length=254)
     candidate_phone: str = Field(default="", max_length=50)

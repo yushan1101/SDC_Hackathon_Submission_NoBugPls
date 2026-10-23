@@ -335,6 +335,33 @@ def test_hr_can_edit_employee_id_with_validation_and_audit(client):
     assert client.get(f"/api/plans/{other}").status_code == 404
 
 
+def test_hr_can_reuse_deleted_ids_and_edit_plan_id(client):
+    import server.api as api
+    from governance import approval, reviews
+
+    with api.DB_LOCK:
+        plan = {"target_role": "electrician", "activities": [], "status": "draft"}
+        old = approval.create(api.db, plan, "REUSE-OLD", "hr")
+        pid = approval.create(api.db, plan, "REUSE-NEW", "hr")
+        reference = approval.reference(api.db, old)
+    login(client, "hr1")
+    change = {"employee_id": "REUSE-OLD", "plan_reference": reference, "review_status": "pending", "revision": 0}
+    conflict = client.post(f"/api/reviews/{pid}/edit", json=change, headers=H)
+    assert conflict.status_code == 409 and "Employee ID is already used" in conflict.json()["detail"]
+    conflict = client.post(f"/api/reviews/{pid}/edit", json=change | {"employee_id": "REUSE-NEW"}, headers=H)
+    assert conflict.status_code == 409 and "Plan ID is already used" in conflict.json()["detail"]
+    for invalid in ["PLAN-000001", "P123", "P1234567", "p000001", "Pabcdef"]:
+        assert client.post(f"/api/reviews/{pid}/edit", json=change | {"plan_reference": invalid}, headers=H).status_code == 422
+    with api.DB_LOCK:
+        reviews.bulk(api.db, [old], {"username": "hr1", "role": "hr_advisor"}, "delete", True)
+    assert client.post(f"/api/reviews/{pid}/edit", json=change, headers=H).status_code == 200
+    saved = client.get(f"/api/plans/{pid}").json()
+    assert saved["subject_id"] == "REUSE-OLD" and saved["plan_reference"] == reference
+    assert saved["plan_id"] == pid
+    listed = next(p for p in client.get("/api/reviews").json() if p["plan_id"] == pid)
+    assert listed["plan_reference"] == reference
+
+
 RESUME = open("data/samples/sample_resume_nurse.md", "rb").read()
 
 

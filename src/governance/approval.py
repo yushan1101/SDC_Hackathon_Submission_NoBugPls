@@ -40,7 +40,14 @@ def create(con, plan: dict, subject_id: str, audience: str, issues: list | None 
     pid = uuid.uuid4().hex[:12]
     with con:
         con.execute("INSERT INTO plans VALUES(?,?,?,?)", (pid, subject_id, audience, now()))
-        con.execute("INSERT INTO plan_references(plan_id) VALUES(?)", (pid,))
+        number = con.execute("SELECT max(number) FROM plan_references").fetchone()[0] or 0
+        while con.execute("SELECT 1 FROM plan_reference_overrides o JOIN plans p ON p.plan_id=o.plan_id "
+                          "WHERE o.number=? AND NOT EXISTS (SELECT 1 FROM hr_reviews h "
+                          "WHERE h.plan_id=p.plan_id AND h.deleted_utc IS NOT NULL)", (number + 1,)).fetchone():
+            number += 1
+        if number >= 999999:
+            raise TransitionError("No six-digit plan IDs are available")
+        con.execute("INSERT INTO plan_references(number, plan_id) VALUES(?,?)", (number + 1, pid))
         _add_version(con, pid, 1, status, plan)
         con.execute("INSERT INTO validation_events(plan_id,version,issues,at_utc) VALUES(?,?,?,?)",
                     (pid, 1, json.dumps(issues or [], default=str), now()))
@@ -140,7 +147,8 @@ def list_plans(con, user: dict) -> list[dict]:
         return []
     rows = con.execute(f"""SELECT p.plan_id, p.subject_id, p.audience, p.created_utc, v.version, v.status,
                                json_extract(v.snapshot,'$.target_role'), json_extract(v.snapshot,'$.scenario'),
-                               (SELECT printf('PLAN-%06d', r.number) FROM plan_references r WHERE r.plan_id=p.plan_id)
+                               (SELECT printf('P%06d', coalesce(o.number, r.number)) FROM plan_references r
+                                LEFT JOIN plan_reference_overrides o ON o.plan_id=r.plan_id WHERE r.plan_id=p.plan_id)
                            FROM plans p JOIN plan_versions v ON v.plan_id=p.plan_id
                            WHERE {q} AND NOT EXISTS (SELECT 1 FROM hr_reviews r WHERE r.plan_id=p.plan_id
                                AND r.deleted_utc IS NOT NULL)
@@ -176,10 +184,11 @@ def delete_employee_plans(con, plan_ids: list[str], user: dict) -> list[str]:
 
 
 def reference(con, plan_id: str) -> str:
-    row = con.execute("SELECT number FROM plan_references WHERE plan_id=?", (plan_id,)).fetchone()
+    row = con.execute("SELECT coalesce(o.number, r.number) FROM plan_references r "
+                      "LEFT JOIN plan_reference_overrides o ON o.plan_id=r.plan_id WHERE r.plan_id=?", (plan_id,)).fetchone()
     if not row:
         raise TransitionError(f"unknown plan {plan_id}")
-    return f"PLAN-{row[0]:06d}"
+    return f"P{row[0]:06d}"
 
 
 def latest(con, plan_id: str) -> dict:
