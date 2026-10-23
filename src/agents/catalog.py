@@ -9,6 +9,7 @@ Two kinds:
 `task` is which model setting answers (agents/llm.TASKS, so an HR advisor's per-task model choice applies).
 The web app draws every agent as the owl companion, each in its own pose (web/js/agents.js POSE).
 """
+import re
 
 GUARD = ("Use only the facts in <CONTEXT> and general, well-established career knowledge. If the context does not "
          "answer something, say so plainly and suggest what would. Never invent statistics, salaries, job postings or "
@@ -73,6 +74,27 @@ AGENTS = [
      "tagline": "Upload your team and every employee gets a skills analysis and a draft plan to review."},
 ]
 BY_ID = {a["id"]: a for a in AGENTS}
+
+# One agent for the person: each message goes to the specialist it is about, the first match wins; else the default.
+ROUTES = {
+    "individual": ([("interview", r"\binterview|\bstar\b|tell me about yourself|hiring manager|recruiter|\bgap in my (cv|resume)"),
+                    ("trends", r"\btrend|\bai\b.{0,20}\b(news|today|this week)|automation|rising|falling|under pressure|pulled forward")],
+                   "coach"),
+    "hr": ([("posts", r"\bposts?\b|linkedin|facebook|telegram|tweet|\bx\b|whatsapp|discord|slack"),
+            ("hiring", r"\bhir(e|ing)|opening|applicant|candidate|requirement|screen|recruit|interview question"),
+            ("trends", r"\btrend|automation|\bai\b.{0,20}\b(news|today|this week)")],
+           "team"),
+}
+
+
+def route(role: str, texts: list[str]) -> dict:
+    """The specialist for the latest message; an unclear follow-up ("and for nurses?") stays with the earlier topic."""
+    rules, default = ROUTES["hr" if role == "hr_advisor" else "individual"]
+    for text in reversed(texts[-3:]):
+        for agent_id, pattern in rules:
+            if re.search(pattern, text, re.I):
+                return BY_ID[agent_id]
+    return BY_ID[default]
 
 
 def for_role(role: str) -> list[dict]:

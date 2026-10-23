@@ -6,7 +6,7 @@ import { Owl, OwlStatus } from "./owl.js";
 import { gapsBlock, comparisonBlock, outlookBlock, planBlock, historyBlock, sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { openingsView, openingDetail, signalsView } from "./recruit.js";
 import { modelsView, peopleView, pluginsView } from "./org.js";
-import { agentsView, agentChatView, hrCapsule } from "./agents.js";
+import { agentView, hrCapsule } from "./agents.js";
 import { setVoice } from "./voice.js";
 
 const app = $("#app");
@@ -46,7 +46,7 @@ function shell() {
   S.crumb = h("div", { class: "crumb" });
   const review = link("#/review", "Review", "review"); review.append(S.badge);
   const more = h("div", { id: "hr-more", class: "hr-more", popover: "auto", "aria-label": "Additional pages" },
-    h("a", { href: "#/agents", onclick: () => more.hidePopover?.() }, icon("ask"), "Agents"),
+    h("a", { href: "#/agents", onclick: () => more.hidePopover?.() }, icon("ask"), "Agent"),
     h("a", { href: "#/openings", onclick: () => more.hidePopover?.() }, icon("people"), "Hiring"),
     h("a", { href: "#/plugins", onclick: () => more.hidePopover?.() }, icon("plug"), "Hiring plugins"),
     h("a", { href: "#/people", onclick: () => more.hidePopover?.() }, icon("user"), "Team members"),
@@ -57,7 +57,7 @@ function shell() {
   app.replaceChildren(h("div", { class: "hr-shell" },
     h("nav", { class: "rail", "aria-label": "Primary" },
       h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }, S.logo = h("span", { class: "logo-owl" }), h("span", { class: "lbl wordmark" }, "AiversePulse")),
-      link("#/overview", "Overview", "grid"), link("#/agents", "Agents", "ask"), link("#/run", "Analyse team", "upload"), review, link("#/plans", "Plans", "history"),
+      link("#/overview", "Overview", "grid"), link("#/agents", "Agent", "ask"), link("#/run", "Analyse team", "upload"), review, link("#/plans", "Plans", "history"),
       link("#/openings", "Hiring", "people"), link("#/plugins", "Hiring plugins", "plug"), link("#/people", "Team members", "user"), link("#/models", "AI models", "model"),
       link("#/signals", "AI trends", "pulse"),
       h("div", { style: { flex: 1 } }),
@@ -86,7 +86,7 @@ function capsule() {
   const scenario = (k) => ({ label: `Switch to the ${k} AI scenario`, icon: "model", words: "scenario mode",
     run: () => { [...S.seg.querySelectorAll("button")].find((b) => b.textContent.toLowerCase() === k)?.click(); toast(`AI scenario: ${k}`); } });
   return hrCapsule({
-    pages: [page("#/overview", "Overview", "grid", "home dashboard"), page("#/agents", "Agents", "ask", "chat assistants"),
+    pages: [page("#/overview", "Overview", "grid", "home dashboard"), page("#/agents", "Agent", "ask", "chat assistant ai"),
       page("#/run", "Analyse team", "upload", "csv upload run"), page("#/review", "Review queue", "review", "approve pending flagged"),
       page("#/plans", "Plans register", "history"), page("#/openings", "Hiring", "people", "openings jobs applicants"),
       page("#/plugins", "Hiring plugins", "plug", "linkedin post share"), page("#/people", "Team members", "user", "invite users"),
@@ -105,7 +105,7 @@ function capsule() {
 }
 
 function crumb(page = (location.hash.split("/")[1] || "overview")) {
-  const names = { overview: "Overview", run: "Analyse team", review: "Review queue", plans: "Plans register", openings: "Openings & screening", signals: "AI trends", plugins: "Hiring plugins", people: "Team members", models: "AI models", agents: "Agents" };
+  const names = { overview: "Overview", run: "Analyse team", review: "Review queue", plans: "Plans register", openings: "Openings & screening", signals: "AI trends", plugins: "Hiring plugins", people: "Team members", models: "AI models", agents: "Agent" };
   S.crumb.replaceChildren(names[page] || "Overview");
 }
 
@@ -133,14 +133,14 @@ function route() {
     if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
   crumb(page);
-  S.capsule.hidden = page === "agents" && !!id;  // an agent chat has its own composer
+  S.capsule.hidden = page === "agents";  // the agent page is the same chat, full size
   S.onScenarioChange = null;
   const main = $("#main");
   S.routeVersion = (S.routeVersion || 0) + 1;
   main.scrollTop = 0;
   const views = { run: runView, review: () => reviewView(main, id), plans: () => plansView(main, id),
     openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status),
-    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? agentChatView(main, id) : agentsView(main)) };
+    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)) };
   Promise.resolve((views[page] || overview)(main)).catch((e) => {
     main.replaceChildren(h("div", { class: "view" }, h("div", { class: "issue error", role: "alert" }, e.message)));
   });

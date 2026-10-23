@@ -1170,6 +1170,23 @@ def test_agents_gallery_and_chat_answer_from_the_persons_own_context(client, mon
     assert client.post("/api/agents/team/chat", json=body, headers=H).status_code == 200 and '"team"' in seen["prompt"]
 
 
+def test_one_agent_routes_each_message_to_the_right_specialist(client, monkeypatch):
+    import server.api as api
+    H = {"X-AP": "1"}
+    monkeypatch.setattr(api.llm, "generate", lambda prompt, system, **k: ("ok", None))
+    say = lambda *texts: client.post("/api/agents/auto/chat", headers=H, json={"messages": [
+        m for t in texts for m in ({"role": "user", "content": t}, {"role": "assistant", "content": "ok"})][:-1]}).json()["agent"]["id"]
+    login(client, "ana")
+    assert say("How do I answer 'tell me about yourself'?") == "interview"
+    assert say("What changed in AI this week?") == "trends"
+    assert say("What should I learn first?") == "coach"
+    login(client, "hr1")
+    assert say("Write a LinkedIn post for the nurse role") == "posts"
+    assert say("Write a LinkedIn post for the nurse role", "Make it shorter") == "posts"  # a follow-up keeps its topic
+    assert say("Draft requirements for a junior analyst opening") == "hiring"
+    assert say("Who is closest to a data analyst role?") == "team"
+
+
 def test_free_accounts_have_a_daily_agent_message_limit(client, monkeypatch):
     import server.api as api
     H = {"X-AP": "1"}

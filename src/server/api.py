@@ -2292,7 +2292,9 @@ def _agent_context(agent: dict, user: dict, profile: dict | None) -> dict:
 
 @app.post("/api/agents/{agent_id}/chat")
 def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_user)):
-    agent = catalog.BY_ID.get(agent_id)
+    # "auto": the one agent people talk to; it hands each message to the right specialist
+    agent = (catalog.route(user["role"], [m.content for m in body.messages if m.role == "user"]) if agent_id == "auto"
+             else catalog.BY_ID.get(agent_id))
     if not agent or agent["kind"] != "chat" or agent not in [catalog.BY_ID[a["id"]] for a in catalog.for_role(user["role"])]:
         raise HTTPException(404, "No such agent for your account.")
     if body.messages[-1].role != "user":
@@ -2313,7 +2315,7 @@ def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_us
         _record_usage(user["username"], f"agent:{agent_id}", usage)
     if not text:
         raise HTTPException(503, "The agent can't answer right now. Please try again in a moment.")
-    return {"reply": text.strip()[:6000], "model": (usage or {}).get("model")}
+    return {"reply": text.strip()[:6000], "model": (usage or {}).get("model"), "agent": {"id": agent["id"], "name": agent["name"]}}
 
 
 # --- public application link (no account; consent required) --------------------------------------------------
