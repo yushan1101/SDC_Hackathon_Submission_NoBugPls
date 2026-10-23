@@ -92,13 +92,34 @@ OVERLAY = """
       background:radial-gradient(1200px 700px at 50%% 40%%,#3d5cff,#141a3a);color:#fff;opacity:0;transition:opacity .6s;pointer-events:none}
     #ad-card.on{opacity:1}
     #ad-card b{font:700 64px/1.1 system-ui,sans-serif;letter-spacing:-.02em}
-    #ad-card span{font:500 26px/1.4 system-ui,sans-serif;opacity:.85}`;
+    #ad-card span{font:500 26px/1.4 system-ui,sans-serif;opacity:.85}
+    #ad-cur{position:fixed;left:0;top:0;z-index:2147483647;width:30px;height:30px;pointer-events:none;display:none;
+      filter:drop-shadow(0 3px 6px rgba(0,0,0,.35))}
+    #ad-ring{position:fixed;z-index:2147483646;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%%;pointer-events:none;
+      border:3px solid rgba(61,92,255,.85);opacity:0;transform:scale(.4)}
+    #ad-ring.go{animation:adring .55s ease-out}
+    @keyframes adring{from{opacity:1;transform:scale(.4)}to{opacity:0;transform:scale(1.4)}}`;
   document.documentElement.append(css);
   const cap = Object.assign(document.createElement('div'), { id: 'ad-cap' });
   const card = Object.assign(document.createElement('div'), { id: 'ad-card' });
   card.append(document.createElement('b'), document.createElement('span'));
-  document.documentElement.append(cap, card);
+  const cur = Object.assign(document.createElement('div'), { id: 'ad-cur',
+    innerHTML: '<svg viewBox="0 0 24 24" width="30" height="30"><path d="M4 2l16 9-7 1.6L9.6 20z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>' });
+  const ring = Object.assign(document.createElement('div'), { id: 'ad-ring' });
+  document.documentElement.append(cap, card, ring, cur);
+  let at = JSON.parse(sessionStorage.getItem('ad-cur') || '[960,540]');
+  const put = ([x, y]) => { cur.style.transform = `translate(${x - 4}px, ${y - 2}px)`; at = [x, y]; sessionStorage.setItem('ad-cur', JSON.stringify(at)); };
   window.__ad = {
+    cursor(on) { cur.style.display = on ? 'block' : 'none'; put(at); },
+    move(x, y, ms) {
+      const [x0, y0] = at, t0 = performance.now();
+      return new Promise((done) => { const step = (now) => {
+        const k = Math.min(1, (now - t0) / ms), e = 0.5 - Math.cos(Math.PI * k) / 2;
+        put([x0 + (x - x0) * e, y0 + (y - y0) * e]);
+        if (k < 1) requestAnimationFrame(step); else done();
+      }; requestAnimationFrame(step); });
+    },
+    tap() { ring.style.left = at[0] + 'px'; ring.style.top = at[1] + 'px'; ring.classList.remove('go'); void ring.offsetWidth; ring.classList.add('go'); },
     say(t) { cap.textContent = t; cap.classList.toggle('on', !!t); },
     card(a, b) { card.children[0].textContent = a || ''; card.children[1].textContent = b || ''; card.classList.toggle('on', !!a); },
   };
@@ -107,14 +128,17 @@ OVERLAY = """
 
 
 class Act:
-    def __init__(self, page):
-        self.page = page
+    def __init__(self, page, headless: bool = False):
+        self.page, self.headless = page, headless
+        self.t0, self.clicks = time.monotonic(), []  # headless: (seconds into the video, x, y) of every click
 
     def wait(self, secs: float) -> None:
         time.sleep(secs * PACE)
 
     def ad(self) -> None:
         self.page.evaluate(OVERLAY)
+        if self.headless:
+            self.page.evaluate("() => window.__ad.cursor(true)")
 
     def say(self, text: str, hold: float = 2.6) -> None:
         self.ad(); self.page.evaluate("t => window.__ad.say(t)", text); self.wait(hold)
@@ -135,23 +159,52 @@ class Act:
                                          "window.screenY + outerHeight - innerHeight - (outerWidth - innerWidth) / 2, devicePixelRatio]")
         return (ox + box["x"] + box["width"] / 2) * dpr, (oy + box["y"] + box["height"] / 2) * dpr
 
+    def _page_point(self, loc) -> tuple[float, float]:
+        loc.scroll_into_view_if_needed(timeout=8000)
+        box = loc.bounding_box()
+        if not box:
+            raise RuntimeError("not on screen")
+        return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+
+    def _glide(self, loc, secs: float) -> tuple[float, float]:
+        if not self.headless:
+            glide(*self._screen_point(loc), secs=secs)
+            return 0, 0
+        x, y = self._page_point(loc)
+        self.ad()
+        self.page.evaluate("([x, y, ms]) => window.__ad.move(x, y, ms)", [x, y, int(secs * 1000)])
+        self.page.mouse.move(x, y)
+        return x, y
+
     def click(self, target, secs: float = 0.75, after: float = 1.1) -> None:
-        """Glide the real cursor to the element and click it there (a selector or a Playwright locator)."""
+        """Glide the cursor to the element and click it there (a selector or a Playwright locator)."""
         loc = self.page.locator(target).first if isinstance(target, str) else target.first
         loc.wait_for(state="visible", timeout=20000)
-        glide(*self._screen_point(loc), secs=secs)
-        self.wait(0.15); press(); self.wait(after)
+        x, y = self._glide(loc, secs)
+        self.wait(0.15)
+        if self.headless:
+            self.clicks.append((time.monotonic() - self.t0, x, y))
+            self.page.evaluate("() => window.__ad.tap()")
+            self.page.mouse.click(x, y)
+        else:
+            press()
+        self.wait(after)
 
     def hover(self, target, secs: float = 0.8, after: float = 0.9) -> None:
         loc = self.page.locator(target).first if isinstance(target, str) else target.first
         loc.wait_for(state="visible", timeout=20000)
-        glide(*self._screen_point(loc), secs=secs); self.wait(after)
+        self._glide(loc, secs); self.wait(after)
 
     def type(self, text: str) -> None:
         self.page.keyboard.type(text, delay=45); self.wait(0.5)
 
     def scroll(self, clicks: int, after: float = 1.0) -> None:
-        wheel(clicks); self.wait(after)
+        if self.headless:
+            for _ in range(abs(clicks) * 4):  # small steps read as a smooth scroll on video
+                self.page.mouse.wheel(0, 30 if clicks > 0 else -30); time.sleep(0.03)
+        else:
+            wheel(clicks)
+        self.wait(after)
 
     def beat(self, name: str, fn) -> None:
         """One shot of the ad. A shot that can't run (missing data, changed page) is skipped, not fatal."""
@@ -297,6 +350,52 @@ def act_admin(a: Act) -> None:
 ACTS = {"hr": act_hr, "employee": act_employee, "admin": act_admin}
 
 
+# ---------------------------------------------------------------- headless: auto-zoom on clicks, then one film
+ZOOM, EASE, HOLD = 1.55, 0.45, 1.3  # how far in, how long the push takes, how long it stays after a click
+
+
+def _smooth(a: float, b: float) -> str:
+    """0 before a, 1 after b, eased between (an ffmpeg zoompan expression of the input time `it`)."""
+    return f"(st(0,clip((it-{a:.3f})/{b - a:.3f},0,1))*ld(0)*(3-2*ld(0)))"
+
+
+def zoom_filter(clicks: list[tuple[float, float, float]], w: int, h: int) -> str:
+    """Push in on each click and follow the next ones; ease back out once the clicks pause."""
+    if not clicks:
+        return f"scale={w}:{h},fps=30"
+    spans = []  # clicks close in time share one zoomed span
+    for t, _, _ in clicks:
+        if spans and t - spans[-1][1] < HOLD + 2 * EASE:
+            spans[-1][1] = t
+        else:
+            spans.append([t, t])
+    env = "+".join(f"({_smooth(a - EASE, a)}-{_smooth(b + HOLD, b + HOLD + EASE)})" for a, b in spans)
+    z = f"1+{ZOOM - 1}*({env})"
+    moves = list(zip(clicks, clicks[1:]))
+    fx = f"{clicks[0][1]:.1f}" + "".join(f"+({c[1] - p[1]:.1f})*{_smooth(c[0] - EASE, c[0])}" for p, c in moves)
+    fy = f"{clicks[0][2]:.1f}" + "".join(f"+({c[2] - p[2]:.1f})*{_smooth(c[0] - EASE, c[0])}" for p, c in moves)
+    # 2x upscale first so the push-in stays sharp; zoompan's x/y are the zoomed window's top-left
+    return (f"fps=30,scale={w * 2}:{h * 2},zoompan=z='{z}':d=1:fps=30:s={w}x{h}:"
+            f"x='clip(({fx})*2-iw/zoom/2,0,iw-iw/zoom)':y='clip(({fy})*2-ih/zoom/2,0,ih-ih/zoom)'")
+
+
+def finish(clips: list[tuple[Path, list]], out: Path, w: int, h: int) -> None:
+    import subprocess
+    out.parent.mkdir(parents=True, exist_ok=True)
+    parts = []
+    for i, (src, clicks) in enumerate(clips):
+        part = out.with_name(f"{out.stem}-{i + 1}.mp4")
+        script = out.with_name(f"{out.stem}-{i + 1}.filter")
+        script.write_text(zoom_filter(clicks, w, h), encoding="utf-8")
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-/filter:v", str(script),
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium", "-an", str(part)], check=True)
+        parts.append(part)
+    listing = out.with_name(f"{out.stem}.txt")
+    listing.write_text("".join(f"file '{p.name}'\n" for p in parts), encoding="utf-8")
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(out)], check=True)
+    print(f"Film: {out.resolve()}  (acts: {', '.join(p.name for p in parts)})")
+
+
 # ---------------------------------------------------------------- Cap and the browser
 def cap(action) -> None:
     os.startfile("cap-desktop://action?value=" + urllib.parse.quote(json.dumps(action)))
@@ -319,8 +418,12 @@ def window_title(contains: str) -> str | None:
     return found[0] if found else None
 
 
-def browser(pw, role: str, kiosk: bool):
+def browser(pw, role: str, kiosk: bool, video_dir: Path | None = None, size=(1920, 1080)):
     PROFILES.mkdir(parents=True, exist_ok=True)
+    if video_dir is not None:  # headless: a fixed 1080p page, filmed by Playwright
+        return pw.chromium.launch_persistent_context(str(PROFILES / role), headless=True, viewport={"width": size[0], "height": size[1]},
+                                                     record_video_dir=str(video_dir), record_video_size={"width": size[0], "height": size[1]},
+                                                     args=["--autoplay-policy=no-user-gesture-required"])
     kw = dict(user_data_dir=str(PROFILES / role), headless=False, no_viewport=True,
               args=(["--kiosk", "--start-fullscreen"] if kiosk else ["--start-maximized"]) + ["--disable-infobars", "--autoplay-policy=no-user-gesture-required"],
               ignore_default_args=["--enable-automation"])
@@ -415,6 +518,8 @@ def main() -> int:
     ap.add_argument("--acts", default="hr,employee,admin", help="comma list: hr, employee, admin")
     ap.add_argument("--pace", type=float, default=1.0, help="hold-time multiplier (0.6 = faster cut)")
     ap.add_argument("--url", default=BASE)
+    ap.add_argument("--headless", action="store_true", help="no window: Playwright films the page, ffmpeg adds the click zoom")
+    ap.add_argument("--out", type=Path, default=Path("demo-artifacts") / "aiversepulse-ad.mp4")
     args = ap.parse_args()
     PACE, BASE = args.pace, args.url.rstrip("/")
     from playwright.sync_api import sync_playwright
@@ -423,9 +528,11 @@ def main() -> int:
         if args.setup:
             setup(pw, acts)
             return 0
+        clips, raw = [], args.out.parent / "raw"
         for name in acts:
             print(f"Act: {name}")
-            ctx = browser(pw, name, kiosk=True)
+            started = time.monotonic()  # the headless video starts with the browser
+            ctx = browser(pw, name, kiosk=True, video_dir=raw if args.headless else None)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.add_init_script(OVERLAY)
             me = who(ctx)
@@ -433,7 +540,21 @@ def main() -> int:
                 print(f"  not signed in as {name}: run  python src/scripts/ad_demo.py --setup --acts {name}"); ctx.close(); continue
             print(f"  as {me.get('username')}")
             page.goto(f"{BASE}/{ROLES[name][0]}", wait_until="domcontentloaded")
-            page.wait_for_load_state("networkidle", timeout=30000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass  # pages that keep polling never go idle
+            if args.headless:
+                act = Act(page, headless=True)
+                act.t0 = started
+                try:
+                    ACTS[name](act)
+                finally:
+                    video = page.video
+                    ctx.close()
+                    if video:
+                        clips.append((Path(video.path()), act.clicks))
+                continue
             page.bring_to_front(); time.sleep(1.5)
             recording = False
             if args.record:
@@ -449,7 +570,9 @@ def main() -> int:
                 if recording:
                     time.sleep(1); cap("stop_recording"); time.sleep(3)
                 ctx.close()
-    if args.record:
+    if args.headless and clips:
+        finish(clips, args.out, 1920, 1080)
+    elif args.record:
         print("Done. Each act is a Studio recording in Cap: open it, Zoom -> Auto, trim, then export (or join the three).")
     return 0
 
