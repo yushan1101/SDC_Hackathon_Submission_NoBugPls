@@ -1,7 +1,7 @@
 // Terms of Use and Privacy Policy (with the data declaration). Written from what the code does; when data handling
 // changes (governance/deletion.py, otp.py, risk.py, billing.py, the AI providers), update this text and TERMS_VERSION
 // in governance/accounts.py together. Not legal advice: have it reviewed before relying on it commercially.
-import { api, h } from "./lib.js";
+import { api, h, icon } from "./lib.js";
 
 const UPDATED = "22 October 2026";
 
@@ -13,12 +13,17 @@ async function contact() {
 
 const sec = (title, ...kids) => h("section", { class: "legal-sec" }, h("h2", {}, title), ...kids);
 const ul = (...items) => h("ul", {}, items.map((i) => h("li", {}, i)));
-const page = (main, title, ...kids) => main.replaceChildren(h("article", { class: "legal" },
-  h("h1", { class: "page-title" }, title), h("p", { class: "muted" }, `Last updated ${UPDATED}`), ...kids));
+const page = (main, title, hrLayout, ...kids) => {
+  const article = h("article", { class: "legal" },
+    ...(hrLayout ? [h("a", { class: "btn ghost sm legal-back", href: "#/account", "aria-label": "Back to Plan & Billing" },
+      icon("back"), "Back to Plan & Billing")] : []),
+    h("h1", { class: "page-title" }, title), h("p", { class: "muted" }, `Last updated ${UPDATED}`), ...kids);
+  main.replaceChildren(hrLayout ? h("div", { class: "view legal-view" }, article) : article);
+};
 
-export async function termsView(main) {
+export async function termsView(main, { hrLayout = false } = {}) {
   const who = await contact();
-  page(main, "Terms of Use",
+  page(main, "Terms of Use", hrLayout,
     h("p", { class: "lede" }, "These terms apply when you use AiversePulse, a reskilling and career-planning service. By creating an account you agree to them and to our ",
       h("a", { href: "#/privacy" }, "Privacy Policy"), "."),
     sec("1. The service",
@@ -52,10 +57,10 @@ export async function termsView(main) {
     sec("10. Contact", h("p", {}, "Questions about these terms: ", who, ".")));
 }
 
-export async function privacyView(main) {
+export async function privacyView(main, { hrLayout = false } = {}) {
   const who = await contact();
   const row = (what, why, kept) => h("tr", {}, h("td", {}, what), h("td", {}, why), h("td", {}, kept));
-  page(main, "Privacy Policy",
+  page(main, "Privacy Policy", hrLayout,
     h("p", { class: "lede" }, "This policy explains what personal data AiversePulse collects, why, who it is shared with, how long it is kept and how to delete it. We follow the principles of Malaysia's Personal Data Protection Act 2010 (PDPA)."),
     sec("Data declaration",
       h("div", { class: "table-wrap" }, h("table", { class: "data legal-table" },

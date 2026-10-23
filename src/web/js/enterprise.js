@@ -194,8 +194,9 @@ function route() {
   const views = { run: runView, review: () => reviewView(main, id),
     openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status),
     plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)),
-    account: () => accountView(main, { refreshMe: async () => { S.me = await api("/api/me"); return S.me; } }),
-    pricing: () => pricingView(main, { me: S.me }), terms: () => termsView(main), privacy: () => privacyView(main) };
+    account: () => accountView(main, { refreshMe: async () => { S.me = await api("/api/me"); return S.me; }, hrLayout: true }),
+    pricing: () => pricingView(main, { me: S.me }),
+    terms: () => termsView(main, { hrLayout: true }), privacy: () => privacyView(main, { hrLayout: true }) };
   Promise.resolve((views[page] || overview)(main)).catch((e) => {
     main.replaceChildren(h("div", { class: "view" }, h("div", { class: "issue error", role: "alert" }, e.message)));
   });

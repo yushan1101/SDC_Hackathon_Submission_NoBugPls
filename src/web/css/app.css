@@ -2160,6 +2160,7 @@ dialog.checkout form { display: grid; gap: 16px; }
 .pay-element { min-height: 120px; }
 .account-card { display: grid; grid-template-columns: 1fr 1fr auto; gap: 20px; align-items: center; padding: 22px 24px; margin: 20px 0;
   border: 1px solid var(--rule); border-radius: 20px; background: var(--surface); }
+.hr-account-view .account-card { margin: 0; }
 .account-card p { margin: 0 0 4px; }
 .plan-badge { font-size: 22px; }
 .pay-table { width: 100%; }
@@ -2227,6 +2228,8 @@ dialog.slider-dialog::backdrop { background: oklch(0.15 0.03 262 / 0.6); }
 .agree a { color: var(--shell-ink); font-weight: 600; }
 .legal-links { font-size: 14px; }
 .legal { max-width: 780px; display: grid; gap: 8px; }
+.legal-back { justify-self: start; margin-bottom: 8px; border-color: var(--rule); color: var(--ink-2); text-decoration: none; }
+.legal-back svg { width: 18px; height: 18px; }
 .legal-sec h2 { font-size: 22px; margin: 18px 0 8px; }
 .legal-sec p, .legal-sec li { font-size: 16px; line-height: 1.6; }
 .legal-sec ul { padding-left: 20px; display: grid; gap: 6px; }
