@@ -4,7 +4,9 @@ The browser runs full screen (kiosk) and the script moves the real mouse, so Cap
 editor can auto-zoom on them (record in Studio mode, then Editor -> Zoom -> Auto). Captions and title cards are drawn
 into the page by this script only; the app itself is unchanged.
 
-Accounts are never typed in: each role has its own browser profile, and you sign in to each once.
+Each role has its own browser profile, signed in once by --setup. Passwords come from your local, git-ignored
+src/data/demo_users.local.txt (username<TAB>role<TAB>password, written by seed_demo_users.py); a role with no line
+there opens its sign-in page for you instead. The script never prints them.
 
     python src/scripts/ad_demo.py --setup              # sign in once: admin, HR, employee (three windows)
     python src/scripts/ad_demo.py --check              # rehearse every beat, no recording
@@ -337,6 +339,38 @@ def who(ctx) -> dict | None:
         return None
 
 
+USERS = {"admin": "demo_admin", "hr": "demo_hr", "employee": "demo_employee"}
+
+
+def credentials() -> dict[str, str]:
+    """username -> password from demo_users.local.txt in this checkout or the main one (git worktrees share it)."""
+    import subprocess
+    here = Path(__file__).resolve().parents[1] / "data" / "demo_users.local.txt"
+    try:
+        common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True,
+                                text=True, cwd=Path(__file__).parent).stdout.strip()
+        main_copy = Path(common).parent / "src" / "data" / "demo_users.local.txt"
+    except OSError:
+        main_copy = here
+    path = Path(os.environ.get("AIVERSEPULSE_DEMO_CREDENTIALS", "")) if os.environ.get("AIVERSEPULSE_DEMO_CREDENTIALS") else         next((p for p in (here, main_copy) if p.exists()), None)
+    out = {}
+    for line in (path.read_text(encoding="utf-8").splitlines() if path and path.exists() else []):
+        f = line.split("	")
+        if len(f) >= 3:
+            out[f[0].strip()] = f[2].strip()
+    return out
+
+
+def sign_in(page, username: str, password: str) -> None:
+    """Fill the app's own sign-in form like a person would (it reads typing rhythm), then submit."""
+    page.goto(f"{BASE}/#/signin", wait_until="domcontentloaded")
+    page.locator('input[name="username"]').wait_for(timeout=20000)
+    page.locator('input[name="username"]').click(); page.keyboard.type(username, delay=70)
+    page.locator('input[name="password"]').click(); page.keyboard.type(password, delay=70)
+    time.sleep(0.4)
+    page.get_by_role("button", name="Sign in").click()
+
+
 def setup(pw, roles: list[str]) -> None:
     """Open each role's profile at its sign-in page and wait until you've signed in (the script never sees passwords).
     A role already signed in with the right kind of account is skipped."""
@@ -348,8 +382,19 @@ def setup(pw, roles: list[str]) -> None:
             print(f"  {role}: already signed in as {me.get('username')}")
             ctx.close(); continue
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        page.goto(f"{BASE}/{path}")
-        print(f"Sign in as the {role} demo account ({want}) in the window that opened...")
+        password = credentials().get(USERS[role])
+        if password:
+            print(f"  {role}: signing in as {USERS[role]}...")
+            sign_in(page, USERS[role], password)
+            for _ in range(15):
+                time.sleep(1)
+                if (who(ctx) or {}).get("role") == want:
+                    break
+            else:
+                print(f"  {role}: automatic sign-in didn't finish (a check or an error is on screen); finish it in the window")
+        else:
+            page.goto(f"{BASE}/{path}")
+            print(f"Sign in as the {role} demo account ({want}) in the window that opened...")
         while True:
             me = who(ctx)
             if me and me.get("role") == want:
