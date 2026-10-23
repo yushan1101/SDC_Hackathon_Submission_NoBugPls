@@ -5,6 +5,10 @@ frontend. Keep the repository's Python stack and directory structure.
 
 ## Run
 
+Use the configured **Python 3.11** module. The restored native dependencies
+(including NumPy and PyTorch) were installed for Python 3.11; changing the
+interpreter without reinstalling them causes startup import errors.
+
 Use the **Start application** workflow (the Run button), which runs:
 
 ```sh
@@ -24,7 +28,7 @@ cd src && uv run uvicorn server.api:app --host 0.0.0.0 --port 5000 --proxy-heade
 The existing demo account script creates employee and HR accounts:
 
 ```sh
-uv run --no-sync python scripts/seed_demo_users.py
+cd src && uv run --no-sync python scripts/seed_demo_users.py
 ```
 
 Their randomly generated login details are written to
