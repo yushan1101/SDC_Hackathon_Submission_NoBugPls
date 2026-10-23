@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS interview_sessions (
     stage_index INTEGER NOT NULL DEFAULT 0, active_question_id TEXT,
     plan_id TEXT, profile_json TEXT NOT NULL, context_json TEXT NOT NULL,
     transcript_consent INTEGER NOT NULL, rubric_version TEXT NOT NULL,
-    created_utc TEXT NOT NULL, completed_utc TEXT
+    created_utc TEXT NOT NULL, completed_utc TEXT,
+    draft_answer TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS interview_sessions_owner ON interview_sessions(employee_id, created_utc);
 CREATE TABLE IF NOT EXISTS interview_questions (
@@ -57,6 +58,8 @@ def init(con):
         con.execute("ALTER TABLE interview_sessions ADD COLUMN recommendation_id TEXT")
     if "assessment_source" not in columns:
         con.execute("ALTER TABLE interview_sessions ADD COLUMN assessment_source TEXT")
+    if "draft_answer" not in columns:
+        con.execute("ALTER TABLE interview_sessions ADD COLUMN draft_answer TEXT NOT NULL DEFAULT ''")
 
 
 def json_dump(value):
@@ -92,18 +95,22 @@ def report(con, interview_id):
 
 
 def history(con, employee_id, limit=30):
-    rows = con.execute("""SELECT s.interview_id, s.role_id, s.role_title, s.difficulty, s.status,
-        s.created_utc, s.completed_utc, r.report_json, s.assessment_source FROM interview_sessions s
+    rows = con.execute("""SELECT s.interview_id, s.role_id, s.role_title, s.difficulty, s.status, s.stage_index,
+        s.created_utc, s.completed_utc, r.report_json, s.assessment_source,
+        (SELECT parent_question_id FROM interview_questions WHERE question_id=s.active_question_id)
+            AS active_parent_question_id FROM interview_sessions s
         LEFT JOIN interview_reports r USING(interview_id) WHERE s.employee_id=?
         ORDER BY s.created_utc DESC LIMIT ?""", (employee_id, limit)).fetchall()
     out = []
     for row in rows:
-        item = dict(zip(("interview_id", "role_id", "role_title", "difficulty", "status", "created_utc", "completed_utc", "report_json", "assessment_source"), row))
+        item = dict(zip(("interview_id", "role_id", "role_title", "difficulty", "status", "stage_index", "created_utc", "completed_utc", "report_json", "assessment_source", "active_parent_question_id"), row))
         result = json.loads(item.pop("report_json")) if item.get("report_json") else None
         item["interview_type"] = "AI mock interview"
         item["performance"] = result.get("performance") if result else None
         item["readiness"] = result.get("readiness") if result else None
         item["competitiveness"] = result.get("competitiveness") if result else None
+        item["is_follow_up"] = bool(item.pop("active_parent_question_id"))
+        item["question_number"] = item["stage_index"] + 1
         out.append(item)
     return out
 

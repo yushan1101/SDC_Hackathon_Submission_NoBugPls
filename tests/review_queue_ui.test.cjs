@@ -64,14 +64,14 @@ test('cancel does not mutate reviews and a failed bulk action leaves the dialog 
 
 test('candidate edits send review fields and revision without any AI analysis', async () => {
   const h = harness(); let refreshed = false;
-  h.context.editReview(h.main, 'a', { candidate_name: 'Before', candidate_email: '', candidate_phone: '', reviewer_notes: 'Old', review_status: 'pending', revision: 3 }, () => { refreshed = true; });
+  h.context.editReview(h.main, 'a', { candidate_name: 'Before', candidate_email: '', candidate_phone: '', reviewer_notes: 'Old', review_status: 'pending', revision: 3 }, () => { refreshed = true; }, 'E-001', 'P000001');
   const dialog = h.main.children[0];
-  find(dialog, (e) => e.attrs.type === 'text').value = ' Updated candidate ';
+  find(dialog, (e) => e.value === 'Before').value = ' Updated candidate ';
   find(dialog, (e) => e.tag === 'textarea').value = 'HR assessment';
   find(dialog, (e) => e.tag === 'select').value = 'rejected';
   await find(dialog, (e) => e.tag === 'form').fire('submit');
   assert.deepEqual(JSON.parse(JSON.stringify(h.requests[0])), { url: '/api/reviews/a/edit', method: 'POST', body: {
-    candidate_name: 'Updated candidate', candidate_email: '', candidate_phone: '', reviewer_notes: 'HR assessment', review_status: 'rejected', revision: 3 } });
+    employee_id: 'E-001', plan_reference: 'P000001', candidate_name: 'Updated candidate', candidate_email: '', candidate_phone: '', reviewer_notes: 'HR assessment', review_status: 'rejected', revision: 3 } });
   assert.equal(refreshed, true); assert.equal(dialog.removed, true);
 });
 
@@ -105,4 +105,37 @@ test('failed register status change leaves confirmation open and shows an error'
   assert.equal(dialog.open, true);
   assert.equal(find(dialog, (e) => e.attrs.type === 'submit').disabled, false);
   assert.deepEqual(h.notifications[0], ['Save failed', 'err']);
+});
+
+test('selecting plans preserves the review queue scroll position, including returning from mobile detail', async () => {
+  const plans = ['a', 'b'].map((id) => ({ plan_id: id, subject_id: id, plan_reference: 'P000001',
+    review: { archived: false, review_status: 'pending' } }));
+  const state = { routeVersion: 1, plans };
+  const loaded = [];
+  const main = new Element('main');
+  let currentQueue = { scrollTop: 640, getClientRects: () => [{}] };
+  main.querySelector = () => currentQueue;
+  main.replaceChildren = (wrap) => {
+    main.children = [wrap];
+    currentQueue = find(wrap, (e) => e.attrs.class === 'queue');
+    currentQueue.getClientRects = () => [{}];
+  };
+  const location = { hash: '#/review/a' };
+  const context = vm.createContext({ S: state, location, h: (tag, attrs, ...kids) => new Element(tag, attrs, kids),
+    refreshPlans: async () => {}, api: async () => plans, reviewBadge: () => null, reviewMenu: () => null,
+    loadDetail: (id) => loaded.push(id) });
+  vm.runInContext(source.slice(source.indexOf('async function reviewView('), source.indexOf('function reviewBadge(')), context);
+  await context.reviewView(main, 'a');
+  assert.equal(currentQueue.scrollTop, 640);
+  currentQueue.scrollTop = 820;
+  location.hash = '#/review/b';
+  await context.reviewView(main, 'b');
+  assert.equal(currentQueue.scrollTop, 820);
+  // A hidden mobile queue reports zero scroll; it must not overwrite the saved position.
+  currentQueue.scrollTop = 0;
+  currentQueue.getClientRects = () => [];
+  location.hash = '#/review';
+  await context.reviewView(main);
+  assert.equal(currentQueue.scrollTop, 820);
+  assert.deepEqual(loaded, ['a', 'b', 'a']);
 });

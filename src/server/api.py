@@ -49,7 +49,7 @@ from validation.document_guard import fingerprint, fraud_signals, risk as doc_ri
 from governance.audit import connect
 from validation.revision import validate
 from interview import service as interview_service, store as interview_store
-from interview.schemas import InterviewAnswer, InterviewCreate, InterviewEnd
+from interview.schemas import InterviewAnswer, InterviewCreate, InterviewEnd, InterviewPause
 
 log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
@@ -967,7 +967,12 @@ def interview_recommendation(recommendation_id: str, user: dict = Depends(need("
 @app.get("/api/interviews")
 def interview_history(user: dict = Depends(need("employee"))):
     with DB_LOCK:
-        return {"interviews": interview_store.history(db, user["employee_id"])}
+        interviews = interview_store.history(db, user["employee_id"])
+    total_stages = len(interview_service.STAGES)
+    for item in interviews:
+        item["question_number"] = min(total_stages, max(1, item["question_number"]))
+        item["total_stages"] = total_stages
+    return {"interviews": interviews}
 
 
 @app.get("/api/interviews/{interview_id}")
@@ -981,7 +986,11 @@ def interview_detail(interview_id: str, user: dict = Depends(need("employee"))):
     return {"interview_id": interview_id, "role_id": sess["role_id"], "role_title": sess["role_title"],
             "difficulty": sess["difficulty"], "status": sess["status"], "stage_index": sess["stage_index"],
             "question": active, "report": report, "profile": sess["profile"], "plan_id": sess["plan_id"],
-            "source": sess["context"]["source"], "created_utc": sess["created_utc"]}
+            "source": sess["context"]["source"], "assessment_source": sess.get("assessment_source"),
+            "created_utc": sess["created_utc"],
+            "question_number": min(len(interview_service.STAGES), max(1, sess["stage_index"] + 1)),
+            "is_follow_up": bool(active and active["parent_question_id"]),
+            "total_stages": len(interview_service.STAGES), "draft_answer": sess.get("draft_answer", "")}
 
 
 @app.post("/api/interviews/{interview_id}/answer")
@@ -1036,6 +1045,33 @@ def interview_end(interview_id: str, body: InterviewEnd, user: dict = Depends(ne
         if sess["status"] == "in_progress":
             interview_service.finish_without_answer(db, sess)
     return {"status": "ended"}
+
+
+@app.post("/api/interviews/{interview_id}/pause")
+def interview_pause(interview_id: str, body: InterviewPause, user: dict = Depends(need("employee"))):
+    with DB_LOCK, db:
+        sess = interview_store.session(db, interview_id, user["employee_id"])
+        if not sess:
+            raise HTTPException(404, "Interview not found.")
+        if sess["status"] not in ("in_progress", "paused") or not sess["active_question_id"]:
+            raise HTTPException(409, "This interview can no longer be paused.")
+        db.execute("UPDATE interview_sessions SET status='paused', draft_answer=? WHERE interview_id=? AND employee_id=?",
+                   (body.draft_answer.strip(), interview_id, user["employee_id"]))
+    return {"status": "paused"}
+
+
+@app.post("/api/interviews/{interview_id}/resume")
+def interview_resume(interview_id: str, user: dict = Depends(need("employee"))):
+    with DB_LOCK, db:
+        sess = interview_store.session(db, interview_id, user["employee_id"])
+        if not sess:
+            raise HTTPException(404, "Interview not found.")
+        if sess["status"] == "paused" and sess["active_question_id"]:
+            db.execute("UPDATE interview_sessions SET status='in_progress' WHERE interview_id=? AND employee_id=?",
+                       (interview_id, user["employee_id"]))
+        elif sess["status"] != "in_progress" or not sess["active_question_id"]:
+            raise HTTPException(409, "This interview cannot be resumed.")
+    return {"status": "in_progress"}
 
 
 @app.get("/api/interviews/{interview_id}/report")
@@ -1204,6 +1240,7 @@ def review_list(q: str = "", status: str = "active", user: dict = Depends(need("
 class ReviewEditIn(BaseModel):
     model_config = {"extra": "forbid"}
     employee_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,32}$")
+    plan_reference: str | None = Field(default=None, pattern=r"^P[0-9]{6}$")
     candidate_name: str = Field(default="", max_length=120)
     candidate_email: str = Field(default="", max_length=254)
     candidate_phone: str = Field(default="", max_length=50)

@@ -6,6 +6,10 @@ import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
 import { brandMark } from "./brands.js";
 
 const KEYS = ["A", "B", "C", "D"];
+// Keep assessment results available while moving between SPA routes. The
+// uploaded resume file itself is never cached or persisted here.
+let lastQuickMatch = null;
+let lastResumeAnalysis = null;
 
 // ---------------------------------------------------------------- start: choose a path
 export function startView(main, { name, guest } = {}) {
@@ -146,7 +150,8 @@ function guestHome(main) {
 // ---------------------------------------------------------------- quiz game
 export async function quizView(main, ctx) {
   const q = await api("/api/quiz");
-  const st = { i: -1, answers: {}, fields: new Set(), zone: null };
+  const st = { i: -1, answers: { ...(lastQuickMatch?.answers || {}) }, fields: new Set(lastQuickMatch?.fields || []),
+    zone: lastQuickMatch?.zone ?? null, scenario: lastQuickMatch?.scenario || "assistive" };
   const owl = new Owl({ size: 120, state: "greeting" });
   const bar = h("i");
   const count = h("span", { class: "num" });
@@ -216,21 +221,28 @@ export async function quizView(main, ctx) {
         h("button", { class: "btn ghost", type: "button", onclick: () => { st.fields.clear(); go(0); } }, "Skip, search everything"))), RISE));
   }
 
+  function showResults(result) {
+    owl.set("celebrating");
+    ctx.status?.set("matched", "Matches ready");
+    stage.replaceChildren(reveal(h("div", { class: "q result" },
+      h("h2", {}, "Your quick match"),
+      h("p", { class: "muted" }, "A fast estimate from 13 answers. For an evidence-backed analysis, ", h("a", { href: "#/resume" }, "upload your resume"), "."),
+      h("ul", { class: "skill-chips" }, result.skills.sort((a, b) => b.level - a.level).map((s) => h("li", {}, s.name, h("b", { class: "num" }, ` ${s.level}/5`)))),
+      matchesBlock(result.matches, { onPlan: (m) => ctx.planFor(m, result.skills), onInterview: ctx.onInterview ? (m) => ctx.onInterview(m, result.skills) : null,
+        scenario: result.scenario, onScenario: (k) => { st.scenario = k; finish(); } }),
+      h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => {
+        lastQuickMatch = null; st.answers = {}; st.fields.clear(); st.zone = null; st.scenario = "assistive"; go(-1);
+      } }, "Play again"))), RISE));
+  }
+
   async function finish() {
     owl.set("analyzing");
     stage.replaceChildren(h("div", { class: "q" }, h("h2", {}, "Finding your matches…"),
       h("p", { class: "muted" }, "Comparing your answers with job requirements and today's AI trends.")));
     try {
       const r = await api("/api/quiz/score", { method: "POST", body: { answers: st.answers, fields: [...st.fields], zone: st.zone, scenario: st.scenario || "assistive" } });
-      owl.set("celebrating");
-      ctx.status?.set("matched", "Matches ready");
-      stage.replaceChildren(reveal(h("div", { class: "q result" },
-        h("h2", {}, "Your quick match"),
-        h("p", { class: "muted" }, "A fast estimate from 13 answers. For an evidence-backed analysis, ", h("a", { href: "#/resume" }, "upload your resume"), "."),
-        h("ul", { class: "skill-chips" }, r.skills.sort((a, b) => b.level - a.level).map((s) => h("li", {}, s.name, h("b", { class: "num" }, ` ${s.level}/5`)))),
-        matchesBlock(r.matches, { onPlan: (m) => ctx.planFor(m, r.skills), onInterview: ctx.onInterview ? (m) => ctx.onInterview(m, r.skills) : null,
-          scenario: st.scenario, onScenario: (k) => { st.scenario = k; finish(); } }),
-        h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => { st.answers = {}; go(-1); } }, "Play again"))), RISE));
+      lastQuickMatch = { ...r, scenario: st.scenario || "assistive", answers: { ...st.answers }, fields: [...st.fields], zone: st.zone };
+      showResults(lastQuickMatch);
     } catch (e) {
       owl.set("confused");
       stage.replaceChildren(h("div", { class: "issue error", role: "alert" }, e.message),
@@ -238,7 +250,8 @@ export async function quizView(main, ctx) {
         h("button", { class: "btn primary", type: "button", onclick: finish }, "Try again"));
     }
   }
-  go(-1);
+  if (lastQuickMatch) showResults(lastQuickMatch);
+  else go(-1);
 }
 
 // ---------------------------------------------------------------- resume deep analysis
@@ -307,10 +320,13 @@ export function resumeView(main, ctx) {
     const years = r.years_experience != null && Number.isFinite(Number(r.years_experience))
       ? Number(r.years_experience) : null;
     const matchHost = h("div");
+    let scenario = r.scenario || "assistive";
+    const saveResumeResults = (matches = r.matches) => {
+      lastResumeAnalysis = { ...r, skills: skills.map((s) => ({ ...s })), matches, scenario };
+    };
     const lv = (s) => h("div", { class: "seg levels", role: "group", "aria-label": `${s.name} level` },
       [1, 2, 3, 4, 5].map((n) => h("button", { type: "button", "aria-pressed": String(s.level === n), "aria-label": `level ${n}`,
-        onclick: (e) => { s.level = n; e.currentTarget.parentElement.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(i + 1 === n))); rematch.disabled = false; } }, n)));
-    let scenario = "assistive";
+        onclick: (e) => { s.level = n; e.currentTarget.parentElement.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(i + 1 === n))); saveResumeResults(); rematch.disabled = false; } }, n)));
     const remeasure = async () => {
       owl.set("analyzing");
       const m = await api("/api/match", { method: "POST", body: { skills: skills.map(({ name, level }) => ({ name, level })),
@@ -319,9 +335,13 @@ export function resumeView(main, ctx) {
       owl.set("matched"); drawMatches(m.matches);
     };
     const rematch = h("button", { class: "btn", type: "button", disabled: true, onclick: () => { rematch.disabled = true; remeasure(); } }, "Update matches");
-    const drawMatches = (m) => matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))),
+    const drawMatches = (m) => {
+      r.matches = m;
+      saveResumeResults(m);
+      matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))),
       onInterview: ctx.onInterview ? (x) => ctx.onInterview(x, skills.map(({ name, level }) => ({ name, level }))) : null,
       scenario, onScenario: (k) => { scenario = k; remeasure(); } }));
+    };
     // the person can correct what was found: change levels, remove a wrong skill, add a missing one
     const skillsUl = h("ul");
     const countEl = h("span");
@@ -332,7 +352,7 @@ export function resumeView(main, ctx) {
           h("div", { class: "cv-skill-title" }, h("b", {}, s.name), s.kind === "tool" ? h("span", { class: "tag" }, "tool") : null),
           h("div", { class: "cv-skill-controls" }, lv(s),
           h("button", { class: "btn ghost sm", type: "button", "aria-label": `Remove ${s.name}`, title: "Remove this skill",
-            onclick: () => { skills.splice(i, 1); drawSkills(); rematch.disabled = false; } }, "×"))),
+            onclick: () => { skills.splice(i, 1); drawSkills(); saveResumeResults(); rematch.disabled = false; } }, "×"))),
         s.evidence?.[0] ? h("q", { class: "cv-skill-evidence" }, s.evidence[0]) : null)));
     };
     const addIn = h("input", { class: "input", placeholder: "Add a skill we missed, e.g. Tableau", maxlength: 60, "aria-label": "Add a skill",
@@ -340,7 +360,7 @@ export function resumeView(main, ctx) {
     const addSkill = () => {
       const name = addIn.value.trim();
       if (!name || skills.some((x) => x.name.toLowerCase() === name.toLowerCase())) return;
-      skills.unshift({ name, level: 2, kind: "skill", evidence: [] }); addIn.value = ""; drawSkills(); rematch.disabled = false;
+      skills.unshift({ name, level: 2, kind: "skill", evidence: [] }); addIn.value = ""; drawSkills(); saveResumeResults(); rematch.disabled = false;
     };
     drawSkills();
     const addSkillRow = h("div", { class: "add-skill" }, addIn, h("button", { class: "btn sm", type: "button", onclick: addSkill }, "Add"));
@@ -393,6 +413,9 @@ export function resumeView(main, ctx) {
           h("div", { class: "row-actions cv-rematch-actions" }, rematch))),
       matchHost);
     drawMatches(r.matches);
+  }
+  if (lastResumeAnalysis) {
+    render(lastResumeAnalysis);
   }
 }
 

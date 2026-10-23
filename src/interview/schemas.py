@@ -17,3 +17,7 @@ class InterviewAnswer(BaseModel):
 
 class InterviewEnd(BaseModel):
     pass
+
+
+class InterviewPause(BaseModel):
+    draft_answer: str = Field(default="", max_length=4000)
