@@ -1638,7 +1638,7 @@ details.more summary::-webkit-details-marker { display: none; }
 .plan { gap: 0; padding: 4px 14px; border: 0; border-radius: 18px; background: oklch(.99 .006 262); }
 .phase-row { position: relative; display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 0 18px; min-width: 0; }
 .phase-row + .phase-row { border-top: 1px solid var(--rule); }
-.phase-row:not([data-phase="61-90"])::before { content: ""; position: absolute; z-index: 0; top: 39px; bottom: -39px; left: 20px; width: 2px; background: var(--rule-strong); pointer-events: none; }
+.phase-row:not([data-phase="61-90"])::before { content: ""; position: absolute; z-index: 0; top: 39px; bottom: -39px; left: 20px; width: 2px; border-radius: 99px; background: linear-gradient(180deg, color-mix(in oklch, var(--accent) 55%, var(--surface)), color-mix(in oklch, var(--accent) 26%, var(--surface))); box-shadow: 0 0 7px color-mix(in oklch, var(--accent) 16%, transparent); pointer-events: none; }
 .phase, [data-product="public"] .phase { position: relative; display: block; grid-column: 2; min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .phase-step { justify-self: center; align-self: start; margin-top: 22px; }
 .phase-toggle { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 18px; align-items: center; gap: 0 18px; padding: 20px 8px; list-style: none; cursor: pointer; }
