@@ -59,6 +59,8 @@ def test_hr_review_management(client):
     assert client.post(f"/api/reviews/{pid}/edit", json=edit, headers={"X-AP": "1"}).status_code == 409
     assert client.post(f"/api/reviews/{pid}/edit", json=edit | {"reviewer_notes": "x" * 10001}, headers={"X-AP": "1"}).status_code == 422
     assert [p["plan_id"] for p in client.get("/api/reviews?q=QUEUE%40example.org&status=rejected").json()] == [pid]
+    ref = original["plan_reference"]  # the review queue is also the plans register: plan IDs are searchable
+    assert [p["plan_id"] for p in client.get(f"/api/reviews?q={ref.lower()}&status=all").json()] == [pid]
     assert client.get("/api/reviews?status=invalid").status_code == 422
     def bulk(action, ids=None, confirmed=False):
         return client.post("/api/reviews/bulk", json={"plan_ids": ids or [pid], "action": action, "confirmed": confirmed}, headers={"X-AP": "1"})

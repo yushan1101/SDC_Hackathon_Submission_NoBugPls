@@ -3295,25 +3295,3 @@ body {
 .rv-tabs [role="tab"] { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .rv-tabs .rv-count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--rule); color: var(--ink-2); font: 600 11px/18px var(--font-mono); text-align: center; }
 .rv-sources { display: grid; gap: 6px; }
-
-/* Plans register: fits its panel. Columns drop as it narrows; on phones each plan is a two-line card. */
-.plans-wrap { container: plans / inline-size; }
-.plans-table .plan-status-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-@container plans (max-width: 900px) {
-  .plans-table :is(th, td):nth-child(7) { display: none; }
-}
-@container plans (max-width: 720px) {
-  .plans-table :is(th, td):nth-child(4) { display: none; }
-  .plans-table .plan-status-control .tag { display: none; }
-}
-@container plans (max-width: 520px) {
-  .plans-table thead { display: none; }
-  .plans-table, .plans-table tbody { display: block; }
-  .plans-table tr { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; padding: 12px 14px; border-bottom: 1px solid var(--rule); }
-  [data-product="hr"] .plans-table td { padding: 0; border: 0; text-align: left; }
-  .plans-table td:nth-child(1) { grid-area: 1 / 1; font-weight: 600; }
-  .plans-table td:nth-child(5) { grid-area: 1 / 2; color: var(--ink-2); }
-  .plans-table td:nth-child(2) { grid-area: 2 / 1; color: var(--ink-2); }
-  .plans-table td:nth-child(3) { grid-area: 2 / 2 / 3 / 5; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .plans-table td:nth-child(6) { grid-area: 1 / 4; justify-self: end; }
-}

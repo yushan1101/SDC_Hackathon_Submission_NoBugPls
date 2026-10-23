@@ -75,10 +75,6 @@ def enterprise_demo(page, base_url: str, username: str, password: str) -> None:
     page.locator('nav[aria-label="Review queue"]').wait_for(timeout=30_000)
     pause(page, 1200)
 
-    page.get_by_role("link", name="Plans").first.click()
-    page.get_by_role("heading", name="Plans register").wait_for(timeout=30_000)
-    pause(page, 1200)
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)

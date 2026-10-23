@@ -1302,7 +1302,7 @@ def review_list(q: str = "", status: str = "active", user: dict = Depends(need("
     return [p for p in rows if (status == "all" or (p["review"]["archived"] if status == "archived" else
             not p["review"]["archived"] and (status == "active" or p["review"]["review_status"] == status)))
             and (not term or term in " ".join(str(x or "") for x in (
-                p["subject_id"], p["target_role"], p["review"]["candidate_name"],
+                p["subject_id"], p["target_role"], p.get("plan_reference"), p["plan_id"], p["review"]["candidate_name"],
                 p["review"]["candidate_email"], p["review"]["candidate_phone"])).casefold())]
 
 
