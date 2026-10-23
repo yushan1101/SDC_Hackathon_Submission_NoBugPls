@@ -1,4 +1,5 @@
 import { api, h, icon, toast, fmtTime, ApiError } from "./lib.js";
+import { Owl } from "./owl.js";
 
 const LABELS = {
   knowledge: "Job-relevant knowledge", relevance: "Answer relevance & completeness",
@@ -9,6 +10,30 @@ const TYPES = { behavioral: "HR / behavioral", technical: "Technical", situation
   problem_solving: "Problem-solving", workplace_scenario: "Workplace scenario" };
 const STAGE_ORDER = ["behavioral", "technical", "situational", "problem_solving", "workplace_scenario"];
 const pct = (n) => `${Math.max(0, Math.min(100, Math.round(Number(n) || 0)))}%`;
+const OFFICE = () => window.AP_CONFIG?.VIRTUAL_INTERVIEW_3D === true;
+
+/** The interviewer, waiting in the 3D office (the same scene as the live room), with the page's heading and next
+ *  step over it. Call mountStage() once the stage is on the page. Without WebGL or the 3D flag the owl stands in. */
+function interviewerStage({ eyebrow, title, text, greeting, actions = [] }) {
+  const scene = h("div", { class: "interview-stage-scene" },
+    greeting ? h("p", { class: "interview-stage-bubble", "aria-hidden": "true" }, greeting) : null);
+  const stage = h("section", { class: "interview-stage" }, scene,
+    h("div", { class: "interview-stage-copy" }, h("p", { class: "eyebrow" }, eyebrow), h("h1", { class: "page-title" }, title),
+      h("p", { class: "lede" }, text), actions.length ? h("div", { class: "interview-stage-actions" }, actions) : null));
+  stage.mount = () => {
+    const owl = () => { scene.querySelector("canvas")?.remove(); scene.append(new Owl({ size: 168, state: "greeting" }).el); stage.classList.add("is-owl"); };
+    if (!OFFICE()) { owl(); return; }
+    import("./virtual-office.js").then(({ mountVirtualOffice }) => {
+      if (!scene.isConnected) return;
+      // wide: look left of the interviewer so they sit on the right, clear of the heading; phones: centred
+      const unmount = mountVirtualOffice(scene, { onFailure: owl, aimX: (w) => (w > 760 ? -1 : 0.12) });
+      stage.classList.add("is-ready");
+      const leave = () => { removeEventListener("hashchange", leave); unmount(); };  // the page is replaced on any route
+      addEventListener("hashchange", leave);
+    }).catch(owl);
+  };
+  return stage;
+}
 export async function interviewView(main, interviewId, recommendationId = null, callbacks = {}) {
   main.replaceChildren(h("div", { class: "interview-loading", role: "status" }, "Preparing your interview workspace…"));
   try {
@@ -45,13 +70,11 @@ export async function interviewView(main, interviewId, recommendationId = null, 
 }
 
 function renderHistory(main, history) {
-  const empty = h("section", { class: "interview-empty interview-card" },
-    h("div", { class: "interview-empty-icon", "aria-hidden": "true" }, icon("spark")),
-    h("div", {}, h("h2", {}, "No practice interviews yet"),
-      h("p", {}, "Discover your career matches by uploading your resume or completing our career game. Once you've found your recommended roles, you can unlock personalized AI mock interviews to prepare for your future career.")),
-    h("div", { class: "interview-report-actions" },
-      h("a", { class: "btn primary", href: "#/resume" }, "Upload resume"),
-      h("a", { class: "btn", href: "#/quiz" }, "Take Quick Match")));
+  const step = (n, title, text) => h("li", {}, h("span", { class: "num" }, n), h("b", {}, title), h("span", {}, text));
+  const empty = h("ol", { class: "interview-steps", "aria-label": "How a mock interview works" },
+    step(1, "Pick a role", "Quick Match or your resume suggests roles you could grow into."),
+    step(2, "Talk it through", "Five questions, by voice or text, with follow-ups on what you say."),
+    step(3, "Get your report", "Scores, job readiness and a plan for what to practise next."));
   const list = h("section", { class: "interview-card" },
     h("div", { class: "section-head" }, h("h2", {}, "Interview history"),
       h("span", { class: "muted" }, `${history.length} ${history.length === 1 ? "session" : "sessions"}`)),
@@ -78,12 +101,17 @@ function renderHistory(main, history) {
               try { await api(`/api/interviews/${item.interview_id}`, { method: "DELETE" }); location.reload(); }
               catch (e) { toast(e.message, "err"); } } }, "Delete")));
     })));
-  main.replaceChildren(
-    h("div", { class: "interview-page" },
-      h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "MOCK INTERVIEWS"),
-        h("h1", { class: "page-title" }, "Interview history"),
-        h("p", { class: "lede" }, "Review your practice sessions and track your preparation for recommended roles."))),
-      history.length ? list : empty));
+  const open = history.find((item) => ["in_progress", "paused"].includes(item.status));
+  const stage = interviewerStage({
+    eyebrow: "MOCK INTERVIEW", title: open ? `Ready to pick up ${open.role_title}?` : "Practise with your AI interviewer",
+    text: open ? `You stopped at question ${open.question_number || 1} of ${open.total_stages || 5}. Your answers so far are saved.`
+      : "A friendly interviewer asks about a role you're aiming for, listens to your answers and tells you what to work on.",
+    greeting: open ? "Welcome back! Shall we continue?" : "Hi, I'm your interviewer. Which role shall we practise?",
+    actions: open ? [h("a", { class: "btn primary", href: `#/interview/${open.interview_id}` }, icon("quiz"), "Resume interview")]
+      : [h("a", { class: "btn primary", href: "#/quiz" }, icon("spark"), "Find a role to practise"),
+        h("a", { class: "btn", href: "#/resume" }, icon("file"), "Use my resume")] });
+  main.replaceChildren(h("div", { class: "interview-page" }, stage, history.length ? list : empty));
+  stage.mount();
 }
 
 function renderLaunch(main, recommendation, plans) {
@@ -108,13 +136,14 @@ function renderLaunch(main, recommendation, plans) {
       location.hash = `#/interview/${session.interview_id}`;
     } catch (e) { error.textContent = e.message; start.disabled = false; start.textContent = "Start mock interview"; }
   } }, "Start mock interview");
+  const stage = interviewerStage({
+    eyebrow: `MOCK INTERVIEW · ${recommendation.source === "resume" ? "FROM YOUR RESUME" : "FROM QUICK MATCH"}`,
+    title: recommendation.role_title,
+    text: "Five questions: behavioural, technical, situational, problem-solving and a workplace scenario, with follow-ups on your answers.",
+    greeting: `Hello! Ready to talk about the ${recommendation.role_title} role?` });
   main.replaceChildren(
-    h("div", { class: "interview-page" },
-      h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "RECOMMENDED ROLE · PRACTICE"),
-        h("h1", { class: "page-title" }, recommendation.role_title),
-        h("p", { class: "lede" }, recommendation.source === "resume"
-          ? "This role came from your completed resume analysis." : "This role came from your Quick Match results."))),
-      h("section", { class: "interview-card" }, h("h2", {}, "Prepare for your interview"),
+    h("div", { class: "interview-page" }, stage,
+      h("section", { class: "interview-card" }, h("h2", {}, "Set up your interview"),
         h("p", { class: "muted" }, `Recommended role · ESCO ${recommendation.role_id}`),
         h("div", { class: "interview-skills" }, skills.map((s) => h("span", { class: "chip-static" }, `${s.name} · ${s.level}/5`))),
         h("label", { class: "field" }, h("span", {}, "Difficulty"), difficulty),
@@ -124,6 +153,7 @@ function renderLaunch(main, recommendation, plans) {
         h("p", { class: "fine" }, "Voice input uses your browser’s speech recognition when available. Browser speech services may process audio; text entry is always available.")),
         error, start),
       h("a", { class: "btn ghost", href: "#/interview" }, "Back to interview history")));
+  stage.mount();
 }
 
 function renderRoom(main, detail, initial = null, callbacks = {}) {

@@ -1821,11 +1821,6 @@ table.compare tbody th { color: var(--ink-2); font-weight: 500; white-space: now
 .interview-history-status { white-space: nowrap; }
 .interview-history-status.pending { background: var(--sunken); color: var(--ink-2); }
 .interview-history-actions { display: flex; justify-content: end; gap: 6px; }
-.interview-empty { max-width: 720px; margin: 20px auto; justify-items: center; text-align: center; padding: clamp(24px, 6vw, 52px); }
-.interview-empty h2 { margin: 0; }
-.interview-empty p { max-width: 58ch; margin: 10px auto 0; line-height: 1.6; color: var(--ink-2); }
-.interview-empty-icon { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; color: var(--link); background: var(--accent-soft); }
-.interview-empty-icon svg { width: 28px; height: 28px; }
 .interview-compare { display: grid; gap: 14px; }
 .interview-compare > div { display: grid; grid-template-columns: minmax(170px, 1fr) 2fr; gap: 8px 14px; align-items: center; }
 .interview-compare .interview-meter { grid-column: 1 / -1; }
@@ -2746,3 +2741,41 @@ body {
   .cap-kbd { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .hr-capsule { transition: none; } }
+
+/* ---------- Interview landing: the interviewer waiting in the 3D office ---------- */
+.interview-stage { position: relative; isolation: isolate; display: grid; align-items: end; min-height: clamp(380px, 56vh, 540px);
+  overflow: hidden; border-radius: 28px; background: #d9e3f1; color: #152033; box-shadow: var(--card-shadow); }
+.interview-stage-scene { position: absolute; inset: 0; z-index: -1; }
+.interview-stage-scene canvas { display: block; width: 100%; height: 100%; opacity: 0; transition: opacity 600ms ease-out; }
+.interview-stage.is-ready .interview-stage-scene canvas { opacity: 1; }
+.interview-stage.is-owl .interview-stage-scene { display: grid; place-items: center end; padding-right: 12%;
+  background: radial-gradient(circle at 72% 45%, var(--accent-soft), #d9e3f1 60%); }
+/* the copy sits on a soft wash over the left of the room; the interviewer stays clear on the right */
+.interview-stage-copy { display: grid; gap: 10px; justify-items: start; max-width: 520px; padding: clamp(24px, 4vw, 44px);
+  background: linear-gradient(90deg, #f4f7fcf2 0%, #f4f7fcd9 70%, #f4f7fc00 100%); }
+.interview-stage-copy .eyebrow { margin: 0; color: #3f4f6e; }
+.interview-stage-copy .page-title { margin: 0; color: #101a2c; font-size: clamp(34px, 4.4vw, 54px); line-height: 1.04; }
+.interview-stage-copy .lede { margin: 0; max-width: 42ch; color: #33415c; }
+.interview-stage-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.interview-stage-actions .btn svg { width: 18px; height: 18px; }
+.interview-stage-bubble { position: absolute; top: clamp(18px, 9%, 48px); right: clamp(16px, 8%, 120px); max-width: 26ch; margin: 0;
+  padding: 12px 16px; border-radius: 18px 18px 18px 6px; background: #fff; color: #152033; font-weight: 600; line-height: 1.35;
+  box-shadow: 0 14px 30px -18px #09111f80; animation: stage-bubble 520ms 700ms cubic-bezier(0.34, 1.4, 0.64, 1) both; }
+@keyframes stage-bubble { from { opacity: 0; transform: translateY(8px) scale(0.92); } }
+.interview-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0; padding: 0; list-style: none; }
+.interview-steps li { display: grid; gap: 6px; align-content: start; padding: 20px; border: 1px solid var(--rule); border-radius: 20px; background: var(--surface); }
+.interview-steps .num { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.interview-steps b { font-size: 17px; }
+.interview-steps li > span:last-child { color: var(--ink-2); line-height: 1.5; }
+@media (max-width: 760px) {
+  /* phones: the room on top, the copy below it */
+  .interview-stage { grid-template-rows: 300px auto; min-height: 0; }
+  .interview-stage-scene { position: relative; inset: auto; z-index: 0; grid-row: 1; align-self: stretch; }
+  .interview-stage-copy { grid-row: 2; max-width: none; background: var(--surface); color: var(--ink); }
+  .interview-stage-copy .page-title { color: var(--ink); }
+  .interview-stage-copy .eyebrow, .interview-stage-copy .lede { color: var(--ink-2); }
+  .interview-stage.is-owl .interview-stage-scene { place-items: center; padding: 0; }
+  .interview-stage-bubble { top: auto; bottom: 12px; right: auto; left: 12px; max-width: 22ch; font-size: 14px; }
+  .interview-steps { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .interview-stage-bubble { animation: none; } .interview-stage-scene canvas { transition: none; } }

@@ -8,7 +8,11 @@ const makeClayMaterial = (color, roughness) => new THREE.MeshPhysicalMaterial({
   color, roughness, metalness: 0, clearcoat: 0.1, clearcoatRoughness: 0.72,
 });
 
-export function mountVirtualOffice(host, { onFailure } = {}) {
+// aimX(width): where the camera looks across the desk; the room leaves its left side to the question overlay,
+// the landing stage (interview.js) leaves its left side to the page heading.
+const ROOM_AIM = (w) => (w >= 1024 ? 0.34 : w <= 760 ? 0.12 : 0);
+
+export function mountVirtualOffice(host, { onFailure, aimX = ROOM_AIM } = {}) {
   const width = host.clientWidth;
   const height = host.clientHeight;
   if (!width || !height) throw new Error("The interview office has no visible size.");
@@ -19,7 +23,7 @@ export function mountVirtualOffice(host, { onFailure } = {}) {
 
   const camera = new THREE.PerspectiveCamera(48, width / height, 0.1, 30);
   camera.position.set(0, 1.15, 2.8);
-  const aimCamera = () => camera.lookAt(window.innerWidth >= 1024 ? 0.34 : window.innerWidth <= 760 ? 0.12 : 0, 1.52, 0.05);
+  const aimCamera = () => camera.lookAt(aimX(host.clientWidth), 1.52, 0.05);
   aimCamera();
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "low-power" });
