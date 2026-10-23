@@ -11,7 +11,7 @@ import { registerView, pricingView, accountView, planName, verifyLinkView, forgo
 import { termsView, privacyView } from "./legal.js";
 import { watchForm } from "./risk.js";
 import { micButton, readAloudButton, setVoice } from "./voice.js";
-import { agentsView, agentChatView } from "./agents.js";
+import { agentsView, agentChatView, agentSwitch } from "./agents.js";
 
 const app = $("#app");
 const store = {
@@ -127,7 +127,7 @@ function shell() {
       // guests: the home page and the AI-trends page, and one action: sign in
       guest ? null : S.me.role !== "employee" ? h("nav", { class: "pub-nav", "aria-label": "Primary" }, h("a", { href: "enterprise.html" }, icon("back"), h("span", {}, "Back to console")))
         : h("nav", { class: "pub-nav", "aria-label": "Primary" }, nav("#/start", "Home", "home"), nav("#/agents", "Agents", "ask"), nav("#/today", "AI trends", "pulse"),
-          nav("#/report", "Chat", "report"), nav("#/interview", "Interview", "quiz"), nav("#/plans", "My plans", "plans")),
+          nav("#/report", "Chat", "report"), nav("#/plans", "My plans", "plans")),
       guest ? null : S.status.el,
       guest
         ? h("div", { class: "top-actions" }, h("a", { class: "btn sm top-plans", href: "#/today" }, "AI trends"), h("a", { class: "btn sm top-plans", href: "#/pricing" }, "Plans"),
@@ -136,7 +136,7 @@ function shell() {
             icon("user"), planName(S.me.effective_plan || "org")),
           h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out"))),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
-    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/agents", "Agents", "ask"), tab("#/today", "AI trends", "pulse"), tab("#/interview", "Interview", "quiz"), tab("#/plans", "Plans", "plans")),
+    guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/agents", "Agents", "ask"), tab("#/today", "AI trends", "pulse"), tab("#/plans", "Plans", "plans")),
     S.sheet].filter(Boolean));  // replaceChildren would print a null as the text "null"
 }
 
@@ -205,7 +205,8 @@ function route() {
     return;
   }
   if (!$("#main")) shell();
-  const section = ["quiz", "resume", "build"].includes(page) ? "#/start" : `#/${page}`;  // the three starts live on Home
+  // the three starts live on Home; chat agents and the mock interview share the Agents page
+  const section = ["quiz", "resume", "build"].includes(page) ? "#/start" : page === "interview" ? "#/agents" : `#/${page}`;
   document.querySelectorAll("[data-route]").forEach((a) => {
     const active = section === a.dataset.route || section.startsWith(a.dataset.route + "/");
     if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
@@ -217,7 +218,11 @@ function route() {
   else if (page === "plans" && id) planDetail(main, id);
   else if (page === "plans") plansView(main);
   else if (page === "build") buildView(main);
-  else if (page === "interview") interviewView(main, interviewStart ? null : id, interviewStart ? rest[0] : null);
+  else if (page === "interview") {
+    const pane = h("div");
+    main.replaceChildren(agentSwitch("interview"), pane);
+    interviewView(pane, interviewStart ? null : id, interviewStart ? rest[0] : null);
+  }
   else if (page === "quiz") quizView(main, { status: S.status, planFor, onInterview: startInterview });
   else if (page === "resume") resumeView(main, { status: S.status, planFor, onInterview: startInterview });
   else if (page === "terms") termsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));

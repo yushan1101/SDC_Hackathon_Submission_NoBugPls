@@ -2,7 +2,6 @@
 // plugins (company accounts the posting agent sends openings to).
 import { api, h, icon, toast, fmtTime } from "./lib.js";
 import { Owl } from "./owl.js";
-import { micButton, readAloudButton } from "./voice.js";
 import { brandMark as mark } from "./brands.js";
 
 const STATUS_TAG = { active: "approved", invited: "draft", disabled: "flagged" };
@@ -138,31 +137,6 @@ export async function publishPanel(id, status, isOpen) {
       d.connections.length ? go : h("p", { class: "muted" }, "No accounts connected. ", h("a", { href: "#/plugins" }, "Add hiring plugins"), " to post openings to LinkedIn, Facebook, X, Telegram, Discord or Slack."),
       isOpen ? null : h("p", { class: "note" }, "Closed openings aren't posted."),
       list));
-}
-
-// ---------------------------------------------------------------- ask about your team (plain language, typed or spoken)
-export function askPanel(status, plan) {
-  const q = h("input", { class: "input", maxlength: 500, placeholder: "e.g. Who is closest to a data analyst role?", "aria-label": "Your question" });
-  const out = h("div", { class: "ask-answer", "aria-live": "polite" });
-  const go = h("button", { class: "btn primary", type: "submit" }, "Ask");
-  const paid = ["team", "org"].includes(plan);
-  const form = h("form", { class: "ask-row", onsubmit: async (e) => {
-    e.preventDefault();
-    if (q.value.trim().length < 3) return;
-    go.disabled = true; status.set("thinking", "Looking through your team's data");
-    try {
-      const r = await api("/api/hr/ask", { method: "POST", body: { question: q.value.trim() } });
-      out.replaceChildren(h("p", {}, r.answer), readAloudButton(() => r.answer),
-        r.employees.length ? h("p", { class: "muted" }, "Based on: ", ...r.employees.map((id, i) => [i ? ", " : "", h("span", { class: "mono" }, id)])) : null);
-      status.set("matched", "Answered");
-    } catch (ex) { out.replaceChildren(h("p", { class: "error" }, ex.message)); status.set("confused", "No answer"); }
-    go.disabled = false;
-  } }, q, micButton(q), go);
-  return h("section", { class: "panel ask-panel" }, h("header", {}, h("h2", {}, "Ask about your team")),
-    h("div", { class: "pad", style: { display: "grid", gap: "10px" } },
-      paid ? form : h("p", { class: "muted" }, "Ask questions about your team's plans and hiring in plain language. Part of the Team plan. ",
-        h("a", { href: "./#/pricing" }, "See plans")),
-      out));
 }
 
 // ---------------------------------------------------------------- AI models per task, for this organisation

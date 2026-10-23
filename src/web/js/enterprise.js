@@ -5,8 +5,8 @@ import { api, stream, h, $, icon, toast, fmtTime, ApiError, SCENARIO_HELP } from
 import { Owl, OwlStatus } from "./owl.js";
 import { gapsBlock, comparisonBlock, outlookBlock, planBlock, historyBlock, sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { openingsView, openingDetail, signalsView } from "./recruit.js";
-import { askPanel, modelsView, peopleView, pluginsView } from "./org.js";
-import { agentsView, agentChatView } from "./agents.js";
+import { modelsView, peopleView, pluginsView } from "./org.js";
+import { agentsView, agentChatView, hrCapsule } from "./agents.js";
 import { setVoice } from "./voice.js";
 
 const app = $("#app");
@@ -70,7 +70,7 @@ function shell() {
       tab("#/review", "Review", "review"), tab("#/plans", "Plans", "history"),
       h("button", { type: "button", class: "hr-more-button", popovertarget: "hr-more", "data-route": "#/more",
         "aria-haspopup": "true", "aria-label": "More pages" }, icon("grid"), "More")),
-    more));
+    more, S.capsule = capsule()));
   // the owl lives in the rail's logo spot; on phones (no rail) it moves back next to the status text
   const narrow = matchMedia("(max-width: 767px)");
   const place = () => (narrow.matches ? S.status.el.prepend(S.status.owl.el) : S.logo.append(S.status.owl.el));
@@ -78,6 +78,30 @@ function shell() {
   place();
   crumb();
   refreshPlans();
+}
+
+/** The floating agent capsule: every page and the console's main actions, searchable and runnable from anywhere. */
+function capsule() {
+  const page = (href, label, ic, words = "") => ({ href, label, icon: ic, words });
+  const scenario = (k) => ({ label: `Switch to the ${k} AI scenario`, icon: "model", words: "scenario mode",
+    run: () => { [...S.seg.querySelectorAll("button")].find((b) => b.textContent.toLowerCase() === k)?.click(); toast(`AI scenario: ${k}`); } });
+  return hrCapsule({
+    pages: [page("#/overview", "Overview", "grid", "home dashboard"), page("#/agents", "Agents", "ask", "chat assistants"),
+      page("#/run", "Analyse team", "upload", "csv upload run"), page("#/review", "Review queue", "review", "approve pending flagged"),
+      page("#/plans", "Plans register", "history"), page("#/openings", "Hiring", "people", "openings jobs applicants"),
+      page("#/plugins", "Hiring plugins", "plug", "linkedin post share"), page("#/people", "Team members", "user", "invite users"),
+      page("#/models", "AI models", "model", "llm settings"), page("#/signals", "AI trends", "pulse", "signals news"),
+      page("./#/account", "Plan & billing", "user", "pricing subscription")],
+    actions: [{ label: "Analyse a team CSV", icon: "upload", words: "start new run import", run: () => { location.hash = "#/run"; } },
+      { label: "Review the next pending plan", icon: "review", words: "approve open next", run: () => {
+        const p = S.plans.find((x) => x.audience === "hr" && !x.review?.archived && x.review?.review_status === "pending");
+        location.hash = p ? `#/review/${p.plan_id}` : "#/review"; if (!p) toast("Nothing is waiting for review."); } },
+      { label: "Create a job opening", icon: "people", words: "new hire post", run: () => { location.hash = "#/openings"; } },
+      { label: "Invite a team member", icon: "user", words: "add people", run: () => { location.hash = "#/people"; } },
+      scenario("assistive"), scenario("agentic"),
+      { label: "Sign out", icon: "out", words: "log out", run: signOut }],
+    plans: () => S.plans, status: S.status,
+  });
 }
 
 function crumb(page = (location.hash.split("/")[1] || "overview")) {
@@ -109,6 +133,7 @@ function route() {
     if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
   crumb(page);
+  S.capsule.hidden = page === "agents" && !!id;  // an agent chat has its own composer
   S.onScenarioChange = null;
   const main = $("#main");
   S.routeVersion = (S.routeVersion || 0) + 1;
@@ -176,7 +201,7 @@ async function overview(main) {
   if (version !== S.routeVersion) return;
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "Overview"), h("a", { class: "btn primary sm", href: "#/run" }, icon("upload"), "Analyse team")),
-    stats(), askPanel(S.status, S.me.effective_plan), h("div", { class: "overview" }, needsPanel(),
+    stats(), h("div", { class: "overview" }, needsPanel(),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Needs your review")),
         h("div", { class: "pad review-list" }, latestPerEmployee(S.plans.filter((p) => p.audience === "hr" && !p.review?.archived && p.review?.review_status === "pending")).slice(0, 6).map((p) =>
           h("a", { href: `#/review/${p.plan_id}`, class: "review-row" },

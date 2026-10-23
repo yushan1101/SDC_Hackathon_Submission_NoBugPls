@@ -7,7 +7,7 @@ Two kinds:
           gallery opens that screen.
 
 `task` is which model setting answers (agents/llm.TASKS, so an HR advisor's per-task model choice applies).
-`picture` is img/agents/<id>.jpg (generated to the same still-life style as the trend board).
+The web app draws every agent as the owl companion, each in its own pose (web/js/agents.js POSE).
 """
 
 GUARD = ("Use only the facts in <CONTEXT> and general, well-established career knowledge. If the context does not "
