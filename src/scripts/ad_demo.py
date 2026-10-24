@@ -298,6 +298,10 @@ def act_employee(a: Act) -> None:
     a.card("Your next career move, planned", "AiversePulse · for employees")
 
     def answer_quiz(quick: bool = False):
+        # the page may open on the questions, the "skip" choice, or the last results already
+        p.locator(".opts button, button:has-text('Skip, search everything'), button:has-text('Practice interview')").first.wait_for(timeout=30000)
+        if p.get_by_role("button", name="Practice interview").count() and not p.locator(".opts button").count():
+            return
         if p.get_by_role("button", name="Skip, search everything").count():
             a.click(p.get_by_role("button", name="Skip, search everything"), after=0.8)
         for i in range(13):
@@ -325,7 +329,8 @@ def act_employee(a: Act) -> None:
         p.locator(".plan-block").first.wait_for(timeout=300_000)
         a.say("Steps that use what you already know, at the hours you have.")
         a.scroll(5, after=1.6)
-        a.click(".phase summary", after=1.4)
+        if not p.locator(".act-done").first.is_visible():  # the first phase starts open; open it only if it isn't
+            a.click(".phase summary", after=1.4)
         a.click(".act-done", after=1.2)
         a.say("Tick it off: your progress is saved, and your HR advisor sees it.", hold=2.4)
     a.beat("personal plan", plan)
