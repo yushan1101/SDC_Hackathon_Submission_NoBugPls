@@ -118,175 +118,113 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 
 ### Architecture
 
+**1. The system at a glance**
+
 ```mermaid
----
-title: AiversePulse Enterprise — Roles, Features and Architecture
----
-flowchart LR
-  %% ==================== ACTORS ====================
-  Guest(("Guest<br/>(not signed in)"))
-  Emp(("Employee / Learner<br/>(signed in)"))
-  App(("Applicant<br/>(public apply link)"))
-  HR(("HR Advisor"))
-  Admin(("Platform Admin"))
-
-  %% ==================== FRONTEND ====================
-  subgraph FE["Frontend site — Replit (static src/web/)"]
-    direction LR
-    subgraph Landing["Public landing /"]
-      G1(["Feature overview"])
-      G2(["Public Today<br/>AI-trend board"])
-      G3(["Sign up / Sign in<br/>(#35;/signin/feature)"])
-    end
-    subgraph EmpApp["Employee app (signed in)"]
-      E1(["Quick-match game<br/>(13 scenarios)"])
-      E2(["Resume upload<br/>Evidence-quoted ESCO skills"])
-      E3(["Pick a job / rate skills"])
-      E4(["Streamed report: roles, gaps,<br/>2 AI scenarios, STF-KAN outlook, SDGs"])
-      E5(["Edit 30/60/90-day plan<br/>(New version on edit)"])
-      E6(["3D hologram mock interview<br/>(Recommended roles;<br/>text / browser voice)"])
-      E7(["Interview history & reports"])
-      E8(["Personal assistant bot<br/>(Owl companion + RAG chat)"])
-      E9(["Plans & payment"])
-      E10(["Delete my account"])
-    end
-    subgraph ApplyPg["Apply page /apply/{token}"]
-      A1(["Submit resume<br/>(Consent, honeypot, rate limit)"])
-    end
-    subgraph HRC["HR console /enterprise"]
-      H1(["Team: CSV import, invite by email,<br/>disable / remove members"])
-      H2(["Watch each employee's<br/>8-agent trace live"])
-      H3(["Approve / flag plans<br/>(Named human sign-off)"])
-      H4(["Review queue<br/>(Edit, archive, delete)"])
-      H5(["Openings with plain-English<br/>thresholds + public apply link"])
-      H6(["Blind ranked review<br/>Shortlist / hold / decline"])
-      H7(["Hiring plugins<br/>(LinkedIn, Facebook, X,<br/>Telegram, Discord, Slack)"])
-      H8(["Ask about your team<br/>+ voice job drafts"])
-      H9(["Choose AI model per task<br/>(From admin allow-list)"])
-      H10(["Signals view / refresh board"])
-    end
-    subgraph ADM["Admin console"]
-      M1(["Allowed AI models list"])
-      M2(["Frontend sites<br/>(Allowed origins)"])
-      M3(["Platform accounts<br/>& organisations"])
-      M4(["Plans, pricing & billing"])
-    end
-    Holo["Three.js 3D hologram"]
-    Owl["Owl companion<br/>(Rigged SVG, live agent state)"]
-  end
-
-  %% ==================== LOAD BALANCER ====================
-  CF{{"Cloudflare MCP balancer"}}
-
-  %% ==================== BACKEND ====================
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "16px", "primaryColor": "#EAF2FB", "primaryTextColor": "#0F172A", "primaryBorderColor": "#1F4E79", "lineColor": "#3B82F6", "clusterBkg": "#F8FAFC", "clusterBorder": "#94A3B8", "titleColor": "#0F172A", "edgeLabelBackground": "#FFFFFF"}}}%%
+flowchart TB
+  Users["Guest · Employee / Learner · Applicant · HR Advisor · Platform Admin"]
+  FE["<b>Frontend site — Replit</b><br/>static src/web/: public landing, employee app,<br/>apply page, HR console, admin console<br/>Three.js 3D hologram · Owl companion"]
   subgraph VPS["Dual-node VPS backend"]
-    subgraph Main["Main node — FastAPI (sdc.olgtx.com)"]
-      API["API + SSE<br/>Sessions, roles (employee / HR / admin)<br/>CSRF X-AP, CORS"]
-      Guard["Document guard<br/>(Hidden text, injection, fraud)"]
-      subgraph LG["Reskilling graph (LangGraph)"]
-        Graph["Supervisor -> profiler<br/>Knowledge search / market analyst<br/>Gap analysis -> pathway -> coach -> reviewer"]
-      end
-      subgraph SG["Resume-screening graph (LangGraph)"]
-        Screen["Parse resume -> extract skills<br/>Assess fit -> judge criteria + ranking"]
-      end
-      Chat["RAG chat / assistant agent"]
-      Intv["Mock-interview agent<br/>(ESCO-grounded adaptive questions, scoring)"]
-      Rec["Recruiter / posting agent"]
-      SQL[("SQLite<br/>Accounts, sessions, plan versions, approvals<br/>HR reviews, recruiting, interviews<br/>Trend history, payments, audit log")]
-      Chroma[("Chroma<br/>18,444 ESCO + learning passages")]
-    end
-    subgraph Worker["Worker node"]
-      MCP["FastMCP tools<br/>ESCO search, embeddings, match_roles<br/>trend_signals, sdg_for, skill_outlook (STF-KAN)"]
-    end
+    Main["<b>Main node — FastAPI</b> (sdc.olgtx.com)<br/>API + SSE · document guard · LangGraph graphs<br/>chat, interview and recruiter agents"]
+    Worker["<b>Worker node</b><br/>FastMCP tools"]
+    DB[("SQLite + Chroma")]
   end
+  CF{{"Cloudflare MCP balancer"}}
+  Data["<b>Data</b><br/>ESCO · UN SDG · HN, arXiv, Arbeitnow, Remotive<br/>exported model assets (STF-KAN)"]
+  Ext["<b>External services</b><br/>Gemini · OpenAI-compatible gateway<br/>Stripe · SMTP · social platform APIs"]
 
-  %% ==================== DATA SOURCES ====================
-  subgraph Data["Data"]
-    ESCO["ESCO v1.2<br/>(2,938 occupations)"]
-    SDG["UN SDG API<br/>(169 targets)"]
-    Feeds["HN, arXiv, Arbeitnow,<br/>Remotive (daily)"]
-    Assets["Exported model assets<br/>(Requirement model, STF-KAN)"]
-    ONET["O*NET 31.0<br/>(Training only)"]
-  end
+  Users --> FE
+  FE -- "HTTPS + SSE" --> Main
+  Main --> DB
+  Main --> CF --> Worker
+  Worker -. "local fallback" .-> Main
+  Worker --> Data
+  Main -. "AI models, payments, email, posts" .-> Ext
 
-  %% ==================== EXTERNAL SERVICES ====================
-  subgraph Ext["External services"]
-    Gem["Gemini 3.1 Flash-Lite"]
-    GW["OpenAI-compatible gateway"]
-    Stripe["Stripe"]
-    SMTP["SMTP"]
-    Social["Social platform APIs"]
-  end
-
-  %% ==================== ROLE RELATIONS ====================
-  Guest --> G1 & G2 & G3
-  G3 -. becomes .-> Emp
-  Emp --> E1 & E2 & E3 & E4 & E5 & E6 & E7 & E8 & E9 & E10
-  App --> A1
-  HR --> H1 & H2 & H3 & H4 & H5 & H6 & H7 & H8 & H9 & H10
-  Admin --> M1 & M2 & M3 & M4
-  M1 -. limits choices .-> H9
-  H1 -. invites team members .-> Emp
-  H5 -. shares public apply link .-> A1
-
-  %% ==================== FRONTEND TO BACKEND ====================
-  G2 & G3 --> API
-  E1 & E3 --> API
-  E2 --> Guard
-  E4 -- SSE stream --> Graph
-  E5 & E7 & E10 --> SQL
-  E6 --> Holo --> Intv
-  E8 --> Owl --> Chat
-  E9 --> Stripe
-  A1 --> Guard
-  Guard -- Employee resume --> Graph
-  Guard -- Applicant resume --> Screen
-  H1 --> SMTP
-  H2 --> Graph
-  H3 & H4 --> SQL
-  H5 & H8 --> Rec
-  H6 --> Screen
-  H7 --> Social
-  H9 --> API
-  H10 --> MCP
-  M1 & M2 --> API
-  M3 --> SQL
-  M4 --> Stripe
-
-  %% ==================== BACKEND INTERNALS ====================
-  Graph --> CF --> MCP
-  MCP -. Local fallback .-> Main
-  Graph & Chat --> Chroma
-  Chat --> SQL
-  Intv --> MCP
-  Intv & Screen --> SQL
-  Graph -- Draft until approved --> SQL
-  MCP --> ESCO & SDG & Feeds & Assets
-  ONET -. Offline training .-> Assets
-
-  %% ==================== AI MODEL ROUTING ====================
-  Graph -. Optional routing .-> Gem
-  Graph -. Optional coach .-> GW
-  Chat -.-> GW
-  Intv -. Questions + STT .-> GW
-  Screen & Rec -.-> GW
-
-  %% ==================== STYLES (as in the PlantUML) ====================
-  classDef fe fill:#EAF2FB,stroke:#1F4E79
-  classDef be fill:#F4F8EC,stroke:#1F4E79
-  classDef data fill:#FFF7E6,stroke:#1F4E79
-  classDef ext fill:#F9ECEC,stroke:#1F4E79
-  class FE fe
-  class VPS be
+  classDef fe fill:#EAF2FB,stroke:#1F4E79,color:#0F172A
+  classDef be fill:#F4F8EC,stroke:#1F4E79,color:#0F172A
+  classDef data fill:#FFF7E6,stroke:#1F4E79,color:#0F172A
+  classDef ext fill:#F9ECEC,stroke:#1F4E79,color:#0F172A
+  class Users,FE fe
+  class Main,Worker,DB,CF be
   class Data data
   class Ext ext
-  classDef inner fill:#FFFFFF,stroke:#1F4E79
-  class Landing,EmpApp,ApplyPg,HRC,ADM,Main,Worker,LG,SG inner
-  linkStyle default stroke:#1F4E79
 ```
 
-GitHub draws this diagram from the Mermaid text above. The original PlantUML is in
-[`docs/architecture.puml`](docs/architecture.puml); change both together.
+**2. Inside the main node**
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "16px", "primaryColor": "#F4F8EC", "primaryTextColor": "#0F172A", "primaryBorderColor": "#1F4E79", "lineColor": "#3B82F6", "clusterBkg": "#F8FAFC", "clusterBorder": "#94A3B8", "titleColor": "#0F172A", "edgeLabelBackground": "#FFFFFF"}}}%%
+flowchart LR
+  API["<b>API + SSE</b><br/>sessions, roles<br/>CSRF X-AP, CORS"]
+  Guard["<b>Document guard</b><br/>hidden text, injection, fraud"]
+  Graph["<b>Reskilling graph</b><br/>(LangGraph)"]
+  Screen["<b>Resume-screening graph</b><br/>(LangGraph)"]
+  Chat["<b>RAG chat / assistant</b>"]
+  Intv["<b>Mock-interview agent</b>"]
+  Rec["<b>Recruiter / posting agent</b>"]
+  SQL[("<b>SQLite</b><br/>accounts, plans, approvals,<br/>recruiting, interviews, audit")]
+  Chroma[("<b>Chroma</b><br/>18,444 passages")]
+
+  API --> Guard
+  Guard -- "employee resume" --> Graph
+  Guard -- "applicant resume" --> Screen
+  API --> Graph & Chat & Intv & Rec
+  Graph -- "draft until approved" --> SQL
+  Screen & Chat & Intv --> SQL
+  Graph & Chat --> Chroma
+
+  classDef n fill:#F4F8EC,stroke:#1F4E79,color:#0F172A
+  class API,Guard,Graph,Screen,Chat,Intv,Rec,SQL,Chroma n
+```
+
+**3. The two agent pipelines** — employee plans and applicant screening; a person approves every plan and makes every hiring decision
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "16px", "primaryColor": "#EEF2FF", "primaryTextColor": "#0F172A", "primaryBorderColor": "#1F4E79", "lineColor": "#3B82F6", "clusterBkg": "#F8FAFC", "clusterBorder": "#94A3B8", "titleColor": "#0F172A", "edgeLabelBackground": "#FFFFFF"}}}%%
+flowchart TB
+  subgraph R["Reskilling graph"]
+    direction TB
+    S["Supervisor"] --> P["Profiler"] & K["Knowledge search"] & M["Market analyst"]
+    P & K & M --> G["Gap analysis<br/>(2 AI scenarios)"] --> W["Pathway<br/>30/60/90-day plan"] --> C["Coach"] --> V["Reviewer"]
+    V --> D(["Draft plan"]) -- "named sign-off" --> A(["Approved plan"])
+  end
+  subgraph H["Resume screening"]
+    direction TB
+    X["Parse resume"] --> E["Extract skills"] --> F["Assess fit"] --> J["Judge criteria<br/>+ ranking"]
+    J --> B(["Blind ranked review"]) -- "HR decides" --> O(["Shortlist / hold / decline"])
+  end
+
+  classDef n fill:#EEF2FF,stroke:#1F4E79,color:#0F172A
+  classDef h fill:#ECFDF5,stroke:#047857,color:#0F172A
+  class S,P,K,M,G,W,C,V,X,E,F,J n
+  class D,A,B,O h
+```
+
+**4. Tools and data** — reached through the Cloudflare MCP balancer, with a local fallback on the main node
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "16px", "primaryColor": "#FFF7E6", "primaryTextColor": "#0F172A", "primaryBorderColor": "#1F4E79", "lineColor": "#3B82F6", "clusterBkg": "#F8FAFC", "clusterBorder": "#94A3B8", "titleColor": "#0F172A", "edgeLabelBackground": "#FFFFFF"}}}%%
+flowchart LR
+  MCP["<b>FastMCP tools</b> (worker node)<br/>ESCO search · embeddings · match_roles<br/>trend_signals · sdg_for · skill_outlook"]
+  ESCO["ESCO v1.2<br/>2,938 occupations"]
+  SDG["UN SDG API<br/>169 targets"]
+  Feeds["HN, arXiv, Arbeitnow,<br/>Remotive (daily)"]
+  Assets["Exported model assets<br/>requirement model, STF-KAN"]
+  ONET["O*NET 31.0<br/>training only"]
+
+  MCP --> ESCO & SDG & Feeds & Assets
+  ONET -. "offline training" .-> Assets
+
+  classDef n fill:#FFF7E6,stroke:#1F4E79,color:#0F172A
+  classDef t fill:#F4F8EC,stroke:#1F4E79,color:#0F172A
+  class ESCO,SDG,Feeds,Assets,ONET n
+  class MCP t
+```
+
+The complete single diagram (every feature and connection) is the PlantUML in
+[`docs/architecture.puml`](docs/architecture.puml); keep it and these diagrams in step.
 
 **Who uses it**
 
