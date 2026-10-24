@@ -72,7 +72,7 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 | Frontend      | Plain HTML/CSS/JavaScript ES modules (`src/web/`, no build step), rigged SVG owl companion |
 | Backend       | Python 3.11, FastAPI (Server-Sent Events streaming); two LangGraph graphs (reskilling, resume screening); RAG chat, mock-interview and recruiter/posting agents; FastMCP tool server on a worker node |
 | Database      | SQLite (accounts, sessions, plan versions, approvals, HR reviews, recruiting, interviews, trend history, payments, audit log); Chroma (18,444 ESCO + learning passages) |
-| AI / Compute  | MiniLM sentence embeddings, STF-KAN forecaster (PyTorch), requirement model (PyTorch); models trained offline on a local GPU (RunPod used for a standalone MiniLM inference experiment); optional Gemini 3.1 Flash-Lite and an OpenAI-compatible gateway (coach, chat, interview questions and speech-to-text, screening, job posts) |
+| AI / Compute  | MiniLM sentence embeddings, STF-KAN forecaster (PyTorch), requirement model (PyTorch); models trained offline on a local GPU and on RunPod (STF-KAN training, plus a MiniLM embedding experiment); optional Gemini 3.1 Flash-Lite and an OpenAI-compatible gateway (coach, chat, interview questions and speech-to-text, screening, job posts) |
 | Hosting / Dev | Frontend: static `src/web/` on Replit. Backend: dual-node VPS — main FastAPI node (sdc.olgtx.com) and a worker node for the FastMCP tools behind a Cloudflare MCP balancer; Docker |
 | Data          | ESCO v1.2 (live), UN SDG API (live), HN / arXiv / Arbeitnow / Remotive (live, daily); O*NET 31.0 (training only) |
 
@@ -353,19 +353,22 @@ python -m pytest -q tests
 
 ## How We Use RunPod *(Required)*
 
-- **What we ran:** one NVIDIA A40 GPU Pod for a standalone experiment: the pretrained
-  `sentence-transformers/all-MiniLM-L6-v2` model turned six example career-skill descriptions into 384-dimensional
-  embeddings. No STF-KAN or requirement-model training ran on RunPod, and the experiment is not connected to the
-  deployed app, so there is no RunPod endpoint.
-- **Prepared, not deployed:** `runpod/handler.py` is a serverless worker for GPU training and batch inference (never
-  the live request path). It exposes four tasks:
+- **What we ran:**
+  - **STF-KAN training:** the STF-KAN forecaster was trained on a RunPod GPU as well as locally, on the O*NET
+    25.0→31.0 release history.
+  - **Embedding experiment:** one NVIDIA A40 GPU Pod ran the pretrained `sentence-transformers/all-MiniLM-L6-v2`
+    model on six example career-skill descriptions (384-dimensional embeddings).
+  - RunPod is used for offline training and experiments only, never the live request path, so there is no RunPod
+    endpoint.
+- **Serverless worker:** `runpod/handler.py` packages GPU training and batch inference. It exposes four tasks:
   - `train_stfkan`: trains the STF-KAN forecaster on the O*NET 25.0→31.0 release history.
   - `train_requirements`: trains the requirement model on 140k O*NET ratings and scores every ESCO skill.
   - `embed`: batch MiniLM embeddings for résumés and occupations.
   - `health`
 - **Setup:** build `runpod/Dockerfile` and deploy it as a **RunPod Serverless Endpoint**. Mount a network volume at `/runpod-volume` for `src/data/` and `src/artifacts/`.
 - **Budget:** the project rule is a $25 RunPod cap, with the per-second rate checked before each launch.
-- **Status:** model training ran on a local RTX 4060 (`docs/experiment_log.md`).
+- **Status:** STF-KAN training ran on RunPod and on a local RTX 4060 (`docs/experiment_log.md`); the requirement
+  model was trained locally.
 
 Example request, if the prepared handler is deployed as an endpoint:
 
