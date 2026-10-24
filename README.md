@@ -107,7 +107,7 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 │   ├── REPLIT PROOF OF USE.pdf
 │   ├── RUNPOD PROOF OF USE.pdf
 │   ├── Submission Template SDC Hackathon.pdf
-│   └── PROPOSAL_DRAFT.md    # Draft answers for the Phase 1 proposal form
+│   └── PROPOSAL.md          # Phase 1 proposal answers (for the submission form)
 ├── tests/                   # 74 pytest tests (agents, API, security, runtime data isolation, RunPod handler)
 ├── .env.example             # Example environment variables
 ├── .gitignore
@@ -445,7 +445,7 @@ Frontend interaction checks (Node.js, no packages required): `node --test tests/
 - [ ] Demo video link added
 - [ ] Replit used, with proof of use in `submission/`
 - [ ] RunPod used, with proof of use in `submission/`
-- [ ] Submission template completed in `submission/` (draft answers: [`submission/PROPOSAL_DRAFT.md`](submission/PROPOSAL_DRAFT.md))
+- [ ] Submission template PDF completed in `submission/` (answers: [`submission/PROPOSAL.md`](submission/PROPOSAL.md))
 - [x] "How to Run" steps verified (fresh virtual environment + CI on every push)
 - [x] No API keys or secrets committed to the repository
 
@@ -459,4 +459,4 @@ Third-party data and models keep their own licenses:
 - UN SDG content © United Nations
 - all-MiniLM-L6-v2, Apache 2.0
 
-See [`submission/PROPOSAL_DRAFT.md`](submission/PROPOSAL_DRAFT.md) §6.2.
+See [`submission/PROPOSAL.md`](submission/PROPOSAL.md) §6.2.
