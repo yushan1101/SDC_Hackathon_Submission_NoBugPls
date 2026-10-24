@@ -23,7 +23,7 @@
 | Replit Project    | https://replit.com/join#t=tgoyzxfovhhsrpu-boyuuu                                                              |
 | Live Demo         | https://sdc-hackathon-submission-no-bug-pls.replit.app (replite node deployed link)// **https://sdc.olgtx.com** (main node backup link)                                                               |
 | RunPod Endpoint   | None                                                                 |
-| Slide Deck        | https://github.com/yushan1101/SDC_Hackathon_Submission_NoBugPls/submission/SDC2026_NoBugPls_PitchDeck.pdf                                                              |
+| Slide Deck        | [View Pitch Deck](submission/SDC2026_NoBugPls_PitchDeck.pdf)                                                              |
 | Demo Video        | https://youtu.be/rUKrFtVBMRo    
 
 ---
