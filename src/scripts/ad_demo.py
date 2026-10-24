@@ -32,6 +32,7 @@ PROFILES = Path.home() / ".aiversepulse-demo" / "profiles"
 ROLES = {"admin": ("admin.html", "admin"), "hr": ("enterprise.html", "hr_advisor"), "employee": ("index.html", "employee")}
 TITLE = "AiversePulse Demo"  # constant window title, so Cap can find the window to record
 PACE = 1.0                   # --pace 0.6 for a faster cut
+ONLY: set[str] = set()       # --only "mock interview": run just these beats (rehearsing one shot)
 
 # ---------------------------------------------------------------- the real mouse (Cap records the OS cursor)
 user32 = ctypes.windll.user32
@@ -208,11 +209,15 @@ class Act:
 
     def beat(self, name: str, fn) -> None:
         """One shot of the ad. A shot that can't run (missing data, changed page) is skipped, not fatal."""
+        if ONLY and name not in ONLY:
+            return
         try:
             fn()
             print(f"  ok    {name}")
         except Exception as e:  # keep the take going
-            print(f"  skip  {name}: {type(e).__name__}: {str(e).splitlines()[0][:120]}")
+            why = [l.strip() for l in str(e).splitlines() if l.strip()]
+            what = next((l for l in why if "waiting for" in l or "locator(" in l), "")  # which element it waited on
+            print(f"  skip  {name}: {type(e).__name__}: {why[0][:120] if why else ''} {what[:160]}")
             try:
                 self.say("")
             except Exception:
@@ -336,9 +341,10 @@ def act_employee(a: Act) -> None:
             return
         a.click(practice, after=2)
         a.click("input[type=checkbox]", after=0.6)
-        a.click(p.get_by_role("button", name="Start mock interview"), after=3)
-        if p.locator('.room-mode [data-mode="focus"]').count():
-            a.click('.room-mode [data-mode="focus"]', after=1)
+        a.click(p.get_by_role("button", name="Start mock interview"), after=1)
+        a.say("Mina writes the first question for this role.", hold=0.5)
+        p.locator('.room-mode [data-mode="focus"]').wait_for(timeout=90000)  # the room opens once the question is ready
+        a.click('.room-mode [data-mode="focus"]', after=1)
         a.say("She reads each question aloud, listens, and asks follow-ups.", hold=7)
     a.beat("mock interview", interview)
 
@@ -537,10 +543,12 @@ def main() -> int:
     ap.add_argument("--acts", default="hr,employee,admin", help="comma list: hr, employee, admin")
     ap.add_argument("--pace", type=float, default=1.0, help="hold-time multiplier (0.6 = faster cut)")
     ap.add_argument("--url", default=BASE)
+    ap.add_argument("--only", default="", help='comma list of beat names to run, e.g. "mock interview"')
     ap.add_argument("--headless", action="store_true", help="no window: Playwright films the page, ffmpeg adds the click zoom")
     ap.add_argument("--out", type=Path, default=Path("demo-artifacts") / "aiversepulse-ad.mp4")
     args = ap.parse_args()
     PACE, BASE = args.pace, args.url.rstrip("/")
+    ONLY.update(b.strip() for b in args.only.split(",") if b.strip())
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         acts = [a.strip() for a in args.acts.split(",") if a.strip()]
