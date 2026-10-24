@@ -112,6 +112,7 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 │   ├── pyproject.toml       # Package metadata and dependencies
 │   └── uv.lock              # Locked Python dependencies
 ├── submission/              # Required submission documents
+│   ├── SDC2026_NoBugPls_PitchDeck.pdf        # Submitted Pitch Deck
 │   ├── SDC2026_NoBugPls_Preliminary.pdf      # Submitted Phase 1 proposal
 │   ├── SDC2026_NoBugPls_Replit_POU.pdf       # Submitted Replit Proof of Use
 │   ├── SDC2026_NoBugPls_Runpod_POU.pdf       # Submitted RunPod Proof of Use
