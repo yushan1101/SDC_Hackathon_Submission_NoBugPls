@@ -8,6 +8,7 @@ name: Deploy to server
 on:
   push:
     branches: [main]
+    paths: [src/**, .github/workflows/deploy.yml]   # the server only runs src/; docs-only pushes skip the deploy
   workflow_dispatch:
 
 concurrency:          # one deploy at a time; a newer push waits for the running one instead of racing it
