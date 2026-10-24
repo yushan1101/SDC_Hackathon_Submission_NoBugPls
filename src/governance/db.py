@@ -12,12 +12,14 @@ SQL that differs in meaning (upserts, JSON, case-insensitive LIKE) is written po
 `json_text()` below where needed.
 """
 import hashlib
+import logging
 import os
 import re
 import sqlite3
 import uuid
 from functools import lru_cache
 
+log = logging.getLogger(__name__)
 DML = re.compile(r"^\s*(INSERT|UPDATE|DELETE|REPLACE)\b", re.I)
 _LITERAL = re.compile(r"('(?:[^']|'')*')")  # single-quoted SQL strings: leave their contents alone
 _PRAGMA = re.compile(r"^\s*PRAGMA\s+table_info\((\w+)\)\s*;?\s*$", re.I)
@@ -124,14 +126,27 @@ class PgConnection:
     """psycopg connection with sqlite3's calling conventions (see the module docstring)."""
 
     def __init__(self, url: str, schema: str = "public"):
-        import psycopg
-        self._pg = psycopg.connect(url, autocommit=True)
-        self._pg.adapters.register_loader("numeric", _numeric_loader())  # SUM(bigint) etc.: int/float like SQLite, not Decimal
-        self.schema = schema
+        self._url, self.schema = url, schema
         self._in_txn = False
-        if schema != "public":
-            self._pg.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
-        self._pg.execute(f'SET search_path TO "{schema}", public')  # public: extensions such as pgvector's `vector` type
+        self._open()
+
+    def _open(self):
+        import psycopg
+        self._pg = psycopg.connect(self._url, autocommit=True)
+        self._pg.adapters.register_loader("numeric", _numeric_loader())  # SUM(bigint) etc.: int/float like SQLite, not Decimal
+        if self.schema != "public":
+            self._pg.execute(f'CREATE SCHEMA IF NOT EXISTS "{self.schema}"')
+        self._pg.execute(f'SET search_path TO "{self.schema}", public')  # public: extensions such as pgvector's `vector` type
+
+    def _dropped(self) -> bool:
+        return self._pg.closed or self._pg.broken
+
+    def _ensure_open(self):
+        """The server closed the connection (restart, idle timeout, network): open a new one before the next call.
+        Never inside a transaction: its uncommitted work is gone, and the caller must hear about that."""
+        if not self._in_txn and self._dropped():
+            log.warning("database connection was closed; reconnecting")
+            self._open()
 
     # --- statements ------------------------------------------------------------------------------------------
     def execute(self, sql: str, params=()):
@@ -145,6 +160,7 @@ class PgConnection:
 
     def executescript(self, script: str):
         self.commit()  # sqlite3's executescript commits first, then runs the script outside a transaction
+        self._ensure_open()
         try:
             self._pg.execute(ddl(script))
         except Exception as e:
@@ -152,22 +168,31 @@ class PgConnection:
 
     def _run(self, fn, sql):
         import psycopg
-        if DML.match(sql) and not self._in_txn:
-            self._pg.execute("BEGIN")
-            self._in_txn = True
-        cur = self._pg.cursor()
-        try:
-            fn(cur)
-        except psycopg.Error as e:
-            # Postgres aborts the whole transaction on an error; end it so the connection stays usable
-            # ponytail: sqlite3 would keep the transaction open; add per-statement SAVEPOINTs if a caller needs that
-            if self._in_txn:
-                self._pg.execute("ROLLBACK")
-                self._in_txn = False
-            raise _as_sqlite_error(e) from e
-        return _Cursor(cur)
+        for attempt in (1, 2):
+            self._ensure_open()
+            began = DML.match(sql) and not self._in_txn
+            try:
+                if began:
+                    self._pg.execute("BEGIN")
+                    self._in_txn = True
+                cur = self._pg.cursor()
+                fn(cur)
+                return _Cursor(cur)
+            except psycopg.Error as e:
+                dropped = self._dropped()
+                lost_work = self._in_txn and not began  # earlier statements of this transaction were uncommitted
+                if self._in_txn:
+                    # Postgres aborts the whole transaction on an error; end it so the connection stays usable
+                    # ponytail: sqlite3 would keep the transaction open; add per-statement SAVEPOINTs if a caller needs that
+                    self._in_txn = False
+                    if not dropped:
+                        self._pg.execute("ROLLBACK")
+                if dropped and attempt == 1 and not lost_work:
+                    continue  # nothing of the caller's was lost: reconnect and run this statement once more
+                raise _as_sqlite_error(e) from e
 
     def _table_info(self, table: str):
+        self._ensure_open()
         cur = self._pg.cursor()
         cur.execute("""SELECT c.ordinal_position - 1, c.column_name, upper(c.data_type), (c.is_nullable = 'NO')::int,
                               c.column_default,
@@ -185,13 +210,14 @@ class PgConnection:
             self._in_txn = False
             try:
                 self._pg.execute("COMMIT")
-            except Exception as e:
+            except Exception as e:  # a dropped connection here: the outcome is unknown, so never retry a COMMIT
                 raise _as_sqlite_error(e) from e
 
     def rollback(self):
         if self._in_txn:
             self._in_txn = False
-            self._pg.execute("ROLLBACK")
+            if not self._dropped():
+                self._pg.execute("ROLLBACK")
 
     @property
     def in_transaction(self) -> bool:
