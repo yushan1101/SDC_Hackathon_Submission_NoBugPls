@@ -107,8 +107,7 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 │   ├── SDC2026_NoBugPls_Preliminary.pdf      # Submitted Phase 1 proposal
 │   ├── SDC2026_NoBugPls_TechDeclaration.pdf  # Submitted technical & tools declaration
 │   ├── REPLIT PROOF OF USE.pdf
-│   ├── RUNPOD PROOF OF USE.pdf
-│   └── PROPOSAL.md          # Repository copy of the proposal answers
+│   └── RUNPOD PROOF OF USE.pdf
 ├── tests/                   # 74 pytest tests (agents, API, security, runtime data isolation, RunPod handler)
 ├── .env.example             # Example environment variables
 ├── .gitignore
@@ -450,7 +449,7 @@ Frontend interaction checks (Node.js, no packages required): `node --test tests/
 - [ ] Demo video link added
 - [ ] Replit used, with proof of use in `submission/`
 - [x] RunPod used, with proof of use in `submission/`
-- [x] Submission forms completed in `submission/`: [`SDC2026_NoBugPls_Preliminary.pdf`](submission/SDC2026_NoBugPls_Preliminary.pdf) and [`SDC2026_NoBugPls_TechDeclaration.pdf`](submission/SDC2026_NoBugPls_TechDeclaration.pdf) (repository copy of the proposal: [`submission/PROPOSAL.md`](submission/PROPOSAL.md))
+- [x] Submission forms completed in `submission/`: [`SDC2026_NoBugPls_Preliminary.pdf`](submission/SDC2026_NoBugPls_Preliminary.pdf) and [`SDC2026_NoBugPls_TechDeclaration.pdf`](submission/SDC2026_NoBugPls_TechDeclaration.pdf)
 - [x] "How to Run" steps verified (fresh virtual environment + CI on every push)
 - [x] No API keys or secrets committed to the repository
 
@@ -464,4 +463,4 @@ Third-party data and models keep their own licenses:
 - UN SDG content © United Nations
 - all-MiniLM-L6-v2, Apache 2.0
 
-See [`submission/PROPOSAL.md`](submission/PROPOSAL.md) §6.2.
+The full list of third-party code, data and models is in [`submission/SDC2026_NoBugPls_TechDeclaration.pdf`](submission/SDC2026_NoBugPls_TechDeclaration.pdf).
