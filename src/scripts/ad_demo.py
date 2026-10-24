@@ -486,7 +486,15 @@ def credentials() -> dict[str, str]:
         f = line.split("	")
         if len(f) >= 3:
             out[f[0].strip()] = f[2].strip()
+            out.setdefault(f"role:{f[1].strip()}", f[0].strip())  # first account of each role, as a fallback
     return out
+
+
+def account_for(role: str) -> tuple[str, str | None]:
+    """(username, password): the preferred account for this act, else the file's first account with that role."""
+    creds, want = credentials(), ROLES[role][1]
+    name = USERS[role] if USERS[role] in creds else creds.get(f"role:{want}", USERS[role])
+    return name, creds.get(name)
 
 
 def sign_in(page, username: str, password: str) -> None:
@@ -510,19 +518,21 @@ def setup(pw, roles: list[str]) -> None:
             print(f"  {role}: already signed in as {me.get('username')}")
             ctx.close(); continue
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        password = credentials().get(USERS[role])
+        username, password = account_for(role)
         if password:
-            print(f"  {role}: signing in as {USERS[role]}...")
-            sign_in(page, USERS[role], password)
+            print(f"  {role}: signing in as {username}...")
+            sign_in(page, username, password)
             for _ in range(15):
                 time.sleep(1)
                 if (who(ctx) or {}).get("role") == want:
                     break
             else:
-                print(f"  {role}: automatic sign-in didn't finish (a check or an error is on screen); finish it in the window")
+                err = page.locator(".signin-form .error").first
+                why = err.inner_text().strip() if err.count() else "a check or an error is on screen"
+                print(f"  {role}: automatic sign-in as {username} didn't finish ({why}); finish it in the window")
         else:
             page.goto(f"{BASE}/{path}")
-            print(f"Sign in as the {role} demo account ({want}) in the window that opened...")
+            print(f"  {role}: no {want} line in demo_users.local.txt (add: {username}<TAB>{want}<TAB>password); sign in in the window")
         while True:
             me = who(ctx)
             if me and me.get("role") == want:
