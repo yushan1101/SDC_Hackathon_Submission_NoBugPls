@@ -123,7 +123,7 @@ class PgConnection:
         self._in_txn = False
         if schema != "public":
             self._pg.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
-        self._pg.execute(f'SET search_path TO "{schema}"')
+        self._pg.execute(f'SET search_path TO "{schema}", public')  # public: extensions such as pgvector's `vector` type
 
     # --- statements ------------------------------------------------------------------------------------------
     def execute(self, sql: str, params=()):
