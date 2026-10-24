@@ -23,7 +23,7 @@
 | Replit Project    | _TODO_                                                               |
 | Live Demo         | _TODO_                                                               |
 | RunPod Endpoint   | None                                                                 |
-| Slide Deck        | _TODO_                                                               |
+| Slide Deck        | https://canva.link/tiplai5jqc0up4t                                                              |
 | Demo Video        | _TODO_                                                               |
 
 ---
