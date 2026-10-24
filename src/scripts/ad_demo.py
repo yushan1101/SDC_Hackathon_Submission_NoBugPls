@@ -296,7 +296,14 @@ def act_employee(a: Act) -> None:
         if p.get_by_role("button", name="Skip, search everything").count():
             a.click(p.get_by_role("button", name="Skip, search everything"), after=0.8)
         for i in range(13):
-            a.click(p.locator(".opts button").nth(i % 4), secs=0.2 if quick else 0.35, after=0.25 if quick else 0.45)
+            for attempt in range(4):  # the next question slides in; a button caught mid-swap is clicked again
+                try:
+                    a.click(p.locator(".opts button").nth(i % 4), secs=0.25 if quick else 0.35, after=0.45)
+                    break
+                except Exception:
+                    if attempt == 3:
+                        raise
+                    time.sleep(0.4)
         p.get_by_text("Your quick match", exact=True).wait_for(timeout=60000)
 
     def match():
