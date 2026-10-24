@@ -37,4 +37,3 @@ SDC_Hackathon_Submission_Template/
 .impeccable/review/
 # daily live RAG copy (rebuilt by the trend refresh)
 src/data/live_passages.json
-demo-artifacts/
