@@ -42,7 +42,7 @@ def test_protected_demo_bootstrap_creates_exact_accounts_once(client, monkeypatc
     monkeypatch.setenv("DEMO_BOOTSTRAP_TOKEN", "test-only-token-" + ("x" * 32))
     assert client.get("/bootstrap-demo.html").status_code == 200
     assert client.post(path, headers={"X-AP": "1", "Authorization": "Bearer wrong"}).status_code == 404
-    assert api.db.execute("SELECT 1 FROM users WHERE username='demo2_admin'").fetchone() is None
+    assert api.db.execute("SELECT 1 FROM users WHERE username='demo_admin'").fetchone() is None
 
     headers = {"X-AP": "1", "Authorization": "Bearer test-only-token-" + ("x" * 32)}
     response = client.post(path, headers=headers)
@@ -50,9 +50,9 @@ def test_protected_demo_bootstrap_creates_exact_accounts_once(client, monkeypatc
     assert "no-store" in response.headers["Cache-Control"]
     credentials = response.json()["accounts"]
     assert {(row["username"], row["role"]) for row in credentials} == {
-        ("demo2_employee", "employee"),
-        ("demo2_hr", "hr_advisor"),
-        ("demo2_admin", "admin"),
+        ("demo_employee", "employee"),
+        ("demo_hr", "hr_advisor"),
+        ("demo_admin", "admin"),
     }
     for row in credentials:
         user = accounts.authenticate(api.db, row["username"], row["password"])

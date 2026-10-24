@@ -6,9 +6,9 @@ from governance.audit import now
 
 
 DEMO_USERS = (
-    ("demo2_employee", "employee", "Demo Employee"),
-    ("demo2_hr", "hr_advisor", "Demo HR Advisor"),
-    ("demo2_admin", "admin", "Demo Administrator"),
+    ("demo_employee", "employee", "Demo Employee"),
+    ("demo_hr", "hr_advisor", "Demo HR Advisor"),
+    ("demo_admin", "admin", "Demo Administrator"),
 )
 
 

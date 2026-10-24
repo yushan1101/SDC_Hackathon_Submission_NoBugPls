@@ -38,7 +38,7 @@ The app stores accounts, sessions and audit records in `data/audit.sqlite3`.
 The imported ESCO snapshots are already included; no training or GPU is needed.
 
 For the published site, the one-time `/bootstrap-demo.html` page creates only
-`demo2_employee`, `demo2_hr`, and `demo2_admin`. It requires a
+`demo_employee`, `demo_hr`, and `demo_admin`. It requires a
 `DEMO_BOOTSTRAP_TOKEN` Replit Secret of at least 32 characters, refuses to run
 if any of those accounts already exist, and shows the generated passwords once.
 Remove the temporary secret after saving the credentials.
