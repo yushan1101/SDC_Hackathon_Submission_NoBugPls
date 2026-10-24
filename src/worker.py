@@ -14,7 +14,7 @@ from pathlib import Path
 import httpx
 
 SRC = Path(__file__).resolve().parent
-MAIN_URL = "https://aiversepulse.olgtx.com"  # the main node; MAIN_URL in the environment overrides it
+MAIN_URL = "https://sdc.olgtx.com"  # the main node; MAIN_URL in the environment overrides it
 OPEN_PATHS = {"/", "/healthz"}  # host health checks (Replit probes "/"), no data
 
 

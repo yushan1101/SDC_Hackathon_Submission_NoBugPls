@@ -13,7 +13,8 @@ services:
       OUTLOOK_ARTIFACT_DIR: /app/models/onet
       OUTLOOK_HISTORY_PATH: /app/models/onet_history.csv
       # MCP_URL and NODE_TOKEN come from .env (worker nodes, e.g. MCP_URL=https://mcp.olgtx.com/mcp; empty = in-process)
-      CORS_ORIGINS: "https://aiversepulse.olgtx.com"   # public address via Cloudflare + nginx
+      # public address sdc.olgtx.com (Cloudflare Worker, src/deploy/front-door) -> this server at aiversepulse.olgtx.com
+      CORS_ORIGINS: "https://sdc.olgtx.com,http://sdc.olgtx.com"
     volumes:
       - ./state:/app/state                                  # accounts, plans, audit log, trend history, live passages
       - ./models/onet:/app/models/onet:ro                   # STF-KAN checkpoint + manifest (checksum-checked)

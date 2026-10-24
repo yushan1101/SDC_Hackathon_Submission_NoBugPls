@@ -86,7 +86,7 @@ class Settings(BaseSettings):
     x_client_id: str = ""
     x_client_secret: SecretStr | None = None   # empty = public client (PKCE only)
     plugin_secret_key: SecretStr | None = None  # Fernet key for stored platform tokens; empty = key file beside the database
-    public_url: str = ""  # e.g. https://aiversepulse.olgtx.com: where links in emails point (empty = the address the request came in on)
+    public_url: str = ""  # e.g. https://sdc.olgtx.com: where links in emails point (empty = the address the request came in on)
     # separate frontend deploy: comma-separated origins allowed to call the API with credentials, e.g.
     # "https://app.example.com,http://localhost:5173". Empty = same-origin only (frontend served by this API).
     cors_origins: str = ""

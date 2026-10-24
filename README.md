@@ -183,10 +183,10 @@ AI-trend board immediately; it otherwise refreshes once a day.
 
 ### More frontend sites, one backend
 
-Every site serves the same web app and calls one backend (e.g. `https://aiversepulse.olgtx.com`):
+Every site serves the same web app and calls one backend (e.g. `https://sdc.olgtx.com`):
 
 ```bash
-sh src/deploy/build-frontend.sh https://aiversepulse.olgtx.com dist-web
+sh src/deploy/build-frontend.sh https://sdc.olgtx.com dist-web
 ```
 
 Upload `dist-web/` to any static host (nginx, Cloudflare Pages, Netlify), then add the site's address under

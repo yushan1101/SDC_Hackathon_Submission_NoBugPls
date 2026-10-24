@@ -1,0 +1,12 @@
+{
+  // Public address of AiversePulse. Deploy: cd src/deploy/front-door && npx wrangler deploy
+  "name": "aiversepulse-front",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "routes": [{ "pattern": "sdc.olgtx.com", "custom_domain": true }],
+  "observability": { "enabled": true },
+  "vars": {
+    // the main node; users never see this address
+    "ORIGIN": "https://aiversepulse.olgtx.com"
+  }
+}
