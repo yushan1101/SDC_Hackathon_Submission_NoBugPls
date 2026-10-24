@@ -26,6 +26,18 @@
 | Slide Deck        | [View Pitch Deck](submission/SDC2026_NoBugPls_PitchDeck.pdf)                                                              |
 | Demo Video        | https://youtu.be/rUKrFtVBMRo    
 
+### Demo Accounts
+
+Sign in on either live demo link (both use the same backend). Shared demo data: please don't change passwords or
+remove other users.
+
+| Role | Username | Password | What to try |
+| ---- | -------- | -------- | ----------- |
+| Platform admin | `demo_admin` | `Demo-1afe20-Sdc26` | Admin console: allowed AI models, frontend sites, accounts and organisations, plans and billing |
+| HR advisor | `demo_hr` | `Demo-3fb410-Sdc26` | HR console (`/enterprise`): team, live agent traces, plan approval, openings, blind resume review, hiring plugins |
+| Employee (organisation) | `demo_employee` | `Demo-27a30f-Sdc26` | Employee app: resume upload, streamed reskilling report, 30/60/90-day plan, mock interview, assistant |
+| Personal (individual, free plan) | `demo_personal` | `Demo-4115b9-Sdc26` | The same employee app as a self-signed-up individual: quick-match game, report, plans and payment |
+
 ---
 
 ## Overview
