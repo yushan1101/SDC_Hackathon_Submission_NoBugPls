@@ -21,7 +21,7 @@
 | ----------------- | -------------------------------------------------------------------- |
 | GitHub Repository | https://github.com/yushan1101/SDC_Hackathon_Submission_NoBugPls      |
 | Replit Project    | https://replit.com/join#t=tgoyzxfovhhsrpu-boyuuu                                                              |
-| Live Demo         | https://sdc-hackathon-submission-no-bug-pls.replit.app // **https://sdc.olgtx.com**                                                               |
+| Live Demo         | https://sdc-hackathon-submission-no-bug-pls.replit.app (replite node deployed link)// **https://sdc.olgtx.com** (main node backup link)                                                               |
 | RunPod Endpoint   | None                                                                 |
 | Slide Deck        | https://canva.link/tiplai5jqc0up4t                                                              |
 | Demo Video        | https://youtu.be/rUKrFtVBMRo    
