@@ -385,6 +385,12 @@ def history_days(con=None, limit: int = 30) -> list[str]:
     return [r[0] for r in con.execute("SELECT day FROM signal_boards ORDER BY day DESC LIMIT ?", (limit,))]
 
 
+def seeded_history() -> list[dict]:
+    """Small, read-only historical comparison snapshots bundled with the app."""
+    path = Path(__file__).resolve().parent.parent / "data" / "signal_history_seed.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--refresh", action="store_true")

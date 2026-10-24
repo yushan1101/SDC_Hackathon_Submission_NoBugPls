@@ -291,7 +291,12 @@ def test_resume_quotes_education_and_dated_jobs():
 
 def test_trend_history_is_public(client):
     client.cookies.clear()
-    assert client.get("/api/signals/history").status_code == 200
+    response = client.get("/api/signals/history")
+    assert response.status_code == 200
+    history = response.json()
+    previous = next(day for day in history["days"] if day["day"] == "2026-10-23")
+    assert len(previous["z"]) == 16
+    assert previous["direction"]["ai-customer-service"] == "rising"
 
 
 def test_team_stream_ticks_and_validation(client):

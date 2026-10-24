@@ -1720,12 +1720,20 @@ def signals_today(day: str | None = None):  # public, read-only: shown on the la
 @app.get("/api/signals/history")
 def signals_history():  # public, like today's board: aggregate topic strength, nothing personal
     con = signals.db(cfg.database_path)
-    out = []
+    history = {
+        item["day"]: {
+            "day": item["day"],
+            "z": {topic["id"]: topic["z"] for topic in item["topics"]},
+            "direction": {topic["id"]: topic.get("direction", "stable") for topic in item["topics"]},
+        }
+        for item in signals.seeded_history()
+    }
     for d in reversed(signals.history_days(con, 30)):
         b = signals.latest_board(con, d)
-        out.append({"day": d, "z": {t["id"]: t["z"] for t in b["topics"]},
-                    "direction": {t["id"]: t.get("direction", "stable") for t in b["topics"]}})
-    return {"days": out, "topics": [{"id": t["id"], "label": t["label"], "kind": t["kind"]} for t in signals.TOPICS]}
+        history[d] = {"day": d, "z": {t["id"]: t["z"] for t in b["topics"]},
+                      "direction": {t["id"]: t.get("direction", "stable") for t in b["topics"]}}
+    days = [history[d] for d in sorted(history)[-30:]]
+    return {"days": days, "topics": [{"id": t["id"], "label": t["label"], "kind": t["kind"]} for t in signals.TOPICS]}
 
 
 REFRESHING = threading.Lock()

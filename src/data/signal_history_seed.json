@@ -1,0 +1,23 @@
+[
+  {
+    "day": "2026-10-23",
+    "topics": [
+      {"id": "ai-customer-service", "z": 3.27, "direction": "rising"},
+      {"id": "ai-healthcare", "z": 3.16, "direction": "rising"},
+      {"id": "ai-content", "z": 2.59, "direction": "rising"},
+      {"id": "data-engineering", "z": 2.2, "direction": "rising"},
+      {"id": "ai-agents", "z": 1.88, "direction": "stable"},
+      {"id": "ai-finance", "z": 1.36, "direction": "stable"},
+      {"id": "ai-coding", "z": 0.66, "direction": "stable"},
+      {"id": "computer-vision", "z": 0.65, "direction": "stable"},
+      {"id": "edge-ai", "z": 0.61, "direction": "stable"},
+      {"id": "ai-education", "z": 0.26, "direction": "stable"},
+      {"id": "llm", "z": -0.04, "direction": "stable"},
+      {"id": "robotics", "z": -0.18, "direction": "stable"},
+      {"id": "ai-governance", "z": -0.65, "direction": "stable"},
+      {"id": "cybersecurity-ai", "z": -0.87, "direction": "stable"},
+      {"id": "autonomous-vehicles", "z": -1.72, "direction": "stable"},
+      {"id": "green-ai", "z": -2.62, "direction": "falling"}
+    ]
+  }
+]
