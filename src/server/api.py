@@ -48,6 +48,7 @@ from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
 from governance.audit import connect
+from governance.db import json_text
 from validation.revision import validate
 from interview import service as interview_service, store as interview_store
 from interview.schemas import InterviewAnswer, InterviewCreate, InterviewEnd, InterviewPause, InterviewPrefetch
@@ -91,8 +92,9 @@ def _frontends() -> set:
         # its own connection, not DB_LOCK: this runs while callers already hold that lock (e.g. building email links)
         import sqlite3
         from contextlib import closing
+        from governance.db import connect as db_connect
         try:
-            with closing(sqlite3.connect(cfg.database_path, timeout=5)) as c:
+            with closing(db_connect(cfg.database_path)) as c:
                 rows = {r[0] for r in c.execute("SELECT origin FROM frontend_sites")}
         except sqlite3.Error:
             rows = _sites_cache[1]
@@ -672,7 +674,8 @@ def admin_site_add(body: SiteIn, user: dict = Depends(need("admin"))):
         raise HTTPException(422, "Enter the site's address only, e.g. https://jobs.example.com (https required).")
     origin = f"{u.scheme}://{u.netloc}".lower()
     with DB_LOCK, db:
-        db.execute("INSERT OR REPLACE INTO frontend_sites VALUES(?,?,?,?)",
+        db.execute("INSERT INTO frontend_sites(origin, label, added_by, created_utc) VALUES(?,?,?,?) "
+                   "ON CONFLICT(origin) DO UPDATE SET label=excluded.label, added_by=excluded.added_by, created_utc=excluded.created_utc",
                    (origin, body.label.strip() or u.hostname, user["username"], datetime.now(timezone.utc).isoformat(timespec="seconds")))
     global _sites_cache
     _sites_cache = (0.0, set())  # takes effect now
@@ -718,8 +721,8 @@ def admin_users(q: str = "", status: str = "", user: dict = Depends(need("admin"
     sql = f"SELECT {','.join(accounts.KEYS)} FROM users WHERE role!='admin'"
     args: list = []
     if q:
-        sql += " AND (username LIKE ? OR email LIKE ? OR display_name LIKE ?)"
-        args += [f"%{q[:60]}%"] * 3
+        sql += " AND (lower(username) LIKE ? OR lower(email) LIKE ? OR lower(display_name) LIKE ?)"  # case-insensitive on both databases
+        args += [f"%{q[:60].lower()}%"] * 3
     if status:
         sql += " AND status=?"
         args.append(status)
@@ -767,8 +770,9 @@ def admin_trust(username: str, body: TrustIn, user: dict = Depends(need("admin")
 def admin_usage(days: int = 30, user: dict = Depends(need("admin"))):
     since = _since_days(max(1, min(days, 365)))
     def group(col):
-        return [dict(zip(["key", "calls", "input_tokens", "output_tokens", "est_usd"], r)) for r in db.execute(
-            f"SELECT {col}, SUM(calls), SUM(input_tokens), SUM(output_tokens), ROUND(SUM(est_usd),4) FROM llm_usage WHERE at_utc>? "
+        return [dict(zip(["key", "calls", "input_tokens", "output_tokens", "est_usd"], (*r[:4], None if r[4] is None else round(r[4], 4))))
+                for r in db.execute(
+            f"SELECT {col}, SUM(calls), SUM(input_tokens), SUM(output_tokens), SUM(est_usd) FROM llm_usage WHERE at_utc>? "
             f"GROUP BY {col} ORDER BY SUM(input_tokens+output_tokens) DESC LIMIT 50", (since,))]
     with DB_LOCK:
         return {"by_user": group("username"), "by_model": group("model"), "by_agent": group("node"), "by_feature": group("feature"),
@@ -900,7 +904,7 @@ def sse(obj: dict) -> str:
 def remember(pid: str, state: dict, thread: list | None = None):
     report = serialise(state) | ({"thread": thread} if thread is not None else {})
     with DB_LOCK, db:
-        db.execute("INSERT OR REPLACE INTO plan_reports(plan_id, report) VALUES(?,?)",
+        db.execute("INSERT INTO plan_reports(plan_id, report) VALUES(?,?) ON CONFLICT(plan_id) DO UPDATE SET report=excluded.report",
                    (pid, json.dumps(report, default=str)))
     RESULTS[pid] = state
     RESULTS.move_to_end(pid)
@@ -1435,7 +1439,8 @@ def plan_progress(pid: str, body: ProgressIn, user: dict = Depends(current_user)
     _guard(pid, user)
     with DB_LOCK, db:
         if body.done:
-            db.execute("INSERT OR REPLACE INTO plan_progress VALUES(?,?,?)", (pid, body.item, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
+            db.execute("INSERT INTO plan_progress(plan_id, item, done_utc) VALUES(?,?,?) "
+                       "ON CONFLICT(plan_id, item) DO UPDATE SET done_utc=excluded.done_utc", (pid, body.item, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
         else:
             db.execute("DELETE FROM plan_progress WHERE plan_id=? AND item=?", (pid, body.item))
         done = [r[0] for r in db.execute("SELECT item FROM plan_progress WHERE plan_id=?", (pid,))]
@@ -2029,7 +2034,7 @@ def org_users(user: dict = Depends(need("hr_advisor"))):
     out = [dict(zip(accounts.KEYS, r)) for r in rows]
     with DB_LOCK:  # each employee's own plans and how far they've got (HR can open these read-only)
         for m in out:
-            plans_ = db.execute("SELECT p.plan_id, p.created_utc, json_extract(v.snapshot,'$.target_role'), v.snapshot FROM plans p "
+            plans_ = db.execute(f"SELECT p.plan_id, p.created_utc, {json_text(db, 'v.snapshot', 'target_role')}, v.snapshot FROM plans p "
                                 "JOIN plan_versions v ON v.plan_id=p.plan_id WHERE p.subject_id=? AND p.audience='individual' "
                                 "AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id) "
                                 "ORDER BY p.created_utc DESC LIMIT 10", (m["employee_id"],)).fetchall() if m["employee_id"] else []
@@ -2229,7 +2234,8 @@ def admin_models(user: dict = Depends(need("admin"))):
 @app.post("/api/admin/models")
 def admin_model_add(body: ModelIn, user: dict = Depends(need("admin"))):
     with DB_LOCK, db:
-        db.execute("INSERT OR REPLACE INTO model_catalog VALUES(?,?,?)",
+        db.execute("INSERT INTO model_catalog(spec, label, created_utc) VALUES(?,?,?) "
+                   "ON CONFLICT(spec) DO UPDATE SET label=excluded.label, created_utc=excluded.created_utc",
                    (body.spec, body.label.strip() or body.spec.split(":", 1)[1], datetime.now(timezone.utc).isoformat(timespec="seconds")))
     return {"spec": body.spec}
 
@@ -2266,7 +2272,7 @@ def org_models_set(body: OrgModelIn, user: dict = Depends(need("hr_advisor"))):
             return {"task": body.task, "spec": None}
         if not db.execute("SELECT 1 FROM model_catalog WHERE spec=?", (body.spec,)).fetchone() or not llm.usable(body.spec):
             raise HTTPException(422, "Pick a model from the list.")
-        db.execute("INSERT OR REPLACE INTO org_models VALUES(?,?,?)", (user["username"], body.task, body.spec))
+        db.execute("INSERT INTO org_models(owner, task, spec) VALUES(?,?,?) ON CONFLICT(owner, task) DO UPDATE SET spec=excluded.spec", (user["username"], body.task, body.spec))
     return {"task": body.task, "spec": body.spec}
 
 

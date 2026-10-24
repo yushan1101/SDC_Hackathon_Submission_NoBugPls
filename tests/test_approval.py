@@ -1,9 +1,13 @@
+import os
 import pytest
 
 from governance import approval as ap
 from governance.audit import connect
 
 PLAN = {"target_role": "Data Analyst", "activities": [], "status": "draft"}
+
+
+sqlite_only = pytest.mark.skipif(bool(os.environ.get("TEST_DATABASE_URL")), reason="upgrades an existing SQLite file")
 
 
 def test_no_click_stays_draft():  # T-11
@@ -55,6 +59,7 @@ def test_plan_references_are_unique_stable_and_not_reused():
     assert ap.reference(con, third) == "P000003"
 
 
+@sqlite_only
 def test_existing_plans_receive_persistent_references(tmp_path):
     import sqlite3
 

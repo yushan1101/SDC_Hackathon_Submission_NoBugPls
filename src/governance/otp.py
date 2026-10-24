@@ -53,7 +53,9 @@ def issue(con, cfg, username: str, email: str, base_url: str, purpose: str = "si
     prefix, route, ttl, subject, heading, lines, button = PURPOSES[purpose]
     key, token = prefix + username, secrets.token_urlsafe(24)
     with con:  # no code yet: one is made only if the link is opened in another browser
-        con.execute("INSERT OR REPLACE INTO email_otp(username,code_hash,expires_utc,tries,link_hash) VALUES(?,NULL,?,0,?)",
+        con.execute("INSERT INTO email_otp(username,code_hash,expires_utc,tries,link_hash) VALUES(?,NULL,?,0,?) "
+                    "ON CONFLICT(username) DO UPDATE SET code_hash=excluded.code_hash, expires_utc=excluded.expires_utc, "
+                    "tries=excluded.tries, link_hash=excluded.link_hash",
                     (key, _later(ttl), _h(key, "link:" + token)))
     link = f"{base_url.rstrip('/')}/#/{route}/{username}/{token}"
     lasts = "7 days" if ttl.days else "10 minutes"
@@ -117,7 +119,8 @@ def new_wait(con, username: str, purpose: str = "signup") -> str:
     init(con)
     token = secrets.token_urlsafe(24)
     with con:
-        con.execute("INSERT OR REPLACE INTO signup_waits VALUES(?,?,?,0)",
+        con.execute("INSERT INTO signup_waits(username,token_hash,expires_utc,claimed) VALUES(?,?,?,0) "
+                    "ON CONFLICT(username) DO UPDATE SET token_hash=excluded.token_hash, expires_utc=excluded.expires_utc, claimed=0",
                     (PURPOSES[purpose][0] + username, hashlib.sha256(token.encode()).hexdigest(), _later(timedelta(hours=1))))
     return token
 

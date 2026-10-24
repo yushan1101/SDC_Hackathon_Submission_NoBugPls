@@ -16,7 +16,8 @@ class DeletionError(ValueError):
 
 
 def _tables(con) -> set:
-    return {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    from governance.db import tables
+    return tables(con)
 
 
 def delete_account(con, username: str) -> dict:

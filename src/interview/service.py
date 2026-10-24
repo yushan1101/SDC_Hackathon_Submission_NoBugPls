@@ -310,7 +310,8 @@ def persist_answer(con, sess, current, text, prepared):
                        "difficulty": sess["difficulty"], "created_utc": sess["created_utc"], "completed_utc": store.now(),
                        "plan_id": sess["plan_id"], "source": sess["context"]["source"], "profile": sess["profile"],
                        "assessment_source": sess.get("assessment_source")})
-        con.execute("INSERT OR REPLACE INTO interview_reports VALUES(?,?,?)",
+        con.execute("INSERT INTO interview_reports(interview_id, report_json, created_utc) VALUES(?,?,?) "
+                    "ON CONFLICT(interview_id) DO UPDATE SET report_json=excluded.report_json, created_utc=excluded.created_utc",
                     (sess["interview_id"], store.json_dump(result), store.now()))
         return {"status": "completed", "evaluation": evaluation, "report": result}
     if next_q:

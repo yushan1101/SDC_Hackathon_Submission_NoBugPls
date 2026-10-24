@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"   # web server bind (src/main.py)
     port: int = Field(8600, gt=0)
     database_path: str = str(SRC / "data" / "audit.sqlite3")   # defaults live under src/ wherever you run from
+    # Postgres for several app nodes sharing one database, e.g. postgresql://app:pw@db.example.com/aiversepulse?sslmode=verify-full
+    # empty = the SQLite file above (governance/db.py)
+    database_url: SecretStr | None = None
     chroma_path: str = str(SRC / "data" / "chroma")
     outlook_artifact_dir: str = str(SRC / "artifacts" / "onet")  # stf_kan_best.pt + artifact_manifest.json (live CPU outlook)
     outlook_history_path: str = str(SRC / "data" / "training" / "onet_history.csv")  # model input, checksum-checked

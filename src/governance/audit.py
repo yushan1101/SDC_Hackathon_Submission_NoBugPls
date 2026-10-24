@@ -1,7 +1,6 @@
 """SQLite plan versions + append-only approval/validation events."""
 import hashlib
 import json
-import os
 import sqlite3
 from datetime import datetime, timezone
 
@@ -14,7 +13,7 @@ CREATE TABLE IF NOT EXISTS plan_reference_overrides(plan_id TEXT PRIMARY KEY, nu
 INSERT INTO plan_references(plan_id)
     SELECT p.plan_id FROM plans p WHERE NOT EXISTS
         (SELECT 1 FROM plan_references r WHERE r.plan_id=p.plan_id)
-    ORDER BY p.created_utc, p.rowid;
+    ORDER BY p.created_utc, p.plan_id;
 CREATE TABLE IF NOT EXISTS plan_reports(plan_id TEXT PRIMARY KEY, report TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS hr_reviews(plan_id TEXT PRIMARY KEY, candidate_name TEXT NOT NULL DEFAULT '',
     candidate_email TEXT NOT NULL DEFAULT '', candidate_phone TEXT NOT NULL DEFAULT '',
@@ -42,11 +41,9 @@ def now() -> str:
 
 
 def connect(path: str | None = None) -> sqlite3.Connection:
-    from config.settings import get_settings
-    path = path or get_settings().database_path
-    if path != ":memory:":
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    con = sqlite3.connect(path, check_same_thread=False)
+    """The app database: SQLite at `path`, or Postgres when DATABASE_URL is set (governance/db.py)."""
+    from governance import db
+    con = db.connect(path)
     con.executescript(SCHEMA)
     return con
 
