@@ -22,6 +22,8 @@ MAX_APPLICATIONS = 1000
 
 
 def init(con):
+    if getattr(con, "backend", "sqlite") == "postgres":
+        return con
     con.executescript(SCHEMA)
     return con
 

@@ -9,3 +9,4 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # tests import helpers
 os.chdir(SRC)
 # hermetic: a developer's .env must not switch on paid LLM calls or change behaviour under test (env beats .env)
 os.environ.update(GEMINI_API_KEY="", LLM_API_KEY="", LLM_RESUME="false", MCP_URL="")
+os.environ["DATABASE_BACKEND"] = "sqlite"

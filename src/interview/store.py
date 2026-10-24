@@ -52,6 +52,8 @@ def now():
 
 
 def init(con):
+    if getattr(con, "backend", "sqlite") == "postgres":
+        return
     con.executescript(SCHEMA)
     columns = {row[1] for row in con.execute("PRAGMA table_info(interview_sessions)")}
     if "recommendation_id" not in columns:

@@ -43,12 +43,25 @@ def now() -> str:
 
 def connect(path: str | None = None) -> sqlite3.Connection:
     from config.settings import get_settings
+    backend = os.environ.get("DATABASE_BACKEND", "sqlite").strip().lower()
+    if backend == "postgres":
+        url = os.environ.get("DATABASE_URL")
+        if not url:
+            raise RuntimeError("DATABASE_BACKEND=postgres but Replit did not provide DATABASE_URL")
+        from governance.postgres import connect as connect_postgres
+        return connect_postgres(url)
+    if backend != "sqlite":
+        raise RuntimeError("DATABASE_BACKEND must be either 'sqlite' or 'postgres'")
     path = path or get_settings().database_path
     if path != ":memory:":
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     con = sqlite3.connect(path, check_same_thread=False)
     con.executescript(SCHEMA)
     return con
+
+
+def is_postgres(con) -> bool:
+    return getattr(con, "backend", "sqlite") == "postgres"
 
 
 def snapshot(obj) -> tuple[str, str]:

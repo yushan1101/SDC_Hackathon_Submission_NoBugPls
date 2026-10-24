@@ -23,7 +23,12 @@ def get(con, pid):
 def _is_account(con, employee_id):
     try:
         return bool(con.execute("SELECT 1 FROM users WHERE employee_id=?", (employee_id,)).fetchone())
-    except sqlite3.OperationalError:  # no accounts table (bare review database)
+    except Exception as exc:  # bare SQLite review DB or a missing PG migration
+        if getattr(con, "backend", "sqlite") == "postgres":
+            if getattr(exc, "sqlstate", None) != "42P01":
+                raise
+        elif not isinstance(exc, sqlite3.OperationalError):
+            raise
         return False
 
 

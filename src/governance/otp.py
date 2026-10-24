@@ -32,6 +32,8 @@ PURPOSES = {
 
 
 def init(con):
+    if getattr(con, "backend", "sqlite") == "postgres":
+        return con
     con.executescript(SCHEMA)
     if "link_hash" not in {r[1] for r in con.execute("PRAGMA table_info(email_otp)")}:
         with con:

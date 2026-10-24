@@ -28,6 +28,8 @@ DISPOSABLE = {"mailinator.com", "10minutemail.com", "guerrillamail.com", "guerri
 
 
 def init(con):
+    if getattr(con, "backend", "sqlite") == "postgres":
+        return con
     con.executescript(SCHEMA)
     return con
 

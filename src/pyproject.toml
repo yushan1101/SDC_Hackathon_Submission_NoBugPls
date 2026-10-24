@@ -28,6 +28,7 @@ dependencies = [
   "pymupdf>=1.24",
   "langgraph>=1.2",
   "fastmcp>=4.1",
+  "psycopg[binary]>=3.2",
   "sentence-transformers>=6.1",
   "torch>=2.4",
 ]

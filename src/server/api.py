@@ -57,25 +57,27 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 cfg = get_settings()
 db = challenge.init(otp.init(billing.init(risk.init(recruiting.init(accounts.init(connect(cfg.database_path)))))))
-db.executescript("""CREATE TABLE IF NOT EXISTS llm_usage(id INTEGER PRIMARY KEY, at_utc TEXT, username TEXT, feature TEXT, node TEXT,
-                        model TEXT, calls INTEGER, input_tokens INTEGER, output_tokens INTEGER, est_usd REAL);
-                    CREATE INDEX IF NOT EXISTS llm_usage_at ON llm_usage(at_utc);
-                    CREATE TABLE IF NOT EXISTS briefing_log(username TEXT, at_utc TEXT);""")  # token use; free-plan quota
+if getattr(db, "backend", "sqlite") != "postgres":
+    db.executescript("""CREATE TABLE IF NOT EXISTS llm_usage(id INTEGER PRIMARY KEY, at_utc TEXT, username TEXT, feature TEXT, node TEXT,
+                            model TEXT, calls INTEGER, input_tokens INTEGER, output_tokens INTEGER, est_usd REAL);
+                        CREATE INDEX IF NOT EXISTS llm_usage_at ON llm_usage(at_utc);
+                        CREATE TABLE IF NOT EXISTS briefing_log(username TEXT, at_utc TEXT);""")  # token use; free-plan quota
 DB_LOCK = threading.Lock()  # one sqlite connection shared across request threads
 SESSION_IDLE = timedelta(minutes=30)
 COOKIE = "ap_session"
 RESULTS: "OrderedDict[str, dict]" = OrderedDict()  # plan_id -> last run, to re-validate edits (bounded)
 
 with DB_LOCK:
-    db.executescript("""CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, username TEXT, role TEXT,
-                        employee_id TEXT, display_name TEXT, expires_utc TEXT);
-                        CREATE TABLE IF NOT EXISTS frontend_sites(origin TEXT PRIMARY KEY, label TEXT, added_by TEXT,
-                        created_utc TEXT);
-                        CREATE TABLE IF NOT EXISTS model_catalog(spec TEXT PRIMARY KEY, label TEXT, created_utc TEXT);
-                        CREATE TABLE IF NOT EXISTS agent_log(username TEXT, agent TEXT, at_utc TEXT);
-                        CREATE TABLE IF NOT EXISTS org_models(owner TEXT, task TEXT, spec TEXT, PRIMARY KEY(owner, task));
-                        CREATE TABLE IF NOT EXISTS plan_progress(plan_id TEXT, item TEXT, done_utc TEXT,
-                        PRIMARY KEY(plan_id, item));""")  # activities ticked off as done ("<days>:<skill>")
+    if getattr(db, "backend", "sqlite") != "postgres":
+        db.executescript("""CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, username TEXT, role TEXT,
+                            employee_id TEXT, display_name TEXT, expires_utc TEXT);
+                            CREATE TABLE IF NOT EXISTS frontend_sites(origin TEXT PRIMARY KEY, label TEXT, added_by TEXT,
+                            created_utc TEXT);
+                            CREATE TABLE IF NOT EXISTS model_catalog(spec TEXT PRIMARY KEY, label TEXT, created_utc TEXT);
+                            CREATE TABLE IF NOT EXISTS agent_log(username TEXT, agent TEXT, at_utc TEXT);
+                            CREATE TABLE IF NOT EXISTS org_models(owner TEXT, task TEXT, spec TEXT, PRIMARY KEY(owner, task));
+                            CREATE TABLE IF NOT EXISTS plan_progress(plan_id TEXT, item TEXT, done_utc TEXT,
+                            PRIMARY KEY(plan_id, item));""")  # activities ticked off as done ("<days>:<skill>")
     interview_store.init(db)
 
 app = FastAPI(title="AiversePulse", docs_url=None, redoc_url=None, openapi_url=None)
@@ -89,12 +91,11 @@ def _frontends() -> set:
     global _sites_cache
     if time.monotonic() - _sites_cache[0] > 30:  # ponytail: 30 s cache, so a newly added site works within half a minute
         # its own connection, not DB_LOCK: this runs while callers already hold that lock (e.g. building email links)
-        import sqlite3
         from contextlib import closing
         try:
-            with closing(sqlite3.connect(cfg.database_path, timeout=5)) as c:
+            with closing(connect(cfg.database_path)) as c:
                 rows = {r[0] for r in c.execute("SELECT origin FROM frontend_sites")}
-        except sqlite3.Error:
+        except Exception:
             rows = _sites_cache[1]
         _sites_cache = (time.monotonic(), rows)
     return set(cfg.allowed_origins) | _sites_cache[1]

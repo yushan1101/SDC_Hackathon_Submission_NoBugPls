@@ -85,6 +85,8 @@ TOPICS = [
 def db(path: str | None = None) -> sqlite3.Connection:
     from governance.audit import connect
     con = connect(path)
+    if getattr(con, "backend", "sqlite") == "postgres":
+        return con
     con.executescript("""
 CREATE TABLE IF NOT EXISTS signal_counts(day TEXT, source TEXT, topic TEXT, window TEXT, value REAL, n INTEGER,
     url TEXT, fetched_utc TEXT, PRIMARY KEY(day, source, topic, window));
