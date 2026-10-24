@@ -1,10 +1,10 @@
 #!/bin/sh
 # Builds the web app as a static site that calls one shared backend, for any extra frontend domain.
-#   sh src/deploy/build-frontend.sh https://sdc.olgtx.com dist-web
+#   sh src/deploy/build-frontend.sh https://aiversepulse.olgtx.com dist-web
 # Upload dist-web/ to any static host (nginx, Cloudflare Pages, Netlify, S3 + CDN), then add the site's address on the
 # admin dashboard (Frontend sites) so the backend accepts it. No build tools needed: the app is plain ES modules.
 set -eu
-API="${1:?usage: build-frontend.sh <backend url, e.g. https://sdc.olgtx.com> [out dir]}"
+API="${1:?usage: build-frontend.sh <backend url, e.g. https://aiversepulse.olgtx.com> [out dir]}"
 OUT="${2:-dist-web}"
 API="${API%/}"
 case "$API" in https://*|http://localhost*|http://127.0.0.1*) ;; *) echo "backend must be https://..." >&2; exit 1 ;; esac
