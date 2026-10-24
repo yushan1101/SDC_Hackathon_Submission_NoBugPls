@@ -1,6 +1,6 @@
 # Architecture (v0.3, 2026-10-20)
 
-> Current roles, features and system diagram: [architecture.svg](architecture.svg) (source [architecture.puml](architecture.puml)). The notes below record the v0.3 design history.
+> Current roles, features and system diagram: the Mermaid diagram in the [README](../README.md#architecture) (original PlantUML: [architecture.puml](architecture.puml)). The notes below record the v0.3 design history.
 
 v0.3: every O*NET occupation; requirements from O*NET 31.0; no training data at runtime; STF-KAN (trained on the
 O*NET release history) feeds the Market Analyst through an exported outlook asset (`skill_outlook` MCP tool);
