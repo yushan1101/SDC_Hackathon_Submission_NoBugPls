@@ -23,7 +23,7 @@
 | Replit Project    | https://replit.com/join#t=tgoyzxfovhhsrpu-boyuuu                                                              |
 | Live Demo         | https://sdc-hackathon-submission-no-bug-pls.replit.app (replite node deployed link)// **https://sdc.olgtx.com** (main node backup link)                                                               |
 | RunPod Endpoint   | None                                                                 |
-| Slide Deck        | https://github.com/yushan1101/SDC_Hackathon_Submission_NoBugPls/submission/SDC2026_NoBugPls_PitchDeck.pdf                                                              |
+| Slide Deck        | [`submission/SDC2026_NoBugPls_PitchDeck.pdf`](submission/SDC2026_NoBugPls_PitchDeck.pdf)                                                              |
 | Demo Video        | https://youtu.be/rUKrFtVBMRo    
 
 ---
@@ -349,7 +349,7 @@ python -m pytest -q tests
 - **Frontend hosting:** Replit hosts the [AiversePulse frontend](https://sdc-hackathon-submission-no-bug-pls.replit.app/), which calls the backend API on our dual-node VPS. The repository also includes a `.replit` workflow and deployment configuration for running FastAPI through `uv run uvicorn` on port 5000.
 - **Secrets:** API keys are configured through Replit Secrets. `.env` and the local demo-password file are git-ignored.
 
-📄 Proof of use: [`submission/REPLIT PROOF OF USE.pdf`](submission/REPLIT%20PROOF%20OF%20USE.pdf) contains actual development and usage screenshots for all five team members.
+📄 Proof of use: [`submission/SDC2026_NoBugPls_Replit_POU.pdf`](submission/SDC2026_NoBugPls_Replit_POU.pdf) contains actual development and usage screenshots for all five team members.
 
 ## How We Use RunPod *(Required)*
 
@@ -376,7 +376,7 @@ curl -X POST https://api.runpod.ai/v2/$RUNPOD_ENDPOINT_ID/runsync \
   -d '{"input": {"task": "train_stfkan", "seeds": [42, 7, 2026]}}'
 ```
 
-📄 Proof of use: [`submission/RUNPOD PROOF OF USE.pdf`](submission/RUNPOD%20PROOF%20OF%20USE.pdf)
+📄 Proof of use: [`submission/SDC2026_NoBugPls_Runpod_POU.pdf`](submission/SDC2026_NoBugPls_Runpod_POU.pdf)
 
 ---
 
