@@ -82,38 +82,49 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 
 ```
 .
+├── .agents/
+├── .github/workflows
+├── .impeccable
 ├── docs/                    # Requirements trace, architecture, technical notes, data sources, API contracts, AGENTS.md
 ├── runpod/
-│   ├── handler.py           # RunPod serverless handler (GPU: STF-KAN training, requirement model, embeddings)
-│   └── Dockerfile           # GPU worker image (build from the repo root)
+│   ├── Dockerfile           # GPU worker image (build from the repo root)
+│   └── handler.py           # RunPod serverless handler (GPU: STF-KAN training, requirement model, embeddings)
 ├── src/
-│   ├── main.py              # Application entry point (starts the web app + API)
 │   ├── agents/              # Profiler, knowledge, gap analyst, pathway, coach, matcher, quiz, resume, SDG, criteria
+│   ├── config/              # Settings, helpers, Streamlit fallback UI (app.py)
 │   ├── core/                # LangGraph pipelines (reskilling graph, resume screening), shared state
-│   ├── mcp_server/          # FastMCP tools, RAG retrieval (Chroma), daily AI-trend signals
-│   ├── server/              # FastAPI app (public + HR APIs, SSE streaming)
-│   ├── validation/          # Reviewer repairs, document guard (prompt-injection / fraud filters)
-│   ├── governance/          # Accounts, approval workflow, recruiting store, audit log
-│   ├── forecasting/         # STF-KAN model, training and evaluation
-│   ├── config/ tools/ ui/   # Settings, helpers, Streamlit fallback UI (app.py)
-│   ├── web/                 # Static frontend: public site, HR console, apply page, config.js (deployable on its own)
 │   ├── data/                # snapshots/ (live public data + model outputs), training_snapshots/ (training only), samples/
-│   ├── scripts/             # Data builders, training and export (ESCO, SDG map, STF-KAN, requirement model)
 │   ├── deploy/              # Separate frontend (nginx) + API docker-compose example
+│   ├── forecasting/         # STF-KAN model, training and evaluation
+│   ├── governance/          # Accounts, approval workflow, recruiting store, audit log
+│   ├── interview            # 
+│   ├── mcp_server/          # FastMCP tools, RAG retrieval (Chroma), daily AI-trend signals
+│   ├── scripts/             # Data builders, training and export (ESCO, SDG map, STF-KAN, requirement model)
+│   ├── server/              # FastAPI app (public + HR APIs, SSE streaming)│   ├── validation/          # Reviewer repairs, document guard (prompt-injection / fraud filters)
+│   ├── tools/               # Settings, helpers, Streamlit fallback UI (app.py)
+│   ├── ui/                  # Settings, helpers, Streamlit fallback UI (app.py)
+│   ├── validation/          # 
+│   ├── web/                 # Static frontend: public site, HR console, apply page, config.js (deployable on its own)
+│   ├── .dockerignore        #
 │   ├── Dockerfile           # CPU image for the web app + API (build context: src/)
+│   ├── app.py               # 
+│   ├── main.py              # Application entry point (starts the web app + API)
 │   ├── pyproject.toml       # Package metadata and dependencies
 │   └── uv.lock              # Locked Python dependencies
 ├── submission/              # Required submission documents
 │   ├── SDC2026_NoBugPls_Preliminary.pdf      # Submitted Phase 1 proposal
-│   ├── SDC2026_NoBugPls_TechDeclaration.pdf  # Submitted technical & tools declaration
 │   ├── SDC2026_NoBugPls_Replit_POU.pdf       # Submitted Replit Proof of Use
-│   └── SDC2026_NoBugPls_Runpod_POU.pdf       # Submitted RunPod Proof of Use
+│   ├── SDC2026_NoBugPls_Runpod_POU.pdf       # Submitted RunPod Proof of Use
+│   └── SDC2026_NoBugPls_TechDeclaration.pdf  # Submitted technical & tools declaration
 ├── tests/                   # 74 pytest tests (agents, API, security, runtime data isolation, RunPod handler)
 ├── .env.example             # Example environment variables
+├── .gitattributes
 ├── .gitignore
 ├── .replit                  # Replit run configuration
+├── DESIGN.md
 ├── LICENSE
-└── README.md
+├── README.md
+└── replit.md
 ```
 
 ### Architecture
