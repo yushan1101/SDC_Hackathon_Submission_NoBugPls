@@ -20,11 +20,11 @@
 | Resource          | Link                                                                 |
 | ----------------- | -------------------------------------------------------------------- |
 | GitHub Repository | https://github.com/yushan1101/SDC_Hackathon_Submission_NoBugPls      |
-| Replit Project    | _TODO_                                                               |
-| Live Demo         | _TODO_                                                               |
+| Replit Project    | https://replit.com/join#t=tgoyzxfovhhsrpu-boyuuu                                                              |
+| Live Demo         | https://sdc-hackathon-submission-no-bug-pls.replit.app // **https://sdc.olgtx.com**                                                               |
 | RunPod Endpoint   | None                                                                 |
 | Slide Deck        | https://canva.link/tiplai5jqc0up4t                                                              |
-| Demo Video        | _TODO_                                                               |
+| Demo Video        | https://youtu.be/rUKrFtVBMRo    
 
 ---
 
@@ -447,7 +447,7 @@ Frontend interaction checks (Node.js, no packages required): `node --test tests/
 
 - [x] Team name, domain (Domain 1 / Domain 2) and SDG track filled in
 - [x] Slide deck link added
-- [ ] Demo video link added
+- [X] Demo video link added
 - [x] Replit used, with proof of use in `submission/`
 - [x] RunPod used, with proof of use in `submission/`
 - [x] Submission forms completed in `submission/`: [`SDC2026_NoBugPls_Preliminary.pdf`](submission/SDC2026_NoBugPls_Preliminary.pdf) and [`SDC2026_NoBugPls_TechDeclaration.pdf`](submission/SDC2026_NoBugPls_TechDeclaration.pdf)
