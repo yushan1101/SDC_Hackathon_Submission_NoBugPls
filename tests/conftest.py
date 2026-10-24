@@ -15,6 +15,6 @@ os.environ["DATABASE_BACKEND"] = "sqlite"
 if os.environ.get("TEST_DATABASE_URL"):
     os.environ.update(
         DATABASE_BACKEND="postgres",
-        DATABASE_URL=os.environ["TEST_DATABASE_URL"],
+        AIVERSEPULSE_DATABASE_URL=os.environ["TEST_DATABASE_URL"],
         AP_PG_SCHEMA_PER_PATH="1",
     )

@@ -1,6 +1,6 @@
 """Chroma vs pgvector: same passages, same MiniLM embeddings, same queries -> are the top-5 results the same?
 
-    DATABASE_URL=postgresql://... python scripts/compare_vector_backends.py
+    AIVERSEPULSE_DATABASE_URL=postgresql://... python scripts/compare_vector_backends.py
 
 Embeds the knowledge snapshot once, loads the identical vectors into a temporary Chroma index and into a scratch
 pgvector table, then compares each query's top 5 (ids in order, and as a set). Where they differ it says which store
@@ -84,6 +84,6 @@ def main():
 
 
 if __name__ == "__main__":
-    if not os.environ.get("DATABASE_URL"):
-        sys.exit("set DATABASE_URL to a Postgres database with pgvector")
+    if not os.environ.get("AIVERSEPULSE_DATABASE_URL"):
+        sys.exit("set AIVERSEPULSE_DATABASE_URL to a Postgres database with pgvector")
     main()

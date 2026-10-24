@@ -40,16 +40,11 @@ def now() -> str:
 
 
 def connect(path: str | None = None):
-    """The app database: SQLite at `path`, or Postgres when DATABASE_URL is set (governance/db.py)."""
+    """The app database: SQLite at `path`, or Postgres when AIVERSEPULSE_DATABASE_URL is set (governance/db.py)."""
     from governance import db
     con = db.connect(path)
     con.executescript(SCHEMA)
     return con
-
-
-def is_postgres(con) -> bool:
-    from governance.db import is_postgres as check_backend
-    return check_backend(con)
 
 
 def snapshot(obj) -> tuple[str, str]:
