@@ -1,8 +1,10 @@
 {
   // Deploy: cd src/deploy/mcp-balancer && npx wrangler deploy
-  // Then on the main node: MCP_URL=https://aiversepulse-mcp.<your-subdomain>.workers.dev/mcp
+  // Live at https://mcp.olgtx.com (custom domain) and aiversepulse-mcp.zuo49934.workers.dev
+  // Main node .env: MCP_URL=https://mcp.olgtx.com/mcp
   "name": "aiversepulse-mcp",
   "main": "worker.js",
+  "routes": [{ "pattern": "mcp.olgtx.com", "custom_domain": true }],
   "compatibility_date": "2026-10-01",
   "observability": { "enabled": true },
   "vars": {

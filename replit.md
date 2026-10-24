@@ -69,6 +69,8 @@ embeddings, STF-KAN outlook) and takes its settings from the main server, so it 
 2. In the worker Repl, add **one Secret**: `NODE_TOKEN` with the same value. If the main server isn't
    `https://sdc.olgtx.com`, change `MAIN_URL` in `src/worker.py`, or also add a `MAIN_URL` Secret.
 3. Run: `cd src && uv run python worker.py`. Deploy it with that same command.
-4. On the main server, set `MCP_URL=https://<worker>.replit.app/mcp` (separate several workers with commas) and restart it.
+4. Add the worker's URL + `/mcp` to `WORKERS` in `src/deploy/mcp-balancer/wrangler.jsonc` (the Cloudflare balancer), and on the main
+   server set `MCP_URL=https://mcp.olgtx.com/mcp` in `.env` and restart it. Without the balancer, `MCP_URL` can list the
+   workers directly (comma-separated).
 
 Accounts and all other data stay on the main server. If a worker is unreachable, the main server runs the tool itself.

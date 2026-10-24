@@ -12,8 +12,9 @@ services:
       DATABASE_PATH: /app/state/audit.sqlite3
       OUTLOOK_ARTIFACT_DIR: /app/models/onet
       OUTLOOK_HISTORY_PATH: /app/models/onet_history.csv
-      MCP_URL: ""
-      CORS_ORIGINS: "https://sdc.olgtx.com,http://sdc.olgtx.com"   # public address via Cloudflare + nginx
+      # MCP_URL and NODE_TOKEN come from .env (worker nodes, e.g. MCP_URL=https://mcp.olgtx.com/mcp; empty = in-process)
+      # public addresses via Cloudflare + nginx; sdc.olgtx.com stays until aiversepulse.olgtx.com replaces it
+      CORS_ORIGINS: "https://aiversepulse.olgtx.com,https://sdc.olgtx.com,http://sdc.olgtx.com"
     volumes:
       - ./state:/app/state                                  # accounts, plans, audit log, trend history, live passages
       - ./models/onet:/app/models/onet:ro                   # STF-KAN checkpoint + manifest (checksum-checked)
