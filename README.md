@@ -70,10 +70,10 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 | Layer         | Technology                                                                 |
 | ------------- | -------------------------------------------------------------------------- |
 | Frontend      | Plain HTML/CSS/JavaScript ES modules (`src/web/`, no build step), rigged SVG owl companion |
-| Backend       | Python 3.11, FastAPI (Server-Sent Events streaming), LangGraph multi-agent graph, FastMCP tool server |
-| Database      | SQLite (accounts, sessions, immutable plan versions, audit log, trend history), Chroma vector store |
-| AI / Compute  | MiniLM sentence embeddings, STF-KAN forecaster (PyTorch), requirement model (PyTorch); GPU training via RunPod (`runpod/handler.py`); optional Gemini LLM for narration |
-| Hosting / Dev | Replit (`.replit`, `uv`); Docker; static frontend deployable separately (`src/deploy/`) |
+| Backend       | Python 3.11, FastAPI (Server-Sent Events streaming); two LangGraph graphs (reskilling, resume screening); RAG chat, mock-interview and recruiter/posting agents; FastMCP tool server on a worker node |
+| Database      | SQLite (accounts, sessions, plan versions, approvals, HR reviews, recruiting, interviews, trend history, payments, audit log); Chroma (18,444 ESCO + learning passages) |
+| AI / Compute  | MiniLM sentence embeddings, STF-KAN forecaster (PyTorch), requirement model (PyTorch); GPU training via RunPod (`runpod/handler.py`); optional Gemini 3.1 Flash-Lite and an OpenAI-compatible gateway (coach, chat, interview questions and speech-to-text, screening, job posts) |
+| Hosting / Dev | Frontend: static `src/web/` on Replit. Backend: dual-node VPS — main FastAPI node (sdc.olgtx.com) and a worker node for the FastMCP tools behind a Cloudflare MCP balancer; Docker |
 | Data          | ESCO v1.2 (live), UN SDG API (live), HN / arXiv / Arbeitnow / Remotive (live, daily); O*NET 31.0 (training only) |
 
 ---
@@ -118,23 +118,49 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 
 ### Architecture
 
-```
-                         ┌──────────── daily refresh ────────────┐
-                         │  HN · arXiv · Arbeitnow · Remotive    │
-                         ▼                                        │
-User ─► src/web/ (public site / HR console) ─► FastAPI (src/server) ──┤
-        quiz · résumé · plan · hiring          │  SSE stream      │
-                                               ▼                  │
-                     LangGraph agents: supervisor → profiler ‖ knowledge ‖ market → gaps → pathway → coach → reviewer
-                                               │                            │
-                                FastMCP tools ─┤─ ESCO + RAG (Chroma, MiniLM)
-                                               ├─ trend_signals (daily board)    ├─ sdg_for (UN SDG targets)
-                                               └─ skill_outlook (STF-KAN asset)  └─ match_roles
-                                               │
-                     SQLite: accounts · plan versions · approvals · recruiting · audit log
-Résumé ─► document guard (visible text only, injection/fraud) ─► screening agents ─► ranked, blind review ─► human decision
-Offline / GPU (RunPod): O*NET ratings + release history ─► requirement model + STF-KAN ─► exported ESCO-keyed assets
-```
+![AiversePulse Enterprise — roles, features and architecture](docs/architecture.svg)
+
+Diagram source: [`docs/architecture.puml`](docs/architecture.puml) (PlantUML). Render after a change with
+`java -jar plantuml.jar -tsvg docs/architecture.puml`.
+
+**Who uses it**
+
+| Role | What they do |
+| ---- | ------------ |
+| Guest (not signed in) | Feature overview, the public Today AI-trend board, sign up / sign in (`#/signin/<feature>`) and becomes an employee |
+| Employee / learner | Quick-match game (13 scenarios); resume upload with evidence-quoted ESCO skills; pick a job and rate skills; streamed report (roles, gaps, two AI scenarios, STF-KAN outlook, SDGs); edit the 30/60/90-day plan (every edit is a new version); 3D hologram mock interview for recommended roles (text or browser voice); interview history and reports; personal assistant (owl companion + RAG chat); plans and payment; delete my account |
+| Applicant (public apply link) | Submit a resume on `/apply/{token}` (consent, honeypot, rate limit) |
+| HR advisor (`/enterprise`) | Team: CSV import, invite by email, disable/remove members; watch each employee's 8-agent trace live; approve or flag plans (named human sign-off); review queue (edit, archive, delete); openings with plain-English thresholds and a public apply link; blind ranked review (shortlist / hold / decline); hiring plugins (LinkedIn, Facebook, X, Telegram, Discord, Slack); ask about your team and voice job drafts; choose the AI model per task (from the admin allow-list); signals view and board refresh |
+| Platform admin | Allowed AI models list; frontend sites (allowed origins); platform accounts and organisations; plans, pricing and billing |
+
+**How it runs**
+
+- **Frontend site — Replit (static `src/web/`).** Public landing, employee app, apply page, HR console and admin
+  console, plus the Three.js 3D hologram (mock interviews) and the owl companion (rigged SVG showing live agent state).
+- **Main node — FastAPI (sdc.olgtx.com).**
+  - **API + SSE:** sessions, roles (employee / HR / admin), CSRF `X-AP` header, CORS.
+  - **Document guard** (hidden text, prompt injection, fraud): every resume passes it first. Employee resumes go on
+    to the reskilling graph, applicant resumes to the screening graph.
+  - **Reskilling graph (LangGraph):** supervisor → profiler, knowledge search / market analyst → gap analysis →
+    pathway → coach → reviewer. Streams to the report over SSE; plans stay drafts until a person approves them.
+  - **Resume-screening graph (LangGraph):** parse resume → extract skills → assess fit → judge criteria + ranking.
+  - **RAG chat / assistant agent**, **mock-interview agent** (ESCO-grounded adaptive questions, scoring) and
+    **recruiter / posting agent**.
+  - **SQLite:** accounts, sessions, plan versions, approvals, HR reviews, recruiting, interviews, trend history,
+    payments, audit log. **Chroma:** 18,444 ESCO + learning passages (used by the graph and the RAG chat).
+- **Cloudflare MCP balancer → worker node.** The reskilling graph and the interview agent call the FastMCP tools
+  (ESCO search, embeddings, `match_roles`, `trend_signals`, `sdg_for`, `skill_outlook` (STF-KAN)) on the worker node
+  through the balancer; if the worker is unreachable the main node runs the same tools in-process (local fallback).
+- **Data.** ESCO v1.2 (2,938 occupations), UN SDG API (169 targets), Hacker News, arXiv, Arbeitnow and Remotive
+  (daily), and exported model assets (requirement model, STF-KAN) trained offline on O*NET 31.0 (training only).
+- **External services.** Gemini 3.1 Flash-Lite (optional routing), an OpenAI-compatible gateway (optional coach,
+  chat, interview questions and speech-to-text, screening, job posts), Stripe, SMTP, social platform APIs.
+
+**Rules that hold everywhere**
+
+- A person approves every plan and makes every hiring decision; the agents recommend.
+- The admin's allowed-model list limits which models an HR advisor can choose.
+- HR invites team members by email; HR openings share a public apply link with applicants.
 
 Full requirement mapping: [`docs/requirements_trace.md`](docs/requirements_trace.md) · deep technical notes: [`docs/TECHNICAL.md`](docs/TECHNICAL.md).
 

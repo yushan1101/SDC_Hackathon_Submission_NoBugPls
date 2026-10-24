@@ -1,0 +1,239 @@
+@startuml
+!theme plain
+left to right direction
+
+title AiversePulse Enterprise — Roles, Features and Architecture
+
+skinparam shadowing false
+skinparam ArrowColor #1F4E79
+skinparam packageStyle rectangle
+skinparam rectangle {
+  RoundCorner 12
+}
+
+' ==================== ACTORS ====================
+
+actor "Guest\n(not signed in)" as Guest
+actor "Employee / Learner\n(signed in)" as Emp
+actor "Applicant\n(public apply link)" as App
+actor "HR Advisor" as HR
+actor "Platform Admin" as Admin
+
+' ==================== FRONTEND ====================
+
+rectangle "Frontend site — Replit (static src/web/)" as FE #EAF2FB {
+
+  package "Public landing /" as Landing {
+    usecase "Feature overview" as G1
+    usecase "Public Today\nAI-trend board" as G2
+    usecase "Sign up / Sign in\n(#/signin/feature)" as G3
+  }
+
+  package "Employee app (signed in)" as EmpApp {
+    usecase "Quick-match game\n(13 scenarios)" as E1
+    usecase "Resume upload\nEvidence-quoted ESCO skills" as E2
+    usecase "Pick a job / rate skills" as E3
+    usecase "Streamed report: roles, gaps,\n2 AI scenarios, STF-KAN outlook, SDGs" as E4
+    usecase "Edit 30/60/90-day plan\n(New version on edit)" as E5
+    usecase "3D hologram mock interview\n(Recommended roles;\ntext / browser voice)" as E6
+    usecase "Interview history & reports" as E7
+    usecase "Personal assistant bot\n(Owl companion + RAG chat)" as E8
+    usecase "Plans & payment" as E9
+    usecase "Delete my account" as E10
+  }
+
+  package "Apply page /apply/{token}" as ApplyPg {
+    usecase "Submit resume\n(Consent, honeypot, rate limit)" as A1
+  }
+
+  package "HR console /enterprise" as HRC {
+    usecase "Team: CSV import, invite by email,\ndisable / remove members" as H1
+    usecase "Watch each employee's\n8-agent trace live" as H2
+    usecase "Approve / flag plans\n(Named human sign-off)" as H3
+    usecase "Review queue\n(Edit, archive, delete)" as H4
+    usecase "Openings with plain-English\nthresholds + public apply link" as H5
+    usecase "Blind ranked review\nShortlist / hold / decline" as H6
+    usecase "Hiring plugins\n(LinkedIn, Facebook, X,\nTelegram, Discord, Slack)" as H7
+    usecase "Ask about your team\n+ voice job drafts" as H8
+    usecase "Choose AI model per task\n(From admin allow-list)" as H9
+    usecase "Signals view / refresh board" as H10
+  }
+
+  package "Admin console" as ADM {
+    usecase "Allowed AI models list" as M1
+    usecase "Frontend sites\n(Allowed origins)" as M2
+    usecase "Platform accounts\n& organisations" as M3
+    usecase "Plans, pricing & billing" as M4
+  }
+
+  component "Three.js 3D hologram" as Holo
+  component "Owl companion\n(Rigged SVG, live agent state)" as Owl
+}
+
+' ==================== LOAD BALANCER ====================
+
+cloud "Cloudflare MCP balancer" as CF
+
+' ==================== BACKEND ====================
+
+rectangle "Dual-node VPS backend" as VPS #F4F8EC {
+
+  node "Main node — FastAPI\n(sdc.olgtx.com)" as Main {
+
+    component "API + SSE\nSessions, roles (employee / HR / admin)\nCSRF X-AP, CORS" as API
+
+    component "Document guard\n(Hidden text, injection, fraud)" as Guard
+
+    package "Reskilling graph (LangGraph)" as LG {
+      component "Supervisor -> profiler\nKnowledge search / market analyst\nGap analysis -> pathway -> coach -> reviewer" as Graph
+    }
+
+    package "Resume-screening graph (LangGraph)" as SG {
+      component "Parse resume -> extract skills\nAssess fit -> judge criteria + ranking" as Screen
+    }
+
+    component "RAG chat / assistant agent" as Chat
+    component "Mock-interview agent\n(ESCO-grounded adaptive questions, scoring)" as Intv
+    component "Recruiter / posting agent" as Rec
+
+    database "SQLite\nAccounts, sessions, plan versions, approvals\nHR reviews, recruiting, interviews\nTrend history, payments, audit log" as SQL
+
+    database "Chroma\n18,444 ESCO + learning passages" as Chroma
+  }
+
+  node "Worker node" as Worker {
+    component "FastMCP tools\nESCO search, embeddings, match_roles\ntrend_signals, sdg_for, skill_outlook (STF-KAN)" as MCP
+  }
+}
+
+' ==================== DATA SOURCES ====================
+
+rectangle "Data" as Data #FFF7E6 {
+  component "ESCO v1.2\n(2,938 occupations)" as ESCO
+  component "UN SDG API\n(169 targets)" as SDG
+  component "HN, arXiv, Arbeitnow,\nRemotive (daily)" as Feeds
+  component "Exported model assets\n(Requirement model, STF-KAN)" as Assets
+  component "O*NET 31.0\n(Training only)" as ONET
+}
+
+' ==================== EXTERNAL SERVICES ====================
+
+rectangle "External services" as Ext #F9ECEC {
+  component "Gemini 3.1 Flash-Lite" as Gem
+  component "OpenAI-compatible gateway" as GW
+  component "Stripe" as Stripe
+  component "SMTP" as SMTP
+  component "Social platform APIs" as Social
+}
+
+' ==================== ROLE RELATIONS ====================
+
+Guest --> G1
+Guest --> G2
+Guest --> G3
+G3 ..> Emp : becomes
+
+Emp --> E1
+Emp --> E2
+Emp --> E3
+Emp --> E4
+Emp --> E5
+Emp --> E6
+Emp --> E7
+Emp --> E8
+Emp --> E9
+Emp --> E10
+
+App --> A1
+
+HR --> H1
+HR --> H2
+HR --> H3
+HR --> H4
+HR --> H5
+HR --> H6
+HR --> H7
+HR --> H8
+HR --> H9
+HR --> H10
+
+Admin --> M1
+Admin --> M2
+Admin --> M3
+Admin --> M4
+
+M1 ..> H9 : limits choices
+H1 ..> Emp : invites team members
+H5 ..> A1 : shares public apply link
+
+' ==================== FRONTEND TO BACKEND ====================
+
+G2 --> API
+G3 --> API
+
+E1 --> API
+E2 --> Guard
+E3 --> API
+E4 --> Graph : SSE stream
+E5 --> SQL
+E6 --> Holo
+Holo --> Intv
+E7 --> SQL
+E8 --> Owl
+Owl --> Chat
+E9 --> Stripe
+E10 --> SQL
+
+A1 --> Guard
+Guard --> Graph : Employee resume
+Guard --> Screen : Applicant resume
+
+H1 --> SMTP
+H2 --> Graph
+H3 --> SQL
+H4 --> SQL
+H5 --> Rec
+H6 --> Screen
+H7 --> Social
+H8 --> Rec
+H9 --> API
+H10 --> MCP
+
+M1 --> API
+M2 --> API
+M3 --> SQL
+M4 --> Stripe
+
+' ==================== BACKEND INTERNALS ====================
+
+Graph --> CF
+CF --> MCP
+MCP ..> Main : Local fallback
+
+Graph --> Chroma
+Chat --> Chroma
+Chat --> SQL
+
+Intv --> MCP
+Intv --> SQL
+Screen --> SQL
+
+Graph --> SQL : Draft until approved
+
+MCP --> ESCO
+MCP --> SDG
+MCP --> Feeds
+MCP --> Assets
+
+ONET ..> Assets : Offline training
+
+' ==================== AI MODEL ROUTING ====================
+
+Graph ..> Gem : Optional routing
+Graph ..> GW : Optional coach
+Chat ..> GW
+Intv ..> GW : Questions + STT
+Screen ..> GW
+Rec ..> GW
+
+@enduml

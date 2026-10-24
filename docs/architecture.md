@@ -1,5 +1,7 @@
 # Architecture (v0.3, 2026-10-20)
 
+> Current roles, features and system diagram: [architecture.svg](architecture.svg) (source [architecture.puml](architecture.puml)). The notes below record the v0.3 design history.
+
 v0.3: every O*NET occupation; requirements from O*NET 31.0; no training data at runtime; STF-KAN (trained on the
 O*NET release history) feeds the Market Analyst through an exported outlook asset (`skill_outlook` MCP tool);
 graph = supervisor -> {profiler || knowledge_search || market_analyst} -> gap_analysis -> pathway -> coach -> reviewer.
