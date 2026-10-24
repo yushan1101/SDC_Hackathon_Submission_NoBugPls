@@ -1,0 +1,18 @@
+# Shared Postgres: the synchronous STANDBY, in LA (64.188.10.157, /opt/aiversepulse-db-standby).
+# Streams from the primary over TLS (verify-full against the private CA) using replication slot standby_la.
+# Hot standby: read-only queries allowed (bound to localhost until app nodes read from it). Setup: setup.md.
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: aiversepulse-db-standby
+    restart: unless-stopped
+    user: "999:999"
+    command: >-
+      postgres -c hot_standby=on -c shared_buffers=128MB -c max_connections=100 -c max_wal_senders=5
+      -c max_replication_slots=5 -c hot_standby_feedback=on -c log_connections=on
+    volumes:
+      - ./data:/var/lib/postgresql/data   # cloned with pg_basebackup -R (standby.signal + primary_conninfo)
+      - ./certs:/certs:ro                 # ca.crt: checks the primary's certificate
+      - ./secrets:/secrets:ro             # pgpass: the replicator password
+    ports: ["127.0.0.1:5433:5432"]
+    shm_size: 128mb
