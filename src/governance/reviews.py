@@ -46,8 +46,9 @@ def history(con, pid):
 
 def _save(con, pid, user, action, before, after):
     after = after | {"revision": before["revision"] + 1}
-    con.execute(f"INSERT OR REPLACE INTO hr_reviews(plan_id,{','.join(FIELDS)}) "
-                f"VALUES({','.join('?' for _ in range(len(FIELDS) + 1))})",
+    con.execute(f"INSERT INTO hr_reviews(plan_id,{','.join(FIELDS)}) "
+                f"VALUES({','.join('?' for _ in range(len(FIELDS) + 1))}) "
+                f"ON CONFLICT(plan_id) DO UPDATE SET {', '.join(f'{k}=excluded.{k}' for k in FIELDS)}",
                 (pid, *(after[k] for k in FIELDS)))
     con.execute("INSERT INTO hr_review_events(plan_id,actor,action,before_json,after_json,at_utc) "
                 "VALUES(?,?,?,?,?,?)", (pid, user["username"], action, json.dumps(before), json.dumps(after), now()))
@@ -86,7 +87,7 @@ def edit(con, pid, user, changes, revision):
             con.execute("UPDATE plans SET subject_id=? WHERE plan_id=?", (employee_id, pid))
             # Reserve numeric IDs so a later analysis cannot reuse an edited ID.
             if match := NUMBERED.fullmatch(employee_id):
-                con.execute("INSERT OR IGNORE INTO analysis_employee_ids(number) VALUES(?)", (int(match.group(1)),))
+                con.execute("INSERT INTO analysis_employee_ids(number) VALUES(?) ON CONFLICT DO NOTHING", (int(match.group(1)),))
         if plan_reference is not None:
             if not re.fullmatch(r"P[0-9]{6}", plan_reference):
                 raise approval.TransitionError("Plan ID must be P followed by six digits, for example P000123")
@@ -100,7 +101,8 @@ def edit(con, pid, user, changes, revision):
                 raise approval.TransitionError("Plan ID is already used by another current plan. Please choose a different ID.")
             before = before | {"plan_reference": approval.reference(con, pid)}
             after = after | {"plan_reference": plan_reference}
-            con.execute("INSERT OR REPLACE INTO plan_reference_overrides(plan_id, number) VALUES(?,?)", (pid, number))
+            con.execute("INSERT INTO plan_reference_overrides(plan_id, number) VALUES(?,?) "
+                        "ON CONFLICT(plan_id) DO UPDATE SET number=excluded.number", (pid, number))
         return _save(con, pid, user, "edited", before, after)
 
 

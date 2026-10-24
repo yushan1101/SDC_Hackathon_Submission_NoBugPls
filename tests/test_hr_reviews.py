@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -9,6 +10,9 @@ from governance.employee_ids import allocate_ids
 HR = {"username": "hr", "role": "hr_advisor"}
 EMPLOYEE = {"username": "employee", "role": "employee", "employee_id": "E1"}
 PLAN = {"status": "draft", "target_role": "Analyst", "activities": []}
+
+
+sqlite_only = pytest.mark.skipif(bool(os.environ.get("TEST_DATABASE_URL")), reason="upgrades an existing SQLite file")
 
 
 def seed(con, audience="hr"):
@@ -71,6 +75,7 @@ def test_bulk_authorization_and_atomicity():
     assert reviews.bulk(con, [pid, pid], HR, "archive") == [pid]
 
 
+@sqlite_only
 def test_existing_database_migration_and_approval_default(tmp_path):
     import sqlite3
     path = str(tmp_path / "old.sqlite")

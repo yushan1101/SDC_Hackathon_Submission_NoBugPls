@@ -83,21 +83,26 @@ export function gapsBlock(gaps) {
 }
 
 export function comparisonBlock(cmp, scenario) {
-  const changed = cmp.filter((c) => c.assistive_required !== c.agentic_required);
-  const shown = (changed.length ? changed : cmp).slice(0, 5);
-  const side = (name, key, note) => {
-    const current = scenario === key.split("_")[0];
-    return h("div", { class: `cmp-side ${current ? "current" : ""}` },
-      h("span", { class: "cmp-tag" }, icon(current ? "check" : "flat"), current ? "Your scenario" : "Compare"),
-      h("b", { class: "cmp-name" }, name), h("p", {}, note),
-      h("ul", {}, shown.map((c) => h("li", {}, h("span", {}, c.skill_id), h("b", { class: "num" }, `level ${c[key]}`)))));
-  };
+  const level = (value) => value !== null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
+  const rows = Array.isArray(cmp) ? cmp.filter((c) => c && c.skill_id).map((c) => ({ ...c,
+    assistive_required: level(c.assistive_required), agentic_required: level(c.agentic_required) })) : [];
+  const changed = rows.filter((c) => c.assistive_required !== null && c.agentic_required !== null
+    && c.assistive_required !== c.agentic_required);
+  const shown = (changed.length ? changed : rows).slice(0, 5);
+  const activeScenario = String(scenario || "").toLowerCase().replace(/[_\s-]+ai$/, "");
+  const th = (name, key) => h("th", { scope: "col", class: activeScenario === key ? "current" : null },
+    name, activeScenario === key ? h("span", { class: "cmp-current" }, "Your scenario") : null);
+  const body = shown.length ? shown.map((c) => h("tr", {},
+    h("th", { scope: "row" }, c.skill_id),
+    h("td", { class: activeScenario === "assistive" ? "current" : null }, c.assistive_required === null ? "Not available" : `Level ${c.assistive_required}`),
+    h("td", { class: activeScenario === "agentic" ? "current" : null }, c.agentic_required === null ? "Not available" : `Level ${c.agentic_required}`)))
+    : [h("tr", {}, h("td", { colspan: 3, class: "cmp-empty" }, "No skill comparison was saved in this report."))];
   return card("Assistive versus agentic AI", "spark", "Assistive vs agentic AI",
     { figure: changed.length, unit: changed.length === 1 ? "skill changes" : "skills change",
       note: "Agentic levels are our assumption, not measured data. Assistive levels are the model's estimates." },
-    h("div", { class: "cmp-sides" },
-      side("Assistive AI", "assistive_required", "AI helps you do today's work."),
-      side("Agentic AI", "agentic_required", "AI agents take over routine tool work.")));
+    h("div", { class: "cmp-table-wrap" }, h("table", { class: "cmp-table" },
+      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Skill"), th("Assistive AI", "assistive"), th("Agentic AI", "agentic"))),
+      h("tbody", {}, body))));
 }
 
 export function outlookBlock(o) {
@@ -156,6 +161,34 @@ export function issuesBlock(issues) {
     icon(i.severity === "error" ? "flag" : "info"), h("span", {}, i.message))));
 }
 
+function planActivitySteps(activity) {
+  if (activity.steps?.length) return activity.steps;
+  const skill = activity.skill_id || "this skill";
+  if (activity.day_range === "61-90") return [
+    `Weeks 9-10: Build a portfolio piece that demonstrates ${skill}, with a short write-up and relevant files or screenshots.`,
+    "Week 11: Ask your manager or a peer to review the work and give specific feedback.",
+    "Week 12: Apply the feedback and write down how you will keep using this skill after the 90 days.",
+  ];
+  if (activity.day_range === "31-60") return [
+    `Week 5: Choose a practical task where you can use ${skill} and agree on it with your manager.`,
+    `Weeks 6-7: Complete the task and note the results, challenges, and what you would improve.`,
+    "Week 8: Share the result with a colleague and ask for one concrete suggestion.",
+  ];
+  return [
+    `Weeks 1-2: Study a guide or tutorial for ${skill} and note three ideas you can use at work.`,
+    `Weeks 3-4: Complete practice exercises and apply ${skill} to one small, suitable work task.`,
+    "End of month: Review what you learned with your manager and agree on a practical next step.",
+  ];
+}
+
+function planActivityOutcome(activity) {
+  if (activity.outcome) return activity.outcome;
+  const skill = activity.skill_id || "the skill";
+  if (activity.day_range === "61-90") return `A reviewed portfolio piece demonstrating ${skill}.`;
+  if (activity.day_range === "31-60") return `A completed work task using ${skill}, with a short note about the result.`;
+  return `A completed set of practice exercises and an explanation of the basics of ${skill}.`;
+}
+
 /** Editable 30/60/90 plan with approval. Talks to /api/plans/:id. Calls onChange(status) after saves. */
 export function planBlock({ planId, planReference, plan, version, status, weeklyHours, onChange, approverLabel = "I have reviewed this plan and approve it", title = "Your 90-day plan",
   progress = [], evidence = null, readOnly = false }) {
@@ -187,13 +220,14 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
       const tick = planId && !readOnly ? h("label", { class: "act-done", title: "Mark this activity as done" },
         h("input", { type: "checkbox", checked: done.has(key(a)) ? true : null, onchange: (e) => mark(a, e.target.checked, e.target) }), "Done") : null;
       const links = courses(a);
+      const steps = planActivitySteps(a);
       const main = h("div", { class: "act-main" },
         h("div", { class: "top" }, h("b", {}, a.skill_id), tick,
           h("label", {}, h("span", { class: "sr-only" }, `Hours for ${a.skill_id}, days ${p}`), input)),
         h("div", { class: "act-description" }, description,
-          a.steps?.length ? h("ol", { class: "act-steps" }, a.steps.map((s) => h("li", {}, s))) : null,
-          a.outcome ? h("p", { class: "act-outcome" }, h("b", {}, "You'll have: "), a.outcome) : null),
-        links.length ? h("div", { class: "act-links" }, links.map((e) => h("a", { href: e.url, target: "_blank", rel: "noopener noreferrer" },
+          h("ol", { class: "act-steps" }, steps.map((s) => h("li", {}, s))),
+          h("p", { class: "act-outcome" }, h("b", {}, "You'll have: "), planActivityOutcome(a))),
+        links.length ? h("div", { class: "act-links" }, links.map((e) => h("a", { href: currentSourceUrl(e.url), target: "_blank", rel: "noopener noreferrer" },
           icon("sources"), /esco\.ec\.europa\.eu/.test(e.url) ? "ESCO skill guide" : `Open course: ${e.title}`, h("span", { class: "tag free" }, "free")))) : null,
         goals.length ? h("span", { class: "sdg-nums", "aria-label": "Related Sustainable Development Goals" }, goals) : null);
       return reveal(h("article", { class: `act${done.has(key(a)) ? " is-done" : ""}`, "data-key": key(a) }, main,
@@ -211,11 +245,12 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     const activityList = mine.length ? h("div", { class: "phase-activities" }, activityCards)
       : h("p", { class: "note" }, "No activities in this phase.");
     const phaseSummary = h("summary", { class: "phase-toggle" },
-      h("span", { class: "phase-step", "aria-hidden": "true" }, phaseIndex + 1),
       h("div", { class: "phase-intro" }, heading, h("p", { class: "phase-summary" }, summary)),
       icon("chevron"));
     const content = h("div", { class: "phase-content" }, budget, activityList);
-    return h("details", { class: "phase", "data-phase": p }, phaseSummary, content);
+    return h("div", { class: "phase-row", "data-phase": p },
+      h("span", { class: "phase-step", "aria-hidden": "true" }, phaseIndex + 1),
+      h("details", { class: "phase", open: phaseIndex === 0 ? true : null }, phaseSummary, content));
   });
   const progressEl = h("div", { class: "plan-progress" });
   function drawProgress() {
@@ -236,8 +271,8 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     try { await api(`/api/plans/${planId}/progress`, { method: "POST", body: { item: key(a), done: value } }); }
     catch (e) { value ? done.delete(key(a)) : done.add(key(a)); box.checked = !value; box.closest(".act")?.classList.toggle("is-done", !value); drawProgress(); toast(e.message, "err"); }
   }
-  if (planId) drawProgress();
-  const planEl = h("div", { class: "plan" }, planId ? progressEl : null, phases,
+  drawProgress();
+  const planEl = h("div", { class: "plan" }, phases,
     h("p", { class: "note plan-cost" }, icon("check"), "Cost: free. Every linked resource is official documentation, vendor training or the ESCO skill page."));
   const sdgGuide = h("details", { class: "note sdg-guide" }, h("summary", {}, "How activities connect to the SDGs"),
     h("p", {}, "Goal tags on each activity show its connection: SDG 4 for learning, SDG 8 for decent work, and (when mapped) one additional goal matched to that skill. These are evidence-linked suggestions, not official UN classifications."));
@@ -278,6 +313,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
   return reveal(h("section", { class: "block plan-block", "aria-label": "30, 60, 90 day plan" },
     h("h3", {}, title),
     planId ? h("p", { class: "muted mono" }, `Plan ID: ${planReference || planId}`) : null,
+    progressEl,
     plan.deferred_skills?.length ? h("details", { class: "note deferred" },
       h("summary", {}, `${plan.deferred_skills.length} more skills don't fit in ${weeklyHours ? weeklyHours + " h/week" : "the weekly hours"}; the plan covers the highest-priority gaps first.`),
       h("p", {}, plan.deferred_skills.join(", "))) : null,
@@ -292,10 +328,27 @@ export function historyBlock(hist) {
 }
 
 export function sourceItem(e) {
-  return h("a", { class: "src", id: `src-${e.id}`, href: e.url, target: "_blank", rel: "noopener noreferrer" },
+  return h("a", { class: "src", id: `src-${e.id}`, href: currentSourceUrl(e.url), target: "_blank", rel: "noopener noreferrer" },
     h("span", { class: "id" }, citeLabel(e.id)),
     h("span", { class: "t" }, e.title),
     h("span", { class: "m" }, [e.publisher, e.publication_date && `published ${e.publication_date}`, e.access_date && `accessed ${e.access_date}`].filter(Boolean).join(" · ")));
+}
+
+function currentSourceUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (url.hostname !== "esco.ec.europa.eu") return rawUrl;
+    const conceptPages = new Set([
+      "/en/classification/skill",
+      "/en/classification/occupation",
+    ]);
+    if (!conceptPages.has(url.pathname)) return rawUrl;
+    const uri = url.searchParams.get("uri");
+    if (uri) url.searchParams.set("uri", uri);
+    return url.href;
+  } catch {
+    return rawUrl;
+  }
 }
 
 // ---------------------------------------------------------------- document integrity (hidden text, injection, fraud)
@@ -557,8 +610,10 @@ export function boardView(b, { onRefresh, preview = false } = {}) {
   if (!b?.available) return h("div", { class: "empty" }, h("h2", {}, "No trend board yet"),
     h("p", { class: "muted" }, b?.message || "The board is built once a day from public news, research and job-posting signals."),
     onRefresh ? h("button", { class: "btn primary", onclick: onRefresh }, "Build today's board") : null);
-  const evid = new Map(b.evidence.map((e) => [e.id, e]));
-  const label = (id) => b.topics.find((t) => t.id === id)?.label;
+  const topics = Array.isArray(b.topics) ? b.topics : [];
+  const evidence = Array.isArray(b.evidence) ? b.evidence : [];
+  const evid = new Map(evidence.map((e) => [e.id, e]));
+  const label = (id) => topics.find((t) => t.id === id)?.label;
   const pill = (ic, text, title) => h("span", { class: "meta-pill", title }, icon(ic), text);
   const meta = h("div", { class: "board-meta" },
     pill("clock", fmtTime(b.created_utc), `Board for ${b.day}`),
@@ -596,13 +651,13 @@ export function boardView(b, { onRefresh, preview = false } = {}) {
           h("ul", {}, links.map((e) => h("li", {}, h("a", { href: e.url, target: "_blank", rel: "noopener noreferrer" }, e.title))))) : null)),
       DROP, { delay: Math.min(i, 12) * 30 });
   };
-  const topics = [...b.topics].sort((a, z) => Math.abs(z.z) - Math.abs(a.z));
-  const grid = h("div", { class: "topic-grid" }, (preview ? topics.slice(0, 5) : topics).map(card));
+  const orderedTopics = [...topics].sort((a, z) => Math.abs(z.z) - Math.abs(a.z));
+  const grid = h("div", { class: "topic-grid" }, (preview ? orderedTopics.slice(0, 5) : orderedTopics).map(card));
   if (preview) return h("div", { class: "board board-preview" }, meta, grid);
   // filter by type of topic, or by a skill / topic word
   let kind = "all";
   const q = h("input", { class: "input sm", type: "search", placeholder: "Filter by skill, e.g. programming, writing", "aria-label": "Filter topics by skill", oninput: filter });
-  const empty = h("p", { class: "muted", hidden: true }, "No topic matches this filter.");
+  const empty = h("p", { class: "muted", hidden: true }, "No trends match your current filters.");
   function filter() {
     const term = q.value.trim().toLowerCase();
     let shown = 0;
@@ -616,10 +671,11 @@ export function boardView(b, { onRefresh, preview = false } = {}) {
     [["all", "All"], ["moving", "Rising or falling"], ["capability", "New skills"], ["automation", "Automation"]].map(([k, l]) =>
       h("button", { type: "button", "aria-pressed": String(k === kind), onclick: (e) => {
         kind = k; seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === e.currentTarget))); filter(); } }, l)));
+  filter();
   // radar + what changed since the previous board, once the history has loaded
   const radarHost = h("div", { class: "radar-host" }, radar(b.topics, null));
   const changes = h("div", { class: "trend-changes" });
-  api("/api/signals/history").then(({ days }) => {
+  api("/api/signals/history").then(({ days = [] }) => {
     const prev = days.filter((d) => d.day < b.day).at(-1);
     let selectedBoard = "today";
     const todayButton = h("button", { class: "k-now", type: "button", "aria-pressed": "true", onclick: () => selectBoard("today") }, "Today");
@@ -642,13 +698,15 @@ export function boardView(b, { onRefresh, preview = false } = {}) {
           flips.map((m) => h("li", {}, h("b", {}, m.t.label), ` is now ${m.t.direction} (was ${m.was})`)),
           big.map((m) => h("li", {}, h("b", {}, m.t.label), ` ${m.dz > 0 ? "strengthened" : "weakened"} by ${Math.abs(m.dz).toFixed(1)}`)))
           : h("p", { class: "muted" }, "No topic changed direction."));
-    }
+    } else changes.replaceChildren(h("h3", {}, icon("history"), "Trend comparison"),
+      h("p", { class: "muted" }, "No previous trend board is available yet."));
     if (days.length >= 3) grid.querySelectorAll(".topic-card").forEach((el) => {
       const vals = days.map((d) => d.z[el.dataset.topic]).filter((v) => v != null);
       if (vals.length >= 3) el.querySelector(".tc-charts").append(h("div", { class: "tc-chart-item tc-history", title: `Trend strength over the last ${vals.length} boards` },
         zLine(vals), h("span", { class: "tc-chart-caption" }, `${vals.length}-day strength`)));
     });
-  }).catch(() => { /* history is optional: the board stands on its own */ });
+  }).catch(() => changes.replaceChildren(h("h3", {}, icon("history"), "Trend comparison"),
+    h("p", { class: "muted" }, "Trend history could not be loaded. The current board is still available.")));
   // the roles: a bar against the strongest score, the topics driving it (with their pictures), and a note when a role
   // is pulled both ways (growth already nets off half the automation pressure, so both can be true)
   const growing = new Set(b.emerging_roles.map((r) => r.soc)), pressed = new Set(b.declining_roles.map((r) => r.soc));

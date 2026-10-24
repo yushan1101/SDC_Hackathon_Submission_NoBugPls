@@ -11,7 +11,7 @@ import { registerView, pricingView, accountView, planName, verifyLinkView, forgo
 import { termsView, privacyView } from "./legal.js";
 import { watchForm } from "./risk.js";
 import { micButton, readAloudButton, setVoice } from "./voice.js";
-import { agentView, agentSwitch, disposeAgentSwitch } from "./agents.js";
+import { agentView, agentSwitch, disposeAgentSwitch, employeeCapsule } from "./agents.js";
 import { reportAssistant } from "./report-assistant.js";
 
 const app = $("#app");
@@ -23,7 +23,7 @@ const S = {
   me: null, meta: null, status: null, sheet: null, sources: null, evidence: new Map(), busy: null,
   // saved profile over the defaults, so an older or partial save never drops a required field
   profile: { target_role: null, target_title: null, scenario: "assistive", weekly_learning_hours: 6, skills: [], ...store.get("ap.profile.v2", {}) },
-  thread: [],
+  thread: [], capsule: null,
 };
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
@@ -138,6 +138,18 @@ function shell() {
           h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out"))),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
     guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/agents", "Agent", "ask"), tab("#/today", "AI trends", "pulse"), tab("#/plans", "Plans", "plans")),
+    S.me?.role === "employee" ? (S.capsule = employeeCapsule({
+      status: S.status,
+      getProfile: () => ({ target_title: S.profile.target_title, skills: S.profile.skills }),
+      pages: [
+        { label: "Home", href: "#/start", icon: "home", words: "dashboard career" },
+        { label: "Career assistant", href: "#/agents", icon: "ask", words: "chat coach" },
+        { label: "AI trends", href: "#/today", icon: "pulse", words: "skills market" },
+        { label: "Career report", href: "#/report", icon: "report", words: "plan analysis" },
+        { label: "My plans", href: "#/plans", icon: "plans", words: "learning pathway" },
+        { label: "Account", href: "#/account", icon: "user", words: "profile settings" },
+      ],
+    })) : null,
     S.sheet].filter(Boolean));  // replaceChildren would print a null as the text "null"
 }
 
@@ -391,7 +403,7 @@ function reportView(main, openId) {
     S.composer = h("form", { class: "composer", onsubmit: (e) => { e.preventDefault(); composerSend(); } },
       S.quick = h("div", { class: "quick", "aria-label": "Suggested report updates" }),
       h("div", { class: "row" }, S.input, micButton(S.input), S.sendBtn));
-    S.assistant = reportAssistant({ thread: S.threadEl, composer: S.composer, input: S.input, onCite: highlight });
+    S.assistant = reportAssistant({ thread: S.threadEl, composer: S.composer, input: S.input, onCite: highlight, hideLauncher: true });
     S.reportEl = h("div", { class: "report" },
       h("div", { class: "thread-col", style: { display: "grid", gap: "24px", "min-width": 0 } },
         h("div", { class: "flow-back-row" },

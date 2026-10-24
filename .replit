@@ -9,6 +9,8 @@ expertMode = true
 
 [userenv.shared]
 DATABASE_BACKEND = "postgres"
+COACH_MODEL = "gemini:gemini-3.1-flash-lite"
+LLM_FAST_MODEL = "gemini-3.1-flash-lite"
 
 [workflows]
 runButton = "Project"
@@ -26,13 +28,13 @@ args = "Start application"
 name = "Start application"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd src && uv run uvicorn server.api:app --host 0.0.0.0 --port 5000 --proxy-headers --forwarded-allow-ips '*'"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd src && uv run --extra ai uvicorn server.api:app --host 0.0.0.0 --port 5000 --proxy-headers --forwarded-allow-ips '*'"
+waitForPort = 5000
 
 [[ports]]
 localPort = 5000

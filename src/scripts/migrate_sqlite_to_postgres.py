@@ -1,195 +1,166 @@
-"""One-time, development-only migration from the app SQLite file to Replit PostgreSQL.
+"""Copy the app's SQLite database into Postgres and prove the copy is exact.
 
-Run from src with DATABASE_URL available:
-    uv run python scripts/migrate_sqlite_to_postgres.py --confirm-development
+    DATABASE_URL=postgresql://postgres:...@host/db python scripts/migrate_sqlite_to_postgres.py SNAPSHOT.sqlite3 [--owner ROLE] [--verify-only]
 
-The SQLite source is never modified. The script refuses to run if the target
-PostgreSQL public schema already contains application tables.
+1. Schema: imports the app (server.api) with DATABASE_URL set, so Postgres gets exactly the tables the app creates,
+   then the modules that create theirs lazily (plugins, trend signals).
+2. Copy: every table in ONE transaction (all or nothing), triggers and foreign-key checks off while copying
+   (session_replication_role = replica: needs a superuser), then identity sequences moved past the copied ids;
+   --owner ROLE hands the tables and trigger functions to the app's own role.
+3. Verify, and exit non-zero on any difference:
+   - row count per table, and a SHA-256 over each table's rows (sorted, values normalised) on both sides
+   - plan_versions: every stored sha256 still matches its snapshot (the audit record is provably unchanged)
+   - foreign keys: orphan rows the copy carried over (SQLite does not enforce them)
+   - the same app read (approval.list_plans) for every user returns the same result on both databases
+Reads SQLite read-only. Prints table names, counts and hashes only: no row contents.
 """
-from __future__ import annotations
-
-import argparse
+import hashlib
+import json
 import os
-import re
 import sqlite3
 import sys
-import tempfile
+import time
 from pathlib import Path
-
-import psycopg
-from psycopg import sql
 
 SRC = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SRC))
+os.chdir(SRC)
+os.environ.setdefault("WARM_ON_START", "false")
+os.environ.setdefault("SIGNALS_DAILY", "false")
+
+SKIP = {"sqlite_sequence"}
 
 
-def _sqlite_snapshot(source: Path) -> Path:
-    if not source.exists():
-        raise FileNotFoundError(f"SQLite database not found: {source}")
-    fd, name = tempfile.mkstemp(prefix="aiversepulse-migration-", suffix=".sqlite3", dir=source.parent)
-    os.close(fd)
-    snapshot = Path(name)
-    with sqlite3.connect(source) as old, sqlite3.connect(snapshot) as new:
-        old.backup(new)
-    return snapshot
+def norm(v):
+    if isinstance(v, (bytes, memoryview)):
+        return "b:" + bytes(v).hex()
+    if isinstance(v, float):
+        return "f:" + repr(round(v, 9))
+    return v
 
 
-def _initialize_latest_sqlite_schema(snapshot: Path) -> None:
-    """Run the existing SQLite initializers against the snapshot to add current tables/columns."""
-    os.environ["DATABASE_BACKEND"] = "sqlite"
-    os.environ["DATABASE_PATH"] = str(snapshot)
-    os.environ["WARM_ON_START"] = "false"
-    os.environ["SIGNALS_DAILY"] = "false"
-    import server.api as api  # noqa: PLC0415 - config must be set before the application import
-
-    api.db.close()
+def table_hash(rows) -> str:
+    return hashlib.sha256(json.dumps(sorted(json.dumps([norm(v) for v in r], default=str) for r in rows)).encode()).hexdigest()
 
 
-def _ordered_tables(con: sqlite3.Connection) -> list[str]:
-    tables = [row[0] for row in con.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-    )]
-    dependencies = {
-        table: {row[2] for row in con.execute(f'PRAGMA foreign_key_list("{table}")')}
-        for table in tables
-    }
-    ordered: list[str] = []
-    remaining = set(tables)
-    while remaining:
-        ready = sorted(table for table in remaining if not (dependencies[table] & remaining))
-        if not ready:
-            raise RuntimeError(f"Foreign-key cycle prevents safe migration: {sorted(remaining)}")
-        ordered.extend(ready)
-        remaining.difference_update(ready)
-    return ordered
+def pg_columns(pg, table):
+    return pg.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = current_schema() "
+                      "AND table_name = %s ORDER BY ordinal_position", (table,)).fetchall()
 
 
-def _postgres_table_ddl(statement: str) -> str:
-    statement = re.sub(
-        r"\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b",
-        "BIGSERIAL PRIMARY KEY",
-        statement,
-        flags=re.I,
-    )
-    statement = re.sub(r"\bINTEGER\s+PRIMARY\s+KEY\b", "SERIAL PRIMARY KEY", statement, flags=re.I)
-    statement = re.sub(r"\bBLOB\b", "BYTEA", statement, flags=re.I)
-    statement = re.sub(r"\bwindow\b", '"window"', statement, flags=re.I)
-    return statement
+def coerce(v, pg_type):
+    if v is None:
+        return None
+    if pg_type == "bigint" and not isinstance(v, int):
+        return int(v)
+    if pg_type == "double precision" and not isinstance(v, float):
+        return float(v)
+    if pg_type == "text" and not isinstance(v, str):
+        return v.decode() if isinstance(v, bytes) else str(v)
+    return v
 
 
-def _create_tables(pg, sqlite_con: sqlite3.Connection, tables: list[str]) -> None:
-    for table in tables:
-        row = sqlite_con.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
-        ).fetchone()
-        if not row or not row[0]:
-            continue
-        pg.execute(_postgres_table_ddl(row[0]))
+def main(snapshot: str, verify_only: bool, owner: str | None = None) -> int:
+    import psycopg
+    url = os.environ["DATABASE_URL"]
+    lite = sqlite3.connect(f"file:{snapshot}?mode=ro", uri=True)
+    tables = [t for (t,) in lite.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name") if t not in SKIP]
+    print(f"source: {len(tables)} tables, {sum(lite.execute(f'SELECT count(*) FROM {t}').fetchone()[0] for t in tables)} rows")
 
-    indexes = sqlite_con.execute(
-        "SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name"
-    ).fetchall()
-    for (statement,) in indexes:
-        pg.execute(statement)
+    if not verify_only:
+        t0 = time.time()
+        import server.api  # noqa: F401  creates every table the app creates at start-up, on DATABASE_URL
+        from governance import plugins
+        from governance.audit import connect
+        from mcp_server import signals
+        plugins.init(connect())
+        signals.db()
+        print(f"schema created in {time.time() - t0:.1f}s")
 
+    pg = psycopg.connect(url, autocommit=True)  # so pg.transaction() below is the one real transaction
+    missing = [t for t in tables if not pg_columns(pg, t)]
+    if missing:
+        print("FAIL: tables the app did not create on Postgres:", missing)
+        return 1
 
-def _copy_rows(pg, sqlite_con: sqlite3.Connection, tables: list[str]) -> tuple[int, int]:
-    table_count = 0
-    row_count = 0
-    for table in tables:
-        columns = [row[1] for row in sqlite_con.execute(f'PRAGMA table_info("{table}")')]
-        rows = sqlite_con.execute(f'SELECT * FROM "{table}"').fetchall()
-        if not columns or not rows:
-            table_count += 1
-            continue
-        query = sql.SQL("INSERT INTO {} ({}) VALUES ({})").format(
-            sql.Identifier(table),
-            sql.SQL(", ").join(sql.Identifier(column) for column in columns),
-            sql.SQL(", ").join(sql.Placeholder() for _ in columns),
-        )
-        pg.executemany(query, rows)
-        table_count += 1
-        row_count += len(rows)
-    return table_count, row_count
+    if not verify_only:
+        t0 = time.time()
+        coerced = 0
+        with pg.transaction():
+            pg.execute("SET LOCAL session_replication_role = replica")  # no triggers / FK checks while copying
+            for t in tables:
+                if pg.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0]:
+                    raise SystemExit(f"FAIL: target table {t} is not empty; migrate into a fresh database only")
+                cols = pg_columns(pg, t)
+                lite_cols = {r[1] for r in lite.execute(f"PRAGMA table_info({t})")}
+                names = [c for c, _ in cols if c in lite_cols]
+                types = dict(cols)
+                rows = lite.execute(f"SELECT {', '.join(names)} FROM {t}").fetchall()
+                out = []
+                for r in rows:
+                    c = tuple(coerce(v, types[n]) for v, n in zip(r, names))
+                    coerced += sum(a is not b and a != b for a, b in zip(r, c))
+                    out.append(c)
+                if out:
+                    with pg.cursor() as cur:
+                        cur.executemany(f'INSERT INTO "{t}" ({", ".join(chr(34) + n + chr(34) for n in names)}) '
+                                        f'VALUES ({", ".join(["%s"] * len(names))})', out)
+            for t, col in pg.execute("SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = current_schema() "
+                                     "AND is_identity = 'YES'").fetchall():
+                pg.execute(f"SELECT setval(pg_get_serial_sequence('\"{t}\"', '{col}'), "
+                           f"GREATEST((SELECT max(\"{col}\") FROM \"{t}\"), 1), (SELECT max(\"{col}\") FROM \"{t}\") IS NOT NULL)")
+            if owner:  # the copy ran as a superuser; the app's own role must own what it uses (identity sequences follow)
+                for (t,) in pg.execute("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()").fetchall():
+                    pg.execute(f'ALTER TABLE "{t}" OWNER TO "{owner}"')
+                for (f,) in pg.execute("SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                                       "WHERE n.nspname = current_schema() AND p.prorettype = 'trigger'::regtype").fetchall():
+                    pg.execute(f'ALTER FUNCTION {f} OWNER TO "{owner}"')
+        print(f"copied in {time.time() - t0:.1f}s (one transaction); values converted to the column type: {coerced}")
+        if owner:
+            n = pg.execute("SELECT count(*) FROM pg_tables WHERE schemaname = current_schema() AND tableowner = %s", (owner,)).fetchone()[0]
+            print(f"owner: {n} tables now owned by {owner}")
 
+    ok = True
+    print("\ntable                              rows sqlite -> pg   row hash")
+    for t in tables:
+        names = [c for c, _ in pg_columns(pg, t) if c in {r[1] for r in lite.execute(f"PRAGMA table_info({t})")}]
+        a = lite.execute(f"SELECT {', '.join(names)} FROM {t}").fetchall()
+        b = pg.execute(f'SELECT {", ".join(chr(34) + n + chr(34) for n in names)} FROM "{t}"').fetchall()
+        same = len(a) == len(b) and table_hash(a) == table_hash(b)
+        ok &= same
+        print(f"{t:34} {len(a):5} -> {len(b):5}   {'same' if same else 'DIFFERENT'}  {table_hash(b)[:12]}")
 
-def _reset_sequences(pg, sqlite_con: sqlite3.Connection, tables: list[str]) -> None:
-    for table in tables:
-        info = sqlite_con.execute(f'PRAGMA table_info("{table}")').fetchall()
-        pk_columns = [row for row in info if row[5]]
-        if len(pk_columns) != 1 or "INT" not in pk_columns[0][2].upper():
-            continue
-        column = pk_columns[0][1]
-        sequence = pg.execute("SELECT pg_get_serial_sequence(%s, %s)", (table, column)).fetchone()[0]
-        if not sequence:
-            continue
-        maximum = pg.execute(
-            sql.SQL("SELECT MAX({}) FROM {}").format(sql.Identifier(column), sql.Identifier(table))
-        ).fetchone()[0]
-        if maximum is not None:
-            pg.execute("SELECT setval(%s::regclass, %s, true)", (sequence, maximum))
+    bad = [pid for pid, v, snap, sha in pg.execute("SELECT plan_id, version, snapshot, sha256 FROM plan_versions")
+           if hashlib.sha256(snap.encode()).hexdigest() != sha]
+    n = pg.execute("SELECT count(*) FROM plan_versions").fetchone()[0]
+    print(f"\naudit: {n - len(bad)}/{n} plan versions still match their stored sha256")
+    ok &= not bad
 
+    orphans = {}
+    for child, col, parent, pcol in pg.execute("""
+            SELECT kcu.table_name, kcu.column_name, ccu.table_name, ccu.column_name FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu USING (constraint_schema, constraint_name)
+            JOIN information_schema.constraint_column_usage ccu USING (constraint_schema, constraint_name)
+            WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = current_schema()""").fetchall():
+        k = pg.execute(f'SELECT count(*) FROM "{child}" c WHERE c."{col}" IS NOT NULL AND NOT EXISTS '
+                       f'(SELECT 1 FROM "{parent}" p WHERE p."{pcol}" = c."{col}")').fetchone()[0]
+        orphans[f"{child}.{col} -> {parent}"] = k
+    print("foreign keys (orphan rows carried over from SQLite):", orphans or "none defined")
 
-def _create_immutability_triggers(pg) -> None:
-    statements = [
-        """CREATE FUNCTION prevent_review_event_update() RETURNS trigger LANGUAGE plpgsql AS $$
-           BEGIN RAISE EXCEPTION 'hr_review_events are immutable'; END $$""",
-        """CREATE TRIGGER hr_review_events_immutable BEFORE UPDATE ON hr_review_events
-           FOR EACH ROW EXECUTE FUNCTION prevent_review_event_update()""",
-        """CREATE FUNCTION prevent_review_event_delete() RETURNS trigger LANGUAGE plpgsql AS $$
-           BEGIN RAISE EXCEPTION 'hr_review_events must be retained'; END $$""",
-        """CREATE TRIGGER hr_review_events_retained BEFORE DELETE ON hr_review_events
-           FOR EACH ROW EXECUTE FUNCTION prevent_review_event_delete()""",
-        """CREATE FUNCTION prevent_plan_version_update() RETURNS trigger LANGUAGE plpgsql AS $$
-           BEGIN RAISE EXCEPTION 'plan_versions are immutable'; END $$""",
-        """CREATE TRIGGER versions_immutable BEFORE UPDATE ON plan_versions
-           FOR EACH ROW EXECUTE FUNCTION prevent_plan_version_update()""",
-    ]
-    for statement in statements:
-        pg.execute(statement)
-
-
-def migrate(source: Path, database_url: str) -> tuple[int, int]:
-    snapshot = _sqlite_snapshot(source)
-    try:
-        _initialize_latest_sqlite_schema(snapshot)
-        with sqlite3.connect(snapshot) as sqlite_con:
-            tables = _ordered_tables(sqlite_con)
-            with psycopg.connect(database_url, connect_timeout=10) as pg:
-                existing = pg.execute(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema='public' AND table_type='BASE TABLE' LIMIT 1"
-                ).fetchone()
-                if existing:
-                    raise RuntimeError(
-                        "The development PostgreSQL database is not empty; migration stopped without writing."
-                    )
-                _create_tables(pg, sqlite_con, tables)
-                counts = _copy_rows(pg, sqlite_con, tables)
-                _reset_sequences(pg, sqlite_con, tables)
-                _create_immutability_triggers(pg)
-                return counts
-    finally:
-        snapshot.unlink(missing_ok=True)
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--confirm-development", action="store_true")
-    args = parser.parse_args()
-    if not args.confirm_development:
-        parser.error("Pass --confirm-development to confirm the target is the development database.")
-    if os.environ.get("REPLIT_ENVIRONMENT", "").lower() == "production":
-        raise SystemExit("Refusing to run the SQLite migration in a production environment.")
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise SystemExit("Replit-managed DATABASE_URL is unavailable.")
-    source = Path(os.environ.get("DATABASE_PATH", SRC / "data" / "audit.sqlite3"))
-    tables, rows = migrate(source, database_url)
-    print(f"Migrated {rows} records across {tables} application tables into the development database.")
-    print("The source SQLite database was left unchanged.")
-    return 0
+    from governance import approval
+    from governance.db import PgConnection
+    pgc = PgConnection(url, "public")
+    users = lite.execute("SELECT username, role, employee_id FROM users").fetchall()
+    diff = [u for u, r, e in users if approval.list_plans(lite, {"username": u, "role": r, "employee_id": e})
+            != approval.list_plans(pgc, {"username": u, "role": r, "employee_id": e})]
+    print(f"app read approval.list_plans: identical for {len(users) - len(diff)}/{len(users)} users")
+    ok &= not diff
+    print("\nRESULT:", "PASS: the Postgres copy matches the snapshot" if ok else "FAIL: see DIFFERENT rows above")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    if len(sys.argv) < 2 or not os.environ.get("DATABASE_URL"):
+        sys.exit(__doc__)
+    args = sys.argv[1:]
+    sys.exit(main(args[0], "--verify-only" in args, args[args.index("--owner") + 1] if "--owner" in args else None))

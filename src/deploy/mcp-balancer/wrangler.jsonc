@@ -1,0 +1,18 @@
+{
+  // Deploy: cd src/deploy/mcp-balancer && npx wrangler deploy
+  // Live at https://mcp.olgtx.com (custom domain) and aiversepulse-mcp.zuo49934.workers.dev
+  // Main node .env: MCP_URL=https://mcp.olgtx.com/mcp
+  "name": "aiversepulse-mcp",
+  "main": "worker.js",
+  "routes": [{ "pattern": "mcp.olgtx.com", "custom_domain": true }],
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  "vars": {
+    // the Replit worker nodes, comma-separated, each ending in /mcp. Add or remove one and redeploy;
+    // the main node keeps the same MCP_URL and needs no restart
+    // e.g. "https://aiverse-worker.replit.app/mcp". Empty = 503, and the main node runs the tools itself
+    "WORKERS": "",
+    // a sleeping Replit deployment can take a while to wake; past this the next worker is tried
+    "TIMEOUT_MS": "15000"
+  }
+}

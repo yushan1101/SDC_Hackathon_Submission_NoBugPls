@@ -1,0 +1,4 @@
+# /etc/cron.d/aiversepulse-db-backup on the primary: nightly logical dump of the app database, 7 days kept.
+# (The LA standby is the live copy; this is for "undo yesterday's mistake" and moving servers.)
+# Restore: docker exec -i aiversepulse-db pg_restore -U postgres -d aiversepulse --clean < FILE.dump
+17 3 * * * root docker exec aiversepulse-db pg_dump -U postgres -Fc aiversepulse > /opt/aiversepulse-db/backups/aiversepulse-$(date +\%F).dump && find /opt/aiversepulse-db/backups -name 'aiversepulse-*.dump' -mtime +7 -delete

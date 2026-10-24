@@ -88,21 +88,16 @@ function board(b) {
   // section headings and their one-line explanations rise as each section comes up
   $$(".board-head, .board-section > h2, .board-section > h3, .rl-why").filter(once).forEach((el) =>
     onView(el, { y: 22, opacity: 0, duration: 0.6, ease: EASE }));
-  // topic cards come in by rows (one batch per scroll step, so a row lands together); each photo settles from a slow zoom
+  // Topic cards are part of the page's primary content. Keep them visible even if a
+  // dynamically inserted board misses a ScrollTrigger refresh; animate only the photos.
   const cards = $$(".topic-card").filter(once);
   if (cards.length) {
-    gsap.set(cards, { opacity: 0, y: 36 });
-    const show = (batch) => {
-      gsap.to(batch, { opacity: 1, y: 0, duration: 0.75, stagger: 0.09, ease: EASE, overwrite: true, clearProps: "transform,opacity" });
-      batch.forEach((card, i) => {
-        const img = card.querySelector(".tc-media img");
-        if (img) gsap.fromTo(img, { scale: 1.12, transition: "none" }, { scale: 1, duration: 1.4, delay: i * 0.09, ease: "power2.out",
-          clearProps: "transform,transition" });
-      });
-    };
-    if (ST) ST.batch(cards, { start: "top 92%", once: true, onEnter: show, interval: 0.12, batchMax: 6 });
-    else show(cards);
-    triggersAdded = true;
+    gsap.set(cards, { clearProps: "opacity,visibility,transform" });
+    cards.forEach((card, i) => {
+      const img = card.querySelector(".tc-media img");
+      if (img) gsap.fromTo(img, { scale: 1.08, transition: "none" }, { scale: 1, duration: 1.1, delay: i * 0.025, ease: "power2.out",
+        clearProps: "transform,transition" });
+    });
   }
   // the two role lists: rows slide in from their side
   $$(".role-list").filter(once).forEach((list, i) => {

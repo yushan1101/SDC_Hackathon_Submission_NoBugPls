@@ -210,7 +210,7 @@ const askable = (q) => q.split(/\s+/).length >= 3 || /\?$|^(who|what|which|how|w
 /** Folded to an owl button; opened (click, Ctrl/Cmd+K or /) it searches pages, plans and openings, runs console actions,
  *  or asks the agent, from any page. pages: [{label, href, icon, words}] and actions: [{label, icon, words, run}] from
  *  the console; plans(): its plan list; status: the top-bar owl, kept in step. */
-export function hrCapsule({ pages, actions, plans, status }) {
+function floatingCapsule({ pages = [], actions = [], plans = () => [], status, getProfile = null, employeeMode = false }) {
   const bird = owl(null, 30);
   const fab = h("button", { class: "cap-fab", type: "button", "aria-label": "Open the agent (Ctrl K)", "aria-expanded": "false",
     onclick: () => (el.classList.contains("folded") ? unfold() : fold()) }, bird.el);
@@ -227,9 +227,9 @@ export function hrCapsule({ pages, actions, plans, status }) {
   const index = () => [
     ...actions.map((a) => ({ ...a, kind: "Action" })),
     ...pages.map((p) => ({ ...p, kind: "Go to" })),
-    ...plans().filter((p) => p.audience === "hr" && !p.review?.archived).map((p) => ({ label: `${p.subject_id} · ${p.target_role}`,
+    ...plans().filter((p) => !employeeMode && p.audience === "hr" && !p.review?.archived).map((p) => ({ label: `${p.subject_id} · ${p.target_role}`,
       sub: `${p.plan_reference || ""} ${p.review?.candidate_name || ""} · ${p.status}`.trim(), href: `#/review/${p.plan_id}`, icon: "review", kind: "Plan" })),
-    ...(openings || []).map((o) => ({ label: o.title, sub: `${o.status} · ${o.applications} applications`, href: `#/openings/${o.id}`, icon: "people", kind: "Opening" })),
+    ...(!employeeMode ? (openings || []).map((o) => ({ label: o.title, sub: `${o.status} · ${o.applications} applications`, href: `#/openings/${o.id}`, icon: "people", kind: "Opening" })) : []),
   ];
   const draw = () => {
     const t = q.value.trim(), words = t.toLowerCase().split(/\s+/).filter(Boolean);
@@ -252,13 +252,17 @@ export function hrCapsule({ pages, actions, plans, status }) {
   };
   function unfold() {
     el.classList.remove("folded"); fab.setAttribute("aria-expanded", "true"); fab.setAttribute("aria-label", "Fold the agent");
-    if (!openings) api("/api/openings").then((o) => { openings = o; if (q.value) draw(); }).catch(() => { openings = []; });
+    if (!employeeMode && !openings) api("/api/openings").then((o) => { openings = o; if (q.value) draw(); }).catch(() => { openings = []; });
     q.focus(); q.select(); draw();
   }
   function fold() {
     if (busy) return;
-    q.value = ""; answer.hidden = true; draw(); q.blur();
+    q.value = "";
+    if (!employeeMode) answer.hidden = true;
+    draw(); q.blur();
     el.classList.add("folded"); fab.setAttribute("aria-expanded", "false"); fab.setAttribute("aria-label", "Open the agent (Ctrl K)");
+    // A preserved employee answer keeps `open` set for reopening. Folded must still mean launcher only.
+    el.classList.remove("open");
   }
   function pick(i) {
     const it = items[i];
@@ -275,7 +279,7 @@ export function hrCapsule({ pages, actions, plans, status }) {
     answer.replaceChildren(h("p", { class: "cap-q" }, text), h("div", { class: "cap-who" }, owl(null, 24, "thinking").el, "Writing…"));
     const msgs = [...store.get(), { role: "user", content: text }];  // the same conversation as the Agent page
     try {
-      const r = await say(msgs);
+      const r = await say(msgs, getProfile?.() || null);
       const reply = { role: "assistant", content: r.reply, agent: r.agent, proposal: r.proposal, link: r.link };
       msgs.push(reply); store.set(msgs);
       // employee ids in the answer open their plan: the agent's answer becomes a way to drive the console
@@ -310,4 +314,14 @@ export function hrCapsule({ pages, actions, plans, status }) {
   // a click elsewhere folds it back, unless an answer is still being written
   addEventListener("pointerdown", (e) => { if (!el.contains(e.target) && !el.classList.contains("folded")) fold(); });
   return el;
+}
+
+/** HR console launcher; its organization search/actions remain confined to the HR experience. */
+export function hrCapsule({ pages, actions, plans, status }) {
+  return floatingCapsule({ pages, actions, plans, status });
+}
+
+/** Employee launcher with the same mascot, chat UI, voice input, and employee-scoped agent API. */
+export function employeeCapsule({ pages, status, getProfile }) {
+  return floatingCapsule({ pages, status, getProfile, employeeMode: true });
 }

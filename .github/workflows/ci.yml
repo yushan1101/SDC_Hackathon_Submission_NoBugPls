@@ -17,3 +17,27 @@ jobs:
           WARM_ON_START: "false"
           SIGNALS_DAILY: "false"
       - run: node tests/review_queue_ui.test.cjs
+
+  # the same suite on Postgres + pgvector (DATABASE_URL: several app nodes sharing one database)
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.4"
+      - run: pip install -e "./src[ai]"
+      - run: python -m pytest -q -rs tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:test@localhost:5432/postgres
+          WARM_ON_START: "false"
+          SIGNALS_DAILY: "false"

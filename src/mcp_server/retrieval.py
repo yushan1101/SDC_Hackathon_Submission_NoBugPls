@@ -1,8 +1,12 @@
-"""Chroma vector lookup (MiniLM embeddings) with metadata filters; offline JSON fallback.
+"""Vector lookup (MiniLM embeddings) with metadata filters; offline JSON fallback.
+
+Store: Chroma on disk (default), or pgvector in the shared Postgres database when DATABASE_URL is set, so every app
+node searches the same passages and sees a new day's live set at the same moment (it is replaced in one transaction).
 
 Retrieved text is DATA: it is never used as instructions, only displayed/cited.
 """
 import json
+import os
 from pathlib import Path
 import logging
 import re
@@ -64,6 +68,75 @@ def _safe(fn):
         log.warning("encoder warm-up failed (%s); offline retrieval only", type(e).__name__)
 
 
+# --- pgvector (DATABASE_URL set) ---------------------------------------------------------------------------
+VEC_TABLE = """CREATE TABLE IF NOT EXISTS vec_passages(collection TEXT NOT NULL, id TEXT NOT NULL, document TEXT NOT NULL,
+    meta JSONB NOT NULL, embedding vector(384) NOT NULL, PRIMARY KEY(collection, id));"""
+# ponytail: exact search, no HNSW index: ~20 ms over 20k rows and never misses a match; add
+# `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops)` (+ hnsw.iterative_scan for filters) past ~200k rows
+
+
+def _pg():
+    """The shared Postgres connection, or None when the app runs on SQLite (then Chroma is the store)."""
+    from config.settings import get_settings
+    backend = os.environ.get("DATABASE_BACKEND", "").strip().lower()
+    if backend not in {"", "sqlite", "postgres"}:
+        raise RuntimeError("DATABASE_BACKEND must be either 'sqlite' or 'postgres'")
+    use_postgres = backend == "postgres" or (backend == "" and bool(get_settings().database_url))
+    if backend == "postgres" and not get_settings().database_url:
+        raise RuntimeError("DATABASE_BACKEND=postgres but DATABASE_URL is unavailable")
+    return _pg_con() if use_postgres else None
+
+
+@lru_cache
+def _pg_con():
+    from governance.db import connect
+    con = connect()
+    try:
+        con.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    except Exception:  # not allowed for this role: fine if an admin already installed it
+        log.info("pgvector: CREATE EXTENSION skipped (needs an admin); assuming it is installed")
+    con.executescript(VEC_TABLE)
+    return con
+
+
+def _vec(e) -> str:
+    return "[" + ",".join(repr(float(x)) for x in e) + "]"
+
+
+def _pg_count(name: str) -> int:
+    with _LOCK:
+        return _pg().execute("SELECT count(*) FROM vec_passages WHERE collection=?", (name,)).fetchone()[0]
+
+
+def _pg_replace(name: str, passages: list[dict]) -> int:
+    """Swap a collection's rows in one transaction: other nodes see the old set or the new one, never half."""
+    rows = []
+    for i in range(0, len(passages), 256):  # embed first, outside the transaction (the slow part)
+        part = passages[i:i + 256]
+        rows += [(name, p["id"], p["text"], json.dumps({k: p.get(k, "") for k in META_KEYS}), _vec(e))
+                 for p, e in zip(part, _embed(p["title"] + ". " + p["text"] for p in part))]
+    con = _pg()
+    with _LOCK, con:
+        con.execute("DELETE FROM vec_passages WHERE collection=?", (name,))
+        con.executemany("INSERT INTO vec_passages(collection, id, document, meta, embedding) VALUES(?,?,?,?::jsonb,?::vector) "
+                        "ON CONFLICT(collection, id) DO UPDATE SET document=excluded.document, meta=excluded.meta, "
+                        "embedding=excluded.embedding", rows)  # upsert: another node may be rebuilding the same set
+    return len(rows)
+
+
+def _pg_query(name: str, query: str, top_k: int, where: dict | None = None) -> list[dict]:
+    emb = _vec(_embed([query])[0])
+    sql = "SELECT id, document, meta, embedding <=> ?::vector AS dist FROM vec_passages WHERE collection=?"
+    args: list = [emb, name]
+    if where:
+        sql += " AND meta @> ?::jsonb"
+        args.append(json.dumps(where))
+    with _LOCK:
+        rows = _pg().execute(sql + " ORDER BY dist, id LIMIT ?", (*args, top_k)).fetchall()
+    return [m | {"id": i, "text": d, "score": round(1 - dist, 4)} for i, d, m, dist in rows]
+
+
+# --- Chroma (SQLite mode) -------------------------------------------------------------------------------------
 @lru_cache
 def _client():
     import chromadb
@@ -90,7 +163,7 @@ def _open(create):
 def ensure_index() -> int:
     """Build the passage index once if it is missing (fresh volume / first container start); else reuse it."""
     try:
-        n = _collection().count()
+        n = _pg_count(COLLECTION) if _pg() else _collection().count()
         if n:
             return n
     except Exception:
@@ -103,6 +176,8 @@ def ensure_index() -> int:
 
 
 def build_index(passages: list[dict]) -> int:
+    if _pg():
+        return _pg_replace(COLLECTION, passages)
     col = _collection(create=True)
     for i in range(0, len(passages), 256):
         part = passages[i:i + 256]
@@ -120,6 +195,9 @@ def live_file() -> Path:
 
 def restore_live() -> int:
     """On startup: rebuild the live collection from the saved copy when it is missing (e.g. after a container restart)."""
+    if _pg():  # shared database: the set is already there unless this is the first start after moving to Postgres
+        n = _pg_count(LIVE)
+        return n or (index_live(_live_file_copy()) if _live_file_copy() else 0)
     try:
         with _LOCK:
             return _client().get_collection(LIVE).count()
@@ -129,8 +207,10 @@ def restore_live() -> int:
 
 def index_live(passages: list[dict]) -> int:
     """Replace the live collection with today's passages (and keep a JSON copy for the offline fallback)."""
+    if _pg():  # the database rows are the copy every node reads, offline fallback included
+        return _pg_replace(LIVE, passages)
     live_file().write_text(json.dumps(passages), encoding="utf-8")
-    live_offline.cache_clear()
+    _live_file_copy.cache_clear()
     with _LOCK:
         client = _client()
         try:
@@ -147,8 +227,17 @@ def index_live(passages: list[dict]) -> int:
     return len(passages)
 
 
-@lru_cache
 def live_offline() -> list[dict]:
+    """Today's live passages without vectors (keyword fallback): from the shared database, else the JSON copy."""
+    if _pg():
+        with _LOCK:
+            rows = _pg().execute("SELECT id, document, meta FROM vec_passages WHERE collection=? ORDER BY id", (LIVE,)).fetchall()
+        return [m | {"id": i, "text": d} for i, d, m in rows]
+    return _live_file_copy()
+
+
+@lru_cache
+def _live_file_copy() -> list[dict]:
     f = live_file()
     return json.loads(f.read_text(encoding="utf-8")) if f.exists() else []
 
@@ -159,13 +248,16 @@ def search_live(query: str, top_k: int = 3) -> tuple[list[dict], str]:
         if not READY.is_set():
             warm_in_background()
             raise RuntimeError("encoder still loading")
-        with _LOCK:
-            col = _client().get_collection(LIVE)
-        emb = _embed([query])
-        with _LOCK:
-            r = col.query(query_embeddings=emb, n_results=max(1, min(top_k, 10)))
-        hits = [m | {"id": i, "text": d, "score": round(1 - dist, 4)}
-                for i, d, m, dist in zip(r["ids"][0], r["documents"][0], r["metadatas"][0], r["distances"][0])]
+        if _pg():
+            hits = _pg_query(LIVE, query, max(1, min(top_k, 10)))
+        else:
+            with _LOCK:
+                col = _client().get_collection(LIVE)
+            emb = _embed([query])
+            with _LOCK:
+                r = col.query(query_embeddings=emb, n_results=max(1, min(top_k, 10)))
+            hits = [m | {"id": i, "text": d, "score": round(1 - dist, 4)}
+                    for i, d, m, dist in zip(r["ids"][0], r["documents"][0], r["metadatas"][0], r["distances"][0])]
         return [h for h in hits if h["score"] >= LIVE_MIN_SCORE], "vector"  # weak matches would mislead as evidence
     except Exception as e:
         log.info("live vector search unavailable (%s); keyword match on today's copy", type(e).__name__)
@@ -193,6 +285,8 @@ def search(query: str, where: dict | None = None, top_k: int = 5) -> tuple[list[
             raise RuntimeError("encoder still loading")
         if BUILDING.is_set():
             raise RuntimeError("index still building")
+        if _pg():
+            return _pg_query(COLLECTION, query, top_k, where), "vector"
         col = _collection()
         flt = None
         if where:

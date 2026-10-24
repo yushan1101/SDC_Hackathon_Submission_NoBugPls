@@ -58,3 +58,19 @@ needed for this preview. Daily public trend refresh remains enabled and
 depends on external source availability.
 
 This setup is for the development preview, not a production deployment.
+
+## Running a worker node (multi-node)
+
+A Repl can also run as a **worker node** for an existing main server. It serves the heavy tools (occupation search,
+embeddings, STF-KAN outlook) and takes its settings from the main server, so it needs no `.env`.
+
+1. On the **main server**, set `NODE_TOKEN` to a long random value (`python -c "import secrets; print(secrets.token_urlsafe(32))"`)
+   and restart it.
+2. In the worker Repl, add **one Secret**: `NODE_TOKEN` with the same value. If the main server isn't
+   `https://sdc.olgtx.com`, change `MAIN_URL` in `src/worker.py`, or also add a `MAIN_URL` Secret.
+3. Run: `cd src && uv run python worker.py`. Deploy it with that same command.
+4. Add the worker's URL + `/mcp` to `WORKERS` in `src/deploy/mcp-balancer/wrangler.jsonc` (the Cloudflare balancer), and on the main
+   server set `MCP_URL=https://mcp.olgtx.com/mcp` in `.env` and restart it. Without the balancer, `MCP_URL` can list the
+   workers directly (comma-separated).
+
+Accounts and all other data stay on the main server. If a worker is unreachable, the main server runs the tool itself.

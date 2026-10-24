@@ -83,8 +83,8 @@ def create_intent(con, cfg, user: dict, plan: str) -> dict:
         "metadata[username]": user["username"], "metadata[plan]": plan,
         **({"receipt_email": acct["email"]} if acct.get("email") else {})})
     with con:
-        con.execute("INSERT OR IGNORE INTO payments(username,plan,amount_cents,currency,intent_id,status,created_utc,updated_utc) "
-                    "VALUES(?,?,?,?,?,?,?,?)", (user["username"], plan, amount, cfg.currency, pi["id"], pi["status"], now(), now()))
+        con.execute("INSERT INTO payments(username,plan,amount_cents,currency,intent_id,status,created_utc,updated_utc) "
+                    "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING", (user["username"], plan, amount, cfg.currency, pi["id"], pi["status"], now(), now()))
     return {"client_secret": pi["client_secret"], "intent_id": pi["id"], "publishable_key": cfg.stripe_publishable_key,
             "amount_cents": amount, "currency": cfg.currency}
 

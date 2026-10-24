@@ -2,7 +2,7 @@ import { h } from "./lib.js";
 import { Owl } from "./owl.js";
 
 /** Presentation only: the report DOM remains the source of conversation history. */
-export function reportAssistant({ thread, composer, input, onCite }) {
+export function reportAssistant({ thread, composer, input, onCite, hideLauncher = false }) {
   const owl = new Owl({ size: 52, state: "idle" });
   let open = false, stick = true, savedScroll = 0, frame = 0;
   const mirrors = new Map();
@@ -24,6 +24,7 @@ export function reportAssistant({ thread, composer, input, onCite }) {
     h("p", { class: "report-assistant-greeting" }, "Hi! I'm your AiversePulse assistant. Need help understanding your report or adjusting your learning plan? Ask me anything!"),
     log, status, composer);
   const el = h("div", { class: "report-assistant no-print" }, trigger, panel);
+  if (hideLauncher) trigger.hidden = true;
 
   // Project existing messages into the panel; never create another conversation or request.
   function sync() {
@@ -91,7 +92,7 @@ export function reportAssistant({ thread, composer, input, onCite }) {
     savedScroll = log.scrollTop;
     open = false;
     stopMic();
-    panel.hidden = true; trigger.hidden = false;
+    panel.hidden = true; trigger.hidden = hideLauncher;
     trigger.setAttribute("aria-expanded", "false");
     trigger.prepend(owl.el);
     if (restoreFocus && el.isConnected) trigger.focus({ preventScroll: true });

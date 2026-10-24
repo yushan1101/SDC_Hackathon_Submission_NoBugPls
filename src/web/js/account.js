@@ -320,8 +320,10 @@ async function checkout(plan, me) {
 }
 
 // ---------------------------------------------------------------- account: plan and payment history
-export async function accountView(main, { refreshMe }) {
-  main.replaceChildren(h("h1", { class: "page-title" }, "Your account"), h("p", { class: "muted" }, "Loading…"));
+export async function accountView(main, { refreshMe, hrLayout = false }) {
+  const render = (...children) => main.replaceChildren(
+    ...(hrLayout ? [h("div", { class: "view hr-account-view" }, ...children)] : children));
+  render(h("h1", { class: "page-title" }, "Your account"), h("p", { class: "muted" }, "Loading…"));
   // back from a 3-D Secure redirect: Stripe adds ?payment_intent=pi_... to the return URL
   const back = new URLSearchParams(location.search).get("payment_intent");
   if (back) {
@@ -331,7 +333,7 @@ export async function accountView(main, { refreshMe }) {
   const me = await refreshMe();
   const pays = await api("/api/billing/payments");
   const until = me.plan_until && ["pro", "team"].includes(me.effective_plan) ? new Date(me.plan_until).toLocaleDateString() : null;
-  main.replaceChildren(
+  render(
     h("h1", { class: "page-title" }, "Your account"),
     h("section", { class: "account-card" },
       h("div", {}, h("p", { class: "muted" }, "Signed in as"), h("b", {}, me.display_name || me.username), me.email ? h("p", { class: "muted" }, me.email) : null),

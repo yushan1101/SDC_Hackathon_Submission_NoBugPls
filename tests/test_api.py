@@ -1387,3 +1387,15 @@ def test_hr_sees_the_employees_plan_progress(client):
     assert summary["phases"][0] == {"days": "1-30", "done": 2, "total": 2} and summary["last_utc"] == "2026-10-01T09:00:00Z"
     row = next(p for p in client.get("/api/reviews?status=all").json() if p["plan_id"] == pid)
     assert row["progress"]["pct"] == 75
+
+
+def test_node_config_needs_token(client, monkeypatch):
+    """Multi-node: the main node hands worker config only to holders of NODE_TOKEN, and no secrets or paths."""
+    from pydantic import SecretStr
+    import server.api as api
+    assert client.get("/internal/node-config").status_code == 404  # no NODE_TOKEN on the main node = endpoint off
+    monkeypatch.setattr(api.cfg, "node_token", SecretStr("s3cret"))
+    assert client.get("/internal/node-config", headers={"Authorization": "Bearer nope"}).status_code == 404
+    r = client.get("/internal/node-config", headers={"Authorization": "Bearer s3cret"})
+    assert r.status_code == 200 and set(r.json()) == {k.upper() for k in api.WORKER_KEYS}
+    assert not any("KEY" in k or "SECRET" in k or "PATH" in k for k in r.json())

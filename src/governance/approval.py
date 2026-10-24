@@ -155,9 +155,10 @@ def list_plans(con, user: dict) -> list[dict]:
         q, arg = "p.audience=?", "hr"
     else:
         return []
+    from governance.db import json_text
     rows = con.execute(f"""SELECT p.plan_id, p.subject_id, p.audience, p.created_utc, v.version, v.status,
-                               json_extract(v.snapshot,'$.target_role'), json_extract(v.snapshot,'$.scenario'),
-                               (SELECT printf('P%06d', coalesce(o.number, r.number)) FROM plan_references r
+                               {json_text(con, 'v.snapshot', 'target_role')}, {json_text(con, 'v.snapshot', 'scenario')},
+                               (SELECT coalesce(o.number, r.number) FROM plan_references r
                                 LEFT JOIN plan_reference_overrides o ON o.plan_id=r.plan_id WHERE r.plan_id=p.plan_id)
                            FROM plans p JOIN plan_versions v ON v.plan_id=p.plan_id
                            WHERE {q} AND NOT EXISTS (SELECT 1 FROM hr_reviews r WHERE r.plan_id=p.plan_id
@@ -165,7 +166,7 @@ def list_plans(con, user: dict) -> list[dict]:
                            AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)
                            ORDER BY p.created_utc DESC""", (arg,))
     cols = ["plan_id", "subject_id", "audience", "created_utc", "version", "status", "target_role", "scenario", "plan_reference"]
-    return [dict(zip(cols, r)) for r in rows]
+    return [dict(zip(cols, (*r[:-1], f"P{r[-1]:06d}" if r[-1] is not None else None))) for r in rows]
 
 
 def delete_employee_plans(con, plan_ids: list[str], user: dict) -> list[str]:

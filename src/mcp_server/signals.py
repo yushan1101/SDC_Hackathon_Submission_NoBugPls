@@ -26,6 +26,8 @@ from pathlib import Path
 
 import numpy as np
 
+from governance.db import no_wait
+
 log = logging.getLogger(__name__)
 UA = {"User-Agent": "AiversePulse/0.3 (workforce research; hackathon)"}
 
@@ -82,14 +84,19 @@ TOPICS = [
 ]
 
 
+COUNT_UPSERT = ('INSERT INTO signal_counts(day, source, topic, "window", value, n, url, fetched_utc) VALUES(?,?,?,?,?,?,?,?) '
+                'ON CONFLICT(day, source, topic, "window") DO UPDATE SET value=excluded.value, n=excluded.n, url=excluded.url, '
+                'fetched_utc=excluded.fetched_utc')
+
+
 def db(path: str | None = None) -> sqlite3.Connection:
     from governance.audit import connect
     con = connect(path)
     if getattr(con, "backend", "sqlite") == "postgres":
         return con
     con.executescript("""
-CREATE TABLE IF NOT EXISTS signal_counts(day TEXT, source TEXT, topic TEXT, window TEXT, value REAL, n INTEGER,
-    url TEXT, fetched_utc TEXT, PRIMARY KEY(day, source, topic, window));
+CREATE TABLE IF NOT EXISTS signal_counts(day TEXT, source TEXT, topic TEXT, "window" TEXT, value REAL, n INTEGER,
+    url TEXT, fetched_utc TEXT, PRIMARY KEY(day, source, topic, "window"));
 CREATE TABLE IF NOT EXISTS signal_boards(day TEXT PRIMARY KEY, board TEXT, created_utc TEXT);""")
     return con
 
@@ -338,10 +345,11 @@ def refresh(today: date | None = None, con=None, sources=("hn", "arxiv", "jobs")
     with con:
         for tid, counts in hn.items():
             for k, c in enumerate(counts):
-                con.execute("INSERT OR REPLACE INTO signal_counts VALUES(?,?,?,?,?,?,?,?)",
+                con.execute(COUNT_UPSERT,
                             (day, "hn", tid, f"week-{len(counts) - k}", c, c, "https://hn.algolia.com", now))
         for tid, (r, p) in arxiv.items():
-            con.execute("INSERT OR REPLACE INTO signal_counts VALUES(?,?,?,?,?,?,?,?)", (day, "arxiv", tid, "14d", r, r, "https://arxiv.org", now))
+            con.execute(COUNT_UPSERT, (day, "arxiv", tid, "14d", r, r, "https://arxiv.org", now))
+        no_wait(con)  # fetched counts: re-fetchable, no need to wait for the standby
     history = {}
     for t in TOPICS:
         rows = con.execute("SELECT value FROM signal_counts WHERE source='jobs' AND topic=? AND day<? ORDER BY day DESC LIMIT 28",
@@ -351,10 +359,12 @@ def refresh(today: date | None = None, con=None, sources=("hn", "arxiv", "jobs")
     with con:
         for tp in board["topics"]:
             if "jobs" in tp["sources"]:
-                con.execute("INSERT OR REPLACE INTO signal_counts VALUES(?,?,?,?,?,?,?,?)",
+                con.execute(COUNT_UPSERT,
                             (day, "jobs", tp["id"], "day", tp["sources"]["jobs"]["share"], tp["sources"]["jobs"]["mentions"],
                              "https://www.arbeitnow.com", now))
-        con.execute("INSERT OR REPLACE INTO signal_boards VALUES(?,?,?)", (day, json.dumps(board), now))
+        con.execute("INSERT INTO signal_boards(day, board, created_utc) VALUES(?,?,?) "
+                    "ON CONFLICT(day) DO UPDATE SET board=excluded.board, created_utc=excluded.created_utc", (day, json.dumps(board), now))
+        no_wait(con)
     try:  # real-time RAG: today's postings and stories replace yesterday's in the live vector collection
         from mcp_server import retrieval
         board["live_indexed"] = retrieval.index_live(live_passages(day, stories, jobs))

@@ -48,6 +48,7 @@ from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
 from governance.audit import connect
+from governance.db import json_text, no_wait
 from validation.revision import validate
 from interview import service as interview_service, store as interview_store
 from interview.schemas import InterviewAnswer, InterviewCreate, InterviewEnd, InterviewPause, InterviewPrefetch
@@ -91,11 +92,13 @@ def _frontends() -> set:
     global _sites_cache
     if time.monotonic() - _sites_cache[0] > 30:  # ponytail: 30 s cache, so a newly added site works within half a minute
         # its own connection, not DB_LOCK: this runs while callers already hold that lock (e.g. building email links)
+        import sqlite3
         from contextlib import closing
+        from governance.db import connect as db_connect
         try:
-            with closing(connect(cfg.database_path)) as c:
+            with closing(db_connect(cfg.database_path)) as c:
                 rows = {r[0] for r in c.execute("SELECT origin FROM frontend_sites")}
-        except Exception:
+        except sqlite3.Error:
             rows = _sites_cache[1]
         _sites_cache = (time.monotonic(), rows)
     return set(cfg.allowed_origins) | _sites_cache[1]
@@ -184,6 +187,7 @@ def current_user(request: HttpRequest) -> dict:
             db.commit()
             raise HTTPException(401, "session expired")
         db.execute("UPDATE sessions SET expires_utc=? WHERE token_hash=?", ((now + SESSION_IDLE).isoformat(), _hash(token)))
+        no_wait(db)  # every signed-in request refreshes its session: never wait for the standby on that
         db.commit()
     return {"username": row[0], "role": row[1], "employee_id": row[2], "display_name": row[3]}
 
@@ -225,6 +229,7 @@ def _record_usage(username: str, feature: str, records) -> None:
                        [(datetime.now(timezone.utc).isoformat(), username, feature, r.get("node", feature), r.get("model", ""),
                          int(r.get("llm_calls", 1)), int(r.get("input_tokens", 0)), int(r.get("output_tokens", 0)),
                          float(r.get("est_usd", 0.0))) for r in rows])
+        no_wait(db)
 
 
 class Login(BaseModel):
@@ -673,7 +678,8 @@ def admin_site_add(body: SiteIn, user: dict = Depends(need("admin"))):
         raise HTTPException(422, "Enter the site's address only, e.g. https://jobs.example.com (https required).")
     origin = f"{u.scheme}://{u.netloc}".lower()
     with DB_LOCK, db:
-        db.execute("INSERT OR REPLACE INTO frontend_sites VALUES(?,?,?,?)",
+        db.execute("INSERT INTO frontend_sites(origin, label, added_by, created_utc) VALUES(?,?,?,?) "
+                   "ON CONFLICT(origin) DO UPDATE SET label=excluded.label, added_by=excluded.added_by, created_utc=excluded.created_utc",
                    (origin, body.label.strip() or u.hostname, user["username"], datetime.now(timezone.utc).isoformat(timespec="seconds")))
     global _sites_cache
     _sites_cache = (0.0, set())  # takes effect now
@@ -719,8 +725,8 @@ def admin_users(q: str = "", status: str = "", user: dict = Depends(need("admin"
     sql = f"SELECT {','.join(accounts.KEYS)} FROM users WHERE role!='admin'"
     args: list = []
     if q:
-        sql += " AND (username LIKE ? OR email LIKE ? OR display_name LIKE ?)"
-        args += [f"%{q[:60]}%"] * 3
+        sql += " AND (lower(username) LIKE ? OR lower(email) LIKE ? OR lower(display_name) LIKE ?)"  # case-insensitive on both databases
+        args += [f"%{q[:60].lower()}%"] * 3
     if status:
         sql += " AND status=?"
         args.append(status)
@@ -768,8 +774,9 @@ def admin_trust(username: str, body: TrustIn, user: dict = Depends(need("admin")
 def admin_usage(days: int = 30, user: dict = Depends(need("admin"))):
     since = _since_days(max(1, min(days, 365)))
     def group(col):
-        return [dict(zip(["key", "calls", "input_tokens", "output_tokens", "est_usd"], r)) for r in db.execute(
-            f"SELECT {col}, SUM(calls), SUM(input_tokens), SUM(output_tokens), ROUND(SUM(est_usd),4) FROM llm_usage WHERE at_utc>? "
+        return [dict(zip(["key", "calls", "input_tokens", "output_tokens", "est_usd"], (*r[:4], None if r[4] is None else round(r[4], 4))))
+                for r in db.execute(
+            f"SELECT {col}, SUM(calls), SUM(input_tokens), SUM(output_tokens), SUM(est_usd) FROM llm_usage WHERE at_utc>? "
             f"GROUP BY {col} ORDER BY SUM(input_tokens+output_tokens) DESC LIMIT 50", (since,))]
     with DB_LOCK:
         return {"by_user": group("username"), "by_model": group("model"), "by_agent": group("node"), "by_feature": group("feature"),
@@ -901,7 +908,7 @@ def sse(obj: dict) -> str:
 def remember(pid: str, state: dict, thread: list | None = None):
     report = serialise(state) | ({"thread": thread} if thread is not None else {})
     with DB_LOCK, db:
-        db.execute("INSERT OR REPLACE INTO plan_reports(plan_id, report) VALUES(?,?)",
+        db.execute("INSERT INTO plan_reports(plan_id, report) VALUES(?,?) ON CONFLICT(plan_id) DO UPDATE SET report=excluded.report",
                    (pid, json.dumps(report, default=str)))
     RESULTS[pid] = state
     RESULTS.move_to_end(pid)
@@ -1194,6 +1201,7 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
     if not body.previous_plan_id:
         with DB_LOCK, db:
             db.execute("INSERT INTO briefing_log VALUES(?,?)", (user["username"], datetime.now(timezone.utc).isoformat()))
+            no_wait(db)
 
     prev, history = None, []
     if body.previous_plan_id:  # only the caller's own run; if the server restarted, it falls back to a full run
@@ -1436,7 +1444,8 @@ def plan_progress(pid: str, body: ProgressIn, user: dict = Depends(current_user)
     _guard(pid, user)
     with DB_LOCK, db:
         if body.done:
-            db.execute("INSERT OR REPLACE INTO plan_progress VALUES(?,?,?)", (pid, body.item, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
+            db.execute("INSERT INTO plan_progress(plan_id, item, done_utc) VALUES(?,?,?) "
+                       "ON CONFLICT(plan_id, item) DO UPDATE SET done_utc=excluded.done_utc", (pid, body.item, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
         else:
             db.execute("DELETE FROM plan_progress WHERE plan_id=? AND item=?", (pid, body.item))
         done = [r[0] for r in db.execute("SELECT item FROM plan_progress WHERE plan_id=?", (pid,))]
@@ -2030,7 +2039,7 @@ def org_users(user: dict = Depends(need("hr_advisor"))):
     out = [dict(zip(accounts.KEYS, r)) for r in rows]
     with DB_LOCK:  # each employee's own plans and how far they've got (HR can open these read-only)
         for m in out:
-            plans_ = db.execute("SELECT p.plan_id, p.created_utc, json_extract(v.snapshot,'$.target_role'), v.snapshot FROM plans p "
+            plans_ = db.execute(f"SELECT p.plan_id, p.created_utc, {json_text(db, 'v.snapshot', 'target_role')}, v.snapshot FROM plans p "
                                 "JOIN plan_versions v ON v.plan_id=p.plan_id WHERE p.subject_id=? AND p.audience='individual' "
                                 "AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id) "
                                 "ORDER BY p.created_utc DESC LIMIT 10", (m["employee_id"],)).fetchall() if m["employee_id"] else []
@@ -2230,7 +2239,8 @@ def admin_models(user: dict = Depends(need("admin"))):
 @app.post("/api/admin/models")
 def admin_model_add(body: ModelIn, user: dict = Depends(need("admin"))):
     with DB_LOCK, db:
-        db.execute("INSERT OR REPLACE INTO model_catalog VALUES(?,?,?)",
+        db.execute("INSERT INTO model_catalog(spec, label, created_utc) VALUES(?,?,?) "
+                   "ON CONFLICT(spec) DO UPDATE SET label=excluded.label, created_utc=excluded.created_utc",
                    (body.spec, body.label.strip() or body.spec.split(":", 1)[1], datetime.now(timezone.utc).isoformat(timespec="seconds")))
     return {"spec": body.spec}
 
@@ -2267,7 +2277,7 @@ def org_models_set(body: OrgModelIn, user: dict = Depends(need("hr_advisor"))):
             return {"task": body.task, "spec": None}
         if not db.execute("SELECT 1 FROM model_catalog WHERE spec=?", (body.spec,)).fetchone() or not llm.usable(body.spec):
             raise HTTPException(422, "Pick a model from the list.")
-        db.execute("INSERT OR REPLACE INTO org_models VALUES(?,?,?)", (user["username"], body.task, body.spec))
+        db.execute("INSERT INTO org_models(owner, task, spec) VALUES(?,?,?) ON CONFLICT(owner, task) DO UPDATE SET spec=excluded.spec", (user["username"], body.task, body.spec))
     return {"task": body.task, "spec": body.spec}
 
 
@@ -2439,19 +2449,48 @@ class AgentChatIn(BaseModel):
 
 
 def _my_plans(user: dict) -> list[dict]:
-    """The person's own plans, as the coaches see them: job, status, the skill steps and hours. No ids or names."""
+    """The person's own plans and report evidence for the coaches. No other employees' data or plan ids."""
     with DB_LOCK:
         rows = approval.list_plans(db, user)[:6]
         snaps = {pid: json.loads(s or "{}") for pid, s in db.execute(
             "SELECT p.plan_id, v.snapshot FROM plans p JOIN plan_versions v ON v.plan_id=p.plan_id WHERE p.plan_id IN ({}) "
             "AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)".format(",".join("?" * len(rows))),
             [r["plan_id"] for r in rows])} if rows else {}
+        reports = {pid: report for pid, report in db.execute(
+            "SELECT plan_id, report FROM plan_reports WHERE plan_id IN ({})".format(",".join("?" * len(rows))),
+            [r["plan_id"] for r in rows])} if rows else {}
     out = []
     for r in rows:
         acts = snaps.get(r["plan_id"], {}).get("activities", [])
+        try:
+            report = json.loads(reports.get(r["plan_id"]) or "{}")
+        except (TypeError, json.JSONDecodeError):
+            report = {}
+        gaps = report.get("gaps") or []
+        if not isinstance(gaps, list):
+            gaps = []
+        report_outlook = report.get("outlook") or {}
+        outlook = report_outlook.get("items") or [] if isinstance(report_outlook, dict) else []
+        comparison = report.get("comparison") or []
         out.append({"target_job": (occupation(r["target_role"]) or {}).get("title", r["target_role"]), "status": r["status"],
-                    "made": r["created_utc"][:10], "learning_hours": round(sum(a.get("estimated_hours", 0) for a in acts)),
-                    "steps": [f"days {a.get('day_range')}: {a.get('activity')}" for a in acts[:8]]})
+                    "scenario": r.get("scenario"), "made": r["created_utc"][:10],
+                    "learning_hours": round(sum(a.get("estimated_hours", 0) for a in acts)),
+                    "steps": [f"days {a.get('day_range')}: {a.get('activity')}" for a in acts[:8]],
+                    "report": {"summary": str(report.get("narrative") or report.get("answer") or "")[:1200],
+                               "skill_gaps": [{"skill": str(g.get("skill_id") or "")[:100],
+                                               "current_level": g.get("current_level"),
+                                               "required_level": g.get("required_level"),
+                                               "gap": g.get("gap"), "outlook": g.get("outlook"), "hot": g.get("hot")}
+                                              for g in gaps[:10] if isinstance(g, dict)],
+                               "skill_outlook": [{"skill": str(o.get("skill_id") or "")[:100],
+                                                  "direction": o.get("direction")}
+                                                 for o in outlook[:10] if isinstance(o, dict)],
+                               "scenario_comparison": [{"skill": str(c.get("skill_id") or "")[:100],
+                                                        "current": c.get("current"),
+                                                        "assistive_required": c.get("assistive_required"),
+                                                        "agentic_required": c.get("agentic_required"),
+                                                        "outlook": c.get("outlook")}
+                                                       for c in comparison[:8] if isinstance(c, dict)]}})
     return out
 
 
@@ -2494,6 +2533,7 @@ def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_us
             raise HTTPException(402 if limit < AGENT_DAILY_MAX else 429,
                                 f"You've used today's {limit} agent messages. " + ("Pro has more. See plans to upgrade." if limit < AGENT_DAILY_MAX else "Try again tomorrow."))
         db.execute("INSERT INTO agent_log VALUES(?,?,?)", (user["username"], agent_id, datetime.now(timezone.utc).isoformat()))
+        no_wait(db)
     if user["role"] == "hr_advisor":  # "send the nurse opening to Telegram": an action to confirm, not a chat answer
         with DB_LOCK:
             act = ops.publish_intent(body.messages[-1].content, recruiting.list_openings(db), plugins.connections(db, user["username"]))
@@ -2637,6 +2677,19 @@ def admin_ui():
 @app.get("/healthz")
 def health():
     return {"ok": True}
+
+
+# settings a worker node (src/worker.py) takes from this node at boot. Non-secret, and no paths: those are per machine
+WORKER_KEYS = ("model_card_url", "log_level", "mcp_timeout_s", "signals_daily", "warm_on_start")
+
+
+@app.get("/internal/node-config")
+def node_config(request: HttpRequest):
+    token = cfg.node_token.get_secret_value() if cfg.node_token else ""
+    sent = (request.headers.get("authorization") or "").removeprefix("Bearer ")
+    if not token or not secrets.compare_digest(sent.encode(), token.encode()):
+        raise HTTPException(404)  # 404, not 401: don't advertise the endpoint
+    return {k.upper(): str(getattr(cfg, k)) for k in WORKER_KEYS}
 
 
 @app.get("/api/health")

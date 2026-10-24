@@ -1,0 +1,42 @@
+# Shared Postgres 17 + pgvector for all app nodes: the PRIMARY, on the main server (/opt/aiversepulse-db).
+# A commit counts as done once the standby in LA has it (synchronous_standby_names); watchdog.sh falls back to
+# async when the standby is unreachable, so writes never hang. Setup and checks: setup.md next to this file.
+#   cd /opt/aiversepulse-db && docker compose up -d
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: aiversepulse-db
+    restart: unless-stopped
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c hba_file=/etc/postgresql/pg_hba.conf
+    environment:
+      POSTGRES_DB: aiversepulse
+      POSTGRES_PASSWORD_FILE: /secrets/postgres.pw
+    volumes:
+      - ./data:/var/lib/postgresql/data
+      - ./conf/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./conf/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./certs:/certs:ro               # server.crt / server.key (private CA, see setup.md)
+      - ./secrets:/secrets:ro           # postgres.pw, app.pw, replicator.pw: root/postgres only, never in git
+      - ./init:/docker-entrypoint-initdb.d:ro
+    ports: ["5433:5432"]                # 5432 on this host is the BaoTa panel's own Postgres
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "aiversepulse"]
+      interval: 10s
+
+  # degrade-to-async: if the standby is gone for 10 s, stop waiting for it; restore sync once it has caught up
+  watchdog:
+    image: pgvector/pgvector:pg17
+    container_name: aiversepulse-db-watchdog
+    restart: unless-stopped
+    depends_on: [db]
+    entrypoint: ["bash", "/watchdog.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGDATABASE: postgres
+      PGPASSFILE: /tmp/pgpass
+      STANDBY: standby_la
+    volumes:
+      - ./watchdog.sh:/watchdog.sh:ro
+      - ./secrets/postgres.pw:/secrets/postgres.pw:ro

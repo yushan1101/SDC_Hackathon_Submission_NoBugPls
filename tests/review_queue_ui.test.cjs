@@ -139,3 +139,18 @@ test('selecting plans preserves the review queue scroll position, including retu
   assert.equal(currentQueue.scrollTop, 820);
   assert.deepEqual(loaded, ['a', 'b', 'a']);
 });
+
+test('clearing the review search resets its applied query and leaves the status filter alone', () => {
+  const h = harness();
+  const state = { query: 'data', filter: 'pending' };
+  let refreshed = 0;
+  const cleared = h.context.clearReviewSearch({ value: '' }, state.query, () => {
+    state.query = '';
+    refreshed += 1;
+  });
+  assert.equal(cleared, true);
+  assert.equal(state.query, '');
+  assert.equal(state.filter, 'pending');
+  assert.equal(refreshed, 1);
+  assert.equal(h.context.clearReviewSearch({ value: 'data' }, state.query, () => assert.fail('must not clear a nonempty search')), false);
+});

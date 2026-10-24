@@ -40,7 +40,7 @@ def _salt(con) -> str:
         return row[0]
     salt = os.urandom(16).hex()
     with con:
-        con.execute("INSERT OR IGNORE INTO risk_meta VALUES('ip_salt', ?)", (salt,))
+        con.execute("INSERT INTO risk_meta(k, v) VALUES('ip_salt', ?) ON CONFLICT DO NOTHING", (salt,))
     return con.execute("SELECT v FROM risk_meta WHERE k='ip_salt'").fetchone()[0]
 
 
