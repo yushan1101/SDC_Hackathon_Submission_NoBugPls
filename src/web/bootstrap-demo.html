@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Set up demo accounts · AiversePulse</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #15233b; background: #f4f7fc; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    main { width: min(100%, 620px); background: white; border: 1px solid #dfe6f0; border-radius: 18px; padding: 30px; box-shadow: 0 18px 48px #173b6a12; }
+    h1 { margin: 0 0 10px; font-size: 1.55rem; }
+    p { color: #52627a; line-height: 1.55; }
+    label { display: block; margin: 22px 0 8px; font-weight: 650; }
+    input { width: 100%; padding: 13px 14px; border: 1px solid #cbd5e2; border-radius: 10px; font: inherit; }
+    button { margin-top: 14px; border: 0; border-radius: 10px; padding: 12px 17px; color: #fff; background: #2563c7; font: inherit; font-weight: 650; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    #status { min-height: 1.5em; margin: 16px 0 0; }
+    #results { margin-top: 22px; }
+    .account { margin-top: 12px; padding: 14px; background: #f5f8fc; border: 1px solid #e3eaf3; border-radius: 10px; overflow-wrap: anywhere; }
+    .account strong, .account code { display: block; }
+    .account code { margin-top: 8px; font-size: .98rem; }
+    .warning { margin-top: 22px; font-size: .9rem; }
+  </style>
+  <script src="/js/bootstrap-demo.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Set up AiversePulse demo accounts</h1>
+    <p>This one-time setup creates only <code>demo2_employee</code>, <code>demo2_hr</code>, and <code>demo2_admin</code>. It does not replace or erase other data.</p>
+    <p>Enter the temporary <code>DEMO_BOOTSTRAP_TOKEN</code> you saved in Replit Secrets. Generated passwords appear here once; save them privately.</p>
+    <form id="bootstrap-form">
+      <label for="bootstrap-token">Temporary setup token</label>
+      <input id="bootstrap-token" name="token" type="password" minlength="32" maxlength="200" autocomplete="off" required>
+      <button id="submit-button" type="submit">Generate demo credentials</button>
+    </form>
+    <p id="status" role="status" aria-live="polite"></p>
+    <section id="results" aria-label="Generated credentials"></section>
+    <p class="warning">After saving the passwords, remove <code>DEMO_BOOTSTRAP_TOKEN</code> from Replit Secrets. The setup also refuses to run again once any of these accounts exists.</p>
+  </main>
+</body>
+</html>

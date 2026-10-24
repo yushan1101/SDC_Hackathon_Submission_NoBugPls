@@ -8,11 +8,14 @@ chat-style typing never shows an unverified claim.
 """
 import contextvars
 import hashlib
+import hmac
 import json
 import logging
+import os
 import queue
 import re
 import secrets
+import sqlite3
 import threading
 import time
 import uuid
@@ -43,7 +46,7 @@ from core.state import Pathway, Profile, Request, Skill
 from core.team_import import parse_team
 from governance.employee_ids import allocate_ids
 from core.usage import summarize
-from governance import accounts, approval, billing, challenge, deletion, otp, plugins, recruiting, reviews, risk
+from governance import accounts, approval, billing, challenge, deletion, demo_bootstrap, otp, plugins, recruiting, reviews, risk
 from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
@@ -338,6 +341,34 @@ class RegisterIn(BaseModel):
     display_name: str = Field(default="", max_length=60)
     account_type: str = Field(pattern="^(individual|hr)$")
     risk: dict | None = None
+
+
+@app.post("/api/internal/bootstrap-demo-accounts")
+def bootstrap_demo_accounts(request: HttpRequest):
+    """One-time, token-protected creation of only the three fixed demo accounts."""
+    expected = os.environ.get("DEMO_BOOTSTRAP_TOKEN", "")
+    if not expected or len(expected) < 32:
+        raise HTTPException(404, "Not found")
+    authorization = request.headers.get("authorization", "")
+    supplied = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(404, "Not found")
+
+    with DB_LOCK:
+        try:
+            generated = demo_bootstrap.create_demo_accounts(db)
+        except accounts.AuthError as e:
+            raise HTTPException(409, str(e))
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "Demo accounts could not be created; no existing accounts were changed.")
+
+    response = JSONResponse({
+        "message": "Demo accounts created. Save these passwords now; they will not be shown again.",
+        "accounts": generated,
+    })
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @app.post("/api/register")

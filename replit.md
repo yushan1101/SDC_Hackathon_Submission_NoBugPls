@@ -25,7 +25,7 @@ cd src && uv run uvicorn server.api:app --host 0.0.0.0 --port 5000 --proxy-heade
 
 ## Accounts and data
 
-The existing demo account script creates employee and HR accounts:
+The existing demo account script creates local employee and HR accounts:
 
 ```sh
 cd src && uv run --no-sync python scripts/seed_demo_users.py
@@ -36,6 +36,12 @@ Their randomly generated login details are written to
 sign in; do not commit or share it. Rerunning the script skips existing accounts.
 The app stores accounts, sessions and audit records in `data/audit.sqlite3`.
 The imported ESCO snapshots are already included; no training or GPU is needed.
+
+For the published site, the one-time `/bootstrap-demo.html` page creates only
+`demo2_employee`, `demo2_hr`, and `demo2_admin`. It requires a
+`DEMO_BOOTSTRAP_TOKEN` Replit Secret of at least 32 characters, refuses to run
+if any of those accounts already exist, and shows the generated passwords once.
+Remove the temporary secret after saving the credentials.
 
 ## Development-only preview configuration
 

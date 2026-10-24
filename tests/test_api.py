@@ -32,6 +32,34 @@ def login(c, user):
     return r
 
 
+def test_protected_demo_bootstrap_creates_exact_accounts_once(client, monkeypatch):
+    import server.api as api
+    from governance import accounts
+
+    monkeypatch.delenv("DEMO_BOOTSTRAP_TOKEN", raising=False)
+    path = "/api/internal/bootstrap-demo-accounts"
+    assert client.post(path, headers={"X-AP": "1"}).status_code == 404
+    monkeypatch.setenv("DEMO_BOOTSTRAP_TOKEN", "test-only-token-" + ("x" * 32))
+    assert client.get("/bootstrap-demo.html").status_code == 200
+    assert client.post(path, headers={"X-AP": "1", "Authorization": "Bearer wrong"}).status_code == 404
+    assert api.db.execute("SELECT 1 FROM users WHERE username='demo2_admin'").fetchone() is None
+
+    headers = {"X-AP": "1", "Authorization": "Bearer test-only-token-" + ("x" * 32)}
+    response = client.post(path, headers=headers)
+    assert response.status_code == 200
+    assert "no-store" in response.headers["Cache-Control"]
+    credentials = response.json()["accounts"]
+    assert {(row["username"], row["role"]) for row in credentials} == {
+        ("demo2_employee", "employee"),
+        ("demo2_hr", "hr_advisor"),
+        ("demo2_admin", "admin"),
+    }
+    for row in credentials:
+        user = accounts.authenticate(api.db, row["username"], row["password"])
+        assert user["role"] == row["role"]
+    assert client.post(path, headers=headers).status_code == 409
+
+
 def test_hr_review_management(client):
     import server.api as api
     from governance import approval
