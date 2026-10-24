@@ -332,11 +332,11 @@ python -m pytest -q tests
 
 ## How We Use Replit *(Required)*
 
-- **Development and hosting:** the repo is Replit-ready. `.replit` starts `python src/main.py` on Replit's port, and the `[deployment]` section installs, seeds demo users and serves the app. _TODO: add the deployed URL to Live Demo._
-- **Secrets:** API keys (RunPod, optional Gemini) live in Replit Secrets. `.env` and the demo-password file are git-ignored, and nothing secret is committed.
-- **Collaboration:** _TODO: describe how the team used Replit (e.g. Multiplayer sessions, Deployments)._
+- **Development:** team members used Replit workspaces and Agent assistance for prototype development, UI review and deployment setup. The proof of use records team members' development sessions and account-usage screenshots.
+- **Frontend hosting:** Replit hosts the [AiversePulse frontend](https://sdc-hackathon-submission-no-bug-pls.replit.app/), which calls the backend API on our dual-node VPS. The repository also includes a `.replit` workflow and deployment configuration for running FastAPI through `uv run uvicorn` on port 5000.
+- **Secrets:** API keys are configured through Replit Secrets. `.env` and the local demo-password file are git-ignored.
 
-📄 Proof of use: [`submission/REPLIT PROOF OF USE.pdf`](submission/REPLIT%20PROOF%20OF%20USE.pdf) _(TODO: replace the example PDF with real screenshots)_
+📄 Proof of use: [`submission/REPLIT PROOF OF USE.pdf`](submission/REPLIT%20PROOF%20OF%20USE.pdf) contains actual development and usage screenshots for all five team members.
 
 ## How We Use RunPod *(Required)*
 
@@ -447,7 +447,7 @@ Frontend interaction checks (Node.js, no packages required): `node --test tests/
 - [x] Team name, domain (Domain 1 / Domain 2) and SDG track filled in
 - [ ] Slide deck link added
 - [ ] Demo video link added
-- [ ] Replit used, with proof of use in `submission/`
+- [x] Replit used, with proof of use in `submission/`
 - [x] RunPod used, with proof of use in `submission/`
 - [x] Submission forms completed in `submission/`: [`SDC2026_NoBugPls_Preliminary.pdf`](submission/SDC2026_NoBugPls_Preliminary.pdf) and [`SDC2026_NoBugPls_TechDeclaration.pdf`](submission/SDC2026_NoBugPls_TechDeclaration.pdf)
 - [x] "How to Run" steps verified (fresh virtual environment + CI on every push)
