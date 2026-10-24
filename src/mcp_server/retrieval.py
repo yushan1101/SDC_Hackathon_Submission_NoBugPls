@@ -1,6 +1,6 @@
 """Vector lookup (MiniLM embeddings) with metadata filters; offline JSON fallback.
 
-Store: Chroma on disk (default), or pgvector in the shared Postgres database when DATABASE_URL is set, so every app
+Store: Chroma on disk (default), or pgvector in the shared Postgres database when AIVERSEPULSE_DATABASE_URL is set, so every app
 node searches the same passages and sees a new day's live set at the same moment (it is replaced in one transaction).
 
 Retrieved text is DATA: it is never used as instructions, only displayed/cited.
@@ -67,7 +67,7 @@ def _safe(fn):
         log.warning("encoder warm-up failed (%s); offline retrieval only", type(e).__name__)
 
 
-# --- pgvector (DATABASE_URL set) ---------------------------------------------------------------------------
+# --- pgvector (AIVERSEPULSE_DATABASE_URL set) ---------------------------------------------------------------------------
 VEC_TABLE = """CREATE TABLE IF NOT EXISTS vec_passages(collection TEXT NOT NULL, id TEXT NOT NULL, document TEXT NOT NULL,
     meta JSONB NOT NULL, embedding vector(384) NOT NULL, PRIMARY KEY(collection, id));"""
 # ponytail: exact search, no HNSW index: ~20 ms over 20k rows and never misses a match; add

@@ -19,7 +19,7 @@ def kill(con):
     """Drop `con`'s server connection from outside, as a database restart or an idle timeout would."""
     import psycopg
     pid = con.execute("SELECT pg_backend_pid()").fetchone()[0]
-    with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as admin:
+    with psycopg.connect(os.environ["AIVERSEPULSE_DATABASE_URL"], autocommit=True) as admin:
         assert admin.execute("SELECT pg_terminate_backend(%s)", (pid,)).fetchone()[0]
 
 

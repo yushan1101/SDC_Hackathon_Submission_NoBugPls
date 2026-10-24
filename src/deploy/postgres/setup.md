@@ -1,6 +1,6 @@
 # Shared Postgres (primary + semi-synchronous standby)
 
-All app nodes share one Postgres 17 + pgvector database (`DATABASE_URL`, see `governance/db.py`).
+All app nodes share one Postgres 17 + pgvector database (`AIVERSEPULSE_DATABASE_URL`, see `governance/db.py`).
 
 | | Host | Folder | Port |
 |---|---|---|---|

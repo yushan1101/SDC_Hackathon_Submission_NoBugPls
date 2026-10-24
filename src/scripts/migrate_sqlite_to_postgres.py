@@ -1,8 +1,8 @@
 """Copy the app's SQLite database into Postgres and prove the copy is exact.
 
-    DATABASE_URL=postgresql://postgres:...@host/db python scripts/migrate_sqlite_to_postgres.py SNAPSHOT.sqlite3 [--owner ROLE] [--verify-only]
+    AIVERSEPULSE_DATABASE_URL=postgresql://postgres:...@host/db python scripts/migrate_sqlite_to_postgres.py SNAPSHOT.sqlite3 [--owner ROLE] [--verify-only]
 
-1. Schema: imports the app (server.api) with DATABASE_URL set, so Postgres gets exactly the tables the app creates,
+1. Schema: imports the app (server.api) with AIVERSEPULSE_DATABASE_URL set, so Postgres gets exactly the tables the app creates,
    then the modules that create theirs lazily (plugins, trend signals).
 2. Copy: every table in ONE transaction (all or nothing), triggers and foreign-key checks off while copying
    (session_replication_role = replica: needs a superuser), then identity sequences moved past the copied ids;
@@ -62,14 +62,14 @@ def coerce(v, pg_type):
 
 def main(snapshot: str, verify_only: bool, owner: str | None = None) -> int:
     import psycopg
-    url = os.environ["DATABASE_URL"]
+    url = os.environ["AIVERSEPULSE_DATABASE_URL"]
     lite = sqlite3.connect(f"file:{snapshot}?mode=ro", uri=True)
     tables = [t for (t,) in lite.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name") if t not in SKIP]
     print(f"source: {len(tables)} tables, {sum(lite.execute(f'SELECT count(*) FROM {t}').fetchone()[0] for t in tables)} rows")
 
     if not verify_only:
         t0 = time.time()
-        import server.api  # noqa: F401  creates every table the app creates at start-up, on DATABASE_URL
+        import server.api  # noqa: F401  creates every table the app creates at start-up, on AIVERSEPULSE_DATABASE_URL
         from governance import plugins
         from governance.audit import connect
         from mcp_server import signals
@@ -160,7 +160,7 @@ def main(snapshot: str, verify_only: bool, owner: str | None = None) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or not os.environ.get("DATABASE_URL"):
+    if len(sys.argv) < 2 or not os.environ.get("AIVERSEPULSE_DATABASE_URL"):
         sys.exit(__doc__)
     args = sys.argv[1:]
     sys.exit(main(args[0], "--verify-only" in args, args[args.index("--owner") + 1] if "--owner" in args else None))

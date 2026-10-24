@@ -1,4 +1,4 @@
-"""One database connection for the whole app: SQLite (default) or Postgres (DATABASE_URL set, several app nodes).
+"""One database connection for the whole app: SQLite (default) or Postgres (AIVERSEPULSE_DATABASE_URL set, several app nodes).
 
 The app's SQL is written for sqlite3. On Postgres, `PgConnection` takes the same calls and translates the few things that
 differ, so call sites stay unchanged:
@@ -33,7 +33,7 @@ def _settings():
 
 
 def connect(path: str | None = None):
-    """Postgres when DATABASE_URL is set, else the SQLite file at `path` (default: DATABASE_PATH)."""
+    """Postgres when AIVERSEPULSE_DATABASE_URL is set, else the SQLite file at `path` (default: DATABASE_PATH)."""
     s = _settings()
     if s.database_url:
         return PgConnection(s.database_url.get_secret_value(), _schema(path, s))

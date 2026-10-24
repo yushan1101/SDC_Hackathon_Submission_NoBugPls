@@ -1,5 +1,5 @@
-"""pgvector store (DATABASE_URL set): search, filters, scores and the one-transaction live swap. Runs on the Postgres CI
-job only; a word-hashing embedding stands in for MiniLM so no model download is needed."""
+"""pgvector store (AIVERSEPULSE_DATABASE_URL set): search, filters, scores and the one-transaction live swap.
+Runs on the Postgres CI job only; a word-hashing embedding stands in for MiniLM so no model download is needed."""
 import hashlib
 import math
 import os
@@ -62,5 +62,5 @@ def test_live_set_is_swapped_in_one_transaction(store):
 def test_another_node_sees_the_same_rows(store):
     from governance.db import PgConnection
     store.index_live([passage("job-9", "Nurse", "night shift ward")])
-    other = PgConnection(os.environ["DATABASE_URL"], store._pg().schema)  # a second app node: its own connection
+    other = PgConnection(os.environ["AIVERSEPULSE_DATABASE_URL"], store._pg().schema)  # a second app node: its own connection
     assert other.execute("SELECT id FROM vec_passages WHERE collection=?", (store.LIVE,)).fetchall() == [("job-9",)]

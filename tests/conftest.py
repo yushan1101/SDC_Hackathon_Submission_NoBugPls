@@ -12,4 +12,4 @@ os.environ.update(GEMINI_API_KEY="", LLM_API_KEY="", LLM_RESUME="false", MCP_URL
 # TEST_DATABASE_URL=postgresql://... runs the whole suite on Postgres instead of SQLite (governance/db.py); each
 # temporary database path gets its own Postgres schema, so tests stay as isolated as separate SQLite files
 if os.environ.get("TEST_DATABASE_URL"):
-    os.environ.update(DATABASE_URL=os.environ["TEST_DATABASE_URL"], AP_PG_SCHEMA_PER_PATH="1")
+    os.environ.update(AIVERSEPULSE_DATABASE_URL=os.environ["TEST_DATABASE_URL"], AP_PG_SCHEMA_PER_PATH="1")
