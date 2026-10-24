@@ -246,7 +246,7 @@ The complete single diagram (every feature and connection) is the PlantUML in
 | Applicant (public apply link) | Submit a resume on `/apply/{token}` (consent, honeypot, rate limit) |
 | HR advisor (`/enterprise`) | Team: CSV import, invite by email, disable/remove members; watch each employee's 8-agent trace live; approve or flag plans (named human sign-off); review queue (edit, archive, delete); openings with plain-English thresholds and a public apply link; blind ranked review (shortlist / hold / decline); hiring plugins (LinkedIn, Facebook, X, Telegram, Discord, Slack); ask about your team and voice job drafts; choose the AI model per task (from the admin allow-list); signals view and board refresh |
 | Platform admin | Allowed AI models list; frontend sites (allowed origins); platform accounts and organisations; plans, pricing and billing |
-| TVET and university career centres | Advise students on career pathways, skills development, and future job opportunities |
+| TVET and university career centres | Can use the existing employee/learner features to help students assess their current skill levels, identify skill gaps, explore suitable career pathways, and receive personalized upskilling recommendations. No dedicated career advisor dashboard is currently provided. |
 
 **How it runs**
 
