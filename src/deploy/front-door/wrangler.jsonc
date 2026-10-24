@@ -7,6 +7,8 @@
   "observability": { "enabled": true },
   "vars": {
     // the main node; users never see this address
-    "ORIGIN": "https://aiversepulse.olgtx.com"
+    "ORIGIN": "https://aiversepulse.olgtx.com",
+    // "1" = maintenance page for everyone except ?bypass=<BYPASS> (set BYPASS with: wrangler secret put BYPASS)
+    "MAINTENANCE": ""
   }
 }
