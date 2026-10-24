@@ -64,6 +64,14 @@ def json_text(con, column: str, key: str) -> str:
     return f"({column}::jsonb ->> '{key}')" if is_postgres(con) else f"json_extract({column}, '$.{key}')"
 
 
+def no_wait(con):
+    """Call inside a write transaction that need not wait for the standby (session refreshes, usage counters, trend
+    counts): on Postgres it commits once the primary has it, instead of after the round trip to the standby.
+    Losing it in a primary crash costs nothing that matters. No-op on SQLite."""
+    if is_postgres(con) and con.in_transaction:
+        con.execute("SET LOCAL synchronous_commit = local")
+
+
 def tables(con) -> set[str]:
     if is_postgres(con):
         return {r[0] for r in con.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()")}

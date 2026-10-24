@@ -26,6 +26,8 @@ from pathlib import Path
 
 import numpy as np
 
+from governance.db import no_wait
+
 log = logging.getLogger(__name__)
 UA = {"User-Agent": "AiversePulse/0.3 (workforce research; hackathon)"}
 
@@ -345,6 +347,7 @@ def refresh(today: date | None = None, con=None, sources=("hn", "arxiv", "jobs")
                             (day, "hn", tid, f"week-{len(counts) - k}", c, c, "https://hn.algolia.com", now))
         for tid, (r, p) in arxiv.items():
             con.execute(COUNT_UPSERT, (day, "arxiv", tid, "14d", r, r, "https://arxiv.org", now))
+        no_wait(con)  # fetched counts: re-fetchable, no need to wait for the standby
     history = {}
     for t in TOPICS:
         rows = con.execute("SELECT value FROM signal_counts WHERE source='jobs' AND topic=? AND day<? ORDER BY day DESC LIMIT 28",
@@ -359,6 +362,7 @@ def refresh(today: date | None = None, con=None, sources=("hn", "arxiv", "jobs")
                              "https://www.arbeitnow.com", now))
         con.execute("INSERT INTO signal_boards(day, board, created_utc) VALUES(?,?,?) "
                     "ON CONFLICT(day) DO UPDATE SET board=excluded.board, created_utc=excluded.created_utc", (day, json.dumps(board), now))
+        no_wait(con)
     try:  # real-time RAG: today's postings and stories replace yesterday's in the live vector collection
         from mcp_server import retrieval
         board["live_indexed"] = retrieval.index_live(live_passages(day, stories, jobs))

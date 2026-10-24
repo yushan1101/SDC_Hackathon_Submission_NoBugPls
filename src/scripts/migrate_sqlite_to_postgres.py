@@ -1,11 +1,12 @@
 """Copy the app's SQLite database into Postgres and prove the copy is exact.
 
-    DATABASE_URL=postgresql://postgres:...@host/db python scripts/migrate_sqlite_to_postgres.py SNAPSHOT.sqlite3 [--verify-only]
+    DATABASE_URL=postgresql://postgres:...@host/db python scripts/migrate_sqlite_to_postgres.py SNAPSHOT.sqlite3 [--owner ROLE] [--verify-only]
 
 1. Schema: imports the app (server.api) with DATABASE_URL set, so Postgres gets exactly the tables the app creates,
    then the modules that create theirs lazily (plugins, trend signals).
 2. Copy: every table in ONE transaction (all or nothing), triggers and foreign-key checks off while copying
-   (session_replication_role = replica: needs a superuser), then identity sequences moved past the copied ids.
+   (session_replication_role = replica: needs a superuser), then identity sequences moved past the copied ids;
+   --owner ROLE hands the tables and trigger functions to the app's own role.
 3. Verify, and exit non-zero on any difference:
    - row count per table, and a SHA-256 over each table's rows (sorted, values normalised) on both sides
    - plan_versions: every stored sha256 still matches its snapshot (the audit record is provably unchanged)
@@ -59,7 +60,7 @@ def coerce(v, pg_type):
     return v
 
 
-def main(snapshot: str, verify_only: bool) -> int:
+def main(snapshot: str, verify_only: bool, owner: str | None = None) -> int:
     import psycopg
     url = os.environ["DATABASE_URL"]
     lite = sqlite3.connect(f"file:{snapshot}?mode=ro", uri=True)
@@ -108,7 +109,16 @@ def main(snapshot: str, verify_only: bool) -> int:
                                      "AND is_identity = 'YES'").fetchall():
                 pg.execute(f"SELECT setval(pg_get_serial_sequence('\"{t}\"', '{col}'), "
                            f"GREATEST((SELECT max(\"{col}\") FROM \"{t}\"), 1), (SELECT max(\"{col}\") FROM \"{t}\") IS NOT NULL)")
+            if owner:  # the copy ran as a superuser; the app's own role must own what it uses (identity sequences follow)
+                for (t,) in pg.execute("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()").fetchall():
+                    pg.execute(f'ALTER TABLE "{t}" OWNER TO "{owner}"')
+                for (f,) in pg.execute("SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                                       "WHERE n.nspname = current_schema() AND p.prorettype = 'trigger'::regtype").fetchall():
+                    pg.execute(f'ALTER FUNCTION {f} OWNER TO "{owner}"')
         print(f"copied in {time.time() - t0:.1f}s (one transaction); values converted to the column type: {coerced}")
+        if owner:
+            n = pg.execute("SELECT count(*) FROM pg_tables WHERE schemaname = current_schema() AND tableowner = %s", (owner,)).fetchone()[0]
+            print(f"owner: {n} tables now owned by {owner}")
 
     ok = True
     print("\ntable                              rows sqlite -> pg   row hash")
@@ -152,4 +162,5 @@ def main(snapshot: str, verify_only: bool) -> int:
 if __name__ == "__main__":
     if len(sys.argv) < 2 or not os.environ.get("DATABASE_URL"):
         sys.exit(__doc__)
-    sys.exit(main(sys.argv[1], "--verify-only" in sys.argv))
+    args = sys.argv[1:]
+    sys.exit(main(args[0], "--verify-only" in args, args[args.index("--owner") + 1] if "--owner" in args else None))

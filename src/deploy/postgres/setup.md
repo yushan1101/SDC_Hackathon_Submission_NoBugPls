@@ -36,7 +36,8 @@ dumps in `/opt/aiversepulse-db/backups`.
 Primary (main server):
 1. `mkdir -p /opt/aiversepulse-db/{data,conf,certs,secrets,init,backups,ca}`; copy `compose.primary.yml` as
    `compose.yml`, `postgresql.conf` + `pg_hba.conf` into `conf/`, `watchdog.sh`, `init/10-roles.sh` into `init/`.
-2. CA + server certificate (SANs `dnns.olgtx.com`, `db.olgtx.com`, `61.6.144.213`) and three random
+2. CA + server certificate (SANs `dnns.olgtx.com`, `db.olgtx.com`, `aiversepulse-db` for app containers on the
+   docker network, `61.6.144.213`) and three random
    passwords in `secrets/`; `chown -R 999:999 data certs secrets`, keys and passwords `chmod 600`.
 3. `docker compose up -d`. The first start creates the `aiversepulse` database, the `aiversepulse` and
    `replicator` roles, pgvector and the `standby_la` slot.

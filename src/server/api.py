@@ -48,7 +48,7 @@ from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
 from governance.audit import connect
-from governance.db import json_text
+from governance.db import json_text, no_wait
 from validation.revision import validate
 from interview import service as interview_service, store as interview_store
 from interview.schemas import InterviewAnswer, InterviewCreate, InterviewEnd, InterviewPause, InterviewPrefetch
@@ -185,6 +185,7 @@ def current_user(request: HttpRequest) -> dict:
             db.commit()
             raise HTTPException(401, "session expired")
         db.execute("UPDATE sessions SET expires_utc=? WHERE token_hash=?", ((now + SESSION_IDLE).isoformat(), _hash(token)))
+        no_wait(db)  # every signed-in request refreshes its session: never wait for the standby on that
         db.commit()
     return {"username": row[0], "role": row[1], "employee_id": row[2], "display_name": row[3]}
 
@@ -226,6 +227,7 @@ def _record_usage(username: str, feature: str, records) -> None:
                        [(datetime.now(timezone.utc).isoformat(), username, feature, r.get("node", feature), r.get("model", ""),
                          int(r.get("llm_calls", 1)), int(r.get("input_tokens", 0)), int(r.get("output_tokens", 0)),
                          float(r.get("est_usd", 0.0))) for r in rows])
+        no_wait(db)
 
 
 class Login(BaseModel):
@@ -1197,6 +1199,7 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
     if not body.previous_plan_id:
         with DB_LOCK, db:
             db.execute("INSERT INTO briefing_log VALUES(?,?)", (user["username"], datetime.now(timezone.utc).isoformat()))
+            no_wait(db)
 
     prev, history = None, []
     if body.previous_plan_id:  # only the caller's own run; if the server restarted, it falls back to a full run
@@ -2528,6 +2531,7 @@ def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_us
             raise HTTPException(402 if limit < AGENT_DAILY_MAX else 429,
                                 f"You've used today's {limit} agent messages. " + ("Pro has more. See plans to upgrade." if limit < AGENT_DAILY_MAX else "Try again tomorrow."))
         db.execute("INSERT INTO agent_log VALUES(?,?,?)", (user["username"], agent_id, datetime.now(timezone.utc).isoformat()))
+        no_wait(db)
     if user["role"] == "hr_advisor":  # "send the nurse opening to Telegram": an action to confirm, not a chat answer
         with DB_LOCK:
             act = ops.publish_intent(body.messages[-1].content, recruiting.list_openings(db), plugins.connections(db, user["username"]))
