@@ -1,2 +1,3 @@
 - [CPU PyTorch packaging](cpu-pytorch-packaging.md) — prefer an explicit CPU index with manual uv resolution when the package installer rewrites unrelated sources.
 - [Managed PostgreSQL access boundaries](managed-postgres-access.md) — use the environment-scoped database tools; the workspace shell may identify itself as production.
+- [PostgreSQL URL selection](postgres-url-selection.md) — the app-specific URL takes priority; generic `DATABASE_URL` requires an explicit Postgres backend setting.
