@@ -82,9 +82,9 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 
 ```
 .
-├── .agents/
-├── .github/workflows
-├── .impeccable
+├── .agents/                 # Agent project memory, helper scripts and generated artifacts
+├── .github/workflows        # Automated CI tests and deployment workflows
+├── .impeccable              # UI design specifications and review configuration
 ├── docs/                    # Requirements trace, architecture, technical notes, data sources, API contracts, AGENTS.md
 ├── runpod/
 │   ├── Dockerfile           # GPU worker image (build from the repo root)
@@ -97,17 +97,17 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 │   ├── deploy/              # Separate frontend (nginx) + API docker-compose example
 │   ├── forecasting/         # STF-KAN model, training and evaluation
 │   ├── governance/          # Accounts, approval workflow, recruiting store, audit log
-│   ├── interview            # 
+│   ├── interview            # Mock interview sessions, adaptive questions, scoring and reports
 │   ├── mcp_server/          # FastMCP tools, RAG retrieval (Chroma), daily AI-trend signals
 │   ├── scripts/             # Data builders, training and export (ESCO, SDG map, STF-KAN, requirement model)
 │   ├── server/              # FastAPI app (public + HR APIs, SSE streaming)│   ├── validation/          # Reviewer repairs, document guard (prompt-injection / fraud filters)
 │   ├── tools/               # Settings, helpers, Streamlit fallback UI (app.py)
 │   ├── ui/                  # Settings, helpers, Streamlit fallback UI (app.py)
-│   ├── validation/          # 
+│   ├── validation/          # Output schemas, evidence checks, document security and revision logic
 │   ├── web/                 # Static frontend: public site, HR console, apply page, config.js (deployable on its own)
-│   ├── .dockerignore        #
+│   ├── .dockerignore        # Files excluded from the Docker build context
 │   ├── Dockerfile           # CPU image for the web app + API (build context: src/)
-│   ├── app.py               # 
+│   ├── app.py               # Alternative Streamlit interface
 │   ├── main.py              # Application entry point (starts the web app + API)
 │   ├── pyproject.toml       # Package metadata and dependencies
 │   └── uv.lock              # Locked Python dependencies
