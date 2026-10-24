@@ -1,8 +1,8 @@
 # SDC Hackathon 2026: Phase 1 Preliminary Project Proposal
 
-Answers for `Submission Template SDC Hackathon.pdf`, written from what the repository and the deployed
-application actually do. Copy them into the PDF form and save it as `SDC2026_NoBugPls_Preliminary.pdf`.
-Word counts are given per answer.
+The submitted proposal is [`SDC2026_NoBugPls_Preliminary.pdf`](SDC2026_NoBugPls_Preliminary.pdf), with the
+tools declaration in [`SDC2026_NoBugPls_TechDeclaration.pdf`](SDC2026_NoBugPls_TechDeclaration.pdf); where they
+differ from this page, the PDFs are the official version. Word counts are given per answer.
 
 ## 1. Team & Project Overview
 
@@ -63,8 +63,8 @@ Workshop skills used:
   posts; HR picks the model per task from an admin allow-list.
 - **Database architecture:** SQLite for accounts, versioned plans, approvals, audit log and trend history, plus a
   Chroma vector store of 18,444 passages for retrieval.
-- **Cloud hosting:** the frontend on Replit, a dual-node VPS backend behind a Cloudflare MCP balancer, and RunPod
-  GPUs for model training.
+- **Cloud hosting:** the frontend on Replit, a dual-node VPS backend behind a Cloudflare MCP balancer, and a
+  RunPod GPU for a standalone embedding experiment.
 
 ## 3. Technical Architecture & Implementation Plan
 
@@ -80,7 +80,7 @@ Workshop skills used:
 - **Public data:** ESCO v1.2, the UN SDG API, Hacker News, arXiv, Arbeitnow and Remotive. O*NET 31.0 is used for
   training only.
 - **Services:** Stripe (plans and payment), SMTP (verification, password reset and invites), social platform
-  APIs (job posts), RunPod Serverless GPU (`runpod/handler.py`) for training.
+  APIs (job posts). RunPod: one A40 GPU Pod for a standalone MiniLM embedding experiment (no endpoint).
 
 Block diagram (the README has the full set of diagrams):
 
@@ -97,7 +97,7 @@ flowchart TB
   CF{{"Cloudflare MCP balancer"}}
   Data["<b>Data</b><br/>ESCO · UN SDG · HN, arXiv, job boards<br/>STF-KAN and requirement-model assets"]
   Ext["<b>External services</b><br/>Gemini · OpenAI-compatible gateway<br/>Stripe · SMTP · social platform APIs"]
-  GPU["<b>RunPod GPU (offline)</b><br/>O*NET training"]
+  GPU["<b>Local GPU (offline)</b><br/>O*NET training"]
 
   Users --> FE -- "HTTPS + SSE" --> Main
   Main --> DB
@@ -119,7 +119,9 @@ flowchart TB
 
 **Sponsor-provided GenAI API or cloud platform** (proof of use in `submission/`):
 - **Replit:** frontend hosting and development (`.replit`); see `REPLIT PROOF OF USE.pdf`.
-- **RunPod:** GPU training and batch-embedding jobs through a serverless endpoint; see `RUNPOD PROOF OF USE.pdf`.
+- **RunPod:** one NVIDIA A40 GPU Pod for a standalone experiment: pretrained MiniLM embedded six example
+  career-skill descriptions. No model training ran on it and it is not connected to the app; see
+  `RUNPOD PROOF OF USE.pdf`.
 - **Gemini:** GenAI API for routing and narration, alongside an OpenAI-compatible gateway.
 
 ### 3.2 Design-Thinking & Deployment Strategy (≈ 175 words, limit 200)
