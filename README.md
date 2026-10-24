@@ -73,7 +73,7 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 | Backend       | Python 3.11, FastAPI (Server-Sent Events streaming), LangGraph multi-agent graph, FastMCP tool server |
 | Database      | SQLite (accounts, sessions, immutable plan versions, audit log, trend history), Chroma vector store |
 | AI / Compute  | MiniLM sentence embeddings, STF-KAN forecaster (PyTorch), requirement model (PyTorch); GPU training via RunPod (`runpod/handler.py`); optional Gemini LLM for narration |
-| Hosting / Dev | Replit (`.replit`, `python src/main.py`); Docker; static frontend deployable separately (`src/deploy/`) |
+| Hosting / Dev | Replit (`.replit`, `uv`); Docker; static frontend deployable separately (`src/deploy/`) |
 | Data          | ESCO v1.2 (live), UN SDG API (live), HN / arXiv / Arbeitnow / Remotive (live, daily); O*NET 31.0 (training only) |
 
 ---
@@ -101,7 +101,8 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 │   ├── scripts/             # Data builders, training and export (ESCO, SDG map, STF-KAN, requirement model)
 │   ├── deploy/              # Separate frontend (nginx) + API docker-compose example
 │   ├── Dockerfile           # CPU image for the web app + API (build context: src/)
-│   └── pyproject.toml       # Package metadata and dependencies
+│   ├── pyproject.toml       # Package metadata and dependencies
+│   └── uv.lock              # Locked Python dependencies
 ├── submission/              # Required submission documents
 │   ├── REPLIT PROOF OF USE.pdf
 │   ├── RUNPOD PROOF OF USE.pdf
@@ -112,7 +113,6 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 ├── .gitignore
 ├── .replit                  # Replit run configuration
 ├── LICENSE
-├── requirements.txt         # Python dependencies (installs src/ with its AI extras, CPU torch)
 └── README.md
 ```
 
@@ -149,9 +149,9 @@ Full requirement mapping: [`docs/requirements_trace.md`](docs/requirements_trace
    - `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID` (only for GPU jobs)
    - `GEMINI_API_KEY`, `LLM_FAST_MODEL` (optional; without them every agent runs deterministically)
    - Mock interviews require a usable configured LLM (`COACH_MODEL` or the configured fast model); the interview page explains this if none is available.
-3. In the Shell: `pip install -r requirements.txt` and `python src/scripts/seed_demo_users.py` (creates demo
+3. In the Shell: `cd src && uv sync --extra ai && uv run python scripts/seed_demo_users.py` (creates demo
    accounts; passwords are written to `src/data/demo_users.local.txt`, which is never committed).
-4. Click **Run**. Replit uses the `.replit` file to start `python src/main.py`.
+4. Click **Run**. Replit uses the `.replit` workflow to start the FastAPI server.
    - Public site: `/`
    - HR console: `/enterprise`
 
@@ -166,18 +166,18 @@ cd SDC_Hackathon_Submission_NoBugPls
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 
-# 3. Install dependencies
-pip install -r requirements.txt
+# 3. Install dependencies (Python 3.11+ and uv required)
+uv sync --project src --extra ai
 
 # 4. Configure environment variables
 cp .env.example .env            # then fill in your values (all optional for the demo)
 
 # 5. Create demo accounts, then run the app
-python src/scripts/seed_demo_users.py
-python src/main.py              # http://localhost:8600  ·  HR: http://localhost:8600/enterprise
+uv run --project src python src/scripts/seed_demo_users.py
+cd src && uv run --extra ai uvicorn server.api:app --host 0.0.0.0 --port 5000
 ```
 
-Optional (after `pip install -r requirements.txt`): `python -m mcp_server.ingest --index-only` builds the Chroma vector index. Without it, retrieval
+Optional (after `uv sync --project src --extra ai`): `uv run --project src python -m mcp_server.ingest --index-only` builds the Chroma vector index. Without it, retrieval
 falls back to the committed offline snapshot. `python -m mcp_server.signals --refresh` builds today's
 AI-trend board immediately; it otherwise refreshes once a day.
 
