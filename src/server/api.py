@@ -102,11 +102,23 @@ def _frontends() -> set:
     return set(cfg.allowed_origins) | _sites_cache[1]
 
 
+def _is_frontend(origin: str) -> bool:
+    """An allowed frontend: an exact entry, or a wildcard entry "https://*.example.com" for any subdomain of example.com
+    (https only; the wildcard is one or more labels in front, never part of the domain itself)."""
+    origin = origin.rstrip("/").lower()
+    sites = _frontends()
+    if origin in sites:
+        return True
+    host = origin[len("https://"):] if origin.startswith("https://") else ""
+    return bool(host) and "/" not in host and any(
+        s.startswith("https://*.") and host.endswith("." + s[len("https://*."):]) for s in sites)
+
+
 def _foreign_origin(request: HttpRequest) -> str | None:
     """The calling frontend's origin when it is an allowed site other than this backend, else None."""
     origin = (request.headers.get("origin") or "").rstrip("/")
     own = f"{request.url.scheme}://{request.url.netloc}"
-    return origin if origin and origin != own and origin in _frontends() else None
+    return origin if origin and origin != own and _is_frontend(origin) else None
 
 
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
@@ -114,7 +126,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 class SitesCORS(CORSMiddleware):
     def is_allowed_origin(self, origin: str) -> bool:
-        return origin.rstrip("/") in _frontends()
+        return _is_frontend(origin)
 
 
 app.add_middleware(SitesCORS, allow_origins=[], allow_credentials=True, allow_methods=["GET", "POST", "DELETE"],
@@ -129,7 +141,7 @@ async def headers(request: HttpRequest, call_next):
             return JSONResponse({"detail": "missing X-AP header"}, status_code=403)
         origin = (request.headers.get("origin") or "").rstrip("/")
         own = f"{request.url.scheme}://{request.url.netloc}"
-        if origin and origin != own and origin not in _frontends():  # defence in depth behind CORS
+        if origin and origin != own and not _is_frontend(origin):  # defence in depth behind CORS
             return JSONResponse({"detail": "origin not allowed"}, status_code=403)
     if request.url.path.startswith("/api/") and (token := _session_token(request)):
         llm.ORG_MODELS.set(_org_models(token))
@@ -674,6 +686,9 @@ def admin_site_add(body: SiteIn, user: dict = Depends(need("admin"))):
     local = u.hostname in ("localhost", "127.0.0.1")
     if u.scheme not in ("https", "http") or (u.scheme == "http" and not local) or not u.hostname or u.path not in ("", "/") or u.query:
         raise HTTPException(422, "Enter the site's address only, e.g. https://jobs.example.com (https required).")
+    if "*" in u.hostname and not (u.scheme == "https" and u.hostname.startswith("*.") and "*" not in u.hostname[2:]
+                                  and "." in u.hostname[2:]):  # *.replit.dev yes; *.com, a*.x.com, http://*. no
+        raise HTTPException(422, "A wildcard covers subdomains only, e.g. https://*.replit.dev (https required).")
     origin = f"{u.scheme}://{u.netloc}".lower()
     with DB_LOCK, db:
         db.execute("INSERT INTO frontend_sites(origin, label, added_by, created_utc) VALUES(?,?,?,?) "
@@ -2162,7 +2177,7 @@ def plugins_oauth_callback(platform: str, request: HttpRequest, code: str = "", 
     with DB_LOCK:
         row = db.execute("SELECT extra FROM plugin_oauth_states WHERE state=?", (state[:80],)).fetchone() if state else None
     front = json.loads(row[0] or "{}").get("back", "") if row else ""
-    back = f"{front if front in _frontends() else ''}/enterprise.html#/plugins"  # back to the site the advisor started on
+    back = f"{front if _is_frontend(front) else ''}/enterprise.html#/plugins"  # back to the site the advisor started on
     if error or not code or not state or platform not in plugins.OAUTH:
         return RedirectResponse(f"{back}/cancelled", status_code=303)
     try:

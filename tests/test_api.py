@@ -1171,6 +1171,32 @@ def test_extra_frontend_sites_sign_in_with_a_bearer_token(client):
     assert client.delete("/api/admin/sites?origin=https://jobs.example.org", headers=H).json()["ok"]
 
 
+def test_wildcard_frontend_site_covers_subdomains_only(client):
+    H = {"X-AP": "1"}
+    _admin(client)
+    for bad in ("https://*.com", "http://*.replit.dev", "https://a*.replit.dev", "https://*.*.replit.dev"):
+        assert client.post("/api/admin/sites", json={"origin": bad}, headers=H).status_code == 422, bad
+    assert client.post("/api/admin/sites", json={"origin": "https://*.replit.dev", "label": "Replit previews"},
+                       headers=H).json()["origin"] == "https://*.replit.dev"
+
+    def allowed(origin):
+        pre = client.options("/api/login", headers={"Origin": origin, "Access-Control-Request-Method": "POST",
+                                                    "Access-Control-Request-Headers": "content-type,x-ap"})
+        return pre.status_code == 200 and pre.headers.get("access-control-allow-origin") == origin
+
+    assert allowed("https://abc-00-xyz.pike.replit.dev") and allowed("https://x.replit.dev")
+    for origin in ("https://replit.dev", "https://evilreplit.dev", "https://replit.dev.evil.com", "http://x.replit.dev"):
+        assert not allowed(origin), origin
+    client.cookies.clear()
+    r = client.post("/api/login", json={"username": "ana", "password": PW},
+                    headers={"Origin": "https://abc-00-xyz.pike.replit.dev", "X-AP": "1"}).json()
+    assert r["session_token"]  # another site: signs in with a Bearer token, as for exact entries
+    client.cookies.clear()
+    _admin(client)
+    assert client.delete("/api/admin/sites?origin=https://*.replit.dev", headers=H).json()["ok"]
+    assert not allowed("https://x.replit.dev")
+
+
 def test_hr_chooses_the_model_per_task_from_the_admins_list(client, monkeypatch):
     from agents import llm
     H = {"X-AP": "1"}
