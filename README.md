@@ -11,7 +11,7 @@
 | **Team Name**          |          NoBugPls                                                |
 | **Team Domain**        |        Domain 1                                                |
 | **SDG Track (1–17)**   | SDG 8 — Decent Work and Economic Growth (with SDG 4 — Quality Education) |
-| **Team Leader**        | Tang Yu Shan                                                         |
+| **Team Leader**        | TANG YU SHAN                                                       |
 | **University**         | Universiti Teknologi Malaysia (UTM); Universiti Tunku Abdul Rahman (UTAR)                                                      |
 | **Number of Members**  | **5**                                                        |
 
@@ -235,6 +235,7 @@ The complete single diagram (every feature and connection) is the PlantUML in
 | Applicant (public apply link) | Submit a resume on `/apply/{token}` (consent, honeypot, rate limit) |
 | HR advisor (`/enterprise`) | Team: CSV import, invite by email, disable/remove members; watch each employee's 8-agent trace live; approve or flag plans (named human sign-off); review queue (edit, archive, delete); openings with plain-English thresholds and a public apply link; blind ranked review (shortlist / hold / decline); hiring plugins (LinkedIn, Facebook, X, Telegram, Discord, Slack); ask about your team and voice job drafts; choose the AI model per task (from the admin allow-list); signals view and board refresh |
 | Platform admin | Allowed AI models list; frontend sites (allowed origins); platform accounts and organisations; plans, pricing and billing |
+| TVET and university career centres | Advise students on career pathways, skills development, and future job opportunities |
 
 **How it runs**
 
@@ -432,20 +433,20 @@ Frontend interaction checks (Node.js, no packages required): `node --test tests/
 
 ## Team
 
-| Name         | Role                | GitHub                                       |
-| ------------ | ------------------- | -------------------------------------------- |
-| Tang Yu Shan | Group Leader            | [@yushan1101](https://github.com/yushan1101) |
-| BOYU         | System developer              | [@OLGTX303](https://github.com/OLGTX303)                                      |
-| Yuan Man     | Developer (HR review queue)   | [@yuanman1021](https://github.com/yuanman1021)  |
-| zy           | Developer (UI scroll animation) | [@zhengyang316](https://github.com/zhengyang316) |
-| Lee May Yan       | Developer (UI/UX) | [@maydayen](https://github.com/maydayen)|
+| Name            | Role                | GitHub                                       |
+| ------------    | ------------------- | -------------------------------------------- |
+| TANG YU SHAN    | Group Leader            | [@yushan1101](https://github.com/yushan1101) |
+| ZUO BOYU        | System developer              | [@OLGTX303](https://github.com/OLGTX303)                                      |
+| KHOO YUAN MAN   | Developer (HR review queue)   | [@yuanman1021](https://github.com/yuanman1021)  |
+| CHEE ZHENG YANG | Developer (UI scroll animation) | [@zhengyang316](https://github.com/zhengyang316) |
+| LEE MAY YAN     | Developer (UI/UX) | [@maydayen](https://github.com/maydayen)|
 
 ---
 
 ## Submission Checklist
 
 - [x] Team name, domain (Domain 1 / Domain 2) and SDG track filled in
-- [ ] Slide deck link added
+- [x] Slide deck link added
 - [ ] Demo video link added
 - [x] Replit used, with proof of use in `submission/`
 - [x] RunPod used, with proof of use in `submission/`
