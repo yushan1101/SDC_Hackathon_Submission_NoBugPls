@@ -2667,6 +2667,19 @@ def health():
     return {"ok": True}
 
 
+# settings a worker node (src/worker.py) takes from this node at boot. Non-secret, and no paths: those are per machine
+WORKER_KEYS = ("model_card_url", "log_level", "mcp_timeout_s", "signals_daily", "warm_on_start")
+
+
+@app.get("/internal/node-config")
+def node_config(request: HttpRequest):
+    token = cfg.node_token.get_secret_value() if cfg.node_token else ""
+    sent = (request.headers.get("authorization") or "").removeprefix("Bearer ")
+    if not token or not secrets.compare_digest(sent.encode(), token.encode()):
+        raise HTTPException(404)  # 404, not 401: don't advertise the endpoint
+    return {k.upper(): str(getattr(cfg, k)) for k in WORKER_KEYS}
+
+
 @app.get("/api/health")
 def readiness():
     """Blueprint section 11: app, db, MCP, model and LLM readiness. No hostnames, paths or keys."""

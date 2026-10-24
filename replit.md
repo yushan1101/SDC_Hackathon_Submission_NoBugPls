@@ -58,3 +58,17 @@ needed for this preview. Daily public trend refresh remains enabled and
 depends on external source availability.
 
 This setup is for the development preview, not a production deployment.
+
+## Running a worker node (multi-node)
+
+A Repl can also run as a **worker node** for an existing main server. It serves the heavy tools (occupation search,
+embeddings, STF-KAN outlook) and takes its settings from the main server, so it needs no `.env`.
+
+1. On the **main server**, set `NODE_TOKEN` to a long random value (`python -c "import secrets; print(secrets.token_urlsafe(32))"`)
+   and restart it.
+2. In the worker Repl, add **one Secret**: `NODE_TOKEN` with the same value. If the main server isn't
+   `https://sdc.olgtx.com`, change `MAIN_URL` in `src/worker.py`, or also add a `MAIN_URL` Secret.
+3. Run: `cd src && uv run python worker.py`. Deploy it with that same command.
+4. On the main server, set `MCP_URL=https://<worker>.replit.app/mcp` (separate several workers with commas) and restart it.
+
+Accounts and all other data stay on the main server. If a worker is unreachable, the main server runs the tool itself.

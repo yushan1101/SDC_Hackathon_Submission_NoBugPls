@@ -62,14 +62,26 @@ def search_occupations(query: str, limit: int = 12) -> list[dict]:
              "job_zone": occ[soc]["job_zone"]} for soc, (_, t) in ranked]
 
 
-def call_tool(name: str, args: dict) -> dict:
+def _mcp_client():
+    """In-process server, or one of the worker nodes in MCP_URL (random pick, authenticated with NODE_TOKEN)."""
+    import random
+    from fastmcp import Client
     from config.settings import get_settings
     from mcp_server import server
-    try:
-        from fastmcp import Client
+    s = get_settings()
+    urls = [u.strip() for u in s.mcp_url.split(",") if u.strip()]
+    if not urls:
+        return Client(server.mcp, timeout=s.mcp_timeout_s)
+    # ponytail: random pick, no health tracking; a dead worker costs one failed call, then the direct fallback below
+    return Client(random.choice(urls), timeout=s.mcp_timeout_s,
+                  auth=s.node_token.get_secret_value() if s.node_token else None)
 
+
+def call_tool(name: str, args: dict) -> dict:
+    from mcp_server import server
+    try:
         async def go():
-            async with Client(get_settings().mcp_url or server.mcp, timeout=get_settings().mcp_timeout_s) as c:
+            async with _mcp_client() as c:
                 return (await c.call_tool(name, args)).data
         return asyncio.run(go())
     except Exception as e:
@@ -81,12 +93,9 @@ def call_tool(name: str, args: dict) -> dict:
 def mcp_status() -> dict:
     """Readiness over the real MCP protocol (no direct-call fallback): tool count or the failure type."""
     from config.settings import get_settings
-    from mcp_server import server
     try:
-        from fastmcp import Client
-
         async def go():
-            async with Client(get_settings().mcp_url or server.mcp, timeout=get_settings().mcp_timeout_s) as c:
+            async with _mcp_client() as c:
                 return [t.name for t in await c.list_tools()]
         tools = asyncio.run(go())
         return {"ok": bool(tools), "transport": "http" if get_settings().mcp_url else "in-process", "tools": len(tools)}

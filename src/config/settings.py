@@ -42,7 +42,11 @@ class Settings(BaseSettings):
     chroma_path: str = str(SRC / "data" / "chroma")
     outlook_artifact_dir: str = str(SRC / "artifacts" / "onet")  # stf_kan_best.pt + artifact_manifest.json (live CPU outlook)
     outlook_history_path: str = str(SRC / "data" / "training" / "onet_history.csv")  # model input, checksum-checked
-    mcp_url: str = ""  # empty = in-process FastMCP server; else e.g. http://localhost:8765/mcp
+    mcp_url: str = ""  # empty = in-process FastMCP server; else e.g. http://localhost:8765/mcp (comma-separated = several worker nodes)
+    # multi-node: shared secret between the main node and worker nodes (src/worker.py). Workers send it to pull their
+    # config from the main node; the main node sends it to call the workers' MCP tools. Empty = no worker nodes.
+    node_token: SecretStr | None = None
+    main_url: str = ""  # worker nodes only: the main node's address (empty = worker.MAIN_URL)
     mcp_host: str = "127.0.0.1"  # `python -m mcp_server.server --http` bind
     mcp_port: int = Field(8765, gt=0)
     mcp_timeout_s: float = Field(20.0, gt=0)
