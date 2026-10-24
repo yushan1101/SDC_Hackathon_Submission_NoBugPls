@@ -106,8 +106,8 @@ Models trained offline on O*NET learn how important each skill is and forecast w
 ├── submission/              # Required submission documents
 │   ├── SDC2026_NoBugPls_Preliminary.pdf      # Submitted Phase 1 proposal
 │   ├── SDC2026_NoBugPls_TechDeclaration.pdf  # Submitted technical & tools declaration
-│   ├── REPLIT PROOF OF USE.pdf
-│   └── RUNPOD PROOF OF USE.pdf
+│   ├── SDC2026_NoBugPls_Replit_POU.pdf       # Submitted Replit Proof of Use
+│   └── SDC2026_NoBugPls_Runpod_POU.pdf       # Submitted RunPod Proof of Use
 ├── tests/                   # 74 pytest tests (agents, API, security, runtime data isolation, RunPod handler)
 ├── .env.example             # Example environment variables
 ├── .gitignore
