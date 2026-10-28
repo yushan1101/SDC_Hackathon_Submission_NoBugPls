@@ -130,7 +130,13 @@ def can_act(con, plan_id: str, user: dict) -> bool:
     subject, audience = row
     if user["role"] == "employee":
         return subject == user.get("employee_id")
-    return user["role"] == "hr_advisor" and audience == "hr"
+    if user["role"] != "hr_advisor" or audience != "hr":
+        return False
+    # New workforce reports carry an explicit organization owner. Enforce it everywhere
+    # the report can be opened or edited, including the existing review APIs.
+    saved = con.execute("SELECT report FROM plan_reports WHERE plan_id=?", (plan_id,)).fetchone()
+    owner = ((json.loads(saved[0]).get("workforce") or {}).get("owner")) if saved else None
+    return owner is None or owner == user.get("username")
 
 
 def can_view(con, plan_id: str, user: dict) -> bool:
@@ -149,13 +155,15 @@ def require(con, plan_id: str, user: dict):
 
 
 def list_plans(con, user: dict) -> list[dict]:
+    from governance.db import json_text
     if user["role"] == "employee":
-        q, arg = "p.subject_id=?", user.get("employee_id")
+        q, args = "p.subject_id=?", (user.get("employee_id"),)
     elif user["role"] == "hr_advisor":
-        q, arg = "p.audience=?", "hr"
+        owner = json_text(con, json_text(con, "pr.report", "workforce"), "owner")
+        q = f"p.audience=? AND NOT EXISTS (SELECT 1 FROM plan_reports pr WHERE pr.plan_id=p.plan_id AND {owner} IS NOT NULL AND {owner}<>?)"
+        args = ("hr", user.get("username", ""))
     else:
         return []
-    from governance.db import json_text
     rows = con.execute(f"""SELECT p.plan_id, p.subject_id, p.audience, p.created_utc, v.version, v.status,
                                {json_text(con, 'v.snapshot', 'target_role')}, {json_text(con, 'v.snapshot', 'scenario')},
                                (SELECT coalesce(o.number, r.number) FROM plan_references r
@@ -164,7 +172,7 @@ def list_plans(con, user: dict) -> list[dict]:
                            WHERE {q} AND NOT EXISTS (SELECT 1 FROM hr_reviews r WHERE r.plan_id=p.plan_id
                                AND r.deleted_utc IS NOT NULL)
                            AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)
-                           ORDER BY p.created_utc DESC""", (arg,))
+                           ORDER BY p.created_utc DESC""", args)
     cols = ["plan_id", "subject_id", "audience", "created_utc", "version", "status", "target_role", "scenario", "plan_reference"]
     return [dict(zip(cols, (*r[:-1], f"P{r[-1]:06d}" if r[-1] is not None else None))) for r in rows]
 

@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS plan_versions(plan_id TEXT, version INTEGER, status T
 CREATE TABLE IF NOT EXISTS approval_events(id INTEGER PRIMARY KEY, plan_id TEXT, version INTEGER, actor TEXT,
     actor_role TEXT, action TEXT, prev_status TEXT, new_status TEXT, at_utc TEXT);
 CREATE TABLE IF NOT EXISTS validation_events(id INTEGER PRIMARY KEY, plan_id TEXT, version INTEGER, issues TEXT, at_utc TEXT);
+CREATE TABLE IF NOT EXISTS workforce_team_plans(plan_id TEXT PRIMARY KEY, owner TEXT NOT NULL, created_utc TEXT NOT NULL, plan_json TEXT NOT NULL, sample_preview INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS workforce_team_plans_owner ON workforce_team_plans(owner, created_utc);
 CREATE TRIGGER IF NOT EXISTS versions_immutable BEFORE UPDATE ON plan_versions
     BEGIN SELECT RAISE(ABORT, 'plan versions are immutable'); END;
 """

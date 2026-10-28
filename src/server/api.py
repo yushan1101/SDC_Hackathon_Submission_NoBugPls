@@ -28,13 +28,14 @@ from pathlib import Path
 
 import httpx
 import pandas as pd
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request as HttpRequest, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request as HttpRequest, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 from agents.gap_analyst import SCENARIO_NOTES
+from agents.profiler import expand as expand_skill
 from agents import ops
 from agents.pathway import HOURS_PER_LEVEL
 from agents.sdg import goal_meta, role_sdgs
@@ -44,6 +45,7 @@ from config.settings import get_settings
 from core import graph, screening
 from core.state import Pathway, Profile, Request, Skill
 from core.team_import import parse_team
+from governance import workforce
 from governance.employee_ids import allocate_ids
 from core.usage import summarize
 from governance import accounts, approval, billing, challenge, deletion, demo_bootstrap, otp, plugins, recruiting, reviews, risk
@@ -898,10 +900,13 @@ def describe(node: str, u: dict) -> str:
 def serialise(s: dict) -> dict:
     p = s.get("draft_pathway")
     reqs, outlook = s.get("requirements", {}), s.get("outlook", {})
+    request = s.get("request")
+    explicit = {expand_skill(skill.name).casefold() for skill in request.profile.skills} if request else set()
     return {"route": s.get("route"), "route_reason": s.get("route_reason"), "answer": s.get("answer"),
             "status": s.get("status"), "narrative": s.get("narrative", ""), "narrative_mode": s.get("narrative_mode"),
             "occupation": s.get("occupation", {}),
             "gaps": [g.model_dump() | {"hot": bool(reqs.get(g.skill_id, {}).get("hot")),
+                                       "assessed": g.skill_id in s.get("levels", {}) or expand_skill(g.skill_id).casefold() in explicit,
                                        "outlook": outlook.get(g.skill_id, {}).get("direction")}
                      for g in s.get("skill_gaps", [])],
             "outlook": {"items": [{"skill_id": k, **v} for k, v in outlook.items() if v["direction"] != "stable"],
@@ -956,6 +961,10 @@ def remember(pid: str, state: dict, thread: list | None = None):
     with DB_LOCK, db:
         db.execute("INSERT INTO plan_reports(plan_id, report) VALUES(?,?) ON CONFLICT(plan_id) DO UPDATE SET report=excluded.report",
                    (pid, json.dumps(report, default=str)))
+    _cache_result(pid, state)
+
+
+def _cache_result(pid: str, state: dict):
     RESULTS[pid] = state
     RESULTS.move_to_end(pid)
     while len(RESULTS) > 1000:
@@ -1570,6 +1579,7 @@ def acknowledge(pid: str, user: dict = Depends(need("employee"))):
 class TeamIn(BaseModel):
     csv: str = Field(max_length=2_000_000)
     scenario: str = Field(pattern="^(assistive|agentic)$")
+    sample: bool = False
 
 
 @app.post("/api/team/validate")
@@ -1591,6 +1601,8 @@ def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", 
     reqs, errs = _parse(body)
     if errs:
         return JSONResponse({"detail": "invalid team file", "errors": errs}, status_code=422)
+    sample_csv = (ROOT / "data" / "samples" / "sample_team.csv").read_text(encoding="utf-8")
+    is_sample = body.sample or body.csv.strip().replace("\r\n", "\n") == sample_csv.strip().replace("\r\n", "\n")
 
     with DB_LOCK:
         account_ids = [r[0] for r in db.execute("SELECT employee_id FROM users WHERE employee_id IS NOT NULL")]
@@ -1634,11 +1646,14 @@ def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", 
                     continue
                 s = payload
                 out = serialise(s)
+                out["workforce"] = {"owner": user["username"], "employee_key": original[r.employee_id],
+                                    "source": "sample" if is_sample else "team_csv"}
                 with DB_LOCK:
                     pid = approval.create(db, out["plan"], r.employee_id, "hr", out["issues"])
                     with db:
                         db.execute("INSERT INTO plan_original_ids VALUES(?,?)", (pid, original[r.employee_id]))
-                remember(pid, s)
+                        db.execute("INSERT INTO plan_reports(plan_id,report) VALUES(?,?)", (pid, json.dumps(out, default=str)))
+                _cache_result(pid, s)
                 for g in s.get("skill_gaps", []):
                     if g.gap > 0:
                         a = agg.setdefault(g.skill_id, {"skill_id": g.skill_id, "employees_with_gap": 0,
@@ -1659,6 +1674,88 @@ def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", 
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/hr/workforce")
+def workforce_heatmap(response: Response, scenario: str = "assistive", skill: list[str] = Query(default=[]), category: str = "all",
+                      department: str = "", role: str = "", sample_preview: bool = False,
+                      user: dict = Depends(need("hr_advisor"))):
+    if scenario not in {"assistive", "agentic"} or category not in {"all", "skill", "tool"}:
+        raise HTTPException(422, "invalid scenario or skill category")
+    if len(skill) > 500 or len(department) > 100 or len(role) > 160:
+        raise HTTPException(422, "filter is too long")
+    with DB_LOCK:
+        records = workforce.load_reports(db, user["username"], scenario, sample_preview)
+    response.headers["Cache-Control"] = "private, no-store"
+    result = workforce.aggregate(records, skill, category, sample_preview, department, role)
+    # A fictional preview is available to every HR demo account; it is never stored as an assessment.
+    result["sample_available"] = True
+    return result
+
+
+class TeamPlanGapIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    skill: str = Field(min_length=1, max_length=100)
+    group: str = Field(min_length=1, max_length=160)
+
+
+class TeamPlanIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    name: str = Field(min_length=1, max_length=120)
+    scenario: str = Field(pattern="^(assistive|agentic)$")
+    category: str = Field(default="all", pattern="^(all|skill|tool)$")
+    department: str = Field(default="", max_length=100)
+    role: str = Field(default="", max_length=160)
+    gaps: list[TeamPlanGapIn] = Field(min_length=1, max_length=35)
+    sample_preview: bool = False
+
+
+@app.get("/api/hr/team-plans")
+def workforce_team_plans(user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        rows = db.execute("SELECT plan_id, created_utc, plan_json, sample_preview FROM workforce_team_plans WHERE owner=? ORDER BY created_utc DESC", (user["username"],)).fetchall()
+    return [{"plan_id": row[0], "created_utc": row[1], "sample_preview": bool(row[3]), **json.loads(row[2])} for row in rows]
+
+
+@app.post("/api/hr/team-plans")
+def create_workforce_team_plan(body: TeamPlanIn, user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        records = workforce.load_reports(db, user["username"], body.scenario, body.sample_preview)
+        data = workforce.aggregate(records, [], body.category, body.sample_preview, body.department, body.role)
+        allowed = {(cell["skill"], cell["group"]) for cell in data["cells"] if cell["status"] == "ready" and cell["affected"]}
+        selected = list(dict.fromkeys((gap.skill, gap.group) for gap in body.gaps if (gap.skill, gap.group) in allowed))
+        if not selected:
+            raise HTTPException(422, "Select at least one assessed skill gap from the current heatmap")
+        chosen = [cell for cell in data["cells"] if (cell["skill"], cell["group"]) in selected]
+        tracks = {}
+        role_records = workforce._normalize(records)
+        for cell in chosen:
+            group_people = [record for record in role_records if
+                            (record.get("role") == cell["group"] if cell["group_kind"] == "role" else record.get("department", "Unassigned") == cell["group"])]
+            for track_role in sorted({person.get("role", "Assigned role") for person in group_people}):
+                assessed = [(person, person["skills"][cell["skill"]]) for person in group_people
+                            if person.get("role", "Assigned role") == track_role and cell["skill"] in person["skills"]
+                            and person["skills"][cell["skill"]].get("current") is not None]
+                if not assessed:
+                    continue
+                affected = sum(item["current"] < item["required"] for _, item in assessed)
+                current = round(sum(item["current"] for _, item in assessed) / len(assessed), 1)
+                target = round(sum(item["required"] for _, item in assessed) / len(assessed), 1)
+                tracks.setdefault(track_role, []).append({"skill": cell["skill"], "current": current,
+                    "target": target, "affected": affected, "assessed": len(assessed),
+                    "gap_percent": round(affected / len(assessed) * 100),
+                    "step": f"Guided applied practice in {cell['skill']}; reassess against the {track_role} role target."})
+        plan = {"name": body.name.strip(), "status": "draft", "cohort": data["cohort"],
+                "skills": [{"skill": c["skill"], "group": c["group"], "current": c["current"], "target": c["required"],
+                            "affected": c["affected"], "assessed": c["employees"], "gap_percent": c["gap_percent"]} for c in chosen],
+                "tracks": tracks, "resources": "Resource not configured", "review_required": True,
+                "sample_notice": "Fictional demonstration plan; do not assign to a real cohort." if body.sample_preview else None}
+        pid = str(uuid.uuid4())
+        created = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        db.execute("INSERT INTO workforce_team_plans(plan_id, owner, created_utc, plan_json, sample_preview) VALUES(?,?,?,?,?)",
+                   (pid, user["username"], created, json.dumps(plan), int(body.sample_preview)))
+        db.commit()
+    return {"plan_id": pid, "created_utc": created, "sample_preview": body.sample_preview, **plan}
 
 
 DEMO_ROLE = "nurse responsible for general care"

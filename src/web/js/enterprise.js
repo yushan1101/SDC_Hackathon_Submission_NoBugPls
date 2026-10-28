@@ -10,6 +10,7 @@ import { agentView, hrCapsule } from "./agents.js";
 import { setVoice } from "./voice.js";
 import { accountView, pricingView } from "./account.js";
 import { termsView, privacyView } from "./legal.js";
+import { workforceView } from "./workforce.js";
 
 const app = $("#app");
 const AGENTS = ["supervisor", "profiler", "knowledge_search", "gap_analysis", "market_analyst", "pathway", "coach", "reviewer"];
@@ -152,7 +153,7 @@ function shell() {
   updateSidebar();
   // the owl lives in the rail's logo spot; on phones (no rail) it moves back next to the status text
   S.logo.append(S.status.owl.el);
-  refreshPlans();
+  refreshPlans().catch((e) => toast(`Plans could not be loaded. ${e.message}`, "err"));
 }
 
 /** The floating agent capsule: every page and the console's main actions, searchable and runnable from anywhere. */
@@ -280,22 +281,29 @@ const latestPerEmployee = (plans) => [...plans.reduce((m, p) => (!m.has(p.subjec
 
 async function overview(main) {
   const version = S.routeVersion;
-  await refreshPlans();
-  if (version !== S.routeVersion) return;
+  const workforce = h("div", { class: "workforce" });
+  const review = h("div");
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "Overview"), h("a", { class: "btn primary sm", href: "#/run" }, icon("upload"), "Analyse team")),
-    stats(), h("div", { class: "overview" }, needsPanel(),
+    workforce, review));
+  workforceView(workforce);
+  try { await refreshPlans(); } catch (e) {
+    if (version === S.routeVersion) review.replaceChildren(h("p", { class: "issue error", role: "alert" }, `Review queue could not be loaded. ${e.message}`));
+    return;
+  }
+  if (version !== S.routeVersion) return;
+  review.replaceChildren(stats(), h("div", { class: "overview" },
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Needs your review")),
         h("div", { class: "pad review-list" }, latestPerEmployee(S.plans.filter((p) => p.audience === "hr" && !p.review?.archived && p.review?.review_status === "pending")).slice(0, 6).map((p) =>
           h("a", { href: `#/review/${p.plan_id}`, class: "review-row" },
             h("span", { class: "who" }, h("b", {}, p.subject_id), h("span", { class: "muted" }, `${p.target_role} · v${p.version} · ${fmtTime(p.created_utc)}`)), h("span", { class: `tag ${p.status}` }, p.status))),
           S.plans.some((p) => p.audience === "hr" && p.status !== "approved") ? null : h("p", { class: "muted" }, "You're all caught up.")))),
-    rosterTable()));
+    rosterTable());
 }
 
 // ---------------------------------------------------------------- upload & run
 function runView(main) {
-  S.onScenarioChange = () => { if (S.csv) setCsv(S.csv, "current file"); };
+  S.onScenarioChange = () => { if (S.csv) setCsv(S.csv, "current file", S.csvSample); };
   const preview = h("div");
   const schema = h("ul", { class: "schema", "aria-label": "Required columns" });
   const errors = h("ul", { class: "errors", role: "alert" });
@@ -306,6 +314,7 @@ function runView(main) {
     ondragleave: () => drop.classList.remove("over"), ondrop: (e) => { e.preventDefault(); drop.classList.remove("over"); load(e.dataTransfer.files[0]); } },
     file, icon("upload"), h("strong", {}, "Drop a team CSV or choose a file"),
     h("span", { class: "muted mono", style: { "font-size": "14px" } }, "employee_id, target_role, weekly_hours, skill, level"),
+    h("span", { class: "muted", style: { "font-size": "14px" } }, "Levels: 0–5. Omitted skills remain unassessed in the heatmap."),
     h("span", { class: "muted", style: { "font-size": "14px" } }, "target_role: any ESCO job title or code · max 5,000 rows · 500 employees · pseudonymous IDs only"));
 
   async function load(f) {
@@ -313,8 +322,9 @@ function runView(main) {
     if (f.size > 2_000_000) { toast("File is larger than 2 MB.", "err"); return; }
     setCsv(await f.text(), f.name);
   }
-  async function setCsv(text, name) {
+  async function setCsv(text, name, sample = false) {
     S.csv = text;
+    S.csvSample = sample;
     const lines = text.trim().split(/\r?\n/);
     const head = lines[0].split(",").map((s) => s.trim());
     schema.replaceChildren(...["employee_id", "target_role", "weekly_hours", "skill", "level"].map((c) => h("li", { class: head.includes(c) ? "ok" : "bad" }, c)));
@@ -336,7 +346,7 @@ function runView(main) {
     let raf = 0;
     const soon = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(redraw); };
     try {
-      await stream("/api/team", { csv: S.csv, scenario: S.scenario }, (ev) => {
+      await stream("/api/team", { csv: S.csv, scenario: S.scenario, sample: !!S.csvSample }, (ev) => {
         if (ev.t === "owl") S.status.set(ev.state, ev.say);
         else if (ev.t === "roster") { const orig = Object.fromEntries(Object.entries(ev.original_ids || {}).map(([o, id]) => [id, o])); ev.ids.forEach((id) => S.rows.set(id, { id, original: orig[id], role: ev.roles[id], status: "running", ticks: new Set() })); }
         else if (ev.t === "tick") S.rows.get(ev.id)?.ticks.add(ev.node);
@@ -359,7 +369,7 @@ function runView(main) {
       h("div", { class: "run-actions" }, S.seg,
         h("button", { class: "btn sm", type: "button", onclick: async () => {
           const sample = await api("/api/sample-team");
-          setCsv(sample.csv, "sample_team.csv (fictional — fresh employee IDs on each run)");
+          setCsv(sample.csv, "sample_team.csv (fictional — excluded from workforce analytics)", true);
         } }, "Use sample CSV"))),
     h("div", { class: "overview" },
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Team file")), h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, drop, preview)),
@@ -367,7 +377,7 @@ function runView(main) {
         h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, schema, errors,
           runBtn, h("p", { class: "muted", style: { "font-size": "14px" } }, "Each run assigns new employee IDs. You can change them later under Edit review. Plans stay drafts until you approve them.")))),
     live));
-  if (S.csv) setCsv(S.csv, "current file");
+  if (S.csv) setCsv(S.csv, "current file", S.csvSample);
 }
 
 // ---------------------------------------------------------------- review queue (three panes)
