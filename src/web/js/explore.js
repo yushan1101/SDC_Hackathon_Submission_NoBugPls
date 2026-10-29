@@ -249,7 +249,7 @@ export async function quizView(main, ctx) {
     st.answers[item.id] = k;
     stage.querySelectorAll(".opt").forEach((b, j) => b.setAttribute("aria-pressed", String(j === k)));
     owl.set(k >= 2 ? "matched" : "thinking");
-    setTimeout(() => go(st.i + 1), 280);
+    setTimeout(() => go(st.i + 1), 450);  // long enough to see the picked answer
   }
 
   function fields() {
@@ -279,7 +279,7 @@ export async function quizView(main, ctx) {
       h("p", { class: "muted" }, "A fast estimate from 13 answers. For an evidence-backed analysis, ", h("a", { href: "#/resume" }, "upload your resume"), "."),
       h("ul", { class: "skill-chips" }, result.skills.sort((a, b) => b.level - a.level).map((s) => h("li", {}, s.name, h("b", { class: "num" }, ` ${s.level}/5`)))),
       matchesBlock(result.matches, { onPlan: (m) => ctx.planFor(m, result.skills), onInterview: ctx.onInterview ? (m) => ctx.onInterview(m, result.skills) : null,
-        scenario: result.scenario, onScenario: (k) => { st.scenario = k; finish(); } }),
+        scenario: result.scenario, previous: result.previous, onScenario: (k) => { st.previous = result.matches.map((m) => m.soc); st.scenario = k; finish(); } }),
       h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => {
         lastQuickMatch = null; st.answers = {}; st.fields.clear(); st.zone = null; st.scenario = "assistive"; go(-1);
       } }, "Play again"))), RISE));
@@ -291,7 +291,8 @@ export async function quizView(main, ctx) {
       h("p", { class: "muted" }, "Comparing your answers with job requirements and today's AI trends.")));
     try {
       const r = await api("/api/quiz/score", { method: "POST", body: { answers: st.answers, fields: [...st.fields], zone: st.zone, scenario: st.scenario || "assistive" } });
-      lastQuickMatch = { ...r, scenario: st.scenario || "assistive", answers: { ...st.answers }, fields: [...st.fields], zone: st.zone };
+      lastQuickMatch = { ...r, scenario: st.scenario || "assistive", previous: st.previous, answers: { ...st.answers }, fields: [...st.fields], zone: st.zone };
+      st.previous = null;
       showResults(lastQuickMatch);
     } catch (e) {
       owl.set("confused");
@@ -397,12 +398,14 @@ export function resumeView(main, ctx) {
       owl.set("matched"); drawMatches(m.matches);
     };
     const rematch = h("button", { class: "btn", type: "button", disabled: true, onclick: () => { rematch.disabled = true; remeasure(); } }, "Update matches");
+    let previous = null;  // the other scenario's ranking, right after a switch
     const drawMatches = (m) => {
       r.matches = m;
       saveResumeResults(m);
       matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))),
       onInterview: ctx.onInterview ? (x) => ctx.onInterview(x, skills.map(({ name, level }) => ({ name, level }))) : null,
-      scenario, onScenario: (k) => { scenario = k; remeasure(); } }));
+      scenario, previous, onScenario: (k) => { previous = r.matches.map((x) => x.soc); scenario = k; remeasure(); } }));
+      previous = null;
     };
     // the person can correct what was found: change levels, remove a wrong skill, add a missing one
     const skillsUl = h("ul");

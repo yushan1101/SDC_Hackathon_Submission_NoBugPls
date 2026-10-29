@@ -617,9 +617,9 @@ table.topics .cite { margin: 0 4px 0 0; }
 .opt { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 14px; align-items: center; min-height: 56px; padding: 10px 16px; border: 1px solid var(--rule-strong); border-radius: var(--radius); background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-fast) var(--ease-out); }
 .opt:hover { border-color: var(--ink); }
 .opt:active { transform: scale(0.99); }
-.opt[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.opt[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 0 3px var(--accent-soft); }
 .opt kbd { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--rule-strong); border-radius: var(--radius); font: 600 13px var(--font-mono); background: var(--bg); }
-.opt[aria-pressed="true"] kbd { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.opt[aria-pressed="true"] kbd { background: var(--accent-ink); border-color: var(--accent-ink); color: var(--accent); }
 .quiz-stage h2.sub { font-size: 19px; margin-top: 12px; }
 .matches .who .tag { margin-left: 8px; }
 .field-chips { display: flex; flex-wrap: wrap; gap: 8px; }

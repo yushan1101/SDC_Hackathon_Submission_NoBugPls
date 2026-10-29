@@ -736,7 +736,23 @@ function compareTable(rows) {
       line("UN goals", (m) => (m.sdgs || []).map((g) => `SDG ${g.goal}`).join(", ") || "–"))));
 }
 
-export function matchesBlock(matches, { onPlan, onInterview, title = "Roles you could grow into", note, scenario, onScenario } = {}) {
+// rank change since the other AI scenario (previous: that ranking's socs), and how today's trends move this role
+function scenarioEffect(m, i, previous, scenario) {
+  const out = [];
+  if (previous) {
+    const was = previous.indexOf(m.soc);
+    if (was < 0) out.push(h("span", { class: "trend rising", title: "Not in the top roles under the other AI scenario" }, icon("up"), "new"));
+    else if (was !== i) out.push(h("span", { class: `trend ${was > i ? "rising" : "falling"}`, title: `Was #${was + 1} under the other AI scenario` },
+      icon(was > i ? "up" : "down"), String(Math.abs(was - i))));
+  }
+  const t = Math.round((m.trend_effect || 0) * 100);
+  if (t) out.push(h("span", { class: `trend ${t > 0 ? "rising" : "falling"}`,
+    title: `Under ${scenario === "agentic" ? "agentic" : "assistive"} AI, today's trends move this role's rank score by ${t > 0 ? "+" : ""}${t}%. The match % does not change.` },
+    `AI outlook ${t > 0 ? "+" : ""}${t}%`));
+  return out;
+}
+
+export function matchesBlock(matches, { onPlan, onInterview, title = "Roles you could grow into", note, scenario, onScenario, previous } = {}) {
   if (!matches?.length) return block("Role matches", h("h3", {}, title), h("p", { class: "note" }, "No matches yet. Add a few more skills."));
   const picked = new Set();
   const compareHost = h("div");
@@ -752,7 +768,7 @@ export function matchesBlock(matches, { onPlan, onInterview, title = "Roles you 
         h("div", { class: "who" },
           h("div", { class: "job-line", title: `ESCO ${m.soc}` },
             jobIcon(m.soc, { size: 44, labelled: true }), h("b", {}, m.title),
-            h("span", { class: "match-badges" }, momentum(m), h("span", { class: `tag effort ${effort(m)[1]}`, title: "Effort to switch, from the share of this role you already cover" }, effort(m)[0])))),
+            h("span", { class: "match-badges" }, scenarioEffect(m, i, previous, scenario), momentum(m), h("span", { class: `tag effort ${effort(m)[1]}`, title: "Effort to switch, from the share of this role you already cover" }, effort(m)[0])))),
         h("div", { class: "fit" },
           h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
           h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 })))),

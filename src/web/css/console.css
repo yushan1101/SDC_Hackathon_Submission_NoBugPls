@@ -236,6 +236,10 @@ html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.
 html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost) { border-color: transparent; background: oklch(1 0 0); }
 html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost):hover { border-color: transparent; background: var(--card-fill-deep); }
 html:is([data-product="hr"], [data-console]) :is(.own-plan-chip, .chip, .wf-suggestion, .ag-starter) { border-color: transparent; background: oklch(1 0 0); box-shadow: none; }
+/* the white chip fill above would hide a pressed chip's white text */
+html:is([data-product="hr"], [data-console]) .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+html:is([data-product="hr"], [data-console]) .goal-chip[aria-pressed="true"] { background: var(--sdg); border-color: var(--sdg); color: #fff; }
+html:is([data-product="hr"], [data-console]) .matches-head .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 html:is([data-product="hr"], [data-console]) .ag-starter { background: var(--card-fill); }
 html:is([data-product="hr"], [data-console]) .ag-composer { border-color: transparent; background: var(--card-fill); box-shadow: none; }
 html:is([data-product="hr"], [data-console]) :is(.seg, .wf-seg) { border: 0; background: var(--card-fill-deep); }
