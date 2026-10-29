@@ -1,7 +1,8 @@
 // The agent: one chat people talk to, shared by the public app and the HR console. Each message is handed to the
 // right specialist on the server (agents/catalog.py route: coach, trends, interview / team, hiring, posts), which
 // answers from the person's own context; the reply is labelled with who answered and drawn as the owl companion in
-// that specialist's pose. The conversation stays in this tab (sessionStorage). The HR console also gets hrCapsule():
+// that specialist's pose. Conversations are saved to the signed-in account on the server (/api/chats), so each person
+// sees only their own history, on any device. The HR console also gets hrCapsule():
 // a folded owl button that opens a bar to search everything, run console actions and ask the agent from any page.
 import { api, h, icon, toast, ApiError, reveal, DROP } from "./lib.js";
 import { Owl } from "./owl.js";
@@ -14,10 +15,32 @@ const owl = (id, size, state = POSE[id] || "idle") => {
   o.el.removeAttribute("role"); o.el.setAttribute("aria-hidden", "true");
   return o;
 };
+try { sessionStorage.removeItem("ap.agent.auto"); } catch { /* older builds kept the chat in the tab, shared by whoever signed in */ }
+const newId = () => crypto.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+/** The open conversation, saved to the account (debounced); ready() reopens the person's latest chat once per page load. */
 const store = {
-  get() { try { return JSON.parse(sessionStorage.getItem("ap.agent.auto")) || []; } catch { return []; } },
-  set(msgs) { try { sessionStorage.setItem("ap.agent.auto", JSON.stringify(msgs.slice(-40))); } catch { /* private mode: this page only */ } },
+  id: null, msgs: [], loaded: null, timer: 0,
+  get() { return this.msgs; },
+  set(msgs) {
+    this.msgs = msgs;
+    if (!msgs.length) return;
+    this.id ??= newId();
+    const id = this.id, body = { messages: msgs.slice(-80) };
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => api(`/api/chats/${id}`, { method: "PUT", body }).catch((e) => toast(`Chat not saved: ${e.message}`, "err")), 400);
+  },
+  ready() {
+    return (this.loaded ??= api("/api/chats").then(({ chats }) => (chats[0] && !this.id ? this.open(chats[0].id) : null)).catch(() => null));
+  },
+  async open(id) { const c = await api(`/api/chats/${id}`); this.id = c.id; this.msgs = c.messages; },
+  fresh() { this.id = null; this.msgs = []; },
 };
+const TOOL_LABEL = { web_search: "Searched the web", fetch_page: "Read", search_occupations: "Looked up occupations",
+  search_role_skills: "Checked role skills", skill_outlook: "Checked skill outlook", trend_signals: "Checked today's trends", match_roles: "Matched roles" };
+/** What the agent looked up before answering (live web, the ESCO and trend tools), so the answer can be checked. */
+const toolTrail = (tools) => (tools?.length ? h("details", { class: "ag-tools-used" },
+  h("summary", {}, icon("search"), `Used ${tools.length} tool${tools.length === 1 ? "" : "s"}`),
+  h("ul", {}, tools.map((t) => h("li", {}, h("b", {}, TOOL_LABEL[t.tool] || t.tool), t.query ? ` · ${t.query}` : "")))) : null);
 let cache = null;
 const load = async () => (cache ??= (await api("/api/agents")).agents);
 const say = (msgs, profile) => api("/api/agents/auto/chat", { method: "POST",
@@ -143,6 +166,7 @@ export async function agentView(main, { getProfile } = {}) {
   const agents = await load();
   const chats = agents.filter((a) => a.kind === "chat"), tools = agents.filter((a) => a.kind === "flow");
   const action = (id) => agents.find((a) => a.id === id)?.action;
+  await store.ready();
   let msgs = store.get(), busy = false;
 
   const thread = h("div", { class: "ag-thread", "aria-live": "polite" });
@@ -158,10 +182,12 @@ export async function agentView(main, { getProfile } = {}) {
     if (m.role === "user") return h("div", { class: "ag-msg me" }, h("p", {}, m.content));
     const next = action(m.agent?.id);  // e.g. the interview coach offers the voice mock interview
     return h("div", { class: "ag-msg them" }, owl(m.agent?.id, 36).el,
-      h("div", { class: "ag-reply" }, m.agent ? h("span", { class: "ag-by" }, m.agent.name) : null, rich(m.content), actionCard(m, () => store.set(msgs)),
+      h("div", { class: "ag-reply" }, m.agent ? h("span", { class: "ag-by" }, m.agent.name) : null, toolTrail(m.tools), rich(m.content), actionCard(m, () => store.set(msgs)),
         h("div", { class: "ag-reply-tools" }, readAloudButton(() => m.content),
           h("button", { class: "btn ghost sm", type: "button", onclick: () => navigator.clipboard?.writeText(m.content).then(() => toast("Copied")) }, "Copy"),
-          next ? h("a", { class: "btn sm", href: next.href }, next.label, icon("flat")) : null)));
+          next ? h("a", { class: "btn sm", href: next.href }, next.label, icon("flat")) : null,
+          m.remembered?.length ? h("a", { class: "ag-memo", href: location.pathname.endsWith("enterprise.html") ? "#/account/memory" : "#/account",
+            title: `Remembered: ${m.remembered.join("; ")}` }, icon("history"), "Memory updated") : null)));
   };
   // a starter from every specialist shows what the one chat can do; guided tools open their own screen
   const empty = () => h("div", { class: "ag-empty" }, owl("coach", 132).el,
@@ -185,7 +211,7 @@ export async function agentView(main, { getProfile } = {}) {
     thread.append(typing); typing.scrollIntoView({ block: "end" });
     try {
       const r = await say(msgs, getProfile?.() || null);
-      msgs.push({ role: "assistant", content: r.reply, agent: r.agent, proposal: r.proposal, link: r.link }); store.set(msgs); draw();
+      msgs.push({ role: "assistant", content: r.reply, agent: r.agent, proposal: r.proposal, link: r.link, remembered: r.remembered, tools: r.tools }); store.set(msgs); draw();
     } catch (e) {
       typing.remove();
       msgs.pop(); store.set(msgs);  // not answered: put the question back to send again
@@ -196,9 +222,26 @@ export async function agentView(main, { getProfile } = {}) {
     busy = false; send.disabled = false; input.focus();
   }
 
+  // the person's earlier conversations (theirs only, from the server); open one to continue it
+  function historyMenu() {
+    const pop = h("div", { id: "ag-history", class: "ag-history", popover: "auto", "aria-label": "Chat history" });
+    const drawList = (list) => pop.replaceChildren(h("p", { class: "ag-history-head" }, "Your chats"),
+      ...(list.length ? list.map((c) => h("div", { class: `ag-history-row${c.id === store.id ? " is-open" : ""}` },
+        h("button", { type: "button", class: "ag-history-open", title: c.title, onclick: async () => {
+          try { await store.open(c.id); msgs = store.get(); pop.hidePopover(); draw(); } catch (e) { toast(e.message, "err"); }
+        } }, h("span", {}, c.title || "Untitled"), h("small", {}, new Date(c.updated).toLocaleDateString())),
+        h("button", { type: "button", class: "ag-history-del", "aria-label": `Delete chat: ${c.title}`, onclick: async () => {
+          try { await api(`/api/chats/${c.id}`, { method: "DELETE" }); if (c.id === store.id) { store.fresh(); msgs = store.get(); draw(); } drawList(list.filter((x) => x !== c)); }
+          catch (e) { toast(e.message, "err"); }
+        } }, icon("trash"))))
+        : [h("p", { class: "muted ag-history-empty" }, "No saved chats yet.")]));
+    pop.addEventListener("beforetoggle", (e) => { if (e.newState === "open") api("/api/chats").then((d) => drawList(d.chats)).catch((er) => toast(er.message, "err")); });
+    return [h("button", { class: "btn sm ghost", type: "button", popovertarget: "ag-history" }, icon("history"), "History"), pop];
+  }
+
   const modes = chats.some((a) => a.id === "interview") ? agentSwitch("chat") : null;  // individuals also have the mock interview
   main.replaceChildren(...[modes, h("section", { class: "ag-main", "aria-label": "Agent" },
-    h("header", { class: "ag-head" }, h("button", { class: "btn sm", type: "button", onclick: () => { msgs = []; store.set(msgs); draw(); input.focus(); } }, icon("edit"), "New chat")),
+    h("header", { class: "ag-head" }, historyMenu(), h("button", { class: "btn sm", type: "button", onclick: () => { store.fresh(); msgs = store.get(); draw(); input.focus(); } }, icon("edit"), "New chat")),
     thread, form)].filter(Boolean));
   draw();
   input.focus({ preventScroll: true });
@@ -277,6 +320,7 @@ function floatingCapsule({ pages = [], actions = [], plans = () => [], status, g
     busy = true; q.value = ""; list.replaceChildren(); bird.set("thinking"); status?.set("thinking", "The agent is working");
     answer.hidden = false; el.classList.add("open");
     answer.replaceChildren(h("p", { class: "cap-q" }, text), h("div", { class: "cap-who" }, owl(null, 24, "thinking").el, "Writing…"));
+    await store.ready();
     const msgs = [...store.get(), { role: "user", content: text }];  // the same conversation as the Agent page
     try {
       const r = await say(msgs, getProfile?.() || null);

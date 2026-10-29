@@ -52,7 +52,8 @@ def profile(con, user: dict) -> dict:
     fields = {k: a.get(k) or "" for k in ("display_name", "email", "phone", "title", "department")}
     missing = [k for k in ("display_name", "email", "phone", "title", "department") if not fields[k]]
     return fields | {
-        "avatar_url": f"/api/avatar/{user['username']}" if a.get("avatar_key") else None,
+        # the version changes with every upload, so browsers never show a cached old photo
+        "avatar_url": f"/api/avatar/{user['username']}?v={a['avatar_key'].rsplit('-', 1)[-1].split('.')[0]}" if a.get("avatar_key") else None,
         "email_pending": a.get("email_pending") or None,
         "enterprise": ({"owner": owner, "name": (org[0] or org[2] or owner) if org else owner, "kind": kind_of(con, owner),
                         "member_label": member_label(con, owner), "members_label": member_label(con, owner, True)} if owner else None),
@@ -147,7 +148,8 @@ def _r2(cfg, method: str, key: str, body: bytes = b"", content_type: str | None 
                "Authorization": f"AWS4-HMAC-SHA256 Credential={cfg.r2_access_key_id}/{scope}, SignedHeaders={signed}, Signature={signature}"}
     if content_type:
         headers["Content-Type"] = content_type
-    return httpx.request(method, f"https://{host}{path}", content=body, headers=headers, timeout=20)
+    scheme = "http" if cfg.r2_endpoint.startswith("http://") else "https"  # http only for a local test stand-in
+    return httpx.request(method, f"{scheme}://{host}{path}", content=body, headers=headers, timeout=20)
 
 
 def _sniff(data: bytes) -> str | None:
@@ -171,6 +173,7 @@ def save_avatar(con, cfg, username: str, data: bytes) -> str:
     r = _r2(cfg, "PUT", key, data, kind)
     if r.status_code >= 300:
         raise EnterpriseError("the photo could not be stored; try again")
+    # ponytail: the new photo is saved before the old one is deleted, so a failed delete leaves a stray file, never a missing photo
     old = con.execute("SELECT avatar_key FROM users WHERE username=?", (username,)).fetchone()
     with con:
         con.execute("UPDATE users SET avatar_key=? WHERE username=?", (key, username))
@@ -229,6 +232,22 @@ def enterprises(con, cfg, month: str | None = None) -> dict:
                     "monthly_fee_cents": cfg.price_team_cents, "paid_cents": paid, "currency": cfg.currency,
                     "ai_calls": usage[0], "ai_usd": round(usage[1], 4), "models": models})
     return {"month": label, "enterprises": out}
+
+
+def usage(con, cfg, owner: str) -> dict:
+    """This month's AI use for an enterprise against its allowance, plus its subscription: the HR usage ring."""
+    label, start, end = _month_bounds(None)
+    people = _people(con, owner)
+    marks = ",".join("?" * len(people))
+    calls, usd = con.execute(f"SELECT COALESCE(SUM(calls),0), COALESCE(SUM(est_usd),0) FROM llm_usage WHERE username IN ({marks}) "
+                             "AND at_utc>=? AND at_utc<?", (*people, start, end)).fetchone()
+    budget = cfg.enterprise_ai_budget_usd
+    left = max(0.0, 1 - usd / budget) if budget else 1.0
+    sub = con.execute("SELECT status, current_period_end, cancel_at_period_end FROM subscriptions WHERE owner=?", (owner,)).fetchone()
+    days_left = (datetime.fromisoformat(end) - datetime.now(timezone.utc)).days + 1
+    return {"month": label, "calls": calls, "ai_usd": round(usd, 4), "budget_usd": budget, "left_pct": round(100 * left),
+            "resets_in_days": max(1, days_left), "people": len(people),
+            "subscription": {"status": sub[0], "renews": sub[1], "cancelling": bool(sub[2])} if sub else None}
 
 
 def bill(con, cfg, owner: str, month: str | None = None) -> dict:

@@ -2,6 +2,7 @@
 // enabled: by the live interview room and by the interview landing pages.
 import * as THREE from "../vendor/three.module.js";
 import { reduceMotion } from "./lib.js";
+import { holoSkin, holoStage } from "./hologram.js";
 
 const makeMaterial = (color, roughness = 0.82, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, ...extra });
 
@@ -12,14 +13,15 @@ const ROOM_AIM = (w) => (w >= 1024 ? 0.34 : w <= 760 ? 0.12 : 0);
 // The room only shows (host[data-ready]) once Mina is seated, so nothing else ever appears in her chair; if she
 // can't load, onFailure lets the caller fall back to its plain layout.
 // onProgress(0..1) while she loads; onReady() once she is seated, textured and her shaders are compiled.
-export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX = ROOM_AIM } = {}) {
+// hologram: she is projected above a light table in a dark room (hologram.js) instead of sitting in the office.
+export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX = ROOM_AIM, hologram = false } = {}) {
   const width = host.clientWidth;
   const height = host.clientHeight;
   if (!width || !height) throw new Error("The interview office has no visible size.");
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#d9e3f1");
-  scene.fog = new THREE.Fog("#d9e3f1", 13, 25);
+  scene.background = new THREE.Color(hologram ? "#050a16" : "#d9e3f1");
+  scene.fog = new THREE.Fog(hologram ? "#050a16" : "#d9e3f1", hologram ? 6 : 13, hologram ? 16 : 25);
 
   const camera = new THREE.PerspectiveCamera(48, width / height, 0.1, 30);
   camera.position.set(0, 1.15, 2.8);
@@ -133,6 +135,7 @@ export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX 
     if (disposed) return;
     m.root.updateMatrixWorld(true);
     m.root.position.add(new THREE.Vector3(0, 1.65, 0.34).sub(m.head.getWorldPosition(new THREE.Vector3())));
+    if (hologram) m.root.traverse((node) => { if (node.isMesh) { node.castShadow = false; [node.material].flat().forEach(holoSkin); } });
     scene.add(m.root);
     await renderer.compileAsync?.(scene, camera);  // no first-frame hitch while the shaders build
     if (disposed) return;
@@ -257,6 +260,22 @@ export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX 
   const faceBounce = new THREE.PointLight("#ffe5cf", 0.46, 3.8, 2);
   faceBounce.position.set(0.15, 2.3, 1.15); scene.add(faceBounce);
 
+  // Hologram: clear the office away (Mina isn't loaded yet, so everything here is set dressing) and light the
+  // projection: cool key from the front, blue rim lights from behind, the projector glow from below.
+  let stage = null;
+  if (hologram) {
+    for (const node of [...scene.children]) {
+      scene.remove(node);
+      if (node.isMesh) node.geometry.dispose();
+    }
+    renderer.shadowMap.enabled = false;
+    stage = holoStage(scene);
+    scene.add(new THREE.HemisphereLight("#9cc0ff", "#0a1430", 1.1));
+    const front = new THREE.DirectionalLight("#dfe9ff", 1.5); front.position.set(0.5, 3, 4); scene.add(front);
+    for (const x of [-2.2, 2.2]) { const rim = new THREE.DirectionalLight("#5b8cff", 2.2); rim.position.set(x, 2.4, -2.5); scene.add(rim); }
+    const under = new THREE.PointLight("#6fa8ff", 2.2, 4, 2); under.position.set(0, 0.4, 0.8); scene.add(under);
+  }
+
   let disposed = false;
   let resizeObserver;
   let resizeListener;
@@ -281,7 +300,7 @@ export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX 
       if (!node.isMesh) return;
       node.geometry.dispose();
     });
-    studio.dispose();
+    studio.dispose(); stage?.dispose();
     mina?.root.traverse((node) => {
       for (const m of [node.material].flat()) if (m) { for (const v of Object.values(m)) if (v?.isTexture) v.dispose(); m.dispose(); }
     });
@@ -297,12 +316,13 @@ export function mountVirtualOffice(host, { onFailure, onReady, onProgress, aimX 
   };
   renderer.domElement.addEventListener("webglcontextlost", contextLost);
   // Reduced motion: settle the pose for the current state off-screen and render one static frame.
-  const drawStill = () => { for (let t = 50; t <= 2000; t += 50) animateAvatar(t); previousFrameTime = 0; draw(); };
+  const drawStill = () => { for (let t = 50; t <= 2000; t += 50) animateAvatar(t); previousFrameTime = 0; stage?.tick(1, 0); draw(); };
   if (!still) renderer.setAnimationLoop((time) => {
     if (disposed) return;
     if (time - lastAnimationFrame < 1000 / 30) return;
     lastAnimationFrame = time;
     animateAvatar(time);
+    stage?.tick(time / 1000, avatarState === "speaking" ? (speechLevel ?? 0.4) : microphoneLevel);
     renderer.render(scene, camera);
   });
   if (window.ResizeObserver) {

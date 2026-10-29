@@ -49,6 +49,31 @@ def model_for(agent: str, org: bool = True) -> str:
     return spec if usable(spec) else fallback  # gateway not set up yet -> keep working on Gemini, else deterministic
 
 
+_gateway_cache: tuple[float, list] = (0.0, [])
+
+
+def gateway_models(refresh: bool = False) -> list[str]:
+    """Model ids the OpenAI-compatible gateway offers (GET {LLM_BASE_URL}/v1/models), cached a minute; [] if unset or down."""
+    global _gateway_cache
+    if not providers()["openai"]:
+        return []
+    if not refresh and time.monotonic() - _gateway_cache[0] < 60:
+        return _gateway_cache[1]
+    import httpx
+    from config.settings import get_settings
+    s = get_settings()
+    try:
+        r = httpx.get(api_base(s.llm_base_url) + "/models", timeout=15,
+                      headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"})
+        r.raise_for_status()
+        ids = sorted({str(m.get("id")) for m in (r.json().get("data") or []) if m.get("id")})
+    except Exception as e:  # noqa: BLE001 - a gateway outage must not break the admin page
+        log.warning("gateway /models failed: %s", e)
+        return []
+    _gateway_cache = (time.monotonic(), ids)
+    return ids
+
+
 def api_base(url: str) -> str:
     """A bare host ("https://gw.example") gets the standard "/v1"; a URL that already has a path is used as given."""
     from urllib.parse import urlparse
@@ -124,6 +149,57 @@ def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None 
     except Exception as e:
         log.warning("LLM call failed (%s %s): %s", provider, name, type(e).__name__)
         return None, record("llm", 1000 * (time.perf_counter() - t), name, error=type(e).__name__)
+
+
+def generate_with_tools(prompt: str, system: str, tools: dict, max_tokens: int = 900, agent: str = "router",
+                        rounds: int = 4, on_tool=None):
+    """Like generate(), but an OpenAI-compatible model may first call tools: {name: (description, json schema, fn)}.
+    Gemini, or a gateway that rejects tools: a plain generate(). -> (text | None, usage)."""
+    import json as _json
+    import httpx
+    from config.settings import get_settings
+    from core.usage import record
+    s = get_settings()
+    spec = model_for(agent)
+    if not spec or not spec.startswith("openai:"):
+        return generate(prompt, system, max_tokens=max_tokens, agent=agent)
+    name = spec.split(":", 1)[1]
+    defs = [{"type": "function", "function": {"name": n, "description": d, "parameters": p}} for n, (d, p, _) in tools.items()]
+    msgs = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+    t, tin, tout = time.perf_counter(), 0, 0
+    try:
+        for turn in range(rounds + 1):
+            body = {"model": name, "temperature": 0.2, "max_tokens": max_tokens, "messages": msgs}
+            if turn < rounds:  # the last round must answer
+                body["tools"] = defs
+            r = httpx.post(api_base(s.llm_base_url) + "/chat/completions", json=body, timeout=max(s.llm_timeout_s, 60),
+                           headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"})
+            if r.status_code == 400 and turn == 0:  # this model or gateway has no tool calling
+                return generate(prompt, system, max_tokens=max_tokens, agent=agent)
+            r.raise_for_status()
+            d = r.json()
+            u = d.get("usage") or {}
+            tin, tout = tin + u.get("prompt_tokens", 0), tout + u.get("completion_tokens", 0)
+            m = d["choices"][0]["message"]
+            calls = m.get("tool_calls") or []
+            if not calls:
+                return m.get("content"), record("llm", 1000 * (time.perf_counter() - t), name, tin, tout, measured=True)
+            msgs.append({"role": "assistant", "content": m.get("content") or "", "tool_calls": calls})
+            for c in calls[:6]:
+                fn_name, args = c["function"]["name"], {}
+                try:
+                    args = _json.loads(c["function"].get("arguments") or "{}")
+                    out = tools[fn_name][2](**args) if fn_name in tools else {"error": "unknown tool"}
+                except Exception as e:  # noqa: BLE001 - a failed tool is reported to the model, which answers without it
+                    log.warning("tool %s failed: %s", fn_name, type(e).__name__)
+                    out = {"error": f"{type(e).__name__}: the tool failed"}
+                if on_tool:
+                    on_tool(fn_name, args if isinstance(args, dict) else {})
+                msgs.append({"role": "tool", "tool_call_id": c["id"], "content": _json.dumps(out, ensure_ascii=False, default=str)[:8000]})
+    except Exception as e:
+        log.warning("LLM tool call failed (%s): %s", name, type(e).__name__)
+        return None, record("llm", 1000 * (time.perf_counter() - t), name, tin, tout, error=type(e).__name__)
+    return None, record("llm", 1000 * (time.perf_counter() - t), name, tin, tout, error="too_many_rounds")
 
 
 def tts_model() -> str:
