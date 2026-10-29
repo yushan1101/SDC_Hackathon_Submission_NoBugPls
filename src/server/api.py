@@ -37,14 +37,14 @@ from pydantic import BaseModel, Field, ValidationError
 from agents.gap_analyst import SCENARIO_NOTES
 from agents.profiler import expand as expand_skill
 from agents import ops
-from agents.pathway import HOURS_PER_LEVEL
+from agents.pathway import HOURS_PER_LEVEL, expand_learning_nodes
 from agents.sdg import goal_meta, role_sdgs
 from agents import catalog, criteria, llm, matcher, quiz, resume
 from agents import tools as agent_tools
 from agents.knowledge import learning_resources, occupation, resolve_occupation, role_requirements, search_occupations
 from config.settings import get_settings
 from core import graph, screening
-from core.state import Pathway, Profile, Request, Skill
+from core.state import LearningNode, Pathway, Profile, Request, Skill
 from core.team_import import normalize_team, parse_team
 from governance import workforce
 from governance.employee_ids import allocate_ids
@@ -1610,15 +1610,53 @@ def sdgs(request: HttpRequest):
     return {"goals": goals, "mine": {str(k): sorted(set(v)) for k, v in count.items()}}
 
 
+def _learning_plan_view(plan: dict) -> dict:
+    """Show saved weekly lessons as separate actions without rewriting the approved plan."""
+    nodes = plan.get("learning_nodes") or []
+    if not nodes or any(node.get("id", "").endswith(("-practice", "-check")) for node in nodes):
+        return plan
+    try:
+        expanded = expand_learning_nodes([LearningNode(**node) for node in nodes], plan.get("target_role"))
+        return {**plan, "learning_nodes": [node.model_dump() for node in expanded]}
+    except ValidationError:
+        return plan
+
+
+def _learning_progress_rows(plan: dict, rows) -> list:
+    original = plan.get("learning_nodes") or []
+    expanded = _learning_plan_view(plan).get("learning_nodes") or []
+    done = dict(rows)
+    if len(expanded) > len(original):
+        for node in original:
+            key = f"node:{node['id']}"
+            marker = f"expanded:{node['id']}"
+            if key in done and marker not in done:
+                for child in expanded:
+                    if child["id"].startswith(node["id"] + "-"):
+                        done.setdefault(f"node:{child['id']}", done[key])
+                done[marker] = done[key]
+    return list(done.items())
+
+
 def _progress_summary(plan: dict, done_rows, created_utc: str) -> dict:
     """How far the employee has got with their 90-day plan: steps done (the boxes they tick), by phase, last activity,
     and the pace against how far into the 90 days they are."""
+    done_rows = _learning_progress_rows(plan, done_rows)
+    plan = _learning_plan_view(plan)
+    nodes = plan.get("learning_nodes") or []
     acts = plan.get("activities", [])
-    keys = {f"{a.get('day_range')}:{a.get('skill_id')}" for a in acts}
+    keys = ({f"node:{node.get('id')}" for node in nodes} if nodes else
+            {f"{a.get('day_range')}:{a.get('skill_id')}" for a in acts})
     done = {item: at for item, at in done_rows if item in keys}
     total, n = len(keys), len(done)
-    phases = [{"days": d, "done": sum(f"{d}:{a.get('skill_id')}" in done for a in acts if a.get("day_range") == d),
-               "total": sum(a.get("day_range") == d for a in acts)} for d in dict.fromkeys(a.get("day_range") for a in acts)]
+    if nodes:
+        bounds = [("1-30", 1, 4), ("31-60", 5, 8), ("61-90", 9, 13)]
+        phases = [{"days": d, "done": sum(f"node:{node['id']}" in done for node in nodes if lo <= node.get("week_number", 0) <= hi),
+                   "total": sum(lo <= x.get("week_number", 0) <= hi for x in nodes)} for d, lo, hi in bounds]
+        phases = [phase for phase in phases if phase["total"]]
+    else:
+        phases = [{"days": d, "done": sum(f"{d}:{a.get('skill_id')}" in done for a in acts if a.get("day_range") == d),
+                   "total": sum(a.get("day_range") == d for a in acts)} for d in dict.fromkeys(a.get("day_range") for a in acts)]
     try:
         elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(created_utc.replace("Z", "+00:00"))).days
     except (AttributeError, ValueError):
@@ -1647,8 +1685,11 @@ def plan(pid: str, user: dict = Depends(current_user)):
                   "original_employee_id": (db.execute("SELECT original_id FROM plan_original_ids WHERE plan_id=?", (pid,))
                                            .fetchone() or [None])[0]} if user["role"] == "hr_advisor" and not read_only else {}
     report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else None
+    visible_rows = _learning_progress_rows(cur.get("plan") or {}, done_rows)
+    done = [item for item, _ in visible_rows if not item.startswith("expanded:")]
+    cur = {**cur, "plan": _learning_plan_view(cur.get("plan") or {})}
     return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], "created_utc": created, **cur, "history": hist, "report": report,
-            "progress": done, "progress_summary": _progress_summary(cur.get("plan") or {}, done_rows, created),
+            "progress": done, "progress_summary": _progress_summary(cur.get("plan") or {}, visible_rows, created),
             "read_only": read_only, **review}
 
 
@@ -1661,6 +1702,10 @@ class ProgressIn(BaseModel):
 def plan_progress(pid: str, body: ProgressIn, user: dict = Depends(current_user)):
     _guard(pid, user)
     with DB_LOCK, db:
+        current_plan = approval.latest(db, pid)["plan"]
+        rows = db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (pid,)).fetchall()
+        for item, at in _learning_progress_rows(current_plan, rows):
+            db.execute("INSERT OR IGNORE INTO plan_progress(plan_id, item, done_utc) VALUES(?,?,?)", (pid, item, at))
         if body.done:
             db.execute("INSERT INTO plan_progress(plan_id, item, done_utc) VALUES(?,?,?) "
                        "ON CONFLICT(plan_id, item) DO UPDATE SET done_utc=excluded.done_utc", (pid, body.item, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))

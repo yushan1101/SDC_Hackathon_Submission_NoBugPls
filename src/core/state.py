@@ -66,9 +66,38 @@ class PathwayActivity(BaseModel):
     sdg_links: list[Annotated[str, StringConstraints(pattern=r"^SDG([1-9]|1[0-7])$")]] = []
 
 
+class LearningQuiz(BaseModel):
+    question: Annotated[str, StringConstraints(max_length=500)]
+    options: list[Annotated[str, StringConstraints(max_length=240)]] = Field(min_length=2, max_length=5)
+    answer_index: int = Field(ge=0, le=4)
+    explanation: Annotated[str, StringConstraints(max_length=700)]
+
+
+class LearningNode(BaseModel):
+    id: Annotated[str, StringConstraints(pattern=r"^week-\d{2}(?:-(?:practice|check))?$")]
+    week_number: int = Field(ge=1, le=13)
+    content_source: Literal["ai", "guided_fallback"] = "guided_fallback"
+    title: Annotated[str, StringConstraints(min_length=4, max_length=120)]
+    type: Literal["learn", "practice", "project", "review", "quiz"]
+    skills: list[Annotated[str, StringConstraints(min_length=1, max_length=120)]] = Field(min_length=1, max_length=6)
+    activity_keys: list[Annotated[str, StringConstraints(max_length=180)]] = Field(default=[], max_length=12)
+    estimated_minutes: int = Field(ge=5, le=6000)
+    learning_objective: Annotated[str, StringConstraints(min_length=12, max_length=500)]
+    topics: list[Annotated[str, StringConstraints(min_length=2, max_length=160)]] = Field(min_length=1, max_length=8)
+    learn: list[Annotated[str, StringConstraints(max_length=1200)]] = Field(min_length=1, max_length=5)
+    instructions: list[Annotated[str, StringConstraints(max_length=700)]] = Field(min_length=2, max_length=7)
+    resource_ids: list[Annotated[str, StringConstraints(max_length=180)]] = Field(default=[], max_length=5)
+    exercise: Annotated[str, StringConstraints(min_length=8, max_length=1000)]
+    deliverable: Annotated[str, StringConstraints(min_length=4, max_length=500)]
+    quiz: LearningQuiz | None = None
+    completion_criteria: list[Annotated[str, StringConstraints(max_length=300)]] = Field(min_length=1, max_length=5)
+    expected_outcome: Annotated[str, StringConstraints(min_length=8, max_length=500)]
+
+
 class Pathway(BaseModel):
     target_role: str
     scenario: Literal["assistive", "agentic"]
     activities: list[PathwayActivity]
+    learning_nodes: list[LearningNode] = Field(default=[], max_length=65)
     deferred_skills: list[str] = []
     status: Literal["draft", "flagged", "approved"] = "draft"

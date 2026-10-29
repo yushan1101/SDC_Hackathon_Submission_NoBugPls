@@ -285,6 +285,45 @@ def test_plan_progress_is_saved_and_private(client):
     assert client.post(f"/api/plans/{pid}/progress", json={"item": "1-30:x", "done": True}, headers={"X-AP": "1"}).status_code == 404
 
 
+def test_learning_node_progress_summary_uses_nodes_and_phases(client):
+    import server.api as api
+    plan = {"activities": [], "learning_nodes": [{"id": f"week-{week:02d}", "week_number": week} for week in range(1, 14)]}
+    rows = [("node:week-01", "2026-10-01T09:00:00Z"), ("node:week-13", "2026-10-02T09:00:00Z")]
+    summary = api._progress_summary(plan, rows, api.datetime.now(api.timezone.utc).isoformat())
+    assert summary["done"] == 2 and summary["total"] == 13 and summary["pct"] == 15
+    assert summary["phases"] == [{"days": "1-30", "done": 1, "total": 4},
+                                 {"days": "31-60", "done": 0, "total": 4},
+                                 {"days": "61-90", "done": 1, "total": 5}]
+
+
+def test_saved_week_lessons_expand_and_keep_completion_without_changing_approval(client):
+    import server.api as api
+    from agents import pathway
+    from core.state import Gap, LearningNode
+    from governance import approval
+    gaps = [Gap(skill_id="SQL", current_level=0, required_level=3, gap=3)]
+    original = pathway.build(gaps, 4, "Data analyst", "assistive")
+    seed = pathway._node_seeds(original, gaps, original.target_role, [], {})[0]
+    original.learning_nodes = [LearningNode(**pathway._fallback_node(seed, original.target_role))]
+    with api.DB_LOCK:
+        pid = approval.create(api.db, original.model_dump(), "E-001", "individual")
+        with api.db:
+            api.db.execute("INSERT INTO plan_progress VALUES(?,?,?)", (pid, "node:week-01", "2026-10-01T09:00:00Z"))
+    login(client, "ana")
+    detail = client.get(f"/api/plans/{pid}").json()
+    assert len(detail["plan"]["learning_nodes"]) == 3
+    assert detail["progress_summary"]["done"] == detail["progress_summary"]["total"] == 3
+    assert detail["version"] == 1 and len(detail["history"]) == 1
+    # Reopening a previously complete lesson preserves all steps. Undoing one stays undone on reload.
+    assert client.post(f"/api/plans/{pid}/progress", json={"item": "node:week-01-check", "done": False}, headers={"X-AP": "1"}).status_code == 200
+    fresh = client.get(f"/api/plans/{pid}").json()
+    assert fresh["progress_summary"]["done"] == 2 and "node:week-01-check" not in fresh["progress"]
+    assert fresh["progress_summary"]["phases"] == [{"days": "1-30", "done": 2, "total": 3}]
+    assert fresh["version"] == 1 and len(fresh["history"]) == 1
+    login(client, "hr1")
+    assert client.post(f"/api/plans/{pid}/progress", json={"item": "node:week-01-practice", "done": True}, headers={"X-AP": "1"}).status_code == 404
+
+
 def test_matches_explain_their_score_and_follow_the_scenario(client):
     login(client, "ana")
     skills = [{"name": "Python", "level": 3}, {"name": "SQL", "level": 3}, {"name": "data analysis", "level": 3}]

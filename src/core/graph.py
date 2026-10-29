@@ -165,7 +165,7 @@ def n_pathway(s):
     except Exception:
         emit = None
     p, usage = pathway.personalise(p, role, r.profile.skills, s.get("skill_gaps", []), r.query, learning, emit)
-    return {"draft_pathway": p, "learning_evidence": [e for v in learning.values() for e in v], "_usage": [usage]}
+    return {"draft_pathway": p, "learning_evidence": [e for v in learning.values() for e in v], "_usage": usage}
 
 
 def _all_evidence(s):
