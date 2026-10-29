@@ -1,0 +1,79 @@
+/* HR and admin consoles, in the product-UI language of cluely.com: a pale field with flat white panels and fine
+   1px lines, Geist only, tight medium-weight headings, 8–12px radii, compact 13–14px text. No icon tiles, glow,
+   glass, gradients, serif or mascot chrome. Loaded last on enterprise.html and admin.html; same palette as the app. */
+html[data-product="hr"] {
+  --c-field: oklch(0.975 0.006 262);
+  --c-line: oklch(0.915 0.008 258);
+  --c-line-strong: oklch(0.86 0.01 258);
+  --c-radius: 12px;
+  --card-shadow: none;
+  --font-display: var(--font-ui);
+}
+
+/* ground and type */
+html[data-product="hr"] body { background: var(--c-field); color: var(--ink); font-size: 14px; }
+html[data-product="hr"] :is(h1, h2, h3, h4, h5, .page-title, .wordmark) { font-family: var(--font-ui); }
+html[data-product="hr"] :is(.view-head h1, .page-title, .view > h1) { font: 600 26px/1.15 var(--font-ui); letter-spacing: -0.025em; }
+html[data-product="hr"] :is(.panel > header h2, .detail-head h2, .wf-heading h2, .wf-panel-header h2, .view h2) { font: 600 16px/1.3 var(--font-ui); letter-spacing: -0.01em; }
+html[data-product="hr"] :is(.view h3, .panel h3) { font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
+html[data-product="hr"] .muted { color: var(--ink-2); }
+
+/* sidebar: flush, full height, quiet; current page is a white row with a hairline */
+html[data-product="hr"] .rail { margin: 0; border-radius: 0; box-shadow: none; background: var(--c-field); border-right: 1px solid var(--c-line); padding: 14px 10px; gap: 2px; }
+html[data-product="hr"] .rail .logo-owl, html[data-product="hr"] .rail .logo .owl { display: none; }
+html[data-product="hr"] .rail .logo { height: 44px; margin-bottom: 10px; padding: 0 10px; }
+html[data-product="hr"] .rail .wordmark { font: 600 17px/1 var(--font-ui); letter-spacing: -0.02em; }
+html[data-product="hr"] :is(.rail a, .rail .rail-group-btn, .rail .hr-account-btn) { height: 34px; padding: 0 10px; gap: 10px; border-radius: 8px; font-size: 14px; font-weight: 500; }
+html[data-product="hr"] :is(.rail a, .rail .rail-group-btn, .rail .hr-account-btn) svg { width: 17px; height: 17px; }
+html[data-product="hr"] :is(.rail a, .rail .rail-group-btn):hover { background: oklch(1 0 0 / 0.7); color: var(--ink); }
+html[data-product="hr"] .rail a[aria-current="page"] { background: oklch(1 0 0); color: var(--ink); box-shadow: inset 0 0 0 1px var(--c-line); }
+html[data-product="hr"] .hr-top, html[data-product="hr"] .admin-top { margin: 0; border-radius: 0; box-shadow: none; background: oklch(1 0 0 / 0.9); border-bottom: 1px solid var(--c-line); }
+
+/* panels and cards: flat white, one hairline, 12px */
+html[data-product="hr"] :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .wf-dialog, .empty-state) {
+  border: 1px solid var(--c-line); border-radius: var(--c-radius); box-shadow: none; background: oklch(1 0 0); }
+html[data-product="hr"] .panel > header { padding: 14px 18px; border-bottom: 1px solid var(--c-line); }
+html[data-product="hr"] .panel > .pad { padding: 18px; }
+
+/* stats: label, number, note; no icon tile */
+html[data-product="hr"] .stat-ic { display: none; }
+html[data-product="hr"] .stats { gap: 12px; }
+html[data-product="hr"] .stat { gap: 4px; padding: 16px 18px; }
+html[data-product="hr"] .stat b { font: 600 28px/1.1 var(--font-ui); letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
+html[data-product="hr"] .stat span:last-child { font-size: 13px; }
+html[data-product="hr"] .wf-stat { gap: 6px; padding: 16px 18px; }
+html[data-product="hr"] .wf-stat strong { font-size: 28px; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
+html[data-product="hr"] .wf-stat > :last-child, html[data-product="hr"] .wf-stat > span:first-child { font-size: 13px; }
+
+/* controls: 8px corners, compact, no glow */
+html[data-product="hr"] .btn { min-height: 36px; padding: 0 14px; border-radius: 8px; font-size: 14px; font-weight: 500; box-shadow: none; }
+html[data-product="hr"] .btn.sm { min-height: 32px; padding: 0 12px; font-size: 13.5px; }
+html[data-product="hr"] .btn.primary { box-shadow: 0 1px 2px oklch(0.53 0.19 263 / 0.35), inset 0 1px 0 oklch(1 0 0 / 0.16); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost) { border-color: var(--c-line-strong); background: oklch(1 0 0); }
+html[data-product="hr"] :is(.input, select.input, textarea.input) { min-height: 36px; border-radius: 8px; border-color: var(--c-line-strong); font-size: 14px; }
+html[data-product="hr"] .tag { border-radius: 6px; font-size: 12.5px; line-height: 22px; }
+html[data-product="hr"] :is(.seg, .seg button, .chip) { border-radius: 8px; }
+html[data-product="hr"] .wf-filter summary { padding: 8px 12px; border-radius: 8px; border-color: var(--c-line-strong); }
+
+/* tables: quiet header row, hairlines */
+html[data-product="hr"] table thead th { background: var(--c-field); color: var(--ink-2); font-size: 12.5px; font-weight: 500; }
+html[data-product="hr"] table :is(th, td) { border-color: var(--c-line); }
+
+/* floating agent: a plain round button and a solid bar; no mascot, no glass */
+html[data-product="hr"] .cap-bar { border-radius: 12px; border-color: var(--c-line-strong); background: oklch(1 0 0); -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: 0 12px 32px -16px oklch(0.25 0.04 262 / 0.35); }
+html[data-product="hr"] .cap-panel { border-radius: 12px; }
+html[data-product="hr"] .hr-capsule.folded .cap-bar { border-radius: 50%; background: var(--ink); border-color: var(--ink); }
+html[data-product="hr"] .cap-fab > * { display: none; }
+html[data-product="hr"] .cap-fab::before { content: ""; width: 20px; height: 20px; background: currentColor;
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>') center / contain no-repeat;
+  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>') center / contain no-repeat; }
+html[data-product="hr"] .cap-fab { color: var(--ink-2); }
+html[data-product="hr"] .hr-capsule.folded .cap-fab { color: oklch(1 0 0); }
+
+/* heatmap and team-plan pieces inside the console */
+html[data-product="hr"] .wf-sample-banner { border-radius: 10px; }
+html[data-product="hr"] .wf-cell { border-radius: 8px; }
+html[data-product="hr"] .wf-suggestion { border-radius: 8px; }
+html[data-product="hr"] .wf-stats { align-items: start; }
+html[data-product="hr"] .wf-stat > :last-child { margin-top: 0; }
