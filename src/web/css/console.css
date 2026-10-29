@@ -499,3 +499,38 @@ html[data-product="hr"] .rv-avatar { background: oklch(1 0 0); }
 html[data-product="hr"] .rv-main .id, html[data-product="hr"] .rv-main .l2 { font-family: var(--font-ui); }
 html[data-product="hr"] .rv-progress { background-image: linear-gradient(oklch(1 0 0), oklch(1 0 0)); }
 html[data-product="hr"] .hr-shell:not(.is-sidebar-collapsed) .hr-rail .hr-account-btn .acct-lbl { display: grid; min-width: 0; }
+
+/* rail foot: account button + usage ring side by side (stacked when the rail is icon-only) */
+html[data-product="hr"] .rail-foot { display: flex; align-items: center; gap: 6px; width: 100%; }
+html[data-product="hr"] .rail-foot .hr-account-btn { flex: 1; min-width: 0; }
+html[data-product="hr"] .hr-shell.is-sidebar-collapsed .rail-foot { flex-direction: column-reverse; }
+html[data-product="hr"] .usage-btn { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border: 0; border-radius: 10px; background: transparent; cursor: pointer; }
+html[data-product="hr"] .usage-btn:hover, html[data-product="hr"] .usage-btn:focus-visible { background: var(--card-fill); }
+html[data-product="hr"] .usage-ring { width: 24px; height: 24px; }
+html[data-product="hr"] .usage-ring circle { fill: none; stroke-width: 3; }
+html[data-product="hr"] .usage-ring .track { stroke: var(--owl-line); }
+html[data-product="hr"] .usage-ring .used { stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray 600ms cubic-bezier(0.16, 1, 0.3, 1); }
+html[data-product="hr"] .usage-ring.low .used { stroke: var(--warn); }
+
+/* menus after the reference: a quiet header row, plain 15px items with icons, shortcuts on the right, thin dividers */
+html[data-product="hr"] .hr-account-menu { width: 300px; padding: 6px; border-radius: 16px; }
+html[data-product="hr"] .hr-account-menu .hr-account-who { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 0; background: none; }
+html[data-product="hr"] .hr-account-menu .hr-account-who b { font-size: 15px; font-weight: 600; }
+html[data-product="hr"] .hr-account-menu :is(a, button) { gap: 12px; padding: 10px 12px; font-size: 15px; font-weight: 500; border-radius: 10px; }
+html[data-product="hr"] .hr-account-menu :is(a, button) svg { width: 18px; height: 18px; color: var(--ink); }
+html[data-product="hr"] .hr-account-menu :is(a, button) > span { flex: 1; }
+html[data-product="hr"] .hr-account-menu kbd { font: 500 12.5px var(--font-ui); color: var(--ink-2); background: none; border: 0; }
+html[data-product="hr"] .hr-account-menu .acct-sep { margin: 4px 8px; background: oklch(0.93 0.01 263); }
+html[data-product="hr"] .hr-account-menu .acct-signout, html[data-product="hr"] .hr-account-menu .acct-signout svg { color: var(--ink); }
+html[data-product="hr"] .usage-menu { width: 320px; }
+html[data-product="hr"] .usage-src { margin: 0; padding: 10px 12px 8px; font-size: 14px; color: var(--ink-2); }
+html[data-product="hr"] .usage-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; font-size: 15px; }
+html[data-product="hr"] .usage-row b { font-weight: 500; font-variant-numeric: tabular-nums; }
+html[data-product="hr"] .usage-row b.warn { color: var(--warn); }
+
+/* review rows: all white like the first; the current one is marked only by its blue outline */
+html[data-product="hr"] .review-entry { background: oklch(1 0 0); box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.06), 0 0 0 1px oklch(0.94 0.012 263); }
+html[data-product="hr"] .review-entry:hover { background: oklch(1 0 0); box-shadow: 0 6px 16px -10px oklch(0.4 0.12 263 / 0.35), 0 0 0 1px oklch(0.9 0.03 263); }
+html[data-product="hr"] .review-entry:has(.queue-item[aria-current="true"]) { box-shadow: inset 0 0 0 1.5px var(--accent), 0 6px 18px -12px oklch(0.4 0.12 263 / 0.45); }
+html[data-product="hr"] .rv-avatar { background: var(--card-fill); }
+html[data-product="hr"] .rv-progress { background-image: linear-gradient(var(--card-fill-deep), var(--card-fill-deep)); }

@@ -169,3 +169,14 @@ def test_admin_lists_gateway_models_and_hr_assigns_one_per_person(env, monkeypat
     login(c, "school1")
     assert api._org_models(c.cookies.get(api.COOKIE))["coach"] == "openai:gpt-test"
     assert c.post("/api/org/members/stud1/models", json={"task": "coach", "spec": ""}, headers=H).json()["models"] == {}
+
+
+def test_hr_usage_ring_counts_the_whole_enterprise_this_month(env, monkeypatch):
+    api, c = env
+    monkeypatch.setattr(api.cfg, "enterprise_ai_budget_usd", 0.10)
+    login(c, "school1")
+    u = c.get("/api/org/usage").json()
+    assert u["calls"] >= 3 and u["ai_usd"] >= 0.02 and 0 <= u["left_pct"] <= 80 and u["budget_usd"] == 0.10
+    assert u["subscription"]["status"] == "active" and u["resets_in_days"] >= 1
+    login(c, "stud1")
+    assert c.get("/api/org/usage").status_code == 403

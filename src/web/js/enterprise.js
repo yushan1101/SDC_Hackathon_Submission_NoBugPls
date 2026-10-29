@@ -122,20 +122,52 @@ function shell() {
     if (S.me.avatar_url) apiBlobUrl(S.me.avatar_url).then((u) => { if (u) el.replaceChildren(h("img", { src: u, alt: "" })); });
     return el;
   };
-  const item = (href, ic, label, hint) => h("a", { href, "data-route": href, onclick: close }, icon(ic), h("span", {}, label, hint ? h("small", {}, hint) : null));
+  const item = (href, ic, label, keys) => h("a", { href, "data-route": href, onclick: close }, icon(ic), h("span", {}, label), keys ? h("kbd", {}, keys) : null);
   const account = h("div", { id: "hr-account", class: "hr-account-menu", popover: "auto", "aria-label": "Account" },
-    h("div", { class: "hr-account-who" }, avatar("lg"),
-      h("div", {}, h("b", {}, name), h("span", { class: "muted" }, S.me.email || S.me.username),
-        h("span", { class: "acct-role" }, ent && ent.name !== name ? `HR advisor · ${ent.name}` : "HR advisor"))),
-    h("div", { class: "acct-group" },
-      item("#/account", "user", "Profile & settings", "Photo, details, email"),
-      item("#/account", "nav-payments", "Plan & billing", "Enterprise subscription"),
-      item("#/models", "nav-models", "AI models", "What your organisation uses")),
+    h("div", { class: "hr-account-who" }, avatar("sm"), h("b", {}, name)),
     h("div", { class: "acct-sep", role: "separator" }),
-    h("button", { type: "button", class: "acct-signout", onclick: () => { close(); signOut(); } }, icon("nav-signout"), h("span", {}, "Sign out")));
+    item("#/people", "nav-team", "Invite teammates"),
+    item("#/account", "user", "Profile & settings"),
+    item("#/account", "nav-payments", "Plan & billing"),
+    item("#/models", "nav-models", "AI models"),
+    h("div", { class: "acct-sep", role: "separator" }),
+    h("button", { type: "button", class: "acct-signout", onclick: () => { close(); signOut(); } }, icon("nav-signout"), h("span", {}, "Log out")));
   const accountBtn = h("button", { type: "button", class: "rail-group-btn hr-account-btn", popovertarget: "hr-account", "aria-haspopup": "true", title: name },
     avatar("sm"), h("span", { class: "lbl acct-lbl" }, h("b", {}, name), h("small", {}, ent && ent.name !== name ? ent.name : "HR advisor")),
     h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
+
+  // Usage ring: how much of this month's AI allowance the enterprise has left; opens the numbers behind it.
+  const NS = "http://www.w3.org/2000/svg";
+  const ring = document.createElementNS(NS, "svg");
+  ring.setAttribute("viewBox", "0 0 24 24"); ring.setAttribute("class", "usage-ring"); ring.setAttribute("aria-hidden", "true");
+  ring.innerHTML = '<circle cx="12" cy="12" r="9" class="track"/><circle cx="12" cy="12" r="9" class="used" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90 12 12)"/>';
+  const usagePop = h("div", { id: "hr-usage", class: "hr-account-menu usage-menu", popover: "auto", "aria-label": "Usage" });
+  const usageBtn = h("button", { type: "button", class: "usage-btn", popovertarget: "hr-usage", "aria-haspopup": "true", title: "AI usage this month" }, ring);
+  const row = (label, value, tone) => h("div", { class: "usage-row" }, h("span", {}, label), h("b", { class: tone || null }, value));
+  const drawUsage = (u) => {
+    const used = 100 - u.left_pct;
+    ring.querySelector(".used").setAttribute("stroke-dasharray", `${used} 100`);
+    ring.classList.toggle("low", u.left_pct <= 20);
+    usageBtn.title = `AI budget: ${u.left_pct}% left this month`;
+    const sub = u.subscription, live = sub && ["active", "trialing"].includes(sub.status);
+    usagePop.replaceChildren(
+      h("p", { class: "usage-src" }, `Usage source: ${ent?.name || "Your organisation"} · ${u.month}`),
+      h("div", { class: "acct-sep", role: "separator" }),
+      row("Monthly AI budget", `${u.left_pct}% left`, u.left_pct <= 20 ? "warn" : null),
+      row("AI calls this month", u.calls.toLocaleString()),
+      row("Resets in", `${u.resets_in_days} day${u.resets_in_days === 1 ? "" : "s"}`),
+      row("Subscription", live ? (sub.cancelling ? "Ends soon" : "Active") : "Not subscribed", live ? null : "warn"),
+      h("div", { class: "acct-sep", role: "separator" }),
+      h("a", { href: "#/account", onclick: () => usagePop.hidePopover?.() }, h("span", {}, "Manage usage")));
+  };
+  const loadUsage = () => api("/api/org/usage").then(drawUsage).catch(() => { usagePop.replaceChildren(h("p", { class: "usage-src" }, "Usage could not be loaded.")); });
+  loadUsage();
+  usagePop.addEventListener("beforetoggle", (e) => {
+    if (e.newState !== "open") return;
+    loadUsage();
+    const r = usageBtn.getBoundingClientRect(), side = shellEl.classList.contains("is-sidebar-collapsed");
+    Object.assign(usagePop.style, side ? { left: `${r.right + 10}px`, bottom: `${innerHeight - r.bottom}px` } : { left: `${r.left}px`, bottom: `${innerHeight - r.top + 8}px` });
+  });
   account.addEventListener("beforetoggle", (e) => {  // pop up above the button, or beside it when the rail is icon-only
     if (e.newState !== "open") return;
     const r = accountBtn.getBoundingClientRect(), side = shellEl.classList.contains("is-sidebar-collapsed");
@@ -149,7 +181,7 @@ function shell() {
       group("Hiring", "nav-hiring", link("#/openings", "Openings", "nav-openings"), link("#/plugins", "Hiring plugins", "nav-plugins")),
       group("AI trends", "nav-trends", link("#/signals", "Market trends", "nav-market"), link("#/heatmap", "Skills gap heatmap", "nav-heatmap")),
       h("div", { style: { flex: 1 } }),
-      accountBtn, account);
+      h("div", { class: "rail-foot" }, accountBtn, usageBtn), account, usagePop);
   shellEl = h("div", { class: "hr-shell" },
     sidebar,
     h("main", { id: "main", class: "hr-main", tabindex: "-1" }),

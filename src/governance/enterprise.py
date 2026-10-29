@@ -231,6 +231,22 @@ def enterprises(con, cfg, month: str | None = None) -> dict:
     return {"month": label, "enterprises": out}
 
 
+def usage(con, cfg, owner: str) -> dict:
+    """This month's AI use for an enterprise against its allowance, plus its subscription: the HR usage ring."""
+    label, start, end = _month_bounds(None)
+    people = _people(con, owner)
+    marks = ",".join("?" * len(people))
+    calls, usd = con.execute(f"SELECT COALESCE(SUM(calls),0), COALESCE(SUM(est_usd),0) FROM llm_usage WHERE username IN ({marks}) "
+                             "AND at_utc>=? AND at_utc<?", (*people, start, end)).fetchone()
+    budget = cfg.enterprise_ai_budget_usd
+    left = max(0.0, 1 - usd / budget) if budget else 1.0
+    sub = con.execute("SELECT status, current_period_end, cancel_at_period_end FROM subscriptions WHERE owner=?", (owner,)).fetchone()
+    days_left = (datetime.fromisoformat(end) - datetime.now(timezone.utc)).days + 1
+    return {"month": label, "calls": calls, "ai_usd": round(usd, 4), "budget_usd": budget, "left_pct": round(100 * left),
+            "resets_in_days": max(1, days_left), "people": len(people),
+            "subscription": {"status": sub[0], "renews": sub[1], "cancelling": bool(sub[2])} if sub else None}
+
+
 def bill(con, cfg, owner: str, month: str | None = None) -> dict:
     if not con.execute("SELECT 1 FROM users WHERE username=? AND role='hr_advisor'", (owner,)).fetchone():
         raise EnterpriseError("no such enterprise")

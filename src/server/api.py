@@ -2724,6 +2724,12 @@ def _assignable(spec: str) -> bool:
     return bool(db.execute("SELECT 1 FROM model_catalog WHERE spec=?", (spec,)).fetchone()) and llm.usable(spec)
 
 
+@app.get("/api/org/usage")
+def org_usage(user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        return enterprise.usage(db, cfg, user["username"])
+
+
 @app.get("/api/org/members/models")
 def member_models_get(user: dict = Depends(need("hr_advisor"))):
     with DB_LOCK:
