@@ -167,7 +167,7 @@ async def headers(request: HttpRequest, call_next):
     resp = await call_next(request)
     resp.headers.update({
         "Content-Security-Policy": f"default-src 'self'; script-src 'self' '{_assets()[2]}' https://js.stripe.com; style-src 'self' 'unsafe-inline' "
-                                   "https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.stripe.com; "
+                                   "https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.stripe.com; "
                                    "frame-src https://js.stripe.com https://hooks.stripe.com; media-src 'self' blob:; "  # blob: the read-aloud voice
                                    f"connect-src 'self' https://api.stripe.com; frame-ancestors {cfg.frame_ancestors}; base-uri 'none'; form-action 'self'",
         "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin",

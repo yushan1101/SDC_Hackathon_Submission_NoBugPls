@@ -83,7 +83,7 @@ def test_avatar_goes_to_r2_and_is_private(env, monkeypatch):
     assert c.post("/api/profile/avatar", files={"file": ("x.png", b"not an image", "image/png")}, headers=H).status_code == 422
     png = b"\x89PNG\r\n\x1a\n" + b"0" * 64
     prof = c.post("/api/profile/avatar", files={"file": ("me.png", png, "image/png")}, headers=H).json()
-    assert prof["avatar_url"] == "/api/avatar/stud1" and len(store) == 1 and next(iter(store)).startswith("aiversepulse/avatars/stud1-")
+    assert prof["avatar_url"].startswith("/api/avatar/stud1?v=") and len(store) == 1 and next(iter(store)).startswith("aiversepulse/avatars/stud1-")
     assert c.get("/api/avatar/stud1").content == png
     login(c, "school1")
     assert c.get("/api/avatar/stud1").status_code == 200  # same enterprise
@@ -245,3 +245,51 @@ def test_agent_calls_tools_before_answering(env, monkeypatch):
                                       on_tool=lambda n, a: calls.append((n, a)))
     assert text.startswith("Nurses earn more") and calls == [("lookup", {"query": "nurse pay"})]
     assert sent[1]["messages"][-1] == {"role": "tool", "tool_call_id": "c1", "content": '{"pay": "up 4%"}'}
+
+
+def _png(w=4, h=4, rgb=b"\x30\x60\xc0"):
+    import struct, zlib
+    raw = b"".join(b"\x00" + rgb * w for _ in range(h))
+    chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+
+
+def test_avatar_end_to_end_over_signed_r2_requests(env, monkeypatch):
+    """Upload -> signed PUT to an R2 stand-in -> shown from /api/avatar; a new upload deletes the old file."""
+    import httpx
+    from pydantic import SecretStr
+    import r2_stub
+    api, c = env
+    srv = r2_stub.start()
+    for k, v in {"r2_endpoint": f"http://127.0.0.1:{srv.server_port}", "r2_account_id": "", "r2_access_key_id": r2_stub.ACCESS,
+                 "r2_secret_access_key": SecretStr(r2_stub.SECRET), "r2_bucket": "fixit", "r2_prefix": "aiversepulse/avatars/"}.items():
+        monkeypatch.setattr(api.cfg, k, v)
+    keys = lambda: httpx.get(f"http://127.0.0.1:{srv.server_port}/_keys").json()
+    try:
+        login(c, "stud1")
+        first, second = _png(rgb=b"\xff\x00\x00"), _png(rgb=b"\x00\xff\x00")
+        p1 = c.post("/api/profile/avatar", files={"file": ("a.png", first, "image/png")}, headers=H).json()
+        assert len(keys()) == 1 and keys()[0].startswith("/fixit/aiversepulse/avatars/stud1-")
+        assert c.get("/api/me").json()["avatar_url"] == p1["avatar_url"]  # what the sidebar shows
+        assert c.get(p1["avatar_url"]).content == first
+        old = keys()[0]
+        p2 = c.post("/api/profile/avatar", files={"file": ("b.png", second, "image/png")}, headers=H).json()
+        assert p2["avatar_url"] != p1["avatar_url"]  # a new address, so no browser shows the cached old photo
+        assert keys() != [old] and len(keys()) == 1  # the old photo was deleted from storage
+        assert c.get(p2["avatar_url"]).content == second
+        login(c, "school1")
+        assert c.get(p2["avatar_url"]).content == second  # their HR advisor sees it too
+        monkeypatch.setattr(api.cfg, "r2_secret_access_key", SecretStr("wrong"))  # a bad key is refused by storage, not stored
+        login(c, "stud1")
+        assert c.post("/api/profile/avatar", files={"file": ("c.png", first, "image/png")}, headers=H).status_code == 422
+        assert len(keys()) == 1
+    finally:
+        srv.shutdown()
+
+
+def test_pages_may_show_photos_loaded_as_blobs(env):
+    """Profile photos are fetched with the session and shown from blob: URLs; the CSP must allow that."""
+    api, c = env
+    csp = c.get("/enterprise.html").headers.get("content-security-policy", "")
+    img = next(p for p in csp.split(";") if p.strip().startswith("img-src"))
+    assert "blob:" in img.split()

@@ -52,7 +52,8 @@ def profile(con, user: dict) -> dict:
     fields = {k: a.get(k) or "" for k in ("display_name", "email", "phone", "title", "department")}
     missing = [k for k in ("display_name", "email", "phone", "title", "department") if not fields[k]]
     return fields | {
-        "avatar_url": f"/api/avatar/{user['username']}" if a.get("avatar_key") else None,
+        # the version changes with every upload, so browsers never show a cached old photo
+        "avatar_url": f"/api/avatar/{user['username']}?v={a['avatar_key'].rsplit('-', 1)[-1].split('.')[0]}" if a.get("avatar_key") else None,
         "email_pending": a.get("email_pending") or None,
         "enterprise": ({"owner": owner, "name": (org[0] or org[2] or owner) if org else owner, "kind": kind_of(con, owner),
                         "member_label": member_label(con, owner), "members_label": member_label(con, owner, True)} if owner else None),
@@ -147,7 +148,8 @@ def _r2(cfg, method: str, key: str, body: bytes = b"", content_type: str | None 
                "Authorization": f"AWS4-HMAC-SHA256 Credential={cfg.r2_access_key_id}/{scope}, SignedHeaders={signed}, Signature={signature}"}
     if content_type:
         headers["Content-Type"] = content_type
-    return httpx.request(method, f"https://{host}{path}", content=body, headers=headers, timeout=20)
+    scheme = "http" if cfg.r2_endpoint.startswith("http://") else "https"  # http only for a local test stand-in
+    return httpx.request(method, f"{scheme}://{host}{path}", content=body, headers=headers, timeout=20)
 
 
 def _sniff(data: bytes) -> str | None:
@@ -171,6 +173,7 @@ def save_avatar(con, cfg, username: str, data: bytes) -> str:
     r = _r2(cfg, "PUT", key, data, kind)
     if r.status_code >= 300:
         raise EnterpriseError("the photo could not be stored; try again")
+    # ponytail: the new photo is saved before the old one is deleted, so a failed delete leaves a stray file, never a missing photo
     old = con.execute("SELECT avatar_key FROM users WHERE username=?", (username,)).fetchone()
     with con:
         con.execute("UPDATE users SET avatar_key=? WHERE username=?", (key, username))

@@ -358,7 +358,12 @@ function profileSection(me, reload) {
   const file = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp", hidden: true, onchange: async () => {
     if (!file.files[0]) return;
     const form = new FormData(); form.append("file", file.files[0]);
-    try { await upload("/api/profile/avatar", form); toast("Photo updated"); reload(); }
+    try {
+      const prof = await upload("/api/profile/avatar", form);
+      toast("Photo updated");
+      window.dispatchEvent(new CustomEvent("ap:avatar", { detail: prof.avatar_url }));  // the sidebar photo updates too
+      reload();
+    }
     catch (e) { toast(e.message, "err"); }
   } });
   const save = async (e) => {

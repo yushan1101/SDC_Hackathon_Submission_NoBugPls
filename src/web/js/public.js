@@ -167,7 +167,9 @@ function userShell() {
   const name = S.me.display_name || S.me.username || "Account";
   const avatar = () => {  // photo when they have one, initials until it loads
     const el = h("span", { class: "u-avatar sm", "aria-hidden": "true" }, name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase());
-    if (S.me.avatar_url) apiBlobUrl(S.me.avatar_url).then((u) => { if (u) el.replaceChildren(h("img", { src: u, alt: "" })); });
+    const show = (url) => url && apiBlobUrl(url).then((u) => { if (u) el.replaceChildren(h("img", { src: u, alt: "" })); });
+    show(S.me.avatar_url);
+    addEventListener("ap:avatar", (e) => { S.me.avatar_url = e.detail; show(e.detail); });
     return el;
   };
   const close = () => menu.hidePopover?.();
