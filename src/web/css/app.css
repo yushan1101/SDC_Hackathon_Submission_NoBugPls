@@ -3432,6 +3432,100 @@ body {
 .phase .act-steps li::marker { color: var(--accent); font-weight: 600; }
 .phase .act-description .act-outcome { margin-top: 8px; color: var(--ink); }
 
+/* Weekly learning calendar and continuous, selectable 90-day lesson roadmap. */
+.learning-journey { display: grid; gap: 14px; min-width: 0; }
+.learning-journey { --road-accent: #7764df; padding: clamp(12px, 2vw, 20px); border: 1px solid var(--rule); border-radius: 24px; background: var(--surface); }
+.learning-journey-heading h4 { margin: 0; font-size: 22px; font-weight: 650; }
+.learning-journey-heading p { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; }
+.learning-journey > h4, .learning-road-heading h4 { margin: 0; font-size: 16px; }
+.learning-weeks { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 8px; }
+.learning-week { display: grid; gap: 7px; min-width: 0; padding: 12px; text-align: left; color: var(--ink); border: 1px solid var(--rule); border-radius: 14px; background: var(--surface); cursor: pointer; transition: border-color .18s, box-shadow .18s, background .18s; }
+.learning-week:hover, .learning-week.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 15%, transparent); }
+.learning-week.is-current .learning-week-title { color: var(--accent); }
+.learning-week-title { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; }
+.learning-current { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.learning-week-date, .learning-week-meta { color: var(--ink-2); font-size: 12px; }
+.learning-week-focus { min-height: 2.8em; font-size: 13px; line-height: 1.4; }
+.learning-week-progress { display: block; height: 5px; overflow: hidden; border-radius: 99px; background: var(--rule); }
+.learning-week-progress i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .2s; }
+.learning-week { justify-items: center; text-align: center; border-radius: 16px; }
+.learning-week:hover, .learning-week.is-selected { border-color: var(--road-accent); box-shadow: inset 0 0 0 1px var(--road-accent); }
+.learning-week.is-selected { background: color-mix(in oklab, var(--road-accent) 10%, var(--surface)); }
+.learning-week-title { font-size: 18px; }
+.learning-week-focus { min-height: 0; }
+.learning-week-skills { color: var(--ink-2); font-size: 11px; }
+.learning-week-selected { padding: 2px 9px; border-radius: 99px; background: color-mix(in oklab, var(--road-accent) 12%, var(--surface)); font-size: 12px; font-weight: 650; }
+.learning-week-progress { width: 100%; }
+.learning-road-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.learning-road-heading > span { color: var(--ink-2); font-size: 12px; }
+.learning-road-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.learning-road-controls .muted { font-size: 12px; }
+.learning-road-scroll { position: relative; overflow-x: auto; overscroll-behavior-inline: contain; padding: 0 0 12px; border: 1px solid var(--rule); border-radius: 20px; scrollbar-gutter: stable; scroll-behavior: smooth; }
+.learning-road { --node-width: 190px; position: relative; display: flex; align-items: stretch; gap: 0; width: max-content; min-width: 100%; padding: 16px 10px 8px; }
+.learning-road::before, .learning-road::after { position: absolute; z-index: 0; top: 134px; left: 10px; right: 10px; height: 4px; content: ""; background: var(--rule); }
+.learning-road::after { right: auto; width: calc((100% - 20px) * var(--road-progress-number, 0)); max-width: calc(100% - 20px); background: #70cfa9; }
+.road-week { position: relative; z-index: 1; display: grid; align-content: start; gap: 20px; width: calc(var(--steps) * var(--node-width)); flex: 0 0 auto; transition: background .18s; }
+.road-week-heading { display: grid; place-content: center; gap: 4px; height: 64px; margin: 0 6px; border-radius: 12px; text-align: center; }
+.road-week-heading span { color: var(--ink-2); font-size: 12px; }
+.road-week h5 { margin: 0; text-align: center; color: var(--ink); font-size: 18px; font-weight: 650; }
+.road-week.is-current h5 { color: var(--accent); }
+.road-week.is-selected .road-week-heading { background: color-mix(in oklab, var(--road-accent) 12%, var(--surface)); }
+.road-nodes { display: flex; align-items: flex-start; }
+.road-node { position: relative; display: grid; justify-items: center; gap: 14px; width: var(--node-width); flex: 0 0 var(--node-width); padding: 0 10px 12px; border: 0; color: var(--ink); background: transparent; cursor: pointer; }
+.road-node-icon { position: relative; z-index: 2; display: grid; place-items: center; width: 68px; height: 68px; border: 2px solid color-mix(in oklab, var(--road-accent) 65%, var(--surface)); border-radius: 50%; background: var(--surface); color: var(--ink); transition: transform .18s, background .18s, color .18s, border-color .18s; }
+.road-node-icon svg { width: 23px; height: 23px; }
+.road-node:hover .road-node-icon { transform: scale(1.08); }
+.road-node.is-week-selected .road-node-icon { border-color: var(--road-accent); }
+.road-node.is-started .road-node-icon { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 12%, var(--surface)); color: var(--accent); }
+.road-node.is-done .road-node-icon { border-color: #bdced0; color: #15834f; background: #dff4ec; }
+.road-node.is-active .road-node-icon { border-color: var(--road-accent); color: #fff; background: var(--road-accent); box-shadow: 0 0 0 4px color-mix(in oklab, var(--road-accent) 10%, transparent); }
+.road-node-title { max-width: 180px; text-align: center; font-size: 14px; line-height: 1.35; min-height: 3em; }
+.road-node.is-active .road-node-title { font-weight: 700; }
+.road-node-type { color: var(--ink-2); font-size: 14px; }
+.road-node:focus-visible { outline: 2px solid var(--road-accent); outline-offset: -2px; border-radius: 14px; }
+.phase-activity-budget > summary { cursor: pointer; margin: 14px 0; color: var(--ink-2); }
+.learning-lesson-tabs { display: flex; gap: 6px; padding: 5px; border-radius: 12px; background: var(--surface-2, #f3f4f8); }
+.learning-lesson-tabs button { flex: 1; padding: 10px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-2); cursor: pointer; font: inherit; }
+.learning-lesson-tabs button.is-active { background: var(--surface); color: var(--road-accent); box-shadow: 0 1px 5px #0001; font-weight: 650; }
+.learning-lesson { display: grid; gap: 14px; min-width: 0; padding: clamp(14px, 2.5vw, 22px); border: 1px solid var(--rule); border-radius: 18px; background: var(--surface); }
+.learning-lesson-empty { min-height: 70px; place-items: center; color: var(--ink-2); }
+.learning-lesson-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+.learning-step-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.learning-step-nav .muted { font-size: 12px; }
+.learning-lesson-header h4 { margin: 4px 0 8px; font-size: clamp(18px, 2.5vw, 22px); }
+.learning-lesson-header .eyebrow { margin: 0; color: var(--accent); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.learning-skill-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.learning-node-status { flex: 0 0 auto; padding: 6px 10px; border-radius: 99px; background: var(--surface-2, #f3f5f9); color: var(--ink-2); font-size: 12px; font-weight: 700; }
+.learning-node-status.is-done { color: #137547; background: #e2f4eb; }
+.learning-section { display: grid; gap: 8px; min-width: 0; }
+.learning-section h5 { margin: 0; font-size: 14px; }
+.learning-section p { margin: 0; color: var(--ink-2); line-height: 1.55; overflow-wrap: anywhere; }
+.learning-section ol, .learning-section ul { display: grid; gap: 7px; margin: 0; padding-left: 22px; color: var(--ink-2); line-height: 1.5; }
+.learning-section li::marker { color: var(--accent); font-weight: 700; }
+.learning-resources a { font-weight: 650; }
+.learning-options { display: grid; gap: 8px; }
+.learning-option { padding: 10px 12px; text-align: left; color: var(--ink); border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); cursor: pointer; }
+.learning-option:hover, .learning-option[aria-pressed="true"] { border-color: var(--accent); }
+.learning-option.is-correct { border-color: #198754; background: #eaf7f0; }
+.learning-option.is-wrong { border-color: #c44949; background: #fff0f0; }
+.learning-feedback { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 12px; border-radius: 12px; }
+.learning-feedback.is-correct { color: #137547; background: #eaf7f0; }
+.learning-feedback.is-wrong { color: #9d3434; background: #fff0f0; }
+.learning-criterion { display: flex; align-items: flex-start; gap: 9px; color: var(--ink-2); line-height: 1.45; }
+.learning-criterion input { flex: 0 0 auto; margin-top: 3px; accent-color: var(--accent); }
+.learning-outcome { padding-top: 8px; }
+@media (max-width: 620px) {
+  .learning-road-controls { align-items: flex-start; flex-direction: column; }
+  .learning-lesson-header { flex-direction: column; }
+  .learning-week { padding: 10px; }
+  .learning-road { --node-width: 168px; }
+  .road-node-title { max-width: 158px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .learning-road-scroll { scroll-behavior: auto; }
+  .learning-week, .road-week, .road-node-icon, .learning-week-progress i { transition: none; }
+}
+
 /* HR console: no top bar; the page gets the full height. Top-level rail links line up with the folder headers. */
 :is([data-product="hr"], [data-console]) .hr-shell:not(.admin-shell) { grid-template-rows: minmax(0, 1fr); }
 :is([data-product="hr"], [data-console]) .hr-shell:not(.admin-shell) .review { height: 100dvh; }
@@ -3585,8 +3679,7 @@ body {
 .pt-label { font-size: 13px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
 .pt-now .pt-label { color: var(--accent); }
 
-/* section subpage: the overview hides while one section's activity cards are open */
-.plan-block[data-view] .plan-overview { display: none; }
+/* Keep the three phase cards visible while the selected phase's learning journey is open. */
 .phase-toggle { grid-template-columns: minmax(0, 1fr) auto; cursor: default; }
 .phase-open { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .phase-open svg { width: 15px; height: 15px; transform: rotate(-90deg); }

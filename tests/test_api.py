@@ -285,6 +285,45 @@ def test_plan_progress_is_saved_and_private(client):
     assert client.post(f"/api/plans/{pid}/progress", json={"item": "1-30:x", "done": True}, headers={"X-AP": "1"}).status_code == 404
 
 
+def test_learning_node_progress_summary_uses_nodes_and_phases(client):
+    import server.api as api
+    plan = {"activities": [], "learning_nodes": [{"id": f"week-{week:02d}", "week_number": week} for week in range(1, 14)]}
+    rows = [("node:week-01", "2026-10-01T09:00:00Z"), ("node:week-13", "2026-10-02T09:00:00Z")]
+    summary = api._progress_summary(plan, rows, api.datetime.now(api.timezone.utc).isoformat())
+    assert summary["done"] == 2 and summary["total"] == 13 and summary["pct"] == 15
+    assert summary["phases"] == [{"days": "1-30", "done": 1, "total": 4},
+                                 {"days": "31-60", "done": 0, "total": 4},
+                                 {"days": "61-90", "done": 1, "total": 5}]
+
+
+def test_saved_week_lessons_expand_and_keep_completion_without_changing_approval(client):
+    import server.api as api
+    from agents import pathway
+    from core.state import Gap, LearningNode
+    from governance import approval
+    gaps = [Gap(skill_id="SQL", current_level=0, required_level=3, gap=3)]
+    original = pathway.build(gaps, 4, "Data analyst", "assistive")
+    seed = pathway._node_seeds(original, gaps, original.target_role, [], {})[0]
+    original.learning_nodes = [LearningNode(**pathway._fallback_node(seed, original.target_role))]
+    with api.DB_LOCK:
+        pid = approval.create(api.db, original.model_dump(), "E-001", "individual")
+        with api.db:
+            api.db.execute("INSERT INTO plan_progress VALUES(?,?,?)", (pid, "node:week-01", "2026-10-01T09:00:00Z"))
+    login(client, "ana")
+    detail = client.get(f"/api/plans/{pid}").json()
+    assert len(detail["plan"]["learning_nodes"]) == 3
+    assert detail["progress_summary"]["done"] == detail["progress_summary"]["total"] == 3
+    assert detail["version"] == 1 and len(detail["history"]) == 1
+    # Reopening a previously complete lesson preserves all steps. Undoing one stays undone on reload.
+    assert client.post(f"/api/plans/{pid}/progress", json={"item": "node:week-01-check", "done": False}, headers={"X-AP": "1"}).status_code == 200
+    fresh = client.get(f"/api/plans/{pid}").json()
+    assert fresh["progress_summary"]["done"] == 2 and "node:week-01-check" not in fresh["progress"]
+    assert fresh["progress_summary"]["phases"] == [{"days": "1-30", "done": 2, "total": 3}]
+    assert fresh["version"] == 1 and len(fresh["history"]) == 1
+    login(client, "hr1")
+    assert client.post(f"/api/plans/{pid}/progress", json={"item": "node:week-01-practice", "done": True}, headers={"X-AP": "1"}).status_code == 404
+
+
 def test_matches_explain_their_score_and_follow_the_scenario(client):
     login(client, "ana")
     skills = [{"name": "Python", "level": 3}, {"name": "SQL", "level": 3}, {"name": "data analysis", "level": 3}]
@@ -322,6 +361,76 @@ def test_trend_history_is_public(client):
     previous = next(day for day in history["days"] if day["day"] == "2026-10-23")
     assert len(previous["z"]) == 16
     assert previous["direction"]["ai-customer-service"] == "rising"
+
+
+def test_team_assessment_csv_reaches_review_heatmap_and_common_skill_plan(client, monkeypatch):
+    from pathlib import Path
+    import server.api as api
+    from agents import gap_analyst, knowledge, pathway
+
+    login(client, "hr1")
+    preset = client.get("/api/sample-team").json()
+    csv = preset["csv"]
+    assert csv == (Path(api.ROOT) / "data/samples/team_skill_assessments.csv").read_text(encoding="utf-8")
+    assert preset["filename"] == "team_skill_assessments.csv" and not preset["sample"]
+    assert preset["level_max"] == 5 and not preset["external"]
+
+    def analysis(request):
+        occupation = knowledge.occupation(request.target_role)
+        levels = {skill.name: skill.level for skill in request.profile.skills}
+        requirements = {name: {**details, "kind": "skill", "evidence_id": f"esco:{request.target_role}:skill:{name}"}
+                        for name, details in occupation["skills"].items()}
+        gaps = gap_analyst.analyze(levels, requirements, request.scenario)
+        yield "update", "reviewer", {}
+        yield "final", None, {"request": request, "occupation": occupation, "levels": levels,
+                              "skill_gaps": gaps, "status": "draft",
+                              "draft_pathway": pathway.build(gaps, 4, occupation["title"], request.scenario)}
+
+    monkeypatch.setattr(api.graph, "stream", analysis)
+    monkeypatch.setattr(api, "_plan", lambda user: "team")
+    login(client, "hr1")
+    body = {"csv": csv, "scenario": "assistive", "dataset": preset["dataset"], "level_max": preset["level_max"], "sample": preset["sample"]}
+    checked = client.post("/api/team/validate", json=body, headers={"X-AP": "1"}).json()
+    assert checked["employees"] == 8 and not checked["errors"]
+    uploaded = events(client.post("/api/team", json=body, headers={"X-AP": "1"}))
+    ready = [item for item in uploaded if item["t"] == "employee"]
+    assert len(ready) == 8 and all(not item.get("error") for item in ready)
+    ids = {item["plan_id"] for item in ready}
+    assert ids <= {item["plan_id"] for item in client.get("/api/reviews?status=all").json()}
+    assert all(client.get(f"/api/plans/{pid}").json()["report"]["workforce"]["source"] == "team_csv" for pid in ids)
+    # An earlier upload of the same roles must not contaminate this cohort's AI plan.
+    earlier = events(client.post("/api/team", json={**body, "dataset": "Prior period workforce"}, headers={"X-AP": "1"}))
+    assert len([item for item in earlier if item["t"] == "employee"]) == 8
+    heatmap = client.get("/api/hr/workforce?scenario=assistive&dataset=Analytics%20workforce").json()
+    assert heatmap["overview"]["employees"] == 8 and not heatmap["policy"]["sample_preview"]
+    common = {item["skill"]: item["employees"] for item in heatmap["overview"]["common_missing"]}
+    assert common == {"Interpret current data": 7, "Data quality assessment": 6, "Visual presentation techniques": 5}
+    chosen = [cell for cell in heatmap["cells"] if cell["skill"] in common and cell["affected"]]
+    assert len(chosen) == 6 and all(cell["employees"] == 4 and cell["coverage"] == 100 for cell in chosen)
+
+    def generate(prompt, system, **kwargs):
+        data = json.loads(prompt.split("<ASSESSMENT_DATA>\n", 1)[1].split("\n</ASSESSMENT_DATA>", 1)[0])
+        assert data["role_composition"] == {"Data analyst": 4, "Data scientist": 4}
+        assert len(data["selected_assessed_gaps"]) == 6
+        return json.dumps({"name": "Analytics skills development", "overview": "Prioritise the shared gaps shown by the assessed counts.",
+                           "priorities": [{"skill": cell["skill"], "group": cell["group"],
+                                           "reason": f"{cell['employees_below_target']} of {cell['employees_assessed']} are below target."}
+                                          for cell in data["selected_assessed_gaps"]],
+                           "shared_steps": ["Practise data interpretation, quality checks and visual explanations."],
+                           "role_tracks": [], "progress_checks": ["Reassess the selected skills against their role targets."]}), None
+
+    monkeypatch.setattr(api.llm, "generate", generate)
+    plan_events = events(client.post("/api/hr/team-plans/generate", json={"scenario": "assistive",
+                         "datasets": ["Analytics workforce"],
+                         "gaps": [{"skill": cell["skill"], "group": cell["group"]} for cell in chosen]}, headers={"X-AP": "1"}))
+    draft = next(item["draft"] for item in plan_events if item["t"] == "draft")
+    assert draft["cohort"]["employees"] == 8 and len(draft["priorities"]) == 6 and not draft["sample_preview"]
+    saved = client.post("/api/hr/team-plans", json={"scenario": "assistive", "datasets": ["Analytics workforce"],
+        "gaps": [{"skill": cell["skill"], "group": cell["group"]} for cell in chosen],
+        **{key: draft[key] for key in ("name", "overview", "shared_steps", "role_tracks", "progress_checks")},
+        "priorities": [{key: item[key] for key in ("skill", "group", "reason")} for item in draft["priorities"]]}, headers={"X-AP": "1"})
+    assert saved.status_code == 200 and saved.json()["cohort"]["employees"] == 8
+    assert saved.json()["cohort"]["datasets"] == ["Analytics workforce"] and not saved.json()["sample_preview"]
 
 
 def test_team_stream_ticks_and_validation(client):

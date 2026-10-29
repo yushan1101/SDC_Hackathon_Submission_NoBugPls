@@ -1,4 +1,4 @@
-"""Heatmap data sources: an HR advisor sees their invited employees' own analyses and their own team uploads."""
+"""Heatmap data sources: HR team uploads stay separate from employees' individual analyses."""
 import json
 import sqlite3
 
@@ -32,11 +32,12 @@ def _db():
     return con
 
 
-def test_heatmap_uses_own_employees_and_own_uploads():
+def test_heatmap_uses_team_uploads_and_excludes_individual_analyses():
     recs = workforce.load_reports(_db(), "hr1", "assistive")
-    assert sorted((r["key"], r["source"]) for r in recs) == [("E-001", "employee"), ("upload:E-001", "hr_upload"), ("upload:X-7", "hr_upload")]
-    data = workforce.aggregate(recs, source="employee")
-    assert data["overview"]["employees"] == 1 and {s["key"]: s["employees"] for s in data["sources"]} == {"employee": 1, "hr_upload": 2, "external": 0}
+    assert sorted((r["key"], r["source"]) for r in recs) == [("upload:E-001", "hr_upload"), ("upload:X-7", "hr_upload")]
+    data = workforce.aggregate(recs)
+    assert data["overview"]["employees"] == 2 and {s["key"]: s["employees"] for s in data["sources"]} == {"hr_upload": 2, "external": 0}
+    assert workforce.aggregate(recs, source="employee")["overview"]["employees"] == 0
     assert [g["kind"] for g in data["groups"]] == ["role"]  # no departments recorded, so roles are compared
 
 
@@ -57,7 +58,7 @@ def test_uploads_are_named_data_sets_and_external_groups_compare_side_by_side():
     upload("q4", "A3", "Partner clinic", "b2", external=True, group="Penang", cur=1)
     recs = workforce.load_reports(con, "hr1", "assistive")
     by_set = workforce.aggregate(recs, group_by="dataset")
-    assert [g["label"] for g in by_set["groups"]] == ["Earlier uploads", "Employee self-analyses", "ICU nurses", "Partner clinic"]
+    assert [g["label"] for g in by_set["groups"]] == ["Earlier uploads", "ICU nurses", "Partner clinic"]
     cells = {c["group"]: c for c in by_set["cells"] if c["skill"] == "SQL"}
     assert cells["ICU nurses"]["gap_percent"] == 50 and cells["Partner clinic"]["gap_percent"] == 100
     sets = {d["name"]: d for d in by_set["options"]["datasets"]}
@@ -66,7 +67,7 @@ def test_uploads_are_named_data_sets_and_external_groups_compare_side_by_side():
     assert [g["label"] for g in only["groups"]] == ["Penang"] and only["overview"]["employees"] == 2
     ext = workforce.aggregate(recs, source="external")
     assert ext["cohort"]["employees"] == 2 and {s["key"]: s["employees"] for s in ext["sources"]}["external"] == 2
-    assert [g["label"] for g in workforce.aggregate(recs, group_by="source")["groups"]] == ["Employee self-analyses", "External groups", "Team uploads"]
+    assert [g["label"] for g in workforce.aggregate(recs, group_by="source")["groups"]] == ["External groups", "Team uploads"]
 
 
 def test_other_hr_exports_are_read_without_guessing():

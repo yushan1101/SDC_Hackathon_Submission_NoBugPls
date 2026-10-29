@@ -204,7 +204,7 @@ function planCalendar(acts, startDate, done, key) {
   const fmt = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   const jump = (a) => jumpTo(key(a));
   const week = (items, i) => {
-    const from = new Date(+start + i * 7 * DAY_MS), to = new Date(+from + 6 * DAY_MS);
+    const from = new Date(+start + i * 7 * DAY_MS), to = new Date(Math.min(+from + 6 * DAY_MS, +start + 89 * DAY_MS));
     return h("li", { class: `cal-week${i === now ? " is-now" : ""}${i < now ? " is-past" : ""}`, "aria-current": i === now ? "date" : null },
       h("div", { class: "cal-head" }, h("b", {}, `Week ${i + 1}`), h("span", {}, i === now ? "This week" : `${fmt(from)} – ${fmt(to)}`)),
       items.length ? h("ul", {}, items.map(({ a, text }) => h("li", { class: done.has(key(a)) ? "is-done" : null },
@@ -219,13 +219,21 @@ function planCalendar(acts, startDate, done, key) {
 
 /** Editable 30/60/90 plan with approval. Talks to /api/plans/:id. Calls onChange(status) after saves. */
 export function planBlock({ planId, planReference, plan, version, status, weeklyHours, onChange, approverLabel = "I have reviewed this plan and approve it", title = "Your 90-day plan",
-  progress = [], evidence = null, readOnly = false, startDate = null, sectionHref = null }) {
+  progress = [], evidence = null, readOnly = false, startDate = null, sectionHref = null, selectedNodeId = null }) {
   // sectionHref(p | null) -> URL of a section subpage; when given, opening a section goes through the router (so Back works)
   // readOnly: HR looking at a plan an employee made for themself: no hours, ticks, saving or approval
   // progress: activities ticked off as done ("<days>:<skill>", saved on the server); evidence: id -> {title, url} for course links
   const done = new Set(progress);
   const key = (a) => `${a.day_range}:${a.skill_id}`;
   const ev = evidence instanceof Map ? evidence : new Map((evidence || []).map((e) => [e.id, e]));
+  const learningNodes = Array.isArray(plan.learning_nodes) ? plan.learning_nodes : [];
+  const phaseWeekRanges = { "1-30": [1, 4], "31-60": [5, 8], "61-90": [9, 13] };
+  const selectedNodeByPhase = { "1-30": null, "31-60": null, "61-90": null };
+  const selectedWeekByPhase = { "1-30": 1, "31-60": 5, "61-90": 9 };
+  const quizState = new Map(), criteriaState = new Map(), lessonTabs = new Map();
+  const journeyHosts = {};
+  const nodeDone = (node) => done.has(`node:${node.id}`);
+  const nodeStarted = (node) => criteriaState.has(node.id) || quizState.has(node.id);
   const courses = (a) => (a.evidence_ids || []).map((id) => ev.get(id)).filter((e) => e?.url && e.id.startsWith("learn:")).slice(0, 2);
   const cap = weeklyHours ? Math.round((weeklyHours * 30) / 7 * 10) / 10 : null;
   const acts = plan.activities.map((a) => ({ ...a }));
@@ -234,11 +242,16 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
   const phaseNames = ["Foundation", "Practical application", "Portfolio & review"];
   const tracks = {}, counts = {}, panes = {};
   let blockEl;
-  function openPane(p, fromRoute = false) {  // swap the journey overview for one section's subpage (null = back to the overview)
-    if (sectionHref && !fromRoute) { location.hash = sectionHref(p); return; }
+  function openPane(p, fromRoute = false, nodeId = null) {  // swap the journey overview for one section's subpage (null = back to the overview)
+    if (sectionHref && !fromRoute) { location.hash = sectionHref(p, nodeId); return; }
     if (p && !PHASES.includes(p)) p = null;
+    if (p && nodeId) {
+      const node = learningNodes.find((item) => item.id === nodeId);
+      if (node) { selectedNodeByPhase[p] = node.id; selectedWeekByPhase[p] = node.week_number; }
+    }
     blockEl.toggleAttribute("data-view", !!p);
     PHASES.forEach((x) => { panes[x].hidden = x !== p; });
+    if (p && nodeId) renderJourney(p);
     blockEl.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   const phases = PHASES.map((p, phaseIndex) => {
@@ -255,7 +268,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
         const n = String(s).replace(/\D/g, "");
         return h("span", { class: "sdg-n", style: { "--sdg": SDG_COLORS[n] || "#888" }, title: `UN SDG ${n}`, "aria-label": `UN SDG ${n}` }, n);
       });
-      const tick = planId && !readOnly ? h("label", { class: "act-done", title: "Mark this activity as done" },
+      const tick = planId && !readOnly && !learningNodes.length ? h("label", { class: "act-done", title: "Mark this activity as done" },
         h("input", { type: "checkbox", checked: done.has(key(a)) ? true : null, onchange: (e) => mark(a, e.target.checked, e.target) }), "Done") : null;
       const links = courses(a);
       const steps = planActivitySteps(a);
@@ -280,8 +293,10 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     const budget = h("div", { class: "budget", "aria-hidden": "true" },
       h("div", { style: { transform: `scaleX(${cap ? Math.min(1, used / cap) : 1})`, "transform-origin": "left", height: "100%" } },
         reveal(h("i"), GROW, { duration: 700 })));
-    const activityList = mine.length ? h("div", { class: "phase-activities" }, activityCards)
+    const activityList = mine.length ? h("details", { class: "phase-activity-budget", open: !learningNodes.length },
+      h("summary", {}, "Skill activities and learning hours"), h("div", { class: "phase-activities" }, activityCards))
       : h("p", { class: "note" }, "No activities in this phase.");
+    journeyHosts[p] = h("div", { class: "learning-journey", hidden: !learningNodes.length });
     tracks[p] = h("ol", { class: "phase-track", "aria-label": `Days ${p} activities` });
     counts[p] = h("span", { class: "phase-count" });
     // overview row: heading, count and step track; the activity cards live on the section's own subpage
@@ -292,58 +307,222 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
           h("button", { class: `btn sm${x === p ? " primary" : ""}`, type: "button", "aria-current": x === p ? "page" : null, onclick: () => openPane(x) },
             `Days ${x}`)))),
       h("div", { class: "phase-intro" }, heading.cloneNode(true), h("p", { class: "phase-summary" }, summary)),
-      h("div", { class: "phase-content" }, budget, activityList));
+      h("div", { class: "phase-content" }, budget, journeyHosts[p], activityList));
     return h("div", { class: "phase-row", "data-phase": p },
       h("span", { class: "phase-step", "aria-hidden": "true" }, phaseIndex + 1),
       h("div", { class: "phase" }, h("div", { class: "phase-toggle" },
         h("div", { class: "phase-intro" }, heading, h("p", { class: "phase-summary" }, summary, " ", counts[p]), tracks[p]),
         h("button", { class: "btn sm phase-open", type: "button", onclick: () => openPane(p) }, "View details", icon("chevron")))));
   });
+  const phaseForWeek = (week) => week <= 4 ? "1-30" : week <= 8 ? "31-60" : "61-90";
+  const weekBounds = (week) => {
+    const start = new Date(startDate || Date.now()); start.setHours(0, 0, 0, 0);
+    const first = new Date(+start + (week - 1) * 7 * DAY_MS);
+    const last = new Date(Math.min(+first + 6 * DAY_MS, +start + 89 * DAY_MS));
+    const fmt = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return `${fmt(first)} – ${fmt(last)}`;
+  };
+  const scrollRoadTo = (phase, week) => setTimeout(() => journeyHosts[phase]?.querySelector(`.road-week[data-week="${week}"]`)?.scrollIntoView({
+    behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest", inline: "center" }), 0);
+  const renderJourney = (phase) => {
+    const host = journeyHosts[phase];
+    if (!host || !learningNodes.length) return;
+    const [lo, hi] = phaseWeekRanges[phase];
+    const nodes = learningNodes.filter((node) => node.week_number >= lo && node.week_number <= hi)
+      .sort((a, b) => a.week_number - b.week_number ||
+        ["learn", "practice", "project", "review", "quiz"].indexOf(a.type) - ["learn", "practice", "project", "review", "quiz"].indexOf(b.type));
+    const selectedWeek = selectedWeekByPhase[phase];
+    const selectedNode = learningNodes.find((node) => node.id === selectedNodeByPhase[phase]);
+    const weekNodes = (week) => nodes.filter((node) => node.week_number === week);
+    const stateForWeek = (week) => {
+      const group = weekNodes(week);
+      if (group.length && group.every(nodeDone)) return "Completed";
+      if (group.some((node) => nodeDone(node) || nodeStarted(node))) return "In progress";
+      return "Not started";
+    };
+    const weeks = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+    const calendar = h("div", { class: "learning-weeks", role: "group", "aria-label": `Weekly learning schedule for days ${phase}` },
+      ...weeks.map((week) => {
+        const weekly = weekNodes(week);
+        const state = stateForWeek(week);
+        const weeklyProgress = weekly.reduce((total, node) => total + (nodeDone(node) ? 1 : nodeStarted(node) ? 0.5 : 0), 0);
+        return h("button", { type: "button", class: `learning-week${week === selectedWeek ? " is-selected" : ""}${week === nowWeek ? " is-current" : ""}`,
+          "aria-pressed": String(week === selectedWeek), "data-week": String(week), onclick: () => {
+            selectedWeekByPhase[phase] = week; renderAllJourneys();
+            scrollRoadTo(phase, week);
+          } }, h("span", { class: "learning-week-title" }, `Week ${week}`, week === nowWeek ? h("span", { class: "learning-current" }, "Current") : null),
+          h("span", { class: "learning-week-date" }, weekBounds(week)),
+          h("span", { class: "learning-week-focus" }, [...new Set(weekly.flatMap((node) => node.topics || node.skills))].join(" · ") || "Scheduled learning"),
+          h("span", { class: "learning-week-skills" }, [...new Set(weekly.flatMap((node) => node.skills))].join(" · ")),
+          week === selectedWeek ? h("span", { class: "learning-week-selected" }, "Selected") : null,
+          h("span", { class: "learning-week-meta" }, `${weekly.length} step${weekly.length === 1 ? "" : "s"} · ${weekly.reduce((n, node) => n + node.estimated_minutes, 0)} min · ${state}`),
+          h("span", { class: "learning-week-progress", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(weekly.length),
+            "aria-valuenow": String(weeklyProgress), "aria-label": `${stateForWeek(week)}: ${weeklyProgress} of ${weekly.length} step equivalents` },
+            h("i", { style: { width: `${weekly.length ? weeklyProgress / weekly.length * 100 : 0}%` } })));
+      }));
+    const roadWeeks = weeks.map((week) => {
+      const buttons = weekNodes(week).map((node) => {
+          const complete = nodeDone(node), started = nodeStarted(node), active = node.id === selectedNodeByPhase[phase];
+          return h("button", { type: "button", class: `road-node${complete ? " is-done" : ""}${started ? " is-started" : ""}${active ? " is-active" : ""}${week === selectedWeek ? " is-week-selected" : ""}`,
+            "aria-pressed": String(active), "aria-label": `${node.title}, week ${week}, ${complete ? "completed" : started ? "in progress" : "not started"}`,
+            onclick: () => selectNode(node) },
+            h("span", { class: "road-node-icon", "aria-hidden": "true" }, icon(complete ? "check" : node.type === "learn" ? "sources" : node.type === "quiz" ? "target" : "edit")),
+            h("span", { class: "road-node-title" }, node.title), h("span", { class: "road-node-type" }, node.type === "quiz" ? "Quiz" : node.type[0].toUpperCase() + node.type.slice(1)),
+            h("span", { class: "sr-only" }, complete ? "Completed" : started ? "In progress" : "Not started"));
+      });
+      return h("div", { class: `road-week${week === selectedWeek ? " is-selected" : ""}${week === nowWeek ? " is-current" : ""}`,
+        "data-week": String(week), style: { "--steps": Math.max(1, buttons.length) } },
+        h("div", { class: "road-week-heading" }, h("h5", {}, `Week ${week}`), h("span", {}, `${buttons.length} learning steps`)), h("div", { class: "road-nodes" }, ...buttons));
+    });
+    const firstOpen = nodes.findIndex((node) => !nodeDone(node));
+    const completedPrefix = firstOpen < 0 ? nodes.length : firstOpen;
+    const road = h("div", { class: "learning-road-scroll", tabindex: "0", "aria-label": "Scrollable learning roadmap" },
+      h("div", { class: "learning-road", style: { "--road-progress-number": String(nodes.length ? completedPrefix / nodes.length : 0) } }, ...roadWeeks));
+    const controls = h("div", { class: "learning-road-controls" },
+      h("span", { class: "muted" }, "Scroll to explore all steps. Selecting a week highlights it; selecting a node opens its lesson."),
+      h("button", { class: "btn sm", type: "button", onclick: () => { const current = Math.max(lo, Math.min(hi, nowWeek)); selectedWeekByPhase[phase] = current; renderAllJourneys();
+        scrollRoadTo(phase, current); } }, "Scroll to current week"));
+    const lesson = selectedNode && phaseForWeek(selectedNode.week_number) === phase ? renderLearningLesson(selectedNode) :
+      h("section", { class: "learning-lesson learning-lesson-empty" }, h("p", {}, "Select a learning step to open its mini-lesson."));
+    host.replaceChildren(h("header", { class: "learning-journey-heading" }, h("h4", {}, `${phaseNames[PHASES.indexOf(phase)]} Learning Roadmap`),
+      h("p", {}, `Days ${phase} · One continuous journey across ${weeks.length} weeks`)), calendar,
+      h("div", { class: "learning-road-heading" }, h("h4", {}, "Connected learning path"), h("span", {}, "↔ Scroll sideways")), road, controls, lesson);
+  };
+  const renderLearningLesson = (node) => {
+    const week = node.week_number;
+    const state = quizState.get(node.id) || {};
+    const criteria = criteriaState.get(node.id) || (nodeDone(node) ? node.completion_criteria.map(() => true) : node.completion_criteria.map(() => false));
+    const quizOk = !node.quiz || state.correct === true || nodeDone(node);
+    const criteriaOk = criteria.every(Boolean);
+    const activeTab = lessonTabs.get(node.id) || (node.type === "quiz" ? "quiz" : ["practice", "project"].includes(node.type) ? "practice" : "learn");
+    const tabs = h("nav", { class: "learning-lesson-tabs", "aria-label": "Lesson sections" },
+      ...["learn", "practice", ...(node.quiz ? ["quiz"] : [])].map((tab) => h("button", {
+        type: "button", class: activeTab === tab ? "is-active" : null, "aria-pressed": String(activeTab === tab),
+        onclick: () => { lessonTabs.set(node.id, tab); renderAllJourneys(); }
+      }, tab[0].toUpperCase() + tab.slice(1))));
+    const refs = (node.resource_ids || []).map((id) => ev.get(id)).filter((e) => e?.url);
+    const journeyIndex = learningNodes.findIndex((item) => item.id === node.id);
+    const beforeNode = learningNodes[journeyIndex - 1], afterNode = learningNodes[journeyIndex + 1];
+    const stepNav = h("nav", { class: "learning-step-nav", "aria-label": "Learning step navigation" },
+      h("button", { class: "btn sm", type: "button", disabled: !beforeNode ? true : null, onclick: () => beforeNode && selectNode(beforeNode) }, "Previous step"),
+      h("span", { class: "muted" }, `${journeyIndex + 1} of ${learningNodes.length}`),
+      h("button", { class: "btn sm primary", type: "button", disabled: !afterNode ? true : null, onclick: () => afterNode && selectNode(afterNode) }, "Next step"));
+    const quiz = node.quiz ? h("section", { class: "learning-section learning-quiz" }, h("h5", {}, "Quiz · check your understanding"),
+      h("p", {}, node.quiz.question), h("div", { class: "learning-options", role: "group", "aria-label": node.quiz.question },
+        ...node.quiz.options.map((option, index) => h("button", { type: "button", class: `learning-option${state.answer === index ? state.correct ? " is-correct" : " is-wrong" : ""}`,
+          "aria-pressed": String(state.answer === index), onclick: () => { quizState.set(node.id, { answer: index, correct: index === node.quiz.answer_index }); renderAllJourneys(); } }, option))),
+      state.answer != null ? h("p", { class: `learning-feedback${state.correct ? " is-correct" : " is-wrong"}`, role: "status" },
+        state.correct ? `Correct. ${node.quiz.explanation}` : `Not quite. ${node.quiz.explanation}`,
+        !state.correct ? h("button", { type: "button", class: "btn sm", onclick: () => { quizState.delete(node.id); renderAllJourneys(); } }, "Try again") : null) : null) : null;
+    return h("section", { class: "learning-lesson", "aria-labelledby": `lesson-${node.id}` },
+      h("header", { class: "learning-lesson-header" }, h("div", {}, h("p", { class: "eyebrow" }, `Week ${week} selected · ${learningNodes.filter((item) => item.week_number === week).length} learning steps`),
+        h("h4", { id: `lesson-${node.id}` }, node.title), h("div", { class: "learning-skill-tags" }, ...node.skills.map((skill) => h("span", { class: "tag" }, skill)),
+          h("span", { class: "tag learning-source" }, node.content_source === "ai" ? "Personalized lesson" : "Guided lesson"))),
+        h("span", { class: `learning-node-status${nodeDone(node) ? " is-done" : ""}` }, nodeDone(node) ? "✓ Completed" : `${node.estimated_minutes} min`)),
+      stepNav, tabs,
+      h("section", { class: "learning-section" }, h("h5", {}, "Learning objective"), h("p", {}, node.learning_objective)),
+      h("section", { class: "learning-section", hidden: activeTab !== "learn" }, h("h5", {}, "Learn"),
+        node.topics?.length ? h("ul", { class: "learning-topics" }, ...node.topics.map((topic) => h("li", {}, topic))) : null,
+        ...node.learn.map((part) => h("p", {}, part))),
+      h("section", { class: "learning-section", hidden: activeTab !== "learn" }, h("h5", {}, "How to learn"), h("ol", {}, ...node.instructions.map((step) => h("li", {}, step)))),
+      h("section", { class: "learning-section", hidden: activeTab !== "learn" }, h("h5", {}, "Resources"), refs.length ? h("ul", { class: "learning-resources" }, ...refs.map((resource) =>
+        h("li", {}, h("a", { href: currentSourceUrl(resource.url), target: "_blank", rel: "noopener noreferrer" }, resource.title),
+          h("span", { class: "muted" }, ` · ${resource.publisher || "Verified source"} · ${resource.category || "Learning resource"}${resource.id.startsWith("learn:") ? " · Free" : ""}`)))) :
+        h("p", { class: "muted" }, "No verified resource link was retrieved for this step. Use the Learn and Practice instructions below.")),
+      h("section", { class: "learning-section", hidden: activeTab !== "practice" }, h("h5", {}, "Practice"), h("p", {}, node.exercise), h("p", {}, h("b", {}, "Deliverable: "), node.deliverable)),
+      node.quiz ? h("div", { hidden: activeTab !== "quiz" }, quiz) : null,
+      h("section", { class: "learning-section learning-completion" }, h("h5", {}, "Completion criteria"),
+        h("p", { class: "muted" }, "Check each item after doing the work. Completion records this activity; it does not change your verified skill level."),
+        ...node.completion_criteria.map((criterion, index) => h("label", { class: "learning-criterion" },
+          h("input", { type: "checkbox", checked: criteria[index] ? true : null, disabled: readOnly || nodeDone(node) ? true : null,
+            onchange: (event) => { const next = [...criteria]; next[index] = event.target.checked; criteriaState.set(node.id, next); renderAllJourneys(); } }), criterion)),
+        h("p", { class: "learning-outcome" }, h("b", {}, "Expected outcome: "), node.expected_outcome),
+        planId && !readOnly ? h("button", { class: `btn ${nodeDone(node) ? "ghost" : "primary"}`, type: "button",
+          disabled: !nodeDone(node) && (!criteriaOk || !quizOk) ? true : null, onclick: () => markNode(node, !nodeDone(node)) },
+          nodeDone(node) ? "Mark as not completed" : "Mark learning step complete") : h("p", { class: "muted" }, nodeDone(node) ? "Completed" : "Progress is read-only")));
+  };
+  function renderAllJourneys() { PHASES.forEach(renderJourney); }
+  function selectNode(node) {
+    const phase = phaseForWeek(node.week_number);
+    selectedWeekByPhase[phase] = node.week_number;
+    selectedNodeByPhase[phase] = node.id;
+    const activePhase = blockEl?.querySelector(".phase-detail:not([hidden])")?.dataset.pane;
+    if (activePhase !== phase) openPane(phase, false, node.id);
+    else { renderAllJourneys(); scrollRoadTo(phase, node.week_number); }
+  }
+  const nowWeek = Math.min(13, Math.max(1, Math.ceil((Math.floor((Date.now() - (Date.parse(startDate || "") || Date.now())) / DAY_MS) + 1) / 7)));
+  PHASES.forEach((phase) => {
+    const [lo, hi] = phaseWeekRanges[phase]; selectedWeekByPhase[phase] = Math.min(hi, Math.max(lo, nowWeek));
+    const group = learningNodes.filter((node) => node.week_number === selectedWeekByPhase[phase]);
+    selectedNodeByPhase[phase] = (group.find((node) => !nodeDone(node)) || group[0])?.id || null;
+  });
+  const routedNode = learningNodes.find((node) => node.id === selectedNodeId);
+  if (routedNode) {
+    const routedPhase = phaseForWeek(routedNode.week_number);
+    selectedNodeByPhase[routedPhase] = routedNode.id;
+    selectedWeekByPhase[routedPhase] = routedNode.week_number;
+  }
   const progressEl = h("div", { class: "plan-progress plan-stats" });
   const asideEl = h("aside", { class: "plan-aside", "aria-label": "What's next" });
-  const calEl = h("details", { class: "plan-cal-wrap", open: true }, h("summary", {}, icon("grid"), "Calendar: what to do each week"));
+  const calEl = h("details", { class: "plan-cal-wrap", open: true, hidden: learningNodes.length ? true : null }, h("summary", {}, icon("grid"), "Calendar: what to do each week"));
   const startMs = Date.parse(startDate || "") || Date.now();
   function drawProgress() {
     calEl.replaceChildren(calEl.firstChild, planCalendar(acts, startDate, done, key));
-    const total = acts.length, n = acts.filter((a) => done.has(key(a))).length, pct = total ? Math.round((100 * n) / total) : 0;
+    renderAllJourneys();
+    const total = learningNodes.length || acts.length;
+    const n = learningNodes.length ? learningNodes.filter(nodeDone).length : acts.filter((a) => done.has(key(a))).length;
+    const pct = total ? Math.round((100 * n) / total) : 0;
     const hrs = (xs) => Math.round(xs.reduce((s, a) => s + a.estimated_hours, 0) * 10) / 10;
     const inPhase = (p) => acts.filter((a) => a.day_range === p);
-    const reached = PHASES.filter((p) => inPhase(p).length && inPhase(p).every((a) => done.has(key(a))));
+    const phaseNodes = (p) => { const [lo, hi] = phaseWeekRanges[p]; return learningNodes.filter((node) => node.week_number >= lo && node.week_number <= hi); };
+    const phaseDone = (p) => learningNodes.length ? phaseNodes(p).filter(nodeDone).length : inPhase(p).filter((a) => done.has(key(a))).length;
+    const phaseTotal = (p) => learningNodes.length ? phaseNodes(p).length : inPhase(p).length;
+    const reached = PHASES.filter((p) => phaseTotal(p) && phaseDone(p) === phaseTotal(p));
     const daysLeft = Math.max(0, 90 - Math.floor((Date.now() - startMs) / DAY_MS));
-    const next = acts.find((a) => !done.has(key(a)));
+    const next = learningNodes.length ? learningNodes.find((node) => !nodeDone(node)) : acts.find((a) => !done.has(key(a)));
     progressEl.replaceChildren(
       h("div", { class: "ps-main" },
         h("div", { class: "ps-ring", style: { "--pct": pct }, role: "img", "aria-label": `${pct}% done` }, h("b", {}, `${pct}%`)),
-        h("div", { class: "ps-text" }, h("b", {}, "Overall progress"), h("span", { class: "muted" }, `${n} of ${total} activities done · ${hrs(acts.filter((a) => done.has(key(a))))} of ${hrs(acts)} h`),
+        h("div", { class: "ps-text" }, h("b", {}, "Overall progress"), h("span", { class: "muted" }, learningNodes.length
+          ? `${n} of ${total} learning steps complete · estimated activity budget ${hrs(acts)} h`
+          : `${n} of ${total} activities done · ${hrs(acts.filter((a) => done.has(key(a))))} of ${hrs(acts)} h`),
           h("div", { class: "pp-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(total), "aria-valuenow": String(n), "aria-label": "Plan progress" },
             h("i", { style: { width: `${pct}%` } })))),
       h("div", { class: "ps-stat" }, h("span", { class: "ps-icon" }, icon("target")), h("div", {}, h("b", {}, `${reached.length} of 3`), h("span", { class: "muted" }, "Milestones reached"))),
       h("div", { class: "ps-stat" }, h("span", { class: "ps-icon" }, icon("grid")), h("div", {}, h("b", {}, String(daysLeft)), h("span", { class: "muted" }, "Days remaining"))));
     PHASES.forEach((p) => {
       const xs = inPhase(p);
-      counts[p].replaceChildren(icon(xs.length && xs.every((a) => done.has(key(a))) ? "check" : "target"), `${xs.filter((a) => done.has(key(a))).length} of ${xs.length} done`);
+      counts[p].replaceChildren(icon(phaseTotal(p) && phaseDone(p) === phaseTotal(p) ? "check" : "target"), `${phaseDone(p)} of ${phaseTotal(p)} learning steps done`);
       tracks[p].replaceChildren(...xs.map((a) => {
-        const st = done.has(key(a)) ? "done" : a === next ? "now" : "todo";
+        const linked = learningNodes.filter((node) => node.activity_keys?.includes(key(a)));
+        const finished = done.has(key(a)) || (linked.length > 0 && linked.every(nodeDone));
+        const st = finished ? "done" : !learningNodes.length && a === next || learningNodes.length && linked.some((node) => node.id === next?.id) ? "now" : "todo";
         return h("li", { class: `pt-${st}` }, h("button", { type: "button", "aria-current": st === "now" ? "step" : null,
           onclick: (e) => { e.preventDefault(); e.stopPropagation(); jumpTo(key(a)); } },
           h("span", { class: "pt-dot" }, st === "done" ? icon("check") : null),
           h("span", { class: "pt-label" }, a.skill_id), h("span", { class: "pt-tag" }, `${a.estimated_hours} h`)));
       }));
     });
-    const nextPhase = PHASES.find((p) => !reached.includes(p) && inPhase(p).length);
+    const nextPhase = PHASES.find((p) => !reached.includes(p) && phaseTotal(p));
     asideEl.replaceChildren(
       next ? h("section", { class: "aside-card" },
-        h("div", { class: "aside-head" }, h("h4", {}, "Your next activity"), h("span", { class: "pt-tag" }, `Days ${next.day_range}`)),
-        h("b", { class: "aside-skill" }, next.skill_id),
-        h("p", {}, next.activity),
-        h("p", { class: "muted aside-step" }, planActivitySteps(next)[0]),
-        h("div", { class: "aside-meta" }, h("span", {}, icon("clock"), `${next.estimated_hours} h`)),
-        h("button", { class: "btn primary", type: "button", onclick: () => jumpTo(key(next)) }, "Continue learning"))
+        h("div", { class: "aside-head" }, h("h4", {}, learningNodes.length ? "Your next learning step" : "Your next activity"),
+          h("span", { class: "pt-tag" }, learningNodes.length ? `Week ${next.week_number}` : `Days ${next.day_range}`)),
+        h("b", { class: "aside-skill" }, learningNodes.length ? next.title : next.skill_id),
+        h("p", {}, learningNodes.length ? next.learning_objective : next.activity),
+        h("p", { class: "muted aside-step" }, learningNodes.length ? next.instructions[0] : planActivitySteps(next)[0]),
+        h("div", { class: "aside-meta" }, h("span", {}, icon("clock"), learningNodes.length ? `${next.estimated_minutes} min estimate` : `${next.estimated_hours} h`)),
+        h("button", { class: "btn primary", type: "button", onclick: () => {
+          if (!learningNodes.length) return jumpTo(key(next));
+          const phase = phaseForWeek(next.week_number); selectedWeekByPhase[phase] = next.week_number; selectedNodeByPhase[phase] = next.id;
+          openPane(phase, false, next.id); renderAllJourneys(); setTimeout(() => journeyHosts[phase]?.querySelector(`.road-week[data-week="${next.week_number}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" }), 160);
+        } }, "Continue learning"))
         : h("section", { class: "aside-card" }, h("h4", {}, "All activities done"), h("p", {}, "You've finished every activity in this plan.")),
       nextPhase ? h("section", { class: "aside-card" },
         h("h4", {}, `Next milestone · Day ${nextPhase.split("-")[1]}`),
         h("p", { class: "muted" }, `Finish ${phaseNames[PHASES.indexOf(nextPhase)].toLowerCase()} activities:`),
-        h("ul", { class: "aside-list" }, inPhase(nextPhase).map((a) => h("li", { class: done.has(key(a)) ? "is-done" : null },
+        h("ul", { class: "aside-list" }, learningNodes.length ? phaseNodes(nextPhase).map((node) => h("li", { class: nodeDone(node) ? "is-done" : null },
+          icon(nodeDone(node) ? "check" : "target"), node.title)) : inPhase(nextPhase).map((a) => h("li", { class: done.has(key(a)) ? "is-done" : null },
           icon(done.has(key(a)) ? "check" : "target"), a.skill_id)))) : null);
   }
   async function mark(a, value, box) {
@@ -352,6 +531,13 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     drawProgress();
     try { await api(`/api/plans/${planId}/progress`, { method: "POST", body: { item: key(a), done: value } }); }
     catch (e) { value ? done.delete(key(a)) : done.add(key(a)); box.checked = !value; box.closest(".act")?.classList.toggle("is-done", !value); drawProgress(); toast(e.message, "err"); }
+  }
+  async function markNode(node, value) {
+    const item = `node:${node.id}`;
+    value ? done.add(item) : done.delete(item);
+    drawProgress();
+    try { await api(`/api/plans/${planId}/progress`, { method: "POST", body: { item, done: value } }); }
+    catch (e) { value ? done.delete(item) : done.add(item); drawProgress(); toast(e.message, "err"); }
   }
   drawProgress();
   const planEl = h("div", { class: "plan" }, phases,

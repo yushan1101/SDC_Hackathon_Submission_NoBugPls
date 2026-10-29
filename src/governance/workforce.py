@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 MIN_GROUP = 3
 MIN_COVERAGE = 0.6
 TOP_SKILLS = 12  # rows shown when no skill filter is set; a real report lists ~45 ESCO skills
-SOURCES = {"employee": "Employee self-analyses", "hr_upload": "Team uploads", "external": "External groups"}
+SOURCES = {"hr_upload": "Team uploads", "external": "External groups"}
 # what the heatmap's columns compare; "auto" = departments when they are recorded, otherwise roles
 GROUP_BY = {"auto": None, "department": "department", "role": "role", "dataset": "dataset", "group": "group", "source": "source"}
 
@@ -51,24 +51,19 @@ def sample_workforce_records(scenario="assistive"):
 
 
 def load_reports(con, owner: str, scenario: str, sample_preview: bool = False) -> list[dict]:
-    """Latest stored report per person in this HR's organisation, from two sources:
-    the employee's own resume/quiz analysis (an active employee this HR invited) and HR's team uploads
-    (tagged with this HR as owner, or untagged older uploads, which the review queue already shows to HR).
+    """Latest HR-uploaded team reports visible to this HR, kept separate from employees' individual analyses.
     Sample previews use fictional memory-only data."""
     if sample_preview:
         return sample_workforce_records(scenario)
     from governance.db import json_text
-    members = {r[0] for r in con.execute("SELECT employee_id FROM users WHERE invited_by=? AND role='employee' AND status='active'", (owner,)) if r[0]}
     owner_expr = json_text(con, json_text(con, "r.report", "workforce"), "owner")
     rows = con.execute(f"""SELECT p.plan_id, p.subject_id, p.audience, r.report, v.snapshot
         FROM plans p JOIN plan_reports r ON r.plan_id=p.plan_id JOIN plan_versions v ON v.plan_id=p.plan_id
         LEFT JOIN plan_references ref ON ref.plan_id=p.plan_id
         WHERE v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)
         AND NOT EXISTS (SELECT 1 FROM hr_reviews h WHERE h.plan_id=p.plan_id AND (h.deleted_utc IS NOT NULL OR h.archived=1))
-        AND ((p.audience='hr' AND ({owner_expr}=? OR {owner_expr} IS NULL)) OR
-             (p.audience='individual' AND EXISTS (SELECT 1 FROM users u
-              WHERE u.employee_id=p.subject_id AND u.role='employee' AND u.status='active' AND u.invited_by=?)))
-        ORDER BY p.created_utc DESC, ref.number DESC, p.plan_id DESC""", (owner, owner)).fetchall()
+        AND p.audience='hr' AND ({owner_expr}=? OR {owner_expr} IS NULL)
+        ORDER BY p.created_utc DESC, ref.number DESC, p.plan_id DESC""", (owner,)).fetchall()
     latest = {}
     for pid, subject, audience, raw, snapshot in rows:
         try:
@@ -81,15 +76,15 @@ def load_reports(con, owner: str, scenario: str, sample_preview: bool = False) -
         if audience == "hr" and meta.get("owner") not in (owner, None):
             continue
         # an upload's ids come from HR's file and can collide with account ids, so uploads key separately
-        key = subject if audience == "individual" else meta.get("employee_key") or f"upload:{subject}"
+        key = meta.get("employee_key") or f"upload:{subject}"
         if not key:
             continue
         if audience == "hr" and meta.get("dataset_id"):  # one upload (data set) at a time: the same id in two uploads is two people
             key = f"{meta['dataset_id']}:{key}"
         latest.setdefault(key, {"key": key, "role": (report.get("occupation") or {}).get("title") or plan.get("target_role", "Assigned role"),
                                "department": meta.get("department") or "Unassigned", "report": report, "plan": plan, "plan_id": pid,
-                               "source": "employee" if audience == "individual" else "external" if meta.get("external") else "hr_upload",
-                               "dataset": "Employee self-analyses" if audience == "individual" else meta.get("dataset") or "Earlier uploads",
+                               "source": "external" if meta.get("external") else "hr_upload",
+                               "dataset": meta.get("dataset") or "Earlier uploads",
                                "group": meta.get("group") or "Ungrouped"})
     return list(latest.values())
 
@@ -151,7 +146,7 @@ def aggregate(records, skills=(), category="all", sample_preview: bool = False, 
         records = [r for r in records if r.get("role") == role]
     departments = sorted({r.get("department", "Unassigned") for r in records})
     roles = sorted({r.get("role", "Assigned role") for r in records})
-    # no departments recorded (employee self-analyses, older uploads): compare roles instead of one "Unassigned" column
+    # no departments recorded in older uploads: compare roles instead of one "Unassigned" column
     if group_by in ("auto", None):
         group_by = "role" if department or departments == ["Unassigned"] else "department"
     field = GROUP_BY[group_by]
