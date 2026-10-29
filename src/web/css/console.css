@@ -156,12 +156,11 @@ html[data-product="hr"] .wf-avg, html[data-product="hr"] .wf-avg:hover { box-sha
 html[data-product="hr"] .wf-skill-name, html[data-product="hr"] .wf-skill-head { box-shadow: none; }
 html[data-product="hr"] .wf-foot { border-top: 0; }
 html[data-product="hr"] .wf-legend i { border: 0; }
-/* agent page in the console: fills and one soft lift instead of grey outlines; no mascot above the question */
+/* agent page in the console: fills and one soft lift instead of grey outlines; the owl stays above the question */
 html[data-product="hr"] .ag-starter { border-color: transparent; background: oklch(1 0 0); box-shadow: var(--c-lift); border-radius: 10px; }
 html[data-product="hr"] .ag-starter:hover { background: var(--accent-soft); }
 html[data-product="hr"] .ag-composer { border-color: transparent; border-radius: 14px; box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.05), 0 14px 36px -18px oklch(0.25 0.06 262 / 0.3); }
 html[data-product="hr"] .ag-composer:focus-within { box-shadow: 0 0 0 2px var(--accent-soft), 0 14px 36px -18px oklch(0.25 0.06 262 / 0.3); }
-html[data-product="hr"] .ag-empty > .owl { display: none; }
 html[data-product="hr"] :is(.own-plan-chip, .chip) { border-color: transparent; background: var(--c-fill); border-radius: 8px; }
 html[data-product="hr"] .own-plan-chip { text-align: left; }
 html[data-product="hr"] :is(.own-plan-chip, .chip):hover { background: var(--accent-soft); }
