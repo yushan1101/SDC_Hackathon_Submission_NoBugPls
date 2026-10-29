@@ -1084,7 +1084,7 @@ async function renderReport(main, report, callbacks = {}) {
   const reportStatus = currentAttempt?.status
     ? currentAttempt.status.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase()) : "Completed";
   const results = h("div", { class: "interview-page interview-report-page" },
-    h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "YOUR PRACTICE REPORT"),
+    h("div", { class: "interview-heading" }, h("div", {},
       h("h1", { class: "page-title" }, report.role_title || "Interview assessment"),
       h("p", { class: "lede" }, `Completed ${fmtTime(report.completed_utc) || "Date not recorded"} · ${report.difficulty || "Difficulty not recorded"} difficulty`)),
       h("span", { class: "tag interview-report-status" }, reportStatus)),

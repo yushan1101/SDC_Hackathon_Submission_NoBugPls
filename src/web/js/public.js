@@ -135,7 +135,7 @@ function shell() {
             h("a", { class: "btn sm primary top-signin", href: "#/signin" }, icon("user"), "Sign in"))
         : h("div", { class: "top-actions" }, h("a", { class: "btn sm plan-pill", href: "#/account", "data-route": "#/account", title: "Your plan and payments" },
             icon("user"), planName(S.me.effective_plan || "org")),
-          h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out"))),
+          h("button", { class: "btn sm signout", "aria-label": "Sign out", title: "Sign out", onclick: signOut }, icon("out"), h("span", { class: "lbl" }, "Sign out")))),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
     guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/agents", "Agent", "ask"), tab("#/today", "AI trends", "pulse"), tab("#/plans", "Plans", "plans")),
     S.me?.role === "employee" ? (S.capsule = employeeCapsule({
@@ -834,14 +834,13 @@ async function planDetail(main, id, focusPlan = false, section = null) {
     r?.issues?.length ? issuesBlock(r.issues) : null);
   const planFocus = h("section", { class: "plan-focus", tabindex: "-1", "aria-label": approved ? "Approved plan and implementation" : "Proposed plan" },
     h("div", { class: "plan-hero" },
-      h("div", { class: "plan-hero-title" }, h("div", {}, h("p", { class: "eyebrow" }, "My career journey"),
+      h("div", { class: "plan-hero-title" }, h("div", {},
         h("h2", {}, "Become a ", h("span", { class: "plan-hero-role" }, r?.occupation?.title || d.plan.target_role))), h("span", { class: `tag ${d.status}` }, d.status)),
       h("p", { class: "plan-hero-copy" }, approved ? "Your personalised 90-day learning journey. Pick up where you left off on the right." : "Your personalised 90-day learning journey, in three 30-day sections."),
       h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days"), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`))),
     planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence, startDate: d.created_utc,
       sectionHref: (p) => `#/plans/${id}${p ? `/${p}` : ""}`,
-      title: approved ? "Your approved 90-day plan" : "Your proposed 90-day plan",
-      onChange: () => planDetail(main, id, true) }));
+      title: null, onChange: () => planDetail(main, id, true) }));
   let expanded = !approved;
   const panel = h("div", { class: "plan-report-panel", id: "saved-plan-report", inert: approved ? true : null,
     "aria-hidden": String(approved) }, reportContent);

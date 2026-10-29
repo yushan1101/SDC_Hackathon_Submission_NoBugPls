@@ -1,0 +1,340 @@
+/* HR and admin consoles, in the product-UI language of cluely.com: a pale field with flat white panels and fine
+   1px lines, Geist only, tight medium-weight headings, 8–12px radii, compact 13–14px text. No icon tiles, glow,
+   glass, gradients, serif or mascot chrome. Loaded last on enterprise.html and admin.html; same palette as the app. */
+html[data-product="hr"] {
+  --c-field: oklch(0.975 0.006 262);
+  --c-line: oklch(0.915 0.008 258);
+  --c-line-strong: oklch(0.86 0.01 258);
+  --c-radius: 12px;
+  --card-shadow: none;
+  --font-display: var(--font-ui);
+}
+
+/* ground and type */
+html[data-product="hr"] body { background: var(--c-field); color: var(--ink); font-size: 14px; }
+html[data-product="hr"] :is(h1, h2, h3, h4, h5, .page-title, .wordmark) { font-family: var(--font-ui); }
+html[data-product="hr"] :is(.view-head h1, .page-title, .view > h1) { font: 600 26px/1.15 var(--font-ui); letter-spacing: -0.025em; }
+html[data-product="hr"] :is(.panel > header h2, .detail-head h2, .wf-heading h2, .wf-panel-header h2, .view h2) { font: 600 16px/1.3 var(--font-ui); letter-spacing: -0.01em; }
+html[data-product="hr"] :is(.view h3, .panel h3) { font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
+html[data-product="hr"] .muted { color: var(--ink-2); }
+
+/* sidebar: flush, full height, quiet; current page is a white row with a hairline */
+html[data-product="hr"] .rail { margin: 0; border-radius: 0; box-shadow: none; background: var(--c-field); border-right: 1px solid var(--c-line); padding: 14px 10px; gap: 2px; }
+html[data-product="hr"] .rail .logo-owl, html[data-product="hr"] .rail .logo .owl { display: none; }
+html[data-product="hr"] .rail .logo { height: 44px; margin-bottom: 10px; padding: 0 10px; }
+html[data-product="hr"] .rail .wordmark { font: 600 17px/1 var(--font-ui); letter-spacing: -0.02em; }
+html[data-product="hr"] :is(.rail a, .rail .rail-group-btn, .rail .hr-account-btn) { height: 34px; padding: 0 10px; gap: 10px; border-radius: 8px; font-size: 14px; font-weight: 500; }
+html[data-product="hr"] :is(.rail a, .rail .rail-group-btn, .rail .hr-account-btn) svg { width: 17px; height: 17px; }
+html[data-product="hr"] :is(.rail a, .rail .rail-group-btn):hover { background: oklch(1 0 0 / 0.7); color: var(--ink); }
+html[data-product="hr"] .rail a[aria-current="page"] { background: oklch(1 0 0); color: var(--ink); box-shadow: inset 0 0 0 1px var(--c-line); }
+html[data-product="hr"] .hr-top, html[data-product="hr"] .admin-top { margin: 0; border-radius: 0; box-shadow: none; background: oklch(1 0 0 / 0.9); border-bottom: 1px solid var(--c-line); }
+
+/* panels and cards: flat white, one hairline, 12px */
+html[data-product="hr"] :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .wf-dialog, .empty-state) {
+  border: 1px solid var(--c-line); border-radius: var(--c-radius); box-shadow: none; background: oklch(1 0 0); }
+html[data-product="hr"] .panel > header { padding: 14px 18px; border-bottom: 1px solid var(--c-line); }
+html[data-product="hr"] .panel > .pad { padding: 18px; }
+
+/* stats: label, number, note; no icon tile */
+html[data-product="hr"] .stat-ic { display: none; }
+html[data-product="hr"] .stats { gap: 12px; }
+html[data-product="hr"] .stat { gap: 4px; padding: 16px 18px; }
+html[data-product="hr"] .stat b { font: 600 28px/1.1 var(--font-ui); letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
+html[data-product="hr"] .stat span:last-child { font-size: 13px; }
+html[data-product="hr"] .wf-stat { gap: 6px; padding: 16px 18px; }
+html[data-product="hr"] .wf-stat strong { font-size: 28px; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
+html[data-product="hr"] .wf-stat > :last-child, html[data-product="hr"] .wf-stat > span:first-child { font-size: 13px; }
+
+/* controls: 8px corners, compact, no glow */
+html[data-product="hr"] .btn { min-height: 36px; padding: 0 14px; border-radius: 8px; font-size: 14px; font-weight: 500; box-shadow: none; }
+html[data-product="hr"] .btn.sm { min-height: 32px; padding: 0 12px; font-size: 13.5px; }
+html[data-product="hr"] .btn.primary { box-shadow: 0 1px 2px oklch(0.53 0.19 263 / 0.35), inset 0 1px 0 oklch(1 0 0 / 0.16); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost) { border-color: var(--c-line-strong); background: oklch(1 0 0); }
+html[data-product="hr"] :is(.input, select.input, textarea.input) { min-height: 36px; border-radius: 8px; border-color: var(--c-line-strong); font-size: 14px; }
+html[data-product="hr"] .tag { border-radius: 6px; font-size: 12.5px; line-height: 22px; }
+html[data-product="hr"] :is(.seg, .seg button, .chip) { border-radius: 8px; }
+html[data-product="hr"] .wf-filter summary { padding: 8px 12px; border-radius: 8px; border-color: var(--c-line-strong); }
+
+/* tables: quiet header row, hairlines */
+html[data-product="hr"] table thead th { background: var(--c-field); color: var(--ink-2); font-size: 12.5px; font-weight: 500; }
+html[data-product="hr"] table :is(th, td) { border-color: var(--c-line); }
+
+/* floating agent: a plain round button and a solid bar; no mascot, no glass */
+html[data-product="hr"] .cap-bar { border-radius: 12px; border-color: var(--c-line-strong); background: oklch(1 0 0); -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: 0 12px 32px -16px oklch(0.25 0.04 262 / 0.35); }
+html[data-product="hr"] .cap-panel { border-radius: 12px; }
+/* folded: the owl in a white circle with a soft owl-blue lift (no glass) */
+html[data-product="hr"] .hr-capsule.folded .cap-bar { border-radius: 50%; background: oklch(1 0 0); border-color: transparent;
+  box-shadow: 0 10px 26px -12px oklch(0.4 0.12 263 / 0.45); }
+
+/* heatmap and team-plan pieces inside the console */
+html[data-product="hr"] .wf-sample-banner { border-radius: 10px; }
+html[data-product="hr"] .wf-cell { border-radius: 8px; }
+html[data-product="hr"] .wf-suggestion { border-radius: 8px; }
+html[data-product="hr"] .wf-stats { align-items: start; }
+html[data-product="hr"] .wf-stat > :last-child { margin-top: 0; }
+
+/* heatmap filters as one toolbar (Cluely-style): toggle, compact dropdowns, "More filters", Reset, refresh */
+html[data-product="hr"] .wf-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--c-line); border-radius: var(--c-radius); background: oklch(1 0 0); }
+html[data-product="hr"] .wf-select-sm { width: auto; min-width: 0; max-width: 220px; min-height: 32px; height: 32px; padding: 0 28px 0 10px; font-size: 13.5px; }
+html[data-product="hr"] .wf-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; background: var(--c-field); border: 1px solid var(--c-line); }
+html[data-product="hr"] .wf-seg button { min-height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); font: 500 13px var(--font-ui); cursor: pointer; }
+html[data-product="hr"] .wf-seg button[aria-pressed="true"] { background: oklch(1 0 0); color: var(--ink); box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.12), inset 0 0 0 1px var(--c-line); }
+html[data-product="hr"] .wf-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+html[data-product="hr"] .wf-more { min-width: 0; }
+html[data-product="hr"] .wf-more summary { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; font-size: 13.5px; font-weight: 500; list-style: none; background: oklch(1 0 0); }
+html[data-product="hr"] .wf-more summary::-webkit-details-marker { display: none; }
+html[data-product="hr"] .wf-more summary svg { width: 15px; height: 15px; color: var(--ink-2); }
+html[data-product="hr"] .wf-more[open] summary { border-color: var(--accent); }
+html[data-product="hr"] .wf-more .wf-filter-options { width: min(300px, 86vw); border-radius: 10px; border-color: var(--c-line-strong); box-shadow: 0 16px 36px -18px oklch(0.25 0.04 262 / 0.4); gap: 4px; }
+html[data-product="hr"] .wf-more .wf-filter-options label { padding: 6px 8px; border-radius: 6px; font-size: 13.5px; }
+html[data-product="hr"] .wf-more .wf-filter-options label:hover { background: var(--c-field); }
+html[data-product="hr"] .wf-more .wf-select { padding: 4px 8px 10px; border-bottom: 1px solid var(--c-line); font-size: 12.5px; color: var(--ink-2); }
+html[data-product="hr"] .wf-more .wf-select .input { width: 100%; max-width: none; }
+html[data-product="hr"] .wf-more-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px 2px; font-size: 12.5px; color: var(--ink-2); }
+html[data-product="hr"] .wf-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: oklch(1 0 0); font-size: 11.5px; font-weight: 600; }
+html[data-product="hr"] .wf-spacer { flex: 1; }
+html[data-product="hr"] .wf-icon-btn { width: 32px; padding: 0; justify-content: center; }
+html[data-product="hr"] .wf-icon-btn svg { width: 16px; height: 16px; }
+@media (max-width: 600px) {
+  html[data-product="hr"] .wf-filters > :is(.wf-select-sm, .wf-more) { flex: 1 1 140px; max-width: none; }
+  html[data-product="hr"] .wf-more summary { width: 100%; }
+  html[data-product="hr"] .wf-spacer { display: none; }
+}
+html[data-product="hr"] .wf-seg button + button { border-left: 0; }
+html[data-product="hr"] .wf-filters .wf-select-sm { flex: 0 1 auto; width: auto; min-width: 0; max-width: 180px; }
+html[data-product="hr"] .wf-group-head { overflow-wrap: normal; word-break: normal; hyphens: auto; font-size: 12.5px; line-height: 1.3; }
+html[data-product="hr"] .wf-skill-search { min-height: 32px; margin: 2px 4px 6px; width: auto; font-size: 13.5px; }
+html[data-product="hr"] .wf-more .wf-filter-options label[hidden] { display: none; }
+html[data-product="hr"] .wf-more .wf-filter-options { right: 0; left: auto; }
+html[data-product="hr"] .wf-more .wf-filter-options label.wf-select { display: grid; gap: 6px; padding: 6px 8px 10px; border-radius: 0; }
+html[data-product="hr"] .wf-more .wf-filter-options label.wf-select:hover { background: none; }
+html[data-product="hr"] .wf-filters .wf-select-sm { flex: 1 1 110px; max-width: 170px; text-overflow: ellipsis; }
+/* one row when there is room; wraps instead of pushing the page wider */
+html[data-product="hr"] .wf-filters { flex-wrap: wrap; min-width: 0; }
+@media (min-width: 1240px) { html[data-product="hr"] .wf-filters { flex-wrap: nowrap; } }
+html[data-product="hr"] .wf-filters .wf-select-sm { flex-basis: 140px; padding-right: 24px; }
+html[data-product="hr"] .wf-filters > .wf-icon-btn { flex: 0 0 32px; width: 32px; }
+html[data-product="hr"] .wf-filters > .btn.ghost { flex: 0 0 auto; width: auto; }
+
+/* no grey outlines: surfaces separate by tone (white on the pale field, pale field inside white) and one soft,
+   wide shadow, as on cluely.com. Lines stay only where they divide rows of data. */
+html[data-product="hr"] {
+  --c-lift: 0 1px 2px oklch(0.25 0.04 262 / 0.04), 0 10px 30px -18px oklch(0.25 0.06 262 / 0.18);
+  --c-fill: oklch(0.965 0.008 262);
+}
+html[data-product="hr"] :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .empty-state, .wf-filters) { border: 0; box-shadow: var(--c-lift); }
+html[data-product="hr"] .panel > header { border-bottom: 0; padding-bottom: 4px; }
+html[data-product="hr"] .rail { border-right: 0; }
+html[data-product="hr"] .rail a[aria-current="page"] { box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.06); }
+html[data-product="hr"] :is(.hr-top, .admin-top) { border-bottom: 0; background: transparent; }
+/* controls: tinted fills instead of outlines; the primary keeps its blue */
+html[data-product="hr"] :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more summary) { border-color: transparent; background-color: var(--c-fill); }
+html[data-product="hr"] :is(.input, select.input, textarea.input):hover { background-color: oklch(0.95 0.01 262); }
+html[data-product="hr"] :is(.input, select.input, textarea.input):focus { border-color: var(--accent); background-color: oklch(1 0 0); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost) { border-color: transparent; background: var(--c-fill); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost):hover { background: oklch(0.945 0.012 262); }
+html[data-product="hr"] .wf-more[open] summary { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
+html[data-product="hr"] .wf-seg { border: 0; background: var(--c-fill); }
+html[data-product="hr"] .wf-seg button[aria-pressed="true"] { box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.12); }
+html[data-product="hr"] .wf-suggestion { border-color: transparent; background: var(--c-fill); }
+html[data-product="hr"] .wf-suggestion.is-selected { background: var(--accent-soft); box-shadow: none; }
+html[data-product="hr"] .wf-more .wf-filter-options { border: 0; box-shadow: 0 2px 6px oklch(0.25 0.04 262 / 0.06), 0 20px 44px -18px oklch(0.25 0.06 262 / 0.35); }
+html[data-product="hr"] .wf-more .wf-select { border-bottom: 0; }
+/* tables: no frame, header on the pale fill, faint row dividers only */
+html[data-product="hr"] table { border: 0; }
+html[data-product="hr"] table :is(th, td) { border-color: oklch(0.95 0.006 258); }
+html[data-product="hr"] .table-wrap { border: 0; }
+/* heatmap: "no data" is a quiet fill, not a hatched grey box; averages lose their outline ring */
+html[data-product="hr"] .wf-cell.wf-unknown { background: var(--c-fill); color: var(--ink-2); }
+html[data-product="hr"] .wf-cell { border: 0; }
+html[data-product="hr"] .wf-avg, html[data-product="hr"] .wf-avg:hover { box-shadow: none; font-weight: 600; }
+html[data-product="hr"] .wf-skill-name, html[data-product="hr"] .wf-skill-head { box-shadow: none; }
+html[data-product="hr"] .wf-foot { border-top: 0; }
+html[data-product="hr"] .wf-legend i { border: 0; }
+/* agent page in the console: fills and one soft lift instead of grey outlines; the owl stays above the question */
+html[data-product="hr"] .ag-starter { border-color: transparent; background: oklch(1 0 0); box-shadow: var(--c-lift); border-radius: 10px; }
+html[data-product="hr"] .ag-starter:hover { background: var(--accent-soft); }
+html[data-product="hr"] .ag-composer { border-color: transparent; border-radius: 14px; box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.05), 0 14px 36px -18px oklch(0.25 0.06 262 / 0.3); }
+html[data-product="hr"] .ag-composer:focus-within { box-shadow: 0 0 0 2px var(--accent-soft), 0 14px 36px -18px oklch(0.25 0.06 262 / 0.3); }
+html[data-product="hr"] :is(.own-plan-chip, .chip) { border-color: transparent; background: var(--c-fill); border-radius: 8px; }
+html[data-product="hr"] .own-plan-chip { text-align: left; }
+html[data-product="hr"] :is(.own-plan-chip, .chip):hover { background: var(--accent-soft); }
+/* SplitText: words stay together while their letters animate */
+html[data-product="hr"] .sw { display: inline-block; white-space: nowrap; }
+html[data-product="hr"] .sc { display: inline-block; will-change: transform, opacity; }
+
+/* the page title already names the page; the top bar keeps only the account */
+html[data-product="hr"] .admin-top .crumb { visibility: hidden; }
+
+/* one owl colour for edges: the owl's blue (the app accent, hue 263) as pale lines and washes, so tables and
+   controls read clearly without going back to grey */
+html[data-product="hr"] {
+  /* fixed values: mixing toward white in oklch drifts the hue toward pink */
+  --owl-line: oklch(0.91 0.035 263);
+  --owl-line-strong: oklch(0.84 0.06 263);
+  --owl-wash: oklch(0.975 0.012 263);
+  --owl-ink: oklch(0.4 0.12 263);
+}
+html[data-product="hr"] :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .empty-state, .wf-filters) {
+  border: 1px solid var(--owl-line); box-shadow: 0 8px 24px -18px oklch(0.4 0.12 263 / 0.25); }
+html[data-product="hr"] .panel > header { border-bottom: 1px solid var(--owl-line); padding-bottom: 14px; }
+html[data-product="hr"] .rail a[aria-current="page"] { box-shadow: inset 0 0 0 1px var(--owl-line); color: var(--owl-ink); }
+html[data-product="hr"] .rail a[aria-current="page"] svg { color: var(--accent); }
+
+/* tables: a framed card, a blue-washed header row, owl-blue row lines, a soft hover */
+html[data-product="hr"] :is(.table-wrap, .view > table, .panel > table) { border: 1px solid var(--owl-line); border-radius: var(--c-radius); background: oklch(1 0 0); overflow: auto; }
+html[data-product="hr"] .panel .table-wrap { border: 0; border-radius: 0; }
+html[data-product="hr"] table { border-collapse: collapse; width: 100%; }
+html[data-product="hr"] table thead th { background: var(--owl-wash); color: var(--owl-ink); font-weight: 600; border-bottom: 1px solid var(--owl-line-strong); }
+html[data-product="hr"] table :is(th, td) { border: 0; border-bottom: 1px solid var(--owl-line); vertical-align: middle; }
+html[data-product="hr"] table tbody tr:last-child td { border-bottom: 0; }
+html[data-product="hr"] table tbody tr:hover td { background: var(--owl-wash); }
+html[data-product="hr"] table td .row-actions, html[data-product="hr"] table td.row-actions { border: 0; }
+
+/* controls: owl-blue edges on the pale fill */
+html[data-product="hr"] :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more summary) { border-color: var(--owl-line); background-color: oklch(1 0 0); }
+html[data-product="hr"] :is(.input, select.input, textarea.input):hover { border-color: var(--owl-line-strong); background-color: oklch(1 0 0); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost) { border-color: var(--owl-line); background: oklch(1 0 0); color: var(--owl-ink); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost):hover { border-color: var(--owl-line-strong); background: var(--owl-wash); }
+html[data-product="hr"] :is(.own-plan-chip, .chip, .wf-suggestion, .ag-starter) { border: 1px solid var(--owl-line); background: oklch(1 0 0); }
+html[data-product="hr"] .ag-composer { border: 1px solid var(--owl-line-strong); }
+
+/* segmented controls (All / Blocked / Flagged…): owl wash track, white selected segment */
+html[data-product="hr"] .seg { border: 1px solid var(--owl-line); background: var(--owl-wash); padding: 2px; gap: 2px; border-radius: 9px; }
+html[data-product="hr"] .seg button { min-height: 30px; border: 0; border-radius: 7px; color: var(--owl-ink); font-weight: 500; font-size: 13.5px; background: transparent; }
+html[data-product="hr"] .seg button + button { border-left: 0; }
+html[data-product="hr"] .seg button[aria-pressed="true"] { background: oklch(1 0 0); color: var(--accent); box-shadow: 0 1px 3px oklch(0.4 0.12 263 / 0.18), inset 0 0 0 1px var(--owl-line); }
+html[data-product="hr"] .wf-seg { border: 1px solid var(--owl-line); background: var(--owl-wash); }
+html[data-product="hr"] .wf-seg button { color: var(--owl-ink); }
+html[data-product="hr"] .wf-seg button[aria-pressed="true"] { color: var(--accent); box-shadow: 0 1px 3px oklch(0.4 0.12 263 / 0.18), inset 0 0 0 1px var(--owl-line); }
+
+/* heatmap: owl-blue frame lines on the empty cells and the pinned column edge */
+html[data-product="hr"] .wf-cell.wf-unknown { background: var(--owl-wash); box-shadow: inset 0 0 0 1px var(--owl-line); }
+html[data-product="hr"] .wf-foot { border-top: 1px solid var(--owl-line); }
+
+/* tables breathe: dates stay on one line, long reasons get a readable width, actions never clip */
+html[data-product="hr"] table :is(th, td) { padding: 12px 14px; }
+html[data-product="hr"] table td:first-child, html[data-product="hr"] table td:has(> .btn), html[data-product="hr"] table td .row-actions { white-space: nowrap; }
+html[data-product="hr"] table td ul { min-width: 240px; margin: 0; padding-left: 18px; }
+
+/* cards carry the colour, not an edge: a white page, cards filled with a soft owl blue, white controls and table rows
+   sitting inside them. No borders or shadows on cards. */
+html[data-product="hr"] {
+  --card-fill: oklch(0.972 0.014 263);
+  --card-fill-deep: oklch(0.945 0.024 263);
+}
+html[data-product="hr"] body, html[data-product="hr"] .rail { background: oklch(1 0 0); }
+html[data-product="hr"] :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .empty-state, .wf-filters) {
+  border: 0; box-shadow: none; background: var(--card-fill); }
+html[data-product="hr"] .panel > header { border-bottom: 0; padding-bottom: 6px; }
+html[data-product="hr"] .rail a[aria-current="page"] { background: var(--card-fill); box-shadow: none; }
+/* inside a card: white controls without outlines */
+html[data-product="hr"] :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more summary) { border-color: transparent; background-color: oklch(1 0 0); }
+html[data-product="hr"] :is(.input, select.input, textarea.input):hover { border-color: transparent; background-color: oklch(1 0 0); }
+html[data-product="hr"] :is(.input, select.input, textarea.input):focus { border-color: var(--accent); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost) { border-color: transparent; background: oklch(1 0 0); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost):hover { border-color: transparent; background: var(--card-fill-deep); }
+html[data-product="hr"] :is(.own-plan-chip, .chip, .wf-suggestion, .ag-starter) { border-color: transparent; background: oklch(1 0 0); box-shadow: none; }
+html[data-product="hr"] .ag-starter { background: var(--card-fill); }
+html[data-product="hr"] .ag-composer { border-color: transparent; background: var(--card-fill); box-shadow: none; }
+html[data-product="hr"] :is(.seg, .wf-seg) { border: 0; background: var(--card-fill-deep); }
+html[data-product="hr"] :is(.seg, .wf-seg) button[aria-pressed="true"] { box-shadow: none; }
+/* tables: white rows inside the blue card, a deeper-blue header, no frame lines */
+html[data-product="hr"] :is(.table-wrap, .view > table, .panel > table) { border: 0; background: var(--card-fill); padding: 6px; }
+html[data-product="hr"] table thead th { background: var(--card-fill-deep); border-bottom: 0; }
+html[data-product="hr"] table thead th:first-child { border-radius: 8px 0 0 8px; }
+html[data-product="hr"] table thead th:last-child { border-radius: 0 8px 8px 0; }
+html[data-product="hr"] table tbody td { background: oklch(1 0 0); border-bottom: 2px solid var(--card-fill); }
+html[data-product="hr"] table tbody tr:hover td { background: oklch(0.985 0.008 263); }
+/* heatmap empty cells: white instead of an outlined box */
+html[data-product="hr"] .wf-cell.wf-unknown { background: oklch(1 0 0); box-shadow: none; }
+html[data-product="hr"] .wf-foot { border-top: 0; }
+html[data-product="hr"] .wf-skill-name, html[data-product="hr"] .wf-skill-head { background: var(--card-fill); }
+
+/* sidebar icons: two-tone. The tint shape (.d) is faint at rest, deepens on hover, and on the current page the
+   icon turns owl blue with its shape filled in; the label stays ink so the row reads first, the icon second. */
+html[data-product="hr"] .rail svg { width: 18px; height: 18px; stroke-width: 1.6; color: oklch(0.5 0.03 262); transition: color 160ms ease; }
+html[data-product="hr"] .rail svg .d { fill: currentColor; stroke: none; opacity: 0.1; transition: opacity 160ms ease; }
+html[data-product="hr"] :is(.rail a, .rail .rail-group-btn):hover svg { color: var(--ink); }
+html[data-product="hr"] :is(.rail a, .rail .rail-group-btn):hover svg .d { opacity: 0.16; }
+html[data-product="hr"] .rail a[aria-current="page"] svg, html[data-product="hr"] .rail .rail-group.has-current > .rail-group-btn svg:first-child { color: var(--accent); }
+html[data-product="hr"] .rail a[aria-current="page"] svg .d, html[data-product="hr"] .rail .rail-group.has-current > .rail-group-btn svg:first-child .d { opacity: 0.22; }
+html[data-product="hr"] .rail a[aria-current="page"] { color: var(--ink); font-weight: 600; }
+html[data-product="hr"] .rail .rail-group-btn > svg:last-child { width: 14px; height: 14px; color: oklch(0.6 0.02 262); }
+@media (prefers-reduced-motion: reduce) { html[data-product="hr"] .rail svg, html[data-product="hr"] .rail svg .d { transition: none; } }
+
+/* ---------- gap bloom: one-hue owl-blue ramp, light = smaller gap, deep = larger ---------- */
+html[data-product="hr"] {
+  --bl-1: oklch(0.88 0.05 263); --bl-2: oklch(0.78 0.09 263); --bl-3: oklch(0.67 0.14 263);
+  --bl-4: oklch(0.56 0.18 263); --bl-5: oklch(0.42 0.16 265);
+}
+html[data-product="hr"] .wf-head-actions { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px 14px; }
+html[data-product="hr"] .wf-bloom-wrap { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: 28px; align-items: center; }
+html[data-product="hr"] .wf-bloom-fig { margin: 0; display: grid; gap: 10px; justify-items: center; }
+html[data-product="hr"] .wf-bloom { width: 100%; max-width: 380px; height: auto; overflow: visible; }
+html[data-product="hr"] .wf-bloom-ring { fill: none; stroke: oklch(0.9 0.03 263); stroke-width: 1; stroke-dasharray: 2 4; }
+html[data-product="hr"] .wf-bloom-core { fill: oklch(1 0 0); }
+html[data-product="hr"] .wf-bloom-num { text-anchor: middle; font: 600 22px var(--font-ui); letter-spacing: -0.02em; fill: var(--ink); }
+html[data-product="hr"] .wf-bloom-cap { text-anchor: middle; font: 500 11px var(--font-ui); fill: var(--ink-2); }
+html[data-product="hr"] .wf-petal { cursor: pointer; outline: none; animation: wf-bloom-grow 760ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: var(--d); }
+html[data-product="hr"] .wf-petal path { stroke: var(--card-fill, #fff); stroke-width: 2; stroke-linejoin: round; transition: filter 160ms ease, transform 160ms ease; }
+html[data-product="hr"] .wf-petal-n { text-anchor: middle; font: 600 11px var(--font-ui); fill: var(--ink-2); pointer-events: none; }
+html[data-product="hr"] :is(.wf-petal.s1 path, .wf-rank-n.s1, .wf-bloom-scale i.s1) { fill: var(--bl-1); background: var(--bl-1); }
+html[data-product="hr"] :is(.wf-petal.s2 path, .wf-rank-n.s2, .wf-bloom-scale i.s2) { fill: var(--bl-2); background: var(--bl-2); }
+html[data-product="hr"] :is(.wf-petal.s3 path, .wf-rank-n.s3, .wf-bloom-scale i.s3) { fill: var(--bl-3); background: var(--bl-3); }
+html[data-product="hr"] :is(.wf-petal.s4 path, .wf-rank-n.s4, .wf-bloom-scale i.s4) { fill: var(--bl-4); background: var(--bl-4); }
+html[data-product="hr"] :is(.wf-petal.s5 path, .wf-rank-n.s5, .wf-bloom-scale i.s5) { fill: var(--bl-5); background: var(--bl-5); }
+html[data-product="hr"] :is(.wf-petal:hover, .wf-petal:focus-visible, .wf-petal.is-hot) path { filter: brightness(1.08) saturate(1.15) drop-shadow(0 6px 10px oklch(0.4 0.15 263 / 0.35)); }
+html[data-product="hr"] :is(.wf-petal:hover, .wf-petal:focus-visible, .wf-petal.is-hot) .wf-petal-n { fill: var(--accent); }
+html[data-product="hr"] .wf-petal:focus-visible path { stroke: var(--accent); }
+@keyframes wf-bloom-grow { from { transform: scale(0.35) rotate(-8deg); opacity: 0; } to { transform: none; opacity: 1; } }
+html[data-product="hr"] .wf-bloom-scale { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--ink-2); }
+html[data-product="hr"] .wf-bloom-scale i { width: 18px; height: 8px; border-radius: 4px; }
+html[data-product="hr"] .wf-bloom-scale span:first-child { margin-right: 4px; } html[data-product="hr"] .wf-bloom-scale span:last-child { margin-left: 4px; }
+html[data-product="hr"] .wf-bloom-fig figcaption { display: grid; gap: 4px; justify-items: center; font-size: 12px; }
+html[data-product="hr"] .wf-bloom-tip { position: fixed; z-index: 45; width: auto; max-width: 320px; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.45; white-space: pre-line; pointer-events: none; }
+
+/* ranked list: numbered to match the petals, one dot per assessed person (filled = below target) */
+html[data-product="hr"] .wf-rank { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+html[data-product="hr"] .wf-rank button { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto 64px; align-items: center; gap: 12px;
+  padding: 9px 12px; border-radius: 10px; background: oklch(1 0 0); cursor: pointer; transition: background 140ms ease, transform 140ms ease; }
+html[data-product="hr"] .wf-rank li.is-hot button, html[data-product="hr"] .wf-rank button:hover { background: oklch(0.99 0.01 263); transform: translateX(2px); }
+html[data-product="hr"] .wf-rank button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+html[data-product="hr"] .wf-rank-n { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: oklch(1 0 0); font: 600 12px var(--font-ui); }
+html[data-product="hr"] .wf-rank-n.s1, html[data-product="hr"] .wf-rank-n.s2 { color: var(--owl-ink, var(--ink)); }
+html[data-product="hr"] .wf-rank-main { display: grid; gap: 1px; min-width: 0; }
+html[data-product="hr"] .wf-rank-main b { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-product="hr"] .wf-rank-main small { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-product="hr"] .wf-dots { display: flex; flex-wrap: wrap; gap: 3px; max-width: 96px; align-items: center; }
+html[data-product="hr"] .wf-dots i { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--bl-3); }
+html[data-product="hr"] .wf-dots i.on { background: var(--bl-4); box-shadow: none; }
+html[data-product="hr"] .wf-dots em { font-style: normal; font-size: 11px; color: var(--ink-2); }
+html[data-product="hr"] .wf-rank-pct { display: grid; justify-items: end; font: 600 16px var(--font-ui); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+html[data-product="hr"] .wf-rank-pct small { font: 500 11px var(--font-ui); color: var(--ink-2); letter-spacing: 0; }
+@media (max-width: 860px) { html[data-product="hr"] .wf-bloom-wrap { grid-template-columns: 1fr; } html[data-product="hr"] .wf-bloom { max-width: 320px; } }
+@media (max-width: 520px) { html[data-product="hr"] .wf-rank button { grid-template-columns: 24px minmax(0, 1fr) 56px; } html[data-product="hr"] .wf-dots { display: none; } }
+@media (prefers-reduced-motion: reduce) { html[data-product="hr"] .wf-petal { animation: none; } html[data-product="hr"] .wf-rank button { transition: none; } }
+/* petal gradients: pale near the centre, the step colour at the tip; the CSS fill rules above stay as the fallback */
+html[data-product="hr"] .wf-petal path[fill] { fill-opacity: 1; }
+html[data-product="hr"] .wf-stop-a.s1 { stop-color: oklch(0.95 0.025 263); } html[data-product="hr"] .wf-stop-b.s1 { stop-color: var(--bl-1); }
+html[data-product="hr"] .wf-stop-a.s2 { stop-color: oklch(0.93 0.04 263); }  html[data-product="hr"] .wf-stop-b.s2 { stop-color: var(--bl-2); }
+html[data-product="hr"] .wf-stop-a.s3 { stop-color: oklch(0.88 0.06 263); }  html[data-product="hr"] .wf-stop-b.s3 { stop-color: var(--bl-3); }
+html[data-product="hr"] .wf-stop-a.s4 { stop-color: oklch(0.82 0.09 263); }  html[data-product="hr"] .wf-stop-b.s4 { stop-color: var(--bl-4); }
+html[data-product="hr"] .wf-stop-a.s5 { stop-color: oklch(0.72 0.12 263); }  html[data-product="hr"] .wf-stop-b.s5 { stop-color: var(--bl-5); }
+html[data-product="hr"] .wf-petal path { stroke: oklch(1 0 0); stroke-width: 2.5; }
+html[data-product="hr"] .wf-bloom-core { fill: oklch(1 0 0); filter: drop-shadow(0 4px 10px oklch(0.4 0.12 263 / 0.18)); }
+html[data-product="hr"] .wf-bloom-wrap + .wf-suggestions { margin-top: 18px; }
+html[data-product="hr"] .wf-petal.s1 path { fill: url(#wf-bl-1); }
+html[data-product="hr"] .wf-petal.s2 path { fill: url(#wf-bl-2); }
+html[data-product="hr"] .wf-petal.s3 path { fill: url(#wf-bl-3); }
+html[data-product="hr"] .wf-petal.s4 path { fill: url(#wf-bl-4); }
+html[data-product="hr"] .wf-petal.s5 path { fill: url(#wf-bl-5); }
+html[data-product="hr"] .wf-dots { flex-wrap: nowrap; max-width: none; }
+/* the owl in the centre of the bloom */
+html[data-product="hr"] .wf-bloom-stage { position: relative; width: 100%; max-width: 380px; }
+html[data-product="hr"] .wf-bloom-owl { position: absolute; left: 50%; top: 50%; width: 18%; aspect-ratio: 1; translate: -50% -52%; display: grid; place-items: center; pointer-events: none; }
+html[data-product="hr"] .wf-bloom-owl .owl { width: 100%; height: 100%; }
+html[data-product="hr"] .wf-bloom-core { filter: drop-shadow(0 6px 14px oklch(0.4 0.12 263 / 0.22)); }
+html[data-product="hr"] .wf-bloom-avg { margin: 0; font-size: 13px; color: var(--ink-2); }
+html[data-product="hr"] .wf-bloom-avg b { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); margin-right: 4px; }

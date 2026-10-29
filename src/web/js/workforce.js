@@ -1,44 +1,59 @@
 // HR overview: cohort comparisons, sample preview, and separate team plans.
 import { api, h, icon, stream } from "./lib.js";
+import { Owl } from "./owl.js";
 
 const SEVERITY = { low: ["Low", "0–24%"], moderate: ["Moderate", "25–49%"], high: ["High", "50–74%"], critical: ["Critical", "75–100%"] };
 const SELECTED = new Set();
 const cellKey = (c) => `${c.skill}\u001f${c.group}`;
 
 export async function workforceView(root) {
-  const selected = { skill: new Set(), category: "all", scenario: "assistive", department: "", role: "", source: "", samplePreview: false, sampleDismissed: false };
+  const selected = { skill: new Set(), category: "all", scenario: "assistive", department: "", role: "", source: "", samplePreview: false, sampleDismissed: false, view: "bloom" };
   let request = 0, data, plans = [];
   const output = h("div", { class: "wf-output", "aria-live": "polite" });
   const filters = h("div", { class: "wf-filters" });
   const status = h("p", { class: "muted", role: "status" });
-  const refresh = h("button", { type: "button", class: "btn sm", onclick: load }, "Refresh data");
+  const refresh = h("button", { type: "button", class: "btn sm wf-icon-btn", onclick: load, title: "Refresh data", "aria-label": "Refresh data" }, icon("replay"));
   const heading = h("div", { class: "wf-heading" }, h("div", {}, h("h2", {}, "Workforce skills gap heatmap"),
-    h("p", { class: "muted" }, "Compare role-specific proficiency gaps across your workforce.")), refresh);
+    h("p", { class: "muted" }, "Compare role-specific proficiency gaps across your workforce.")));
   const previewBanner = h("div", { class: "wf-sample-banner", role: "status", hidden: true });
   root.replaceChildren(heading, previewBanner, filters, status, output);
 
+  // one toolbar: scenario toggle, three dropdowns, the rest under "More filters"; Reset only when something is filtered
+  const DEFAULTS = { category: "all", scenario: "assistive", department: "", role: "", source: "" };
+  const changed = () => { SELECTED.clear(); drawFilters(); load(); };
   function drawFilters() {
-    const select = (label, key, options, resetOnChange = false) => h("label", { class: "wf-select" }, h("span", {}, label),
-      h("select", { class: "input", onchange: (e) => {
+    const select = (label, key, options, resetOnChange = false) => h("select", { class: "input wf-select-sm", "aria-label": label,
+      onchange: (e) => {
         selected[key] = e.target.value;
         if (resetOnChange && !data.options.roles.includes(selected.role)) selected.role = "";
-        SELECTED.clear(); load();
-      } }, options.map(([value, text]) => h("option", { value, selected: selected[key] === value }, text))));
-    const skillSummary = h("summary", {}, `Skills: ${selected.skill.size ? `${selected.skill.size} selected` : "All skills"}`);
-    const skills = h("details", { class: "wf-filter" }, skillSummary,
-      h("div", { class: "wf-filter-options" }, h("button", { type: "button", class: "btn sm", onclick: () => { selected.skill.clear(); SELECTED.clear(); drawFilters(); load(); } }, "All skills"),
-        data.options.skills.map((s) => h("label", {}, h("input", { type: "checkbox", value: s.name, checked: selected.skill.has(s.name), onchange: (e) => {
-          if (e.target.checked) selected.skill.add(s.name); else selected.skill.delete(s.name);
-          skillSummary.textContent = `Skills: ${selected.skill.size ? `${selected.skill.size} selected` : "All skills"}`;
-          SELECTED.clear(); load();
-        } }), h("span", {}, s.name)))));
+        changed();
+      } }, options.map(([value, text]) => h("option", { value, selected: selected[key] === value }, text)));
+    const scenario = h("div", { class: "seg wf-seg", role: "group", "aria-label": "AI scenario" }, [["assistive", "Assistive"], ["agentic", "Agentic"]].map(([value, text]) =>
+      h("button", { type: "button", "aria-pressed": String(selected.scenario === value), onclick: () => { if (selected.scenario !== value) { selected.scenario = value; changed(); } } }, text)));
     const roleOptions = data.options.roles.filter((r) => !selected.department || data.cells.some((c) => c.department === selected.department && c.roles.includes(r)));
-    filters.replaceChildren(select("Department", "department", [["", "All departments"], ...data.options.departments.map((v) => [v, v])], true),
-      select("Job role", "role", [["", "All roles"], ...roleOptions.map((v) => [v, v])]), skills,
-      select("Category", "category", [["all", "Skills & tools"], ["skill", "Skills"], ["tool", "Tools"]]),
-      select("AI scenario", "scenario", [["assistive", "Assistive"], ["agentic", "Agentic"]]),
+    const more = (selected.category !== "all") + selected.skill.size;
+    // skill ticks keep the menu open; the count and Reset catch up when it closes
+    const moreMenu = h("details", { class: "wf-filter wf-more", ontoggle: (e) => { if (!e.target.open) drawFilters(); } },
+      h("summary", {}, icon("sliders"), "More filters", more ? h("span", { class: "wf-count" }, String(more)) : null),
+      h("div", { class: "wf-filter-options" },
+        h("label", { class: "wf-select" }, h("span", {}, "Category"), select("Category", "category", [["all", "Skills & tools"], ["skill", "Skills"], ["tool", "Tools"]])),
+        h("div", { class: "wf-more-head" }, h("span", {}, "Skills"), selected.skill.size ? h("button", { type: "button", class: "btn sm ghost", onclick: () => { selected.skill.clear(); changed(); } }, "Clear") : null),
+        h("input", { class: "input wf-skill-search", type: "search", placeholder: "Search skills", "aria-label": "Search skills", oninput: (e) => {
+          const q = e.target.value.trim().toLowerCase();
+          e.target.parentElement.querySelectorAll("label[data-skill]").forEach((l) => { l.hidden = !!q && !l.dataset.skill.includes(q); });
+        } }),
+        data.options.skills.map((sk) => h("label", { dataset: { skill: sk.name.toLowerCase() } }, h("input", { type: "checkbox", value: sk.name, checked: selected.skill.has(sk.name), onchange: (e) => {
+          if (e.target.checked) selected.skill.add(sk.name); else selected.skill.delete(sk.name);
+          SELECTED.clear(); load();
+        } }), h("span", {}, sk.name)))));
+    const active = more || Object.entries(DEFAULTS).some(([k, v]) => k !== "category" && selected[k] !== v);
+    filters.replaceChildren(...[scenario,
+      select("Department", "department", [["", "All departments"], ...data.options.departments.map((v) => [v, v])], true),
+      select("Job role", "role", [["", "All roles"], ...roleOptions.map((v) => [v, v])]),
       data.policy.sample_preview ? null : select("Source", "source", [["", "All sources"], ...(data.sources || []).map((x) => [x.key, `${x.label} (${x.employees})`])]),
-      h("button", { type: "button", class: "btn sm", onclick: () => { Object.assign(selected, { skill: new Set(), category: "all", scenario: "assistive", department: "", role: "", source: "" }); SELECTED.clear(); drawFilters(); load(); } }, "Reset filters"));
+      moreMenu, h("span", { class: "wf-spacer" }),
+      active ? h("button", { type: "button", class: "btn sm ghost", onclick: () => { Object.assign(selected, DEFAULTS, { skill: new Set() }); changed(); } }, "Reset") : null,
+      refresh].filter(Boolean));
   }
 
   async function load() {
@@ -53,7 +68,9 @@ export async function workforceView(root) {
       const next = await api(`/api/hr/workforce?${params}`);
       if (version !== request || !root.isConnected) return;
       const hasHeatmap = next.cells?.some((c) => c.status === "ready");
-      if (!selected.samplePreview && !selected.sampleDismissed && !selected.source && !hasHeatmap && next.sample_available) {
+      // the fictional preview only stands in when the organisation has no data at all, never for a filter that matches nothing
+      const filtered = selected.skill.size || selected.department || selected.role || selected.source || selected.category !== "all";
+      if (!selected.samplePreview && !selected.sampleDismissed && !filtered && !hasHeatmap && next.sample_available) {
         selected.samplePreview = true; await load(); return;
       }
       const optionsChanged = !data || JSON.stringify(data.options) !== JSON.stringify(next.options);
@@ -131,12 +148,15 @@ export async function workforceView(root) {
       `Create team reskilling plan${SELECTED.size ? ` · ${SELECTED.size}` : ""}`);
     const teamAction = h("div", { class: "wf-team-action" }, teamButton,
       !SELECTED.size ? h("span", { id: "wf-team-action-hint", class: "wf-team-action-hint" }, "Select a suggested priority below to enable plan creation.") : null);
+    const viewSwitch = h("div", { class: "seg wf-seg", role: "group", "aria-label": "Chart view" }, [["bloom", "Bloom"], ["matrix", "Matrix"]].map(([v, t]) =>
+      h("button", { type: "button", "aria-pressed": String(selected.view === v), onclick: () => { if (selected.view !== v) { selected.view = v; render(); } } }, t)));
     const heatmap = h("section", { class: "panel" }, h("header", { class: "wf-panel-header" }, h("div", {}, h("h2", {}, "Team skill gaps"),
-      h("p", { class: "muted" }, "Each cell shows employees below their role’s target proficiency.")), teamAction),
-      h("div", { class: "pad wf-matrix" }, suggestions, matrix,
+      h("p", { class: "muted" }, selected.view === "bloom" ? "The skills where most people sit below their role's target, largest gap first."
+        : "Each cell shows employees below their role’s target proficiency.")), h("div", { class: "wf-head-actions" }, viewSwitch, teamAction)),
+      h("div", { class: "pad wf-matrix" }, ...(selected.view === "bloom" ? [bloom(), suggestions] : [suggestions, matrix]),
         data.total_skills > data.rows.length && !selected.skill.size ? h("p", { class: "muted wf-policy" },
           `Showing the ${data.rows.length} most-assessed of ${data.total_skills} skills. Use the Skills filter to pick others.`) : null,
-        legend,
+        selected.view === "bloom" ? null : legend,
         h("p", { class: "muted wf-policy" }, data.policy.sample_preview ? "Fictional data uses role-specific targets on a 0–5 scale. Select a cell to inspect it and add its gap to a draft team plan." : "Built from your organisation's analyses: resumes and quizzes your invited employees ran for themselves, and the team files you uploaded. Gap percentage is employees below their role's required proficiency divided by employees assessed for that skill; missing assessments are excluded.")));
     const savedPlan = (p) => {
       const gapCount = (p.gaps || p.skills || []).length;
@@ -164,6 +184,70 @@ export async function workforceView(root) {
         : h("p", { class: "muted" }, "No team plans yet. Select heatmap gaps and create a draft for HR review.")));
     output.replaceChildren(stats, heatmap, section);
   }
+  // Gap bloom: a radial view of the top skills. Petal length = share of assessed people below target (linear radius),
+  // colour = the same share on a one-hue owl-blue ramp; the ranked list beside it carries the exact numbers, one dot
+  // per assessed person. Petals and rows open the same detail as a matrix cell.
+  function bloom() {
+    const skills = data.rows.map((row) => {
+      const ready = row.cells.filter((c) => c.status === "ready" && c.employees);
+      const employees = ready.reduce((n, c) => n + c.employees, 0), affected = ready.reduce((n, c) => n + c.affected, 0);
+      const worst = [...ready].sort((a, b) => (b.gap_percent - a.gap_percent) || (b.affected - a.affected))[0];
+      return { skill: row.skill, employees, affected, pct: employees ? Math.round((100 * affected) / employees) : 0, worst,
+        roles: ready.filter((c) => c.affected).map((c) => c.group) };
+    }).filter((x) => x.employees).sort((a, b) => (b.affected - a.affected) || (b.pct - a.pct)).slice(0, 10);
+    if (!skills.length) return h("div", { class: "empty-state wf-empty" }, h("h3", {}, "No assessed gaps in this view"),
+      h("p", {}, "Try fewer filters, or analyse more of your team."));
+    const step = (pct) => (pct >= 90 ? 5 : pct >= 70 ? 4 : pct >= 45 ? 3 : pct >= 20 ? 2 : 1);
+    const NS = "http://www.w3.org/2000/svg", svg = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+    const C = 180, R0 = 46, R = 160, n = skills.length, slice = (2 * Math.PI) / Math.max(n, 3), gap = 0.06;
+    const pt = (r, a) => `${(C + r * Math.sin(a)).toFixed(1)} ${(C - r * Math.cos(a)).toFixed(1)}`;
+    const chart = svg("svg", { viewBox: "0 0 360 360", class: "wf-bloom", role: "img",
+      "aria-label": `Gap bloom: ${skills.map((x, i) => `${i + 1}. ${x.skill} ${x.pct}%`).join(", ")}` });
+    const defs = svg("defs", {});
+    [1, 2, 3, 4, 5].forEach((k) => { const g = svg("radialGradient", { id: `wf-bl-${k}`, cx: C, cy: C, r: R, gradientUnits: "userSpaceOnUse" });
+      g.append(svg("stop", { offset: "0.25", class: `wf-stop-a s${k}` }), svg("stop", { offset: "1", class: `wf-stop-b s${k}` })); defs.append(g); });
+    chart.append(defs);
+    [0.25, 0.5, 0.75, 1].forEach((f) => chart.append(svg("circle", { cx: C, cy: C, r: R0 + (R - R0) * f, class: "wf-bloom-ring" })));
+    const tip = h("div", { class: "wf-tooltip wf-bloom-tip", hidden: true });
+    skills.forEach((x, i) => {
+      const r = R0 + (R - R0) * Math.max(x.pct, 4) / 100, a0 = i * slice + gap, a1 = (i + 1) * slice - gap, mid = (a0 + a1) / 2;
+      // petal: straight flanks, a rounded tip (two curves meeting at the full length on the mid-line)
+      const k = R0 + (r - R0) * 0.72;
+      const d = `M ${pt(R0, a0)} L ${pt(k, a0)} Q ${pt(r * 1.02, a0)} ${pt(r, mid)} Q ${pt(r * 1.02, a1)} ${pt(k, a1)} L ${pt(R0, a1)} A ${R0} ${R0} 0 0 0 ${pt(R0, a0)} Z`;
+      const g = svg("g", { class: `wf-petal s${step(x.pct)}`, tabindex: "0", role: "button", "aria-label": `${i + 1}. ${x.skill}: ${x.pct}% below target, ${x.affected} of ${x.employees}`,
+        style: `--d:${i * 60}ms; transform-origin: ${C}px ${C}px` });
+      g.append(svg("path", { d, fill: `url(#wf-bl-${step(x.pct)})` }), Object.assign(svg("text", { x: pt(r + 13, mid).split(" ")[0], y: +pt(r + 13, mid).split(" ")[1] + 4, class: "wf-petal-n" }), { textContent: String(i + 1) }));
+      const show = (e) => { tip.hidden = false; tip.textContent = `${x.skill}\n${x.pct}% below target · ${x.affected} of ${x.employees} people${x.roles.length ? `\n${x.roles.join(", ")}` : ""}`;
+        const b = (e.currentTarget || g).getBoundingClientRect(); tip.style.left = `${Math.min(innerWidth - 340, b.right + 8)}px`; tip.style.top = `${b.top}px`; list.querySelectorAll("li")[i]?.classList.add("is-hot"); };
+      const hide = () => { tip.hidden = true; list.querySelectorAll("li")[i]?.classList.remove("is-hot"); };
+      g.addEventListener("mouseenter", show); g.addEventListener("focus", show); g.addEventListener("mouseleave", hide); g.addEventListener("blur", hide);
+      g.addEventListener("click", () => x.worst && detail(x.worst)); g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); x.worst && detail(x.worst); } });
+      chart.append(g);
+    });
+    const people = data.overview.employees, avg = Math.round(skills.reduce((t, x) => t + x.pct, 0) / skills.length);
+    chart.append(svg("circle", { cx: C, cy: C, r: R0 - 4, class: "wf-bloom-core" }));
+    // the owl sits in the flower; its mood follows the data: rings a reminder for large gaps, celebrates small ones,
+    // and thinks while a petal is pointed at
+    const mood = avg >= 70 ? "reminder" : avg < 25 ? "celebrating" : "idle";
+    const owl = new Owl({ size: 64, state: mood });
+    chart.querySelectorAll(".wf-petal").forEach((p) => { p.addEventListener("mouseenter", () => owl.set("thinking")); p.addEventListener("mouseleave", () => owl.set(mood)); });
+    // one dot per person up to ten people; above that ten dots, each a tenth of the people assessed
+    const dots = (x) => { const per = x.employees <= 10, n = per ? x.employees : 10, on = per ? x.affected : Math.round(x.pct / 10);
+      return h("span", { class: "wf-dots", "aria-hidden": "true", title: per ? "One dot per person" : "Each dot is 10% of the people assessed" },
+        Array.from({ length: n }, (_, k) => h("i", { class: k < on ? "on" : null }))); };
+    const list = h("ol", { class: "wf-rank" }, skills.map((x, i) => h("li", {}, h("button", { type: "button", onclick: () => x.worst && detail(x.worst),
+      onmouseenter: () => chart.querySelectorAll(".wf-petal")[i]?.classList.add("is-hot"), onmouseleave: () => chart.querySelectorAll(".wf-petal")[i]?.classList.remove("is-hot") },
+      h("span", { class: `wf-rank-n s${step(x.pct)}` }, String(i + 1)),
+      h("span", { class: "wf-rank-main" }, h("b", {}, x.skill), h("small", {}, x.roles.length ? x.roles.join(" · ") : "No one below target")),
+      dots(x), h("span", { class: "wf-rank-pct" }, `${x.pct}%`, h("small", {}, `${x.affected}/${x.employees}`))))));
+    const scale = h("div", { class: "wf-bloom-scale", "aria-hidden": "true" }, h("span", {}, "Smaller gap"), [1, 2, 3, 4, 5].map((k) => h("i", { class: `s${k}` })), h("span", {}, "Larger gap"));
+    return h("div", { class: "wf-bloom-wrap" },
+      h("figure", { class: "wf-bloom-fig" }, h("div", { class: "wf-bloom-stage" }, chart, h("div", { class: "wf-bloom-owl" }, owl.el)),
+        h("figcaption", {}, h("p", { class: "wf-bloom-avg" }, h("b", {}, `${avg}%`), " average gap across these skills"),
+          scale, h("span", { class: "muted" }, `${people} people · petal length = share below target`))),
+      list, tip);
+  }
+
   function cellButton(c, r, i) {
     const status = c.status === "ready" ? `${c.affected} of ${c.employees} employees` : "No assessment";
     return h("button", { type: "button", class: `wf-cell ${c.status === "ready" ? "wf-heat" : "wf-unknown"}${SELECTED.has(cellKey(c)) ? " is-selected" : ""}`,

@@ -74,12 +74,12 @@ function shell() {
   sidebar = h("nav", { id: "admin-sidebar", class: "rail admin-rail", "aria-label": "Admin navigation",
     onclick: (event) => { if (isMobile() && event.target.closest("a")) closeMobile(true); } },
     h("div", { class: "admin-rail-head" }, brand, sidebarToggle, closeButton),
-    link("#/overview", "Overview", "grid"), link("#/accounts", "Accounts", "people"), link("#/usage", "Token use", "pulse"),
-    link("#/fraud", "Fraud monitoring", "flag"), link("#/payments", "Payments", "file"),
-    link("#/models", "AI models", "model"), link("#/sites", "Frontend sites", "globe"),
+    link("#/overview", "Overview", "nav-overview"), link("#/accounts", "Accounts", "nav-team"), link("#/usage", "Token use", "nav-tokens"),
+    link("#/fraud", "Fraud monitoring", "nav-fraud"), link("#/payments", "Payments", "nav-payments"),
+    link("#/models", "AI models", "nav-models"), link("#/sites", "Frontend sites", "nav-sites"),
     h("div", { class: "admin-rail-spacer" }),
     h("a", { class: "admin-nav-link admin-signout", href: "#", "aria-label": "Sign out", title: "Sign out", onclick: (e) => { e.preventDefault(); signOut(); } },
-      icon("out"), h("span", { class: "lbl" }, "Sign out"), h("span", { class: "tip", "aria-hidden": "true" }, "Sign out")));
+      icon("nav-signout"), h("span", { class: "lbl" }, "Sign out"), h("span", { class: "tip", "aria-hidden": "true" }, "Sign out")));
   let wasMobile = isMobile();
   addEventListener("keydown", (event) => {
     if (event.key === "Escape" && mobileOpen) { event.preventDefault(); closeMobile(true); }

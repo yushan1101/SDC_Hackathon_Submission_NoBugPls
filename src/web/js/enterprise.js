@@ -85,7 +85,7 @@ function shell() {
       title: SCENARIO_HELP[k], "aria-description": SCENARIO_HELP[k],
       onclick: (e) => { S.scenario = k; S.seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget))); S.onScenarioChange?.(); } },
       k === "assistive" ? "Assistive" : "Agentic")));
-  const review = link("#/review", "Review", "review"); review.append(S.badge);
+  const review = link("#/review", "Review", "nav-review"); review.append(S.badge);
   const more = h("div", { id: "hr-more", class: "hr-more", popover: "auto", "aria-label": "Additional pages" },
     h("a", { href: "#/agents", onclick: () => more.hidePopover?.() }, icon("ask"), "Agent"),
     h("a", { href: "#/openings", onclick: () => more.hidePopover?.() }, icon("people"), "Hiring"),
@@ -132,10 +132,10 @@ function shell() {
   sidebar = h("nav", { class: "rail hr-rail", "aria-label": "Primary" },
       h("div", { class: "hr-rail-head" },
         h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }, S.logo = h("span", { class: "logo-owl" }), h("span", { class: "lbl wordmark" }, "AiversePulse")), sidebarToggle),
-      link("#/overview", "Overview", "grid"), link("#/agents", "Agent", "ask"),
-      group("Team", "people", link("#/run", "Analyse team", "upload"), review, link("#/people", "Team members", "user")),
-      group("Hiring", "job", link("#/openings", "Openings", "people"), link("#/plugins", "Hiring plugins", "plug")),
-      group("AI trends", "pulse", link("#/signals", "Market trends", "pulse"), link("#/heatmap", "Skills gap heatmap", "grid")),
+      link("#/overview", "Overview", "nav-overview"), link("#/agents", "Agent", "nav-agent"),
+      group("Team", "nav-team", link("#/run", "Analyse team", "nav-analyse"), review, link("#/people", "Team members", "nav-member")),
+      group("Hiring", "nav-hiring", link("#/openings", "Openings", "nav-openings"), link("#/plugins", "Hiring plugins", "nav-plugins")),
+      group("AI trends", "nav-trends", link("#/signals", "Market trends", "nav-market"), link("#/heatmap", "Skills gap heatmap", "nav-heatmap")),
       h("div", { style: { flex: 1 } }),
       accountBtn, account);
   shellEl = h("div", { class: "hr-shell" },

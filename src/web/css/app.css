@@ -3657,3 +3657,33 @@ body {
   .ir-rows-rubric li { grid-template-columns: minmax(0, 1fr) 44px; }
 }
 .ir-card .fine { font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+
+/* polish to DESIGN.md "The Open Page": 14px floor on public screens, serif display numerals,
+   flat cards at rest, status colours from the ok/warn/danger tokens */
+.plan-ref { margin: 0; font-size: 14px; }
+.ps-ring b, .ps-stat b { font-family: var(--font-display); font-weight: 500; }
+.ps-ring b { font-size: 22px; }
+.ps-stat b { font-size: 28px; }
+.ps-text { font-size: 15px; }
+.aside-card { box-shadow: none; }
+.aside-card h4 { font-size: 18px; }
+.aside-card p, .aside-list { font-size: 15px; }
+.pt-tag, .phase-count, .pt-label, .cal-head, .cal-item, .cal-free, .cal-block h5 { font-size: 14px; }
+.phase-count svg { width: 15px; height: 15px; }
+.interview-report-page { --band-good: var(--ok); --band-mid: var(--warn); --band-low: var(--danger); }
+.ir-hero { box-shadow: none; }
+.ps-ring.ir-ring b { font-family: var(--font-display); font-weight: 500; font-size: 40px; }
+.ir-ring small, .ir-side-score > small, .ir-delta, .ir-chip span, .ir-card .fine, .ir-pill { font-size: 14px; }
+.ir-side-top b { font-family: var(--font-display); font-weight: 500; font-size: 28px; }
+.ir-card h3 { font-size: 18px; }
+.ir-rows li { font-size: 15px; }
+.plan-cal-wrap { margin-top: 12px; }
+/* progress fills are the one blue; status colours stay on the per-skill and rubric bars and the verdict pill */
+.ps-ring.ir-ring { --band: var(--accent); }
+.ir-side-score .ir-bar { --band: var(--accent); }
+.ir-chip span { font-family: var(--font-ui); }
+/* phones: the header fits on one line; Sign out keeps its icon and accessible name */
+@media (max-width: 699px) {
+  .pub-top .signout { width: 38px; padding: 0; justify-content: center; }
+  .pub-top .signout .lbl { display: none; }
+}
