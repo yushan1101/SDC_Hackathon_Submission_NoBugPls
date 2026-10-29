@@ -158,8 +158,9 @@
 .wf-foot { font-weight: 700; border-top: 1px solid var(--rule); }
 .wf-foot ~ .wf-cell { margin-top: 6px; }
 @media (hover: hover) {
-.wf-matrix-grid[data-cross] [data-r], .wf-matrix-grid[data-cross] [data-c] { opacity: .45; transition: opacity 120ms ease; }
-.wf-matrix-grid[data-cross] .is-cross { opacity: 1; }
+.wf-matrix-grid[data-cross] .wf-cell[data-r], .wf-matrix-grid[data-cross] .wf-cell[data-c] { opacity: .45; transition: opacity 120ms ease; }
+.wf-matrix-grid[data-cross] .wf-cell.is-cross { opacity: 1; }
+.wf-matrix-grid[data-cross] .wf-skill-name:not(.is-cross), .wf-matrix-grid[data-cross] .wf-group-head:not(.is-cross) { color: color-mix(in oklch, var(--ink-2) 55%, transparent); }
 .wf-matrix-grid[data-cross] .wf-skill-name.is-cross, .wf-matrix-grid[data-cross] .wf-group-head.is-cross { color: var(--accent); }
 }
 .wf-top-gaps { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; counter-reset: g; }
@@ -172,6 +173,13 @@
   .wf-skill-name { position: static; }
   .wf-foot ~ .wf-cell { margin-top: 0; }
 }
-@media (prefers-reduced-motion: reduce) { .wf-matrix-grid[data-cross] [data-r], .wf-matrix-grid[data-cross] [data-c] { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .wf-matrix-grid[data-cross] .wf-cell { transition: none; } }
 .wf-skill-name, .wf-skill-head { box-shadow: 8px 0 8px -8px color-mix(in oklch, var(--ink) 25%, transparent); }
 @media (max-width: 600px) { .wf-skill-name, .wf-skill-head { box-shadow: none; } }
+
+/* pinned skill column: solid, full row height, and covering the 6px gaps so scrolled cells never show around it */
+@media (min-width: 601px) {
+  .wf-skill-name, .wf-skill-head { align-self: stretch; display: flex; align-items: center; margin: -3px -6px -3px 0; padding: 15px 16px 15px 10px; opacity: 1; }
+  .wf-skill-head { z-index: 2; align-items: end; padding-bottom: 13px; }
+  .wf-foot { padding-top: 18px; }
+}
