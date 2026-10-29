@@ -145,9 +145,13 @@ app.add_middleware(SitesCORS, allow_origins=[], allow_credentials=True, allow_me
 
 
 # --- security -------------------------------------------------------------------------------------
+# Server-to-server callbacks that carry no cookies and prove themselves with a signature: Stripe can't add X-AP.
+CSRF_EXEMPT = {"/api/billing/webhook"}
+
+
 @app.middleware("http")
 async def headers(request: HttpRequest, call_next):
-    if request.method in ("POST", "PUT", "DELETE") and request.url.path.startswith("/api/"):
+    if request.method in ("POST", "PUT", "DELETE") and request.url.path.startswith("/api/")             and request.url.path not in CSRF_EXEMPT:
         if request.headers.get("x-ap") != "1":  # custom header => cross-site forms can't post (CSRF)
             return JSONResponse({"detail": "missing X-AP header"}, status_code=403)
         origin = (request.headers.get("origin") or "").rstrip("/")
