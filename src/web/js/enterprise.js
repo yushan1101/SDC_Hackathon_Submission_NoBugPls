@@ -93,6 +93,7 @@ function shell() {
     h("a", { href: "#/people", onclick: () => more.hidePopover?.() }, icon("user"), "Team members"),
     h("a", { href: "#/models", onclick: () => more.hidePopover?.() }, icon("model"), "AI models"),
     h("a", { href: "#/signals", onclick: () => more.hidePopover?.() }, icon("pulse"), "AI trends"),
+    h("a", { href: "#/heatmap", onclick: () => more.hidePopover?.() }, icon("grid"), "Skills gap heatmap"),
     h("a", { href: "#/account", "data-route": "#/account" }, icon("user"), "Plan & billing"),
     h("button", { type: "button", onclick: signOut }, icon("out"), "Sign out"));
   sidebarToggle = h("button", { class: "hr-sidebar-toggle", type: "button", "aria-expanded": String(sidebarExpanded),
@@ -134,7 +135,7 @@ function shell() {
       link("#/overview", "Overview", "grid"), link("#/agents", "Agent", "ask"),
       group("Team", "people", link("#/run", "Analyse team", "upload"), review, link("#/people", "Team members", "user")),
       group("Hiring", "job", link("#/openings", "Openings", "people"), link("#/plugins", "Hiring plugins", "plug")),
-      link("#/signals", "AI trends", "pulse"),
+      group("AI trends", "pulse", link("#/signals", "Market trends", "pulse"), link("#/heatmap", "Skills gap heatmap", "grid")),
       h("div", { style: { flex: 1 } }),
       accountBtn, account);
   shellEl = h("div", { class: "hr-shell" },
@@ -167,6 +168,7 @@ function capsule() {
       page("#/openings", "Hiring", "people", "openings jobs applicants"),
       page("#/plugins", "Hiring plugins", "plug", "linkedin post share"), page("#/people", "Team members", "user", "invite users"),
       page("#/models", "AI models", "model", "llm settings"), page("#/signals", "AI trends", "pulse", "signals news"),
+      page("#/heatmap", "Skills gap heatmap", "grid", "workforce skills gap team ai trends"),
       page("#/account", "Plan & billing", "user", "pricing subscription")],
     actions: [{ label: "Analyse a team CSV", icon: "upload", words: "start new run import", run: () => { location.hash = "#/run"; } },
       { label: "Review the next pending plan", icon: "review", words: "approve open next", run: () => {
@@ -194,14 +196,14 @@ function route() {
   const hash = location.hash || "#/overview";
   const [page = "overview", id, ...extra] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
   if (page === "plans") { location.replace(`#/review${id ? `/${id}` : ""}`); return; }  // the plans register is part of the review page now
-  const pages = new Set(["overview", "run", "review", "openings", "signals", "plugins", "people", "models", "agents", "account", "pricing", "privacy", "terms"]);
+  const pages = new Set(["overview", "run", "review", "openings", "signals", "heatmap", "plugins", "people", "models", "agents", "account", "pricing", "privacy", "terms"]);
   if (!pages.has(page) || extra.length || (id && !["review", "openings", "plugins", "agents"].includes(page))) {
     location.replace("#/overview");
     return;
   }
   document.querySelectorAll("[data-route]").forEach((a) => {
     const dest = a.dataset.route;
-    const active = dest === "#/more" ? ["openings", "signals", "plugins", "people", "models", "agents"].includes(page) :
+    const active = dest === "#/more" ? ["openings", "signals", "heatmap", "plugins", "people", "models", "agents"].includes(page) :
       hash === dest || hash.startsWith(dest + "/");
     if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
@@ -219,7 +221,7 @@ function route() {
   S.routeVersion = (S.routeVersion || 0) + 1;
   if (page !== "review" || !main.querySelector(".review")) main.scrollTop = 0;
   const views = { run: runView, review: () => reviewView(main, id),
-    openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status),
+    openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status), heatmap: () => heatmapView(main),
     plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)),
     account: () => accountView(main, { refreshMe: async () => { S.me = await api("/api/me"); return S.me; }, hrLayout: true }),
     pricing: () => pricingView(main, { me: S.me }),
@@ -278,6 +280,15 @@ function rosterTable() {
 
 // newest plan per employee, so a re-run doesn't list the same person twice
 const latestPerEmployee = (plans) => [...plans.reduce((m, p) => (!m.has(p.subject_id) || m.get(p.subject_id).created_utc < p.created_utc ? m.set(p.subject_id, p) : m), new Map()).values()];
+
+// AI trends > Skills gap heatmap: the Overview heatmap on a page of its own
+function heatmapView(main) {
+  const workforce = h("div", { class: "workforce" });
+  main.replaceChildren(h("div", { class: "view" },
+    h("div", { class: "view-head" }, h("h1", {}, "AI trends"), h("a", { class: "btn sm", href: "#/signals" }, icon("pulse"), "Market trends")),
+    workforce));
+  workforceView(workforce);
+}
 
 async function overview(main) {
   const version = S.routeVersion;

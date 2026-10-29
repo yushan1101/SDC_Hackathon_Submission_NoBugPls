@@ -85,6 +85,10 @@ with DB_LOCK:
                             CREATE TABLE IF NOT EXISTS plan_progress(plan_id TEXT, item TEXT, done_utc TEXT,
                             PRIMARY KEY(plan_id, item));""")  # activities ticked off as done ("<days>:<skill>")
     interview_store.init(db)
+    # demo accounts made before they were linked: the demo employee belongs to the demo HR's organisation
+    db.execute("UPDATE users SET invited_by='demo_hr' WHERE username='demo_employee' AND invited_by IS NULL "
+               "AND EXISTS (SELECT 1 FROM users WHERE username='demo_hr')")
+    db.commit()
 
 app = FastAPI(title="AiversePulse", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -1678,16 +1682,16 @@ def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", 
 
 @app.get("/api/hr/workforce")
 def workforce_heatmap(response: Response, scenario: str = "assistive", skill: list[str] = Query(default=[]), category: str = "all",
-                      department: str = "", role: str = "", sample_preview: bool = False,
+                      department: str = "", role: str = "", sample_preview: bool = False, source: str = "",
                       user: dict = Depends(need("hr_advisor"))):
-    if scenario not in {"assistive", "agentic"} or category not in {"all", "skill", "tool"}:
-        raise HTTPException(422, "invalid scenario or skill category")
+    if scenario not in {"assistive", "agentic"} or category not in {"all", "skill", "tool"} or source not in {"", *workforce.SOURCES}:
+        raise HTTPException(422, "invalid scenario, skill category or source")
     if len(skill) > 500 or len(department) > 100 or len(role) > 160:
         raise HTTPException(422, "filter is too long")
     with DB_LOCK:
         records = workforce.load_reports(db, user["username"], scenario, sample_preview)
     response.headers["Cache-Control"] = "private, no-store"
-    result = workforce.aggregate(records, skill, category, sample_preview, department, role)
+    result = workforce.aggregate(records, skill, category, sample_preview, department, role, source)
     # A fictional preview is available to every HR demo account; it is never stored as an assessment.
     result["sample_available"] = True
     return result
