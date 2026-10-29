@@ -316,6 +316,27 @@ async function enterprises(main, month = "") {
     table(["Enterprise", "Type", "Plan", "Subscription", "AI usage", "Models", ""], rows, "No enterprises yet: HR accounts appear here.")));
 }
 
+/** Models the OpenAI-compatible gateway offers (GET /v1/models), each one click from the catalog. */
+function gatewayPanel(main) {
+  const box = h("section", { class: "gateway-models" }, h("h2", {}, "Models on your gateway"), h("p", { class: "muted" }, "Asking the gateway…"));
+  const draw = (refresh) => api(`/api/admin/models/gateway${refresh ? "?refresh=true" : ""}`).then((g) => {
+    const head = h("div", { class: "gateway-head" }, h("h2", {}, "Models on your gateway"),
+      g.configured ? h("button", { class: "btn sm", type: "button", onclick: () => draw(true) }, icon("replay"), "Refresh") : null);
+    if (!g.configured) { box.replaceChildren(head, h("p", { class: "muted" }, "No OpenAI-compatible gateway is set up (LLM_BASE_URL and LLM_API_KEY in .env).")); return; }
+    if (!g.reachable) { box.replaceChildren(head, h("p", { class: "issue warning" }, "The gateway didn't answer its /models list. Check LLM_BASE_URL and the key, then Refresh.")); return; }
+    box.replaceChildren(head, h("p", { class: "muted" }, `${g.models.length} models available. Add the ones HR advisors and enterprises may use.`),
+      h("ul", { class: "gateway-list" }, g.models.map((m) => h("li", {},
+        h("code", { class: "mono" }, m.id),
+        m.in_catalog ? h("span", { class: "tag approved" }, "in catalog")
+          : h("button", { class: "btn sm", type: "button", onclick: async () => {
+            try { await api("/api/admin/models", { method: "POST", body: { spec: m.spec, label: m.id } }); toast(`${m.id} added`); models(main); }
+            catch (ex) { toast(ex.message, "err"); }
+          } }, "Add")))));
+  }).catch((e) => box.replaceChildren(h("h2", {}, "Models on your gateway"), h("p", { class: "issue error" }, e.message)));
+  draw(false);
+  return box;
+}
+
 async function models(main) {
   const d = await api("/api/admin/models");
   const spec = h("input", { class: "input", required: true, maxlength: 90, placeholder: "gemini:gemini-3.1-flash  or  openai:gpt-5.6-luna" });  // checked on the server
@@ -344,6 +365,7 @@ async function models(main) {
       try { await api("/api/admin/models", { method: "POST", body: { spec: spec.value.trim(), label: label.value.trim() } }); toast("Added"); models(main); }
       catch (ex) { toast(ex.message, "err"); }
     } }, spec, label, h("button", { class: "btn primary", type: "submit" }, "Add model")),
+    gatewayPanel(main),
     h("h2", {}, "Defaults (from .env)"),
     table(["Task", "Default model"], defaults)));
 }

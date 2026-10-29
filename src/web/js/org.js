@@ -78,7 +78,34 @@ export async function peopleView(main, status) {
           h("label", { class: "field" }, h("span", {}, "Name"), name),
           err, send,
           h("p", { class: "note" }, "They get an email with a link (valid 7 days) to choose a password. Their account is on your organisation's plan. You can disable or remove it at any time. You can see the learning plans they make for themselves, read-only.")))),
-    drawer));
+    memberModels(), drawer));
+}
+
+const SHORT_TASK = { coach: "Coach & interviews", resume: "Resumes", recruiter: "Hiring & team questions" };
+
+/** HR picks the AI model each employee or student uses per task, from the admin's catalog; empty = the enterprise's. */
+function memberModels() {
+  const box = h("section", { class: "panel member-models" }, h("header", {}, h("h2", {}, "AI model per person")), h("div", { class: "pad" }, h("p", { class: "muted" }, "Loading…")));
+  api("/api/org/members/models").then((d) => {
+    const short = (spec) => (spec || "").replace(/^(openai|gemini):/, "") || "rule-based";
+    const pick = (m, task) => {
+      const sel = h("select", { class: "input", "aria-label": `${m.name}: ${d.tasks[task]}`, onchange: async () => {
+        try { const r = await api(`/api/org/members/${encodeURIComponent(m.username)}/models`, { method: "POST", body: { task, spec: sel.value } });
+          m.models = r.models; toast(`${m.name}: ${sel.value ? short(sel.value) : "enterprise default"}`); }
+        catch (e) { toast(e.message, "err"); sel.value = m.models[task] || ""; }
+      } }, h("option", { value: "" }, `Enterprise (${short(d.enterprise[task])})`),
+        d.options.map((o) => h("option", { value: o.spec, selected: m.models[task] === o.spec ? true : null }, o.label || short(o.spec))));
+      return sel;
+    };
+    box.lastElementChild.replaceChildren(
+      h("p", { class: "muted" }, `Choose which AI model each of your ${d.label.toLowerCase()} uses. "Enterprise" follows your organisation's setting.`),
+      d.members.length ? h("div", { class: "table-wrap" }, h("table", { class: "data" },
+        h("thead", {}, h("tr", {}, h("th", {}, "Person"), Object.entries(d.tasks).map(([k, t]) => h("th", { title: t }, SHORT_TASK[k] || t)))),
+        h("tbody", {}, d.members.map((m) => h("tr", {}, h("td", {}, h("b", {}, m.name)), Object.keys(d.tasks).map((t) => h("td", {}, pick(m, t))))))))
+        : h("p", { class: "muted" }, `No ${d.label.toLowerCase()} yet.`),
+      d.options.length ? null : h("p", { class: "note" }, "Your administrator hasn't added any models to the catalog yet, so everyone uses the enterprise default."));
+  }).catch((e) => box.lastElementChild.replaceChildren(h("p", { class: "issue error" }, e.message)));
+  return box;
 }
 
 // ---------------------------------------------------------------- hiring plugins

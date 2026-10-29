@@ -3710,3 +3710,5 @@ body {
   .profile-photo { justify-items: start; grid-template-columns: auto 1fr; align-items: center; text-align: left; }
   .profile-photo .avatar-lg { width: 72px; height: 72px; font-size: 28px; grid-row: span 2; }
 }
+/* long code or config lines scroll inside their block instead of widening the page */
+pre { max-width: 100%; overflow-x: auto; }

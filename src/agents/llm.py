@@ -49,6 +49,31 @@ def model_for(agent: str, org: bool = True) -> str:
     return spec if usable(spec) else fallback  # gateway not set up yet -> keep working on Gemini, else deterministic
 
 
+_gateway_cache: tuple[float, list] = (0.0, [])
+
+
+def gateway_models(refresh: bool = False) -> list[str]:
+    """Model ids the OpenAI-compatible gateway offers (GET {LLM_BASE_URL}/v1/models), cached a minute; [] if unset or down."""
+    global _gateway_cache
+    if not providers()["openai"]:
+        return []
+    if not refresh and time.monotonic() - _gateway_cache[0] < 60:
+        return _gateway_cache[1]
+    import httpx
+    from config.settings import get_settings
+    s = get_settings()
+    try:
+        r = httpx.get(api_base(s.llm_base_url) + "/models", timeout=15,
+                      headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"})
+        r.raise_for_status()
+        ids = sorted({str(m.get("id")) for m in (r.json().get("data") or []) if m.get("id")})
+    except Exception as e:  # noqa: BLE001 - a gateway outage must not break the admin page
+        log.warning("gateway /models failed: %s", e)
+        return []
+    _gateway_cache = (time.monotonic(), ids)
+    return ids
+
+
 def api_base(url: str) -> str:
     """A bare host ("https://gw.example") gets the standard "/v1"; a URL that already has a path is used as given."""
     from urllib.parse import urlparse

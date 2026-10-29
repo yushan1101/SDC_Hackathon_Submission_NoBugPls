@@ -369,3 +369,17 @@ html[data-product="hr"] .ent-models .field { display: grid; gap: 4px; font-size:
 html[data-product="hr"] .ent-bill { grid-template-columns: repeat(2, minmax(0, 1fr)); display: grid; }
 html[data-product="hr"] td .who { display: grid; gap: 2px; }
 html[data-product="hr"] .ent-drawer > .pad { padding: 0 20px 28px; }
+
+/* admin: the gateway's model list; HR: a model per person */
+html[data-product="hr"] .gateway-models { margin-top: 24px; }
+html[data-product="hr"] .gateway-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+html[data-product="hr"] .gateway-head h2 { margin: 0; }
+html[data-product="hr"] .gateway-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 8px; }
+html[data-product="hr"] .gateway-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 8px 10px 8px 12px; border-radius: 10px; background: var(--card-fill, #fff); }
+html[data-product="hr"] .gateway-list code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+html[data-product="hr"] .member-models { margin-top: 16px; }
+html[data-product="hr"] .member-models select { min-width: 150px; max-width: 220px; }
+/* wide tables scroll inside their own box: grid children default to min-width:auto, which let them push the page wider */
+html[data-product="hr"] :is(.view, .panel, .overview, .ent-drawer .pad) > * { min-width: 0; }
+html[data-product="hr"] .table-wrap { max-width: 100%; overflow-x: auto; }
+html[data-product="hr"] :is(pre, .md) { max-width: 100%; overflow-x: auto; }

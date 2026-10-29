@@ -82,6 +82,8 @@ with DB_LOCK:
                             CREATE TABLE IF NOT EXISTS model_catalog(spec TEXT PRIMARY KEY, label TEXT, created_utc TEXT);
                             CREATE TABLE IF NOT EXISTS agent_log(username TEXT, agent TEXT, at_utc TEXT);
                             CREATE TABLE IF NOT EXISTS org_models(owner TEXT, task TEXT, spec TEXT, PRIMARY KEY(owner, task));
+                            CREATE TABLE IF NOT EXISTS member_models(username TEXT, task TEXT, spec TEXT, set_by TEXT,
+                            PRIMARY KEY(username, task));
                             CREATE TABLE IF NOT EXISTS plan_progress(plan_id TEXT, item TEXT, done_utc TEXT,
                             PRIMARY KEY(plan_id, item));""")  # activities ticked off as done ("<days>:<skill>")
     interview_store.init(db)
@@ -185,12 +187,18 @@ def _session_token(request: HttpRequest) -> str | None:
 
 
 def _org_models(token: str) -> dict:
-    """{task: model} chosen by the signed-in person's organisation (empty: the admin defaults)."""
+    """{task: model} for the signed-in person: their own model (set by their HR) over their enterprise's (set by the admin
+    or HR); empty = the admin defaults."""
     with DB_LOCK:
         row = db.execute("SELECT s.username, s.role, u.invited_by FROM sessions s LEFT JOIN users u ON u.username=s.username "
                          "WHERE s.token_hash=?", (_hash(token),)).fetchone()
-        owner = (row[0] if row[1] == "hr_advisor" else row[2]) if row else None
-        return dict(db.execute("SELECT task, spec FROM org_models WHERE owner=?", (owner,)).fetchall()) if owner else {}
+        if not row:
+            return {}
+        owner = row[0] if row[1] == "hr_advisor" else row[2]
+        chosen = dict(db.execute("SELECT task, spec FROM org_models WHERE owner=?", (owner,)).fetchall()) if owner else {}
+        if row[1] == "employee":
+            chosen |= dict(db.execute("SELECT task, spec FROM member_models WHERE username=?", (row[0],)).fetchall())
+        return chosen
 
 
 def _in_context(fn):
@@ -2698,6 +2706,63 @@ def admin_model_remove(spec: str, user: dict = Depends(need("admin"))):
     if not n:
         raise HTTPException(404, "not in the list")
     return {"ok": True}
+
+
+@app.get("/api/admin/models/gateway")
+def admin_gateway_models(refresh: bool = False, user: dict = Depends(need("admin"))):
+    """What the OpenAI-compatible gateway offers right now, marked when it is already in the catalog."""
+    if not llm.providers()["openai"]:
+        return {"configured": False, "models": []}
+    ids = llm.gateway_models(refresh)
+    with DB_LOCK:
+        have = {r[0] for r in db.execute("SELECT spec FROM model_catalog")}
+    return {"configured": True, "reachable": bool(ids), "models": [{"id": i, "spec": f"openai:{i}", "in_catalog": f"openai:{i}" in have} for i in ids]}
+
+
+# ---------------------------------------------------------------- HR: a model per employee or student
+def _assignable(spec: str) -> bool:
+    return bool(db.execute("SELECT 1 FROM model_catalog WHERE spec=?", (spec,)).fetchone()) and llm.usable(spec)
+
+
+@app.get("/api/org/members/models")
+def member_models_get(user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        members = db.execute("SELECT username, COALESCE(display_name, username) FROM users WHERE invited_by=? AND role='employee' "
+                             "ORDER BY 2", (user["username"],)).fetchall()
+        chosen: dict = {}
+        for u, task, spec in db.execute("SELECT m.username, m.task, m.spec FROM member_models m JOIN users u ON u.username=m.username "
+                                        "WHERE u.invited_by=?", (user["username"],)):
+            chosen.setdefault(u, {})[task] = spec
+        org = dict(db.execute("SELECT task, spec FROM org_models WHERE owner=?", (user["username"],)).fetchall())
+        cat = db.execute("SELECT spec, label FROM model_catalog ORDER BY label").fetchall()
+        label = enterprise.member_label(db, user["username"], plural=True)
+    return {"tasks": llm.TASKS, "label": label,
+            "enterprise": {t: org.get(t) or llm.model_for(t, org=False) or None for t in llm.TASKS},
+            "options": [{"spec": s, "label": lb} for s, lb in cat if llm.usable(s)],
+            "members": [{"username": u, "name": n, "models": chosen.get(u, {})} for u, n in members]}
+
+
+class MemberModelIn(BaseModel):
+    task: str = Field(max_length=40)
+    spec: str = Field(default="", max_length=90)  # "" = follow the enterprise
+
+
+@app.post("/api/org/members/{username}/models")
+def member_models_set(username: str, body: MemberModelIn, user: dict = Depends(need("hr_advisor"))):
+    if body.task not in llm.TASKS:
+        raise HTTPException(422, "unknown task")
+    with DB_LOCK:
+        if not db.execute("SELECT 1 FROM users WHERE username=? AND invited_by=? AND role='employee'", (username, user["username"])).fetchone():
+            raise HTTPException(404, "not one of your people")
+        if body.spec and not _assignable(body.spec):
+            raise HTTPException(422, "that model is not in the admin's catalog or has no key configured")
+        with db:
+            if body.spec:
+                db.execute("INSERT INTO member_models(username, task, spec, set_by) VALUES(?,?,?,?) ON CONFLICT(username, task) "
+                           "DO UPDATE SET spec=excluded.spec, set_by=excluded.set_by", (username, body.task, body.spec, user["username"]))
+            else:
+                db.execute("DELETE FROM member_models WHERE username=? AND task=?", (username, body.task))
+        return {"models": dict(db.execute("SELECT task, spec FROM member_models WHERE username=?", (username,)).fetchall())}
 
 
 @app.get("/api/org/models")

@@ -11,3 +11,6 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS org_kind TEXT;
 CREATE TABLE IF NOT EXISTS subscriptions(owner TEXT PRIMARY KEY, customer_id TEXT, subscription_id TEXT UNIQUE, status TEXT,
     current_period_end TEXT, cancel_at_period_end INTEGER DEFAULT 0, amount_cents INTEGER, currency TEXT, updated_utc TEXT);
 CREATE TABLE IF NOT EXISTS billing_meta(key TEXT PRIMARY KEY, value TEXT);
+
+-- a model per employee or student, set by their HR advisor (overrides the enterprise's choice for that task)
+CREATE TABLE IF NOT EXISTS member_models(username TEXT, task TEXT, spec TEXT, set_by TEXT, PRIMARY KEY(username, task));

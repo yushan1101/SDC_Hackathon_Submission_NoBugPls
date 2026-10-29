@@ -141,3 +141,31 @@ def test_stripe_webhook_needs_its_signature_not_the_csrf_header(env, monkeypatch
     assert ok.status_code == 200 and ok.json() == {"received": True}
     assert c.post("/api/billing/webhook", content=body, headers={"stripe-signature": f"t={t},v1=deadbeef"}).status_code == 400
     assert c.post("/api/profile", json={"phone": "123456"}).status_code == 403  # every other POST still needs X-AP
+
+
+def test_admin_lists_gateway_models_and_hr_assigns_one_per_person(env, monkeypatch):
+    api, c = env
+    monkeypatch.setattr(api.llm, "providers", lambda: {"openai": True, "gemini": False})
+    monkeypatch.setattr(api.llm, "gateway_models", lambda refresh=False: ["gpt-test", "grok-mini"])
+    monkeypatch.setattr(api.llm, "usable", lambda spec: True)
+    login(c, "boss")
+    g = c.get("/api/admin/models/gateway").json()
+    assert g["reachable"] and {m["id"]: m["in_catalog"] for m in g["models"]} == {"gpt-test": True, "grok-mini": False}
+    assert c.post("/api/admin/models", json={"spec": "openai:grok-mini", "label": "Grok mini"}, headers=H).status_code == 200
+    with api.db:
+        api.db.execute("INSERT INTO org_models(owner, task, spec) VALUES('school1','coach','openai:gpt-test') ON CONFLICT(owner, task) DO UPDATE SET spec=excluded.spec")
+
+    login(c, "school1")
+    d = c.get("/api/org/members/models").json()
+    assert d["label"] == "Students" and [m["username"] for m in d["members"]] == ["stud1"]
+    assert {o["spec"] for o in d["options"]} >= {"openai:gpt-test", "openai:grok-mini"}
+    assert c.post("/api/org/members/stud1/models", json={"task": "coach", "spec": "openai:not-in-catalog"}, headers=H).status_code == 422
+    assert c.post("/api/org/members/outsider/models", json={"task": "coach", "spec": "openai:grok-mini"}, headers=H).status_code == 404
+    assert c.post("/api/org/members/stud1/models", json={"task": "coach", "spec": "openai:grok-mini"}, headers=H).json()["models"] == {"coach": "openai:grok-mini"}
+
+    # the student's own model wins over the enterprise's; HR keeps the enterprise's
+    login(c, "stud1")
+    assert api._org_models(c.cookies.get(api.COOKIE))["coach"] == "openai:grok-mini"
+    login(c, "school1")
+    assert api._org_models(c.cookies.get(api.COOKIE))["coach"] == "openai:gpt-test"
+    assert c.post("/api/org/members/stud1/models", json={"task": "coach", "spec": ""}, headers=H).json()["models"] == {}
