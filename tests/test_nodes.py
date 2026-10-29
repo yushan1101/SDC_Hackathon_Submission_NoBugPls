@@ -106,3 +106,10 @@ def test_ai_lessons_expand_with_matching_quizzes_and_only_retrieved_resources(mo
     assert all(not node.resource_ids for node in nodes)
     assert nodes[3].content_source == "guided_fallback" and "Color and Contrast" in nodes[3].title
     assert nodes[5].quiz.answer_index < len(nodes[5].quiz.options)
+
+
+def test_fallback_lessons_for_an_uncatalogued_skill_differ_each_week():
+    from agents.lessons import lesson_for
+    topics = [lesson_for("Electronics principles", week, 0)[0] for week in range(1, 14)]
+    assert len(set(topics)) == 13, topics
+    assert topics[0] == "Core Ideas of Electronics principles" and "Applying" not in " ".join(topics)

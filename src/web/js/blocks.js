@@ -178,6 +178,23 @@ function planActivityOutcome(activity) {
 }
 
 const DAY_MS = 864e5;
+// Weeks are dated inside their phase, like the plan schedules them: weeks 1-4 = days 1-30, 5-8 = 31-60, 9-13 = 61-90.
+// A phase's last week takes its leftover days (week 4: days 22-30); week 13 is the short days 89-90.
+const WEEK_PHASES = [[1, 4, 1, 30], [5, 8, 31, 60], [9, 13, 61, 90]];
+function weekDays(week) {  // -> [first day, last day], 1-based
+  const [lo, hi, from, to] = WEEK_PHASES.find(([lo, hi]) => week >= lo && week <= hi) || WEEK_PHASES[2];
+  const first = from + (week - lo) * 7;
+  return [first, week === hi ? to : first + 6];
+}
+const dayToWeek = (day) => { for (let w = 1; w <= 13; w++) if (day <= weekDays(w)[1]) return w; return 13; };
+function weekRange(week, startDate) {
+  const start = new Date(startDate || Date.now()); start.setHours(0, 0, 0, 0);
+  const fmt = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const [a, b] = weekDays(week);
+  return `${fmt(new Date(+start + (a - 1) * DAY_MS))} – ${fmt(new Date(+start + (b - 1) * DAY_MS))}`;
+}
+// this plan's current week (1-13), from its start date
+const currentWeek = (startDate) => dayToWeek(Math.max(1, Math.floor((Date.now() - (Date.parse(startDate || "") || Date.now())) / DAY_MS) + 1));
 
 /** Open the section subpage holding an activity card and scroll to the card. */
 function jumpTo(k) {
@@ -190,7 +207,6 @@ const PHASE_WEEK = { "1-30": 1, "31-60": 5, "61-90": 9 };
 
 /** Week-by-week agenda of a plan: what to do each week, dated from startDate, with this week highlighted. */
 function planCalendar(acts, startDate, done, key) {
-  const start = new Date(startDate || Date.now()); start.setHours(0, 0, 0, 0);
   const weeks = Array.from({ length: 13 }, () => []);
   for (const a of acts) for (const step of planActivitySteps(a)) {
     const m = step.match(/^\s*weeks?\s+(\d+)(?:\s*[-–]\s*(\d+))?\s*:\s*/i);
@@ -200,13 +216,11 @@ function planCalendar(acts, startDate, done, key) {
     const text = m ? step.slice(m[0].length) : step.replace(/^\s*end of month\s*:\s*/i, "");
     for (let w = Math.max(1, from); w <= Math.min(13, to); w++) weeks[w - 1].push({ a, text });
   }
-  const now = Math.floor((Date.now() - start) / DAY_MS / 7);  // 0-based index of this week
-  const fmt = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const now = currentWeek(startDate) - 1;  // 0-based index of this week
   const jump = (a) => jumpTo(key(a));
   const week = (items, i) => {
-    const from = new Date(+start + i * 7 * DAY_MS), to = new Date(Math.min(+from + 6 * DAY_MS, +start + 89 * DAY_MS));
     return h("li", { class: `cal-week${i === now ? " is-now" : ""}${i < now ? " is-past" : ""}`, "aria-current": i === now ? "date" : null },
-      h("div", { class: "cal-head" }, h("b", {}, `Week ${i + 1}`), h("span", {}, i === now ? "This week" : `${fmt(from)} – ${fmt(to)}`)),
+      h("div", { class: "cal-head" }, h("b", {}, `Week ${i + 1}`), h("span", {}, i === now ? "This week" : weekRange(i + 1, startDate))),
       items.length ? h("ul", {}, items.map(({ a, text }) => h("li", { class: done.has(key(a)) ? "is-done" : null },
         h("button", { type: "button", class: "cal-item", title: text, onclick: () => jump(a) }, h("span", { class: "cal-skill" }, a.skill_id), h("span", {}, text)))))
         : h("p", { class: "cal-free" }, i === 12 ? "Wrap-up week" : "Catch-up week"));
@@ -315,13 +329,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
         h("button", { class: "btn sm phase-open", type: "button", onclick: () => openPane(p) }, "View details", icon("chevron")))));
   });
   const phaseForWeek = (week) => week <= 4 ? "1-30" : week <= 8 ? "31-60" : "61-90";
-  const weekBounds = (week) => {
-    const start = new Date(startDate || Date.now()); start.setHours(0, 0, 0, 0);
-    const first = new Date(+start + (week - 1) * 7 * DAY_MS);
-    const last = new Date(Math.min(+first + 6 * DAY_MS, +start + 89 * DAY_MS));
-    const fmt = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    return `${fmt(first)} – ${fmt(last)}`;
-  };
+  const weekBounds = (week) => weekRange(week, startDate);
   const scrollRoadTo = (phase, week) => setTimeout(() => journeyHosts[phase]?.querySelector(`.road-week[data-week="${week}"]`)?.scrollIntoView({
     behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest", inline: "center" }), 0);
   const renderJourney = (phase) => {
@@ -450,7 +458,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     if (activePhase !== phase) openPane(phase, false, node.id);
     else { renderAllJourneys(); scrollRoadTo(phase, node.week_number); }
   }
-  const nowWeek = Math.min(13, Math.max(1, Math.ceil((Math.floor((Date.now() - (Date.parse(startDate || "") || Date.now())) / DAY_MS) + 1) / 7)));
+  const nowWeek = currentWeek(startDate);
   PHASES.forEach((phase) => {
     const [lo, hi] = phaseWeekRanges[phase]; selectedWeekByPhase[phase] = Math.min(hi, Math.max(lo, nowWeek));
     const group = learningNodes.filter((node) => node.week_number === selectedWeekByPhase[phase]);

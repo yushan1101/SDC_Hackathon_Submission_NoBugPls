@@ -106,11 +106,80 @@ def lesson_for(skill: str, week: int, current: float, resources=()):
     if family:
         catalog = CATALOG[family]
         return catalog[(week - 1 + int(current // 2)) % len(catalog)]
+    # no catalog family: follow the plan's stage for this week, so repeated weeks of one skill teach different things
     excerpts = [" ".join(getattr(resource, "excerpt", "").split())[:700] for resource in resources if getattr(resource, "excerpt", "")]
-    explanation = excerpts[0] if excerpts else f"Break {skill} into an input, an action and an observable result. Compare your result with an explicit task requirement before calling the work finished."
-    return (f"Applying {skill} to a Task", explanation,
-            f"For a task involving {skill}, record what you received, the action you chose, and what changed in the output.",
-            f"Select a small task requiring {skill}. Write its acceptance criteria, perform it, and annotate two decisions using the retrieved guide or your workplace procedure.",
-            f"A completed {skill} task with acceptance criteria and two annotated decisions.",
-            f"How can you check the result of a task involving {skill}?",
-            ["Compare its output with the stated acceptance criteria and record evidence.", "Mark it complete without inspecting the result."])
+    topic, idea, example, exercise, deliverable, question, options = GENERIC_STAGES[min(max(week, 1), 13) - 1]
+    s = skill[:1].lower() + skill[1:]
+    explanation = (excerpts[0] + " " if excerpts and week in (1, 2) else "") + idea.format(s=s)
+    return (topic.format(s=skill), explanation, example.format(s=s), exercise.format(s=s), deliverable.format(s=s),
+            question.format(s=s), [o.format(s=s) for o in options])
+
+
+# (topic, idea, example, exercise, deliverable, question, [right, wrong]); one per plan week, {s} = the skill
+GENERIC_STAGES = [
+    ("Core Ideas of {s}", "Start by naming what {s} takes as input, the decision or action it involves, and the result someone else can check.",
+     "Someone new to {s} lists one real input, the action they took and the result their supervisor would inspect.",
+     "Pick one everyday task that needs {s}. Write its input, the action and the checkable result in three lines.",
+     "A three-line input-action-result note for one {s} task.", "What makes a {s} result checkable?",
+     ["Someone else can compare it with a stated requirement.", "You feel confident it went well."]),
+    ("{s} Through a Worked Example", "A worked example shows each decision in order and why it was made, so you can reuse the reasoning.",
+     "A worked {s} example states the goal, then each step with the rule behind it, then the finished result.",
+     "Find or write one complete {s} example. Number its steps and write the reason for each step beside it.",
+     "A numbered {s} example with a reason next to every step.", "Why write the reason beside each step?",
+     ["So the reasoning can be reused on a new task.", "To make the example longer."]),
+    ("Common Mistakes in {s}", "Most errors come from skipping a check, misreading the requirement or using the wrong tool or procedure.",
+     "In {s}, starting before reading the full requirement is a typical cause of rework.",
+     "List three mistakes people make in {s}. For each, write the check that would catch it before the work is handed over.",
+     "A three-row mistake-and-check table for {s}.", "What is the best way to prevent a repeated mistake?",
+     ["Add a specific check to your routine that catches it.", "Work faster so there is time to redo it."]),
+    ("Your First {s} Deliverable", "A small finished piece of work proves more than a large unfinished one. Define done before you start.",
+     "A first {s} deliverable is small, has written acceptance criteria and is checked against them.",
+     "Write three acceptance criteria for a small {s} task, complete it and tick each criterion with evidence.",
+     "A small {s} deliverable with three ticked acceptance criteria.", "When is a deliverable done?",
+     ["When it meets acceptance criteria written beforehand.", "When the time you planned has run out."]),
+    ("{s} on a Real Task", "Real tasks add constraints: time, other people, tools and incomplete information. Name them before you start.",
+     "Using {s} on a real task means noting the deadline, who depends on the result and what information is missing.",
+     "Choose a real or realistic task that uses {s}. List its constraints, then do the task and note how each constraint changed your approach.",
+     "A completed {s} task with its constraints and their effect noted.", "Why list constraints first?",
+     ["They change which approach is realistic.", "They are only needed for reporting."]),
+    ("Checking {s} Work Against Requirements", "Compare the finished work with each requirement line by line, not with a general impression.",
+     "A {s} review lists every requirement with 'met', 'partly met' or 'not met' and the evidence for each.",
+     "Take your last {s} task and review it line by line against its requirements. Mark each one and cite the evidence.",
+     "A line-by-line requirement review of one {s} task.", "What should each review line include?",
+     ["The requirement, a verdict and the evidence.", "Only the parts that went well."]),
+    ("Getting Feedback on {s} Work", "Useful feedback is asked for with a specific question about a specific part of the work.",
+     "'Does step 3 of my {s} work meet the safety requirement?' gets a more useful answer than 'Any thoughts?'",
+     "Ask a colleague or mentor two specific questions about your {s} work. Record their answers word for word.",
+     "Two specific feedback questions about {s} work and the answers received.", "Which request gets more useful feedback?",
+     ["A specific question about one part of the work.", "A general request for any comments."]),
+    ("Improving {s} Work After Feedback", "Turn each piece of feedback into one concrete change, make it, and show the before and after.",
+     "After feedback, a {s} revision shows the original, the change and why it answers the comment.",
+     "Pick the most important feedback point on your {s} work. Make the change and record the before, the after and the reason.",
+     "A before-and-after revision of {s} work linked to one feedback point.", "What shows that feedback was used?",
+     ["A visible change linked to the specific comment.", "A note saying the feedback was read."]),
+    ("Planning Your {s} Work Sample", "A work sample needs a brief: who it is for, what problem it solves and how its quality will be judged.",
+     "A {s} work-sample brief names the audience, the problem and three quality criteria.",
+     "Write a half-page brief for a {s} work sample you could show an employer: audience, problem, scope and three quality criteria.",
+     "A half-page {s} work-sample brief.", "What should a work-sample brief define first?",
+     ["Who it is for and what problem it solves.", "Which colours and fonts to use."]),
+    ("Building Your {s} Work Sample", "Build in small checked steps, and keep a short log of decisions so you can explain the work later.",
+     "While building a {s} work sample, each session ends with a two-line log: what was done, what was decided.",
+     "Build the core of your {s} work sample from the brief. Keep a decision log with at least three entries.",
+     "A first version of the {s} work sample with a three-entry decision log.", "Why keep a decision log?",
+     ["So you can explain and defend your choices later.", "Because logs replace testing the work."]),
+    ("Reviewing Your {s} Work Sample", "Review against the brief's quality criteria, ideally with someone who works in the target role.",
+     "A {s} work-sample review scores each quality criterion from the brief and lists the weakest point.",
+     "Score your {s} work sample against each quality criterion in the brief and name its single weakest point.",
+     "A criterion-by-criterion review of the {s} work sample.", "What should a review measure the sample against?",
+     ["The quality criteria written in the brief.", "How long it took to build."]),
+    ("Refining Your {s} Work Sample", "Fix the weakest point first; one strong improvement is worth more than many cosmetic ones.",
+     "Refining a {s} work sample starts with the lowest-scoring criterion from the review.",
+     "Improve the weakest point found in your review. Re-score that criterion and record the change.",
+     "A refined {s} work sample with the re-scored criterion.", "Which point should you refine first?",
+     ["The weakest criterion from the review.", "Whatever is quickest to polish."]),
+    ("Presenting {s} Evidence", "Present the problem, what you did, the evidence it works and what you would do next, in that order.",
+     "A two-minute {s} summary covers the problem, the approach, the evidence and the next step.",
+     "Write a short summary of your {s} work sample: problem, approach, evidence and next step. Share it with one person.",
+     "A shared {s} evidence summary and your next learning step.", "What makes the summary convincing?",
+     ["Evidence that the work meets its stated criteria.", "Saying you are now an expert."]),
+]

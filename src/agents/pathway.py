@@ -182,16 +182,16 @@ def _fallback_node(seed: dict, role: str) -> dict:
         "id", "week_number", "skills", "activity_keys", "estimated_minutes", "resource_ids"}} | {
         "title": f"Understand {topic}", "type": "learn", "skills": [skill],
         "activity_keys": [key for key in seed["activity_keys"] if key.endswith(":" + skill)],
-        "learning_objective": f"Use {topic.lower()} in {role} work to improve {skill}, from assessed level {current} toward target {required}.",
+        "learning_objective": f"{topic}: apply it to {role} work, moving {skill} from assessed level {current} toward target {required}.",
         "topics": [topic],
         "learn": [explanation, f"Worked example: {example}", f"For your target role ({role}): {challenge}"],
-        "instructions": [f"Read the explanation of {topic.lower()} and identify the rule used in the worked example.",
+        "instructions": [f"Read the explanation of {topic} and identify the rule used in the worked example.",
                          f"Explain how that rule changes one decision in a {role} task.",
                          f"{exercise} {challenge}"],
         "exercise": f"For a {role} work sample: {exercise} {challenge} {phase_task}", "deliverable": deliverable,
         "quiz": {"question": question, "options": options, "answer_index": 0, "explanation": explanation},
-        "completion_criteria": [f"Save this deliverable: {deliverable}", f"Explain how your result uses {topic.lower()}."],
-        "expected_outcome": f"A reviewed example of {topic.lower()} applied to {role} work. Completion records learning activity, not a new proficiency score."}
+        "completion_criteria": [f"Save this deliverable: {deliverable}", f"Explain how your result uses {topic}."],
+        "expected_outcome": f"A reviewed example of {topic} applied to {role} work. Completion records learning activity, not a new proficiency score."}
 
 
 def expand_learning_nodes(nodes: list[LearningNode], role: str | None = None) -> list[LearningNode]:
@@ -215,20 +215,20 @@ def expand_learning_nodes(nodes: list[LearningNode], role: str | None = None) ->
         result.append(node.model_copy(update={
             "type": "learn", "title": node.title,
             "estimated_minutes": learn_minutes, "quiz": None,
-            "completion_criteria": [f"Explain {topic.lower()} in your own words.", "Apply the explanation to one decision in the worked example."],
+            "completion_criteria": [f"Explain {topic} in your own words.", "Apply the explanation to one decision in the worked example."],
         }))
         result.append(node.model_copy(update={
             "id": f"{node.id}-practice", "type": "project" if node.week_number >= 9 else "practice",
-            "title": (f"Create a Work Sample Using {topic}" if node.week_number >= 9 else f"Practice {topic}")[:120], "quiz": None,
+            "title": (f"Work Sample: {topic}" if node.week_number >= 9 else f"Practice: {topic}")[:120], "quiz": None,
             "estimated_minutes": minutes - learn_minutes - check_minutes,
             "learning_objective": f"Create and review this work: {node.deliverable}"[:500],
         }))
         if node.quiz:
             result.append(node.model_copy(update={
-                "id": f"{node.id}-check", "type": "quiz", "title": f"Complete a {topic} Knowledge Check"[:120],
+                "id": f"{node.id}-check", "type": "quiz", "title": f"Knowledge Check: {topic}"[:120],
                 "estimated_minutes": check_minutes,
-                "learning_objective": f"Check whether you can use {topic.lower()} to make a sound workplace decision.",
-                "completion_criteria": ["Answer the knowledge check correctly.", f"Explain why the answer follows the rule for {topic.lower()}."],
+                "learning_objective": f"Check whether you can use {topic} to make a sound workplace decision.",
+                "completion_criteria": ["Answer the knowledge check correctly.", f"Explain why the answer follows the rule for {topic}."],
             }))
     return result
 
