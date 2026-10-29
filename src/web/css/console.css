@@ -216,6 +216,7 @@ html:is([data-product="hr"], [data-console]) .wf-foot { border-top: 1px solid va
 /* tables breathe: dates stay on one line, long reasons get a readable width, actions never clip */
 html:is([data-product="hr"], [data-console]) table :is(th, td) { padding: 12px 14px; }
 html:is([data-product="hr"], [data-console]) table td:first-child, html:is([data-product="hr"], [data-console]) table td:has(> .btn), html:is([data-product="hr"], [data-console]) table td .row-actions { white-space: nowrap; }
+html:is([data-product="hr"], [data-console]) .legal-table td:first-child { white-space: normal; }  /* legal tables hold sentences, not ids */
 html:is([data-product="hr"], [data-console]) table td ul { min-width: 240px; margin: 0; padding-left: 18px; }
 
 /* cards carry the colour, not an edge: a white page, cards filled with a soft owl blue, white controls and table rows

@@ -274,7 +274,7 @@ def role_advice(matches: list[dict]) -> list[dict]:
         priority = gaps[0] if gaps else None
         changes = {c["skill"]: c for c in m.get("requirement_changes", [])}
         changed = changes.get(priority) if priority else None
-        fit = round(100 * m["fit"])
+        fit = round(100 * (m.get("fit") or 0))  # stub or partial matches have no score
         if scenario == "agentic":
             action = (f"For {m['title']}, practise directing an AI agent on work involving {priority}, "
                       "then check and correct its output." if priority else
