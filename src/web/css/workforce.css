@@ -123,3 +123,55 @@
 .wf-suggestion { border: 1px solid var(--rule-strong); border-radius: 999px; background: var(--surface); color: var(--ink); padding: 8px 12px; cursor: pointer; font: inherit; font-size: 13px; }
 .wf-suggestion.is-selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .wf-suggestion:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* continuous heat: --g is the gap % (0-100); green → amber → red, darker as it grows */
+.wf-heat { --hue: calc(150 - var(--g) * 1.25); background: oklch(calc(0.96 - var(--g) * 0.0022) calc(0.04 + var(--g) * 0.0011) var(--hue)); color: oklch(0.32 0.09 var(--hue)); }
+.wf-cell { position: relative; overflow: hidden; min-height: 64px; padding: 10px 8px 14px; border-radius: 12px; gap: 2px; }
+.wf-cell strong { font-size: 20px; line-height: 1.1; }
+.wf-cell span { font-size: 12px; opacity: .85; }
+.wf-bar { position: absolute; left: 8px; right: 8px; bottom: 6px; height: 4px; border-radius: 99px; background: color-mix(in oklch, currentColor 18%, transparent); }
+.wf-bar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--g) * 1%); border-radius: inherit; background: currentColor; opacity: .7; }
+.wf-avg { cursor: default; box-shadow: inset 0 0 0 2px color-mix(in oklch, currentColor 30%, transparent); }
+.wf-avg:hover { transform: none; box-shadow: inset 0 0 0 2px color-mix(in oklch, currentColor 30%, transparent); }
+.wf-avg-head { color: var(--ink); }
+.wf-matrix-grid { gap: 6px; }
+.wf-skill-name { font-size: 14px; }
+.wf-scale { display: inline-flex; align-items: center; gap: 8px; }
+.wf-scale b { font-size: 13px; font-weight: 600; }
+.wf-legend i.wf-ramp { width: 180px; height: 12px; border: 0; border-radius: 99px;
+  background: linear-gradient(90deg, oklch(.96 .04 150), oklch(.85 .1 87), oklch(.74 .15 25)); }
+.wf-suggestion { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px 5px 5px; }
+.wf-suggestion svg { width: 14px; height: 14px; color: var(--accent); }
+.wf-sug-pct { padding: 3px 8px; border-radius: 99px; font-weight: 700; font-size: 12px; }
+.wf-sug-add { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--sunken); color: var(--ink-2); font-weight: 700; }
+/* after the 760px rule above, which otherwise wins on phones and clips the grid */
+@media (max-width: 600px) { .wf-matrix-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .wf-cell { padding: 8px 4px 14px; } .wf-legend i.wf-ramp { width: 120px; } }
+
+/* production polish: scrolls sideways for many departments with the skill column pinned, row/column crosshair on hover,
+   department-average footer, denser cells */
+.wf-matrix-scroll { overflow-x: auto; margin: 0 -4px; padding: 4px; }
+.wf-matrix-grid { min-width: calc(170px + var(--wf-cols) * 104px); grid-template-columns: minmax(150px, 1.2fr) repeat(var(--wf-cols), minmax(96px, 1fr)); }
+.wf-skill-name, .wf-skill-head { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+.wf-group-head { align-self: end; }
+.wf-cell { min-height: 58px; }
+.wf-cell strong { font-size: 18px; }
+.wf-foot { font-weight: 700; border-top: 1px solid var(--rule); }
+.wf-foot ~ .wf-cell { margin-top: 6px; }
+@media (hover: hover) {
+.wf-matrix-grid[data-cross] [data-r], .wf-matrix-grid[data-cross] [data-c] { opacity: .45; transition: opacity 120ms ease; }
+.wf-matrix-grid[data-cross] .is-cross { opacity: 1; }
+.wf-matrix-grid[data-cross] .wf-skill-name.is-cross, .wf-matrix-grid[data-cross] .wf-group-head.is-cross { color: var(--accent); }
+}
+.wf-top-gaps { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; counter-reset: g; }
+.wf-top-gaps li { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; counter-increment: g; }
+.wf-top-gaps li b::before { content: counter(g) ". "; color: var(--muted); font-weight: 500; }
+.wf-top-gaps li span { white-space: nowrap; font-size: 13px; }
+@media (max-width: 600px) {
+  .wf-matrix-scroll { overflow: visible; margin: 0; padding: 0; }
+  .wf-matrix-grid { min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .wf-skill-name { position: static; }
+  .wf-foot ~ .wf-cell { margin-top: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .wf-matrix-grid[data-cross] [data-r], .wf-matrix-grid[data-cross] [data-c] { transition: none; } }
+.wf-skill-name, .wf-skill-head { box-shadow: 8px 0 8px -8px color-mix(in oklch, var(--ink) 25%, transparent); }
+@media (max-width: 600px) { .wf-skill-name, .wf-skill-head { box-shadow: none; } }
