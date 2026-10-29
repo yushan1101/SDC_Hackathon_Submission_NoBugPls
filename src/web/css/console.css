@@ -114,8 +114,9 @@ html[data-product="hr"] .wf-more .wf-filter-options { right: 0; left: auto; }
 html[data-product="hr"] .wf-more .wf-filter-options label.wf-select { display: grid; gap: 6px; padding: 6px 8px 10px; border-radius: 0; }
 html[data-product="hr"] .wf-more .wf-filter-options label.wf-select:hover { background: none; }
 html[data-product="hr"] .wf-filters .wf-select-sm { flex: 1 1 110px; max-width: 170px; text-overflow: ellipsis; }
-html[data-product="hr"] .wf-filters { flex-wrap: nowrap; }
-@media (max-width: 760px) { html[data-product="hr"] .wf-filters { flex-wrap: wrap; } }
+/* one row when there is room; wraps instead of pushing the page wider */
+html[data-product="hr"] .wf-filters { flex-wrap: wrap; min-width: 0; }
+@media (min-width: 1240px) { html[data-product="hr"] .wf-filters { flex-wrap: nowrap; } }
 html[data-product="hr"] .wf-filters .wf-select-sm { flex-basis: 140px; padding-right: 24px; }
 html[data-product="hr"] .wf-filters > .wf-icon-btn { flex: 0 0 32px; width: 32px; }
 html[data-product="hr"] .wf-filters > .btn.ghost { flex: 0 0 auto; width: auto; }
@@ -167,3 +168,57 @@ html[data-product="hr"] :is(.own-plan-chip, .chip):hover { background: var(--acc
 /* SplitText: words stay together while their letters animate */
 html[data-product="hr"] .sw { display: inline-block; white-space: nowrap; }
 html[data-product="hr"] .sc { display: inline-block; will-change: transform, opacity; }
+
+/* the page title already names the page; the top bar keeps only the account */
+html[data-product="hr"] .admin-top .crumb { visibility: hidden; }
+
+/* one owl colour for edges: the owl's blue (the app accent, hue 263) as pale lines and washes, so tables and
+   controls read clearly without going back to grey */
+html[data-product="hr"] {
+  /* fixed values: mixing toward white in oklch drifts the hue toward pink */
+  --owl-line: oklch(0.91 0.035 263);
+  --owl-line-strong: oklch(0.84 0.06 263);
+  --owl-wash: oklch(0.975 0.012 263);
+  --owl-ink: oklch(0.4 0.12 263);
+}
+html[data-product="hr"] :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .empty-state, .wf-filters) {
+  border: 1px solid var(--owl-line); box-shadow: 0 8px 24px -18px oklch(0.4 0.12 263 / 0.25); }
+html[data-product="hr"] .panel > header { border-bottom: 1px solid var(--owl-line); padding-bottom: 14px; }
+html[data-product="hr"] .rail a[aria-current="page"] { box-shadow: inset 0 0 0 1px var(--owl-line); color: var(--owl-ink); }
+html[data-product="hr"] .rail a[aria-current="page"] svg { color: var(--accent); }
+
+/* tables: a framed card, a blue-washed header row, owl-blue row lines, a soft hover */
+html[data-product="hr"] :is(.table-wrap, .view > table, .panel > table) { border: 1px solid var(--owl-line); border-radius: var(--c-radius); background: oklch(1 0 0); overflow: auto; }
+html[data-product="hr"] .panel .table-wrap { border: 0; border-radius: 0; }
+html[data-product="hr"] table { border-collapse: collapse; width: 100%; }
+html[data-product="hr"] table thead th { background: var(--owl-wash); color: var(--owl-ink); font-weight: 600; border-bottom: 1px solid var(--owl-line-strong); }
+html[data-product="hr"] table :is(th, td) { border: 0; border-bottom: 1px solid var(--owl-line); vertical-align: middle; }
+html[data-product="hr"] table tbody tr:last-child td { border-bottom: 0; }
+html[data-product="hr"] table tbody tr:hover td { background: var(--owl-wash); }
+html[data-product="hr"] table td .row-actions, html[data-product="hr"] table td.row-actions { border: 0; }
+
+/* controls: owl-blue edges on the pale fill */
+html[data-product="hr"] :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more summary) { border-color: var(--owl-line); background-color: oklch(1 0 0); }
+html[data-product="hr"] :is(.input, select.input, textarea.input):hover { border-color: var(--owl-line-strong); background-color: oklch(1 0 0); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost) { border-color: var(--owl-line); background: oklch(1 0 0); color: var(--owl-ink); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost):hover { border-color: var(--owl-line-strong); background: var(--owl-wash); }
+html[data-product="hr"] :is(.own-plan-chip, .chip, .wf-suggestion, .ag-starter) { border: 1px solid var(--owl-line); background: oklch(1 0 0); }
+html[data-product="hr"] .ag-composer { border: 1px solid var(--owl-line-strong); }
+
+/* segmented controls (All / Blocked / Flagged…): owl wash track, white selected segment */
+html[data-product="hr"] .seg { border: 1px solid var(--owl-line); background: var(--owl-wash); padding: 2px; gap: 2px; border-radius: 9px; }
+html[data-product="hr"] .seg button { min-height: 30px; border: 0; border-radius: 7px; color: var(--owl-ink); font-weight: 500; font-size: 13.5px; background: transparent; }
+html[data-product="hr"] .seg button + button { border-left: 0; }
+html[data-product="hr"] .seg button[aria-pressed="true"] { background: oklch(1 0 0); color: var(--accent); box-shadow: 0 1px 3px oklch(0.4 0.12 263 / 0.18), inset 0 0 0 1px var(--owl-line); }
+html[data-product="hr"] .wf-seg { border: 1px solid var(--owl-line); background: var(--owl-wash); }
+html[data-product="hr"] .wf-seg button { color: var(--owl-ink); }
+html[data-product="hr"] .wf-seg button[aria-pressed="true"] { color: var(--accent); box-shadow: 0 1px 3px oklch(0.4 0.12 263 / 0.18), inset 0 0 0 1px var(--owl-line); }
+
+/* heatmap: owl-blue frame lines on the empty cells and the pinned column edge */
+html[data-product="hr"] .wf-cell.wf-unknown { background: var(--owl-wash); box-shadow: inset 0 0 0 1px var(--owl-line); }
+html[data-product="hr"] .wf-foot { border-top: 1px solid var(--owl-line); }
+
+/* tables breathe: dates stay on one line, long reasons get a readable width, actions never clip */
+html[data-product="hr"] table :is(th, td) { padding: 12px 14px; }
+html[data-product="hr"] table td:first-child, html[data-product="hr"] table td:has(> .btn), html[data-product="hr"] table td .row-actions { white-space: nowrap; }
+html[data-product="hr"] table td ul { min-width: 240px; margin: 0; padding-left: 18px; }
