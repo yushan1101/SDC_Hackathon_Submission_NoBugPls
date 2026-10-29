@@ -334,6 +334,8 @@ def test_matches_explain_their_score_and_follow_the_scenario(client):
     assert "recommendation_id" not in a[0]  # raw matching is not a completed assessment and cannot unlock an interview
     assert g[0]["scenario"] == "agentic"
     assert "requirement_changes" in g[0]
+    assert [d["skill"] for d in g[0]["top_gap_details"]] == g[0]["top_gaps"]
+    assert all(1 <= d["required"] <= 5 for d in g[0]["top_gap_details"])
     assert [s["soc"] for s in response["suggestions"]] == [m["soc"] for m in g[:3]]
     assert response["suggestions"][0]["skills"] == g[0]["top_gaps"][:2]
     assert "agentic AI" in response["suggestions"][0]["why"]
@@ -561,6 +563,7 @@ def test_quiz_resume_and_match(client):
     answers = {x["id"]: 2 for x in q["questions"]}
     r = client.post("/api/quiz/score", json={"answers": answers, "fields": ["health"]}, headers=H).json()
     assert r["matches"] and all(m["soc"].startswith(("22", "32", "532")) for m in r["matches"])
+    assert [s["soc"] for s in r["suggestions"]] == [m["soc"] for m in r["matches"][:3]]
     assert all(1 <= m["sdgs"][0]["goal"] <= 17 for m in r["matches"] if m["sdgs"])
     r = client.post("/api/resume/analyze", files={"file": ("cv.md", RESUME, "text/markdown")}, headers=H).json()
     assert "## Summary" in r["markdown"] and all(s["evidence"] for s in r["skills"])

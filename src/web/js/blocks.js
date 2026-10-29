@@ -756,8 +756,16 @@ export function matchesBlock(matches, { onPlan, onInterview, ...options } = {}) 
       h("div", { class: "match-badges" }, momentum(m),
         h("span", { class: `tag effort ${effort(m)[1]}` }, effort(m)[0])),
       h("div", { class: "gaps" }, icon(m.top_gaps?.length ? "target" : "check"), h("b", {}, "To learn"),
-        m.top_gaps?.length ? h("span", { class: "gap-chips" }, m.top_gaps.map((gap) => h("span", { class: "gap-chip" }, gap)))
-          : h("span", {}, "No skill gaps identified")),
+        m.top_gaps?.length ? h("span", { class: "gap-chips" }, m.top_gaps.map((gap) => {
+          const detail = m.top_gap_details?.find((item) => item.skill === gap);
+          const change = detail ? detail.required - detail.assistive_required : 0;
+          return h("span", { class: "gap-chip" }, gap, detail ? h("small", {},
+            `Target ${detail.required}/5${change ? ` · ${change > 0 ? "↑" : "↓"} from ${detail.assistive_required}/5` : ""}`) : null);
+        })) : h("span", {}, "No skill gaps identified")),
+      m.scenario === "agentic" ? h("p", { class: "note gap-scenario-note" },
+        m.requirement_changes?.length
+          ? `Agentive AI adjusts ${m.requirement_changes.length} skill targets for this role. A skill can remain on this list if it is still one of your largest gaps.`
+          : "This role has no modelled skill target changes under Agentive AI; its AI outlook can still affect its ranking.") : null,
       m.sdgs?.length ? h("div", { class: "match-sdgs" },
         h("div", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))), sdgMatchDetails(m.sdgs)) : null,
       whyScore(m),

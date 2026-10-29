@@ -46,11 +46,17 @@ def test_scenario_changes_fit_ranking_gaps_and_advice_without_trends(occupations
     assert [m["soc"] for m in agentic].index("routine") < [m["soc"] for m in agentic].index("judgement")
     assert a["mixed"]["top_gaps"] == ["Process records"]
     assert g["mixed"]["top_gaps"] == ["Judge results"]
+    assert a["mixed"]["top_gap_details"] == [{"skill": "Process records", "required": 3, "assistive_required": 3}]
+    assert g["mixed"]["top_gap_details"] == [{"skill": "Judge results", "required": 3, "assistive_required": 2}]
     assert a["mixed"]["fit"] != g["mixed"]["fit"]
     assert a["mixed"]["trend_effect"] == g["mixed"]["trend_effect"] == 0
     assert role_advice([a["mixed"]])[0]["skills"] == ["Process records"]
     assert role_advice([g["mixed"]])[0]["skills"] == ["Judge results"]
     assert "agentic AI" in role_advice([g["mixed"]])[0]["why"]
+    assert "AI for support" in role_advice([a["mixed"]])[0]["action"]
+    assert "directing an AI agent" in role_advice([g["mixed"]])[0]["action"]
+    assert "rises from 2/5 to 3/5" in role_advice([g["mixed"]])[0]["why"]
+    assert role_advice([a["mixed"]])[0]["action"] != role_advice([g["mixed"]])[0]["action"]
     assert levels == before
     assert matcher.match_roles(levels, 10, scenario="assistive") == assistive  # cached base untouched
 

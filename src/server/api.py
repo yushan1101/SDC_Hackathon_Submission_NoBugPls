@@ -2301,7 +2301,8 @@ def quiz_score(body: QuizIn, user: dict = Depends(current_user)):
     if user["role"] == "employee":
         with DB_LOCK, db:
             assessment_id = interview_store.save_recommendations(db, user["employee_id"], "questionnaire", skills, matches)
-    return {"skills": skills, "matches": matches, "assessment_id": assessment_id}
+    return {"skills": skills, "matches": matches, "assessment_id": assessment_id,
+            "suggestions": resume.role_advice(matches)}
 
 
 class MatchIn(BaseModel):

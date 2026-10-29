@@ -3899,6 +3899,12 @@ pre { max-width: 100%; overflow-x: auto; }
 @media (prefers-reduced-motion: reduce) { .pl-caret { animation: none; } }
 
 /* Career ranking: native rank scores, compact rows and stable scenario updates. */
+.quick-suggestions { margin-top: 20px; padding: 20px; border: 1px solid var(--rule); border-radius: 16px; background: var(--surface); }
+.quick-suggestions h3 { margin: 0 0 14px; }
+.quick-suggestions ol { display: grid; gap: 12px; margin: 0; padding-left: 22px; }
+.quick-suggestions li { padding-left: 4px; line-height: 1.5; }
+.quick-suggestions p { margin: 4px 0 0; }
+.quick-suggestions .note { color: var(--ink-2); }
 .ranking-block { min-width: 0; overflow-anchor: none; gap: 6px; }
 .ranking-block .matches-head { gap: 12px 18px; margin-bottom: 8px; }
 .ranking-block .matches-head h3 { margin: 0; }
@@ -3950,6 +3956,9 @@ pre { max-width: 100%; overflow-x: auto; }
 .ranking-details .match-badges { grid-column: auto; }
 .ranking-details .gaps { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); }
 .ranking-details .gaps > svg { width: 17px; height: 17px; color: var(--accent); flex: none; }
+.ranking-details .gap-chip { display: inline-grid; gap: 2px; }
+.ranking-details .gap-chip small { color: var(--ink-2); font-size: 11px; }
+.ranking-details .gap-scenario-note { margin: 0 0 4px; font-size: 12px; line-height: 1.5; }
 .ranking-details .role-about p { font-size: 14px; line-height: 1.6; margin: 6px 0; }
 .ranking-details .role-about h5 { margin: 0; font-size: 15px; }
 .ranking-details > .compare-pick { margin-top: 12px; }

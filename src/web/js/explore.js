@@ -4,7 +4,7 @@ import { Owl } from "./owl.js";
 import { jobIcon } from "./jobicons.js";
 import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
 import { brandMark } from "./brands.js";
-import { createScenarioCache } from "./ranking-state.js";
+import { createScenarioCache, scenarioName } from "./ranking-state.js";
 
 const KEYS = ["A", "B", "C", "D"];
 // Keep assessment results available while moving between SPA routes. The
@@ -280,6 +280,15 @@ export async function quizView(main, ctx) {
     const inputKey = JSON.stringify(body);
     cache.seed(inputKey, result.scenario, result);
     let requestId = 0;
+    const suggestionHost = h("section", { class: "quick-suggestions", "aria-label": "Scenario suggestions", "aria-live": "polite" });
+    const drawSuggestions = (items, scenario) => {
+      suggestionHost.replaceChildren(h("h3", {}, `Suggested next steps · ${scenarioName(scenario)}`),
+        items?.length ? h("ol", {}, items.map((item) => h("li", {},
+          h("strong", {}, item.role || "Recommended role"),
+          h("p", {}, item.action), h("p", { class: "note" }, item.why))))
+          : h("p", { class: "note" }, "No role suggestions yet. Add more skills to see next steps."));
+    };
+    drawSuggestions(result.suggestions, result.scenario);
     const rankings = matchesBlock(result.matches, {
       onPlan: (m) => ctx.planFor(m, result.skills),
       onInterview: ctx.onInterview ? (m) => ctx.onInterview(m, result.skills) : null,
@@ -293,6 +302,7 @@ export async function quizView(main, ctx) {
           st.scenario = next;
           lastQuickMatch = { ...r, scenario: next, answers: body.answers, fields: body.fields, zone: body.zone };
           rankings.update(r.matches, { scenario: next });
+          drawSuggestions(r.suggestions, next);
         } catch (e) {
           if (request === requestId && rankings.isConnected) rankings.setError(e.message);
         }
@@ -302,7 +312,7 @@ export async function quizView(main, ctx) {
       h("h2", {}, "Your quick match"),
       h("p", { class: "muted" }, "A fast estimate from 13 answers. For an evidence-backed analysis, ", h("a", { href: "#/resume" }, "upload your resume"), "."),
       h("ul", { class: "skill-chips" }, result.skills.sort((a, b) => b.level - a.level).map((s) => h("li", {}, s.name, h("b", { class: "num" }, ` ${s.level}/5`)))),
-      rankings,
+      rankings, suggestionHost,
       h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => {
         lastQuickMatch = null; st.answers = {}; st.fields.clear(); st.zone = null; st.scenario = "assistive"; go(-1);
       } }, "Play again"))), RISE));

@@ -73,6 +73,21 @@ test('renders backend order and native rank scores; does not sort by higher matc
   assert.match(root.textContent, /not a percentage or a score out of 100/);
 });
 
+test('To learn shows a changed target even when the same skill remains the top gap', async () => {
+  const s = setup(), assistive = role('a', .6, .7), agentic = role('a', .55, .65, 'agentic');
+  assistive.top_gaps = ['Review results'];
+  assistive.top_gap_details = [{ skill: 'Review results', required: 2, assistive_required: 2 }];
+  agentic.top_gaps = ['Review results'];
+  agentic.top_gap_details = [{ skill: 'Review results', required: 3, assistive_required: 2 }];
+  agentic.requirement_changes = [{ skill: 'Review results', required: 3, assistive_required: 2 }];
+  const root = s.render([assistive]);
+  await rows(root)[0].querySelector('.ranking-row-toggle').click();
+  assert.match(rows(root)[0].querySelector('.gaps').textContent, /Review resultsTarget 2\/5/);
+  root.update([agentic], { scenario: 'agentic' });
+  assert.match(rows(root)[0].querySelector('.gaps').textContent, /Review resultsTarget 3\/5 · ↑ from 2\/5/);
+  assert.match(rows(root)[0].querySelector('.gap-scenario-note').textContent, /Agentive AI adjusts 1 skill target/);
+});
+
 test('moves the same role nodes, reports actual positions, preserves disclosures and compare selections', async () => {
   const s = setup(), root = s.render(initial()), originalRows = [...rows(root)];
   const guide = root.querySelector('.ranking-score-guide'); guide.open = true;
@@ -150,15 +165,18 @@ test('Quick Match switches both ways in place, caches the original result and ig
   });
   const explore = read('explore.js');
   vm.runInContext(explore.slice(explore.indexOf('  function showResults(result)'), explore.indexOf('  async function finish()')), s.context);
-  s.context.showResults({ matches: initial(), skills: [{ name: 'Python', level: 2 }], scenario: 'assistive' });
+  s.context.showResults({ matches: initial(), skills: [{ name: 'Python', level: 2 }], scenario: 'assistive',
+    suggestions: [{ role: 'Role a', action: 'Practice with AI support', why: 'Assistive gap' }] });
   const ranking = stage.querySelector('.ranking-block'), guide = ranking.querySelector('.ranking-score-guide');
+  assert.match(stage.querySelector('.quick-suggestions').textContent, /Practice with AI support/);
   guide.open = true;
   const scenarioButtons = ranking.querySelectorAll('button').filter(b => b.dataset.scenario);
   scenarioButtons.find(b => b.dataset.scenario === 'agentic').click();
   assert.equal(pending.length, 1); assert.equal(pending[0].request.body.scenario, 'agentic');
   scenarioButtons.find(b => b.dataset.scenario === 'assistive').click();
   await new Promise(resolve => setImmediate(resolve));
-  pending[0].resolve({ matches: next(), skills: [{ name: 'Python', level: 2 }] });
+  pending[0].resolve({ matches: next(), skills: [{ name: 'Python', level: 2 }],
+    suggestions: [{ role: 'Role c', action: 'Review an AI agent\'s output', why: 'Agentive gap' }] });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(stage.querySelector('.ranking-block'), ranking);
   assert.equal(guide.open, true); assert.equal(s.context.lastQuickMatch.scenario, 'assistive');
@@ -167,4 +185,6 @@ test('Quick Match switches both ways in place, caches the original result and ig
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(pending.length, 1); assert.equal(s.context.lastQuickMatch.scenario, 'agentic');
   assert.deepEqual(rows(ranking).map(r => r.dataset.roleId), ['c', 'a', 'b', 'd']);
+  assert.match(stage.querySelector('.quick-suggestions').textContent, /Agentive AI.*Review an AI agent's output/);
+  assert.doesNotMatch(stage.querySelector('.quick-suggestions').textContent, /Practice with AI support/);
 });

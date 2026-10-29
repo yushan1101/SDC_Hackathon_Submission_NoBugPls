@@ -149,6 +149,7 @@ def _score(soc: str, credit: np.ndarray, S: np.ndarray, lv: np.ndarray, per_occ:
     order = np.argsort(-(gap * w), kind="stable")
     changes = [{"skill": names[i], "assistive_required": int(base_req[i]), "required": int(req[i])}
                for i in range(len(names)) if req[i] != base_req[i]]
+    top_gap_indices = [int(i) for i in order if gap[i] > 0][:3]
     return {"soc": soc, "title": o["title"], "fit": round(fit, 3), "score": round(float(score), 3),
             "coverage": round(coverage, 3), "tools_matched": tool_hit, "emergence": em, "pressure": pr,
             # the parts of the score, so the UI can explain it
@@ -156,4 +157,7 @@ def _score(soc: str, credit: np.ndarray, S: np.ndarray, lv: np.ndarray, per_occ:
             "text_fit": round(float(tf[soc]), 3) if tf else None, "trend_effect": round(trend, 3), "scenario": scenario,
             "requirement_changes": changes,
             "job_zone": o.get("job_zone"), "isco": o.get("isco"),
-            "top_gaps": [names[i] for i in order[:3] if gap[i] > 0], "gap_levels": int(gap.sum())}
+            "top_gaps": [names[i] for i in top_gap_indices],
+            "top_gap_details": [{"skill": names[i], "required": int(req[i]), "assistive_required": int(base_req[i])}
+                                for i in top_gap_indices],
+            "gap_levels": int(gap.sum())}
