@@ -6,7 +6,9 @@ from collections import Counter, defaultdict
 MIN_GROUP = 3
 MIN_COVERAGE = 0.6
 TOP_SKILLS = 12  # rows shown when no skill filter is set; a real report lists ~45 ESCO skills
-SOURCES = {"employee": "Employee self-analyses", "hr_upload": "HR uploads"}
+SOURCES = {"employee": "Employee self-analyses", "hr_upload": "Team uploads", "external": "External groups"}
+# what the heatmap's columns compare; "auto" = departments when they are recorded, otherwise roles
+GROUP_BY = {"auto": None, "department": "department", "role": "role", "dataset": "dataset", "group": "group", "source": "source"}
 
 DEPARTMENTS = {
     "Customer Support": ["Support Specialist", "Support Team Lead"],
@@ -82,9 +84,13 @@ def load_reports(con, owner: str, scenario: str, sample_preview: bool = False) -
         key = subject if audience == "individual" else meta.get("employee_key") or f"upload:{subject}"
         if not key:
             continue
+        if audience == "hr" and meta.get("dataset_id"):  # one upload (data set) at a time: the same id in two uploads is two people
+            key = f"{meta['dataset_id']}:{key}"
         latest.setdefault(key, {"key": key, "role": (report.get("occupation") or {}).get("title") or plan.get("target_role", "Assigned role"),
                                "department": meta.get("department") or "Unassigned", "report": report, "plan": plan, "plan_id": pid,
-                               "source": "employee" if audience == "individual" else "hr_upload"})
+                               "source": "employee" if audience == "individual" else "external" if meta.get("external") else "hr_upload",
+                               "dataset": "Employee self-analyses" if audience == "individual" else meta.get("dataset") or "Earlier uploads",
+                               "group": meta.get("group") or "Ungrouped"})
     return list(latest.values())
 
 
@@ -124,12 +130,20 @@ def _normalize(records):
     return normalized
 
 
-def aggregate(records, skills=(), category="all", sample_preview: bool = False, department="", role="", source="") -> dict:
+def aggregate(records, skills=(), category="all", sample_preview: bool = False, department="", role="", source="",
+              datasets=(), group_by="auto", group="") -> dict:
     skills = set(skills)
     records = _normalize(records)
     counts = Counter(r.get("source", "hr_upload") for r in records)
+    dataset_counts = Counter(r.get("dataset", "Earlier uploads") for r in records)
+    dataset_external = {r.get("dataset", "Earlier uploads"): r.get("source") == "external" for r in records}
+    all_groups = sorted({r.get("group", "Ungrouped") for r in records} - {"Ungrouped"})
     if source:
         records = [r for r in records if r.get("source", "hr_upload") == source]
+    if datasets:
+        records = [r for r in records if r.get("dataset", "Earlier uploads") in set(datasets)]
+    if group:
+        records = [r for r in records if r.get("group", "Ungrouped") == group]
     all_departments = sorted({r.get("department", "Unassigned") for r in records})
     if department:
         records = [r for r in records if r.get("department", "Unassigned") == department]
@@ -138,9 +152,12 @@ def aggregate(records, skills=(), category="all", sample_preview: bool = False, 
     departments = sorted({r.get("department", "Unassigned") for r in records})
     roles = sorted({r.get("role", "Assigned role") for r in records})
     # no departments recorded (employee self-analyses, older uploads): compare roles instead of one "Unassigned" column
-    by_role = department or departments == ["Unassigned"]
-    groups = ([{"key": r, "label": r, "kind": "role"} for r in roles] if by_role else
-              [{"key": d, "label": d, "kind": "department"} for d in departments])
+    if group_by in ("auto", None):
+        group_by = "role" if department or departments == ["Unassigned"] else "department"
+    field = GROUP_BY[group_by]
+    value = lambda r: r.get(field) or ("Unassigned" if field == "department" else "Assigned role" if field == "role" else "Ungrouped")
+    labels = {"source": SOURCES}
+    groups = [{"key": k, "label": labels.get(field, {}).get(k, k), "kind": group_by} for k in sorted({value(r) for r in records})]
     available = {}
     for record in records:
         for name, item in record["skills"].items():
@@ -150,7 +167,7 @@ def aggregate(records, skills=(), category="all", sample_preview: bool = False, 
     for name in shown:
         cells = []
         for group in groups:
-            cohort = [r for r in records if (r.get("role") == group["key"] if group["kind"] == "role" else r.get("department", "Unassigned") == group["key"])]
+            cohort = [r for r in records if value(r) == group["key"]]
             observations = [(r, r["skills"][name]) for r in cohort if name in r["skills"] and r["skills"][name].get("current") is not None]
             eligible = sum(name in r["skills"] for r in cohort)
             assessed = len(observations)
@@ -184,11 +201,13 @@ def aggregate(records, skills=(), category="all", sample_preview: bool = False, 
     return {"overview": {"employees": employee_count, "assessed_skills": assessed_skills,
                          "critical": sum(c["severity"] == "critical" for c in displayed),
                          "common_missing": [{"skill": n, "employees": count} for n, count in common.most_common(3) if count]},
-            "options": {"departments": all_departments,
+            "options": {"departments": all_departments, "groups": all_groups, "group_by": list(GROUP_BY),
+                        "datasets": [{"name": n, "people": c, "external": dataset_external.get(n, False)} for n, c in sorted(dataset_counts.items())],
                         "roles": sorted({r.get("role", "Assigned role") for r in records}),
                         "skills": [{"name": n, "category": kind} for n, kind in sorted(available.items())]},
             "groups": groups, "skills": [r["skill"] for r in rows], "rows": rows, "cells": displayed, "priorities": priorities,
-            "cohort": {"employees": len(records), "department": department or "All departments", "role": role or "All roles"},
+            "cohort": {"employees": len(records), "department": department or "All departments", "role": role or "All roles",
+                       "datasets": list(datasets) or "All data sets", "group_by": group_by},
             "sources": [{"key": k, "label": label, "employees": counts.get(k, 0)} for k, label in SOURCES.items()],
             "total_skills": total_rows,
             "policy": {"min_group": MIN_GROUP, "min_coverage_percent": MIN_COVERAGE * 100, "scale": "0–5",

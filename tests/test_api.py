@@ -182,6 +182,31 @@ def test_preview_embedding_uses_only_configured_origins(client, monkeypatch):
     assert "samesite=none" in cookie and "secure" in cookie
 
 
+def test_the_plan_streams_to_the_page_as_the_ai_writes_it(client, monkeypatch):
+    from agents import llm
+
+    def fake_stream(prompt, system, **kw):
+        slots = json.loads(prompt.split("<DATA>\n", 1)[1].rsplit("\n</DATA>", 1)[0])["slots"]
+        text = "".join(f"### {n}\nActivity: Lead a ward huddle on {s['skill']}\n- Week {s['weeks'].split('-')[0]}: Prepare it\n"
+                       f"- Week {s['weeks'].split('-')[1]}: Run it and note questions\nOutcome: A huddle you ran\n\n"
+                       for n, s in enumerate(slots, 1))
+        for i in range(0, len(text), 9):
+            yield {"delta": text[i:i + 9]}
+        yield {"usage": None}
+    monkeypatch.setattr(llm, "generate_stream", fake_stream)
+    login(client, "ana")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}
+    ev = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))
+    kinds = [e["t"] for e in ev]
+    pathway_done = next(i for i, e in enumerate(ev) if e["t"] == "agent" and e["node"] == "pathway")
+    assert kinds.index("plan_start") < kinds.index("plan_token") < pathway_done  # live, while the agent is still writing
+    slots = next(e for e in ev if e["t"] == "plan_start")["slots"]
+    written = [e for e in ev if e["t"] == "plan_activity"]
+    assert sorted(e["slot"] for e in written) == list(range(len(slots))) and all(e["ai"] for e in written)
+    plan = next(e for e in ev if e["t"] == "section" and e["kind"] == "plan")["data"]
+    assert all(a["activity"].startswith("Lead a ward huddle on") for a in plan["activities"])  # the saved plan is what was shown
+
+
 def test_public_stream_and_approval(client):
     login(client, "ana")
     body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6,

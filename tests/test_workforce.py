@@ -36,5 +36,45 @@ def test_heatmap_uses_own_employees_and_own_uploads():
     recs = workforce.load_reports(_db(), "hr1", "assistive")
     assert sorted((r["key"], r["source"]) for r in recs) == [("E-001", "employee"), ("upload:E-001", "hr_upload"), ("upload:X-7", "hr_upload")]
     data = workforce.aggregate(recs, source="employee")
-    assert data["overview"]["employees"] == 1 and {s["key"]: s["employees"] for s in data["sources"]} == {"employee": 1, "hr_upload": 2}
+    assert data["overview"]["employees"] == 1 and {s["key"]: s["employees"] for s in data["sources"]} == {"employee": 1, "hr_upload": 2, "external": 0}
     assert [g["kind"] for g in data["groups"]] == ["role"]  # no departments recorded, so roles are compared
+
+
+def test_uploads_are_named_data_sets_and_external_groups_compare_side_by_side():
+    con = _db()
+    gap = lambda cur: {"skill_id": "SQL", "current_level": cur, "required_level": 3}
+
+    def upload(pid, subject, dataset, batch, external=False, department=None, group=None, cur=1):
+        meta = {"owner": "hr1", "dataset": dataset, "dataset_id": batch, "external": external,
+                **({"department": department} if department else {}), **({"group": group} if group else {})}
+        report = {"gaps": [gap(cur)], "request": {"scenario": "assistive"}, "occupation": {"title": "Data analyst"}, "workforce": meta}
+        con.execute("INSERT INTO plans VALUES(?,?,?,?)", (pid, subject, "hr", pid))
+        con.execute("INSERT INTO plan_reports VALUES(?,?)", (pid, json.dumps(report)))
+        con.execute("INSERT INTO plan_versions VALUES(?,?,?)", (pid, 1, json.dumps({"scenario": "assistive"})))
+    upload("q1", "A1", "ICU nurses", "b1", department="ICU", cur=1)
+    upload("q2", "A2", "ICU nurses", "b1", department="ICU", cur=3)
+    upload("q3", "A1", "Partner clinic", "b2", external=True, group="Penang", cur=1)  # same id, another upload: another person
+    upload("q4", "A3", "Partner clinic", "b2", external=True, group="Penang", cur=1)
+    recs = workforce.load_reports(con, "hr1", "assistive")
+    by_set = workforce.aggregate(recs, group_by="dataset")
+    assert [g["label"] for g in by_set["groups"]] == ["Earlier uploads", "Employee self-analyses", "ICU nurses", "Partner clinic"]
+    cells = {c["group"]: c for c in by_set["cells"] if c["skill"] == "SQL"}
+    assert cells["ICU nurses"]["gap_percent"] == 50 and cells["Partner clinic"]["gap_percent"] == 100
+    sets = {d["name"]: d for d in by_set["options"]["datasets"]}
+    assert sets["Partner clinic"]["external"] and sets["Partner clinic"]["people"] == 2 and not sets["ICU nurses"]["external"]
+    only = workforce.aggregate(recs, datasets=["Partner clinic"], group_by="group")
+    assert [g["label"] for g in only["groups"]] == ["Penang"] and only["overview"]["employees"] == 2
+    ext = workforce.aggregate(recs, source="external")
+    assert ext["cohort"]["employees"] == 2 and {s["key"]: s["employees"] for s in ext["sources"]}["external"] == 2
+    assert [g["label"] for g in workforce.aggregate(recs, group_by="source")["groups"]] == ["Employee self-analyses", "External groups", "Team uploads"]
+
+
+def test_other_hr_exports_are_read_without_guessing():
+    import pandas as pd
+    from core.team_import import normalize_team
+    wide = pd.DataFrame({"Staff ID": ["A1", "A2"], "Job Title": ["nurse", "nurse"], "Dept": ["ER", "ICU"],
+                         "Communication": [80, 40], "Critical thinking": [60, None]})
+    long, meta, notes = normalize_team(wide, 100)
+    assert sorted(zip(long["employee_id"], long["skill"], long["level"])) == [("A1", "communication", 4), ("A1", "critical thinking", 3), ("A2", "communication", 2)]
+    assert meta == {"A1": {"department": "ER"}, "A2": {"department": "ICU"}} and any("0-100" in n for n in notes)
+    assert normalize_team(wide, 7)[2] == ["level scale must be one of [5, 10, 100]"]  # HR states the scale; it is never guessed
