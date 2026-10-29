@@ -159,7 +159,7 @@ def n_pathway(s):
     learning = {k: knowledge.learning_resources(k, 1) for k in need}
     role = s.get("occupation", {}).get("title") or r.target_role
     p = pathway.build(s.get("skill_gaps", []), r.profile.weekly_learning_hours, role, r.scenario, learning, r.profile.skills)
-    p, usage = pathway.personalise(p, role, r.profile.skills, s.get("skill_gaps", []), r.query)
+    p, usage = pathway.personalise(p, role, r.profile.skills, s.get("skill_gaps", []), r.query, learning)
     return {"draft_pathway": p, "learning_evidence": [e for v in learning.values() for e in v], "_usage": [usage]}
 
 
