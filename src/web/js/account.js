@@ -406,10 +406,10 @@ function subscriptionSection(reload) {
   return box;
 }
 
-export async function accountView(main, { refreshMe, hrLayout = false }) {
+export async function accountView(main, { refreshMe, hrLayout = false, tab = null }) {
   const render = (...all) => { const children = all.filter(Boolean);  // optional sections pass null
     main.replaceChildren(...(hrLayout ? [h("div", { class: "view hr-account-view" }, ...children)] : children)); };
-  render(h("h1", { class: "page-title" }, "Your account"), h("p", { class: "muted" }, "Loading…"));
+  render(h("h1", { class: "page-title" }, hrLayout ? "Settings" : "Your account"), h("p", { class: "muted" }, "Loading…"));
   // back from a 3-D Secure redirect: Stripe adds ?payment_intent=pi_... to the return URL
   const back = new URLSearchParams(location.search).get("payment_intent");
   if (back) {
@@ -418,6 +418,7 @@ export async function accountView(main, { refreshMe, hrLayout = false }) {
   }
   const me = await refreshMe();
   const pays = await api("/api/billing/payments");
+  if (hrLayout) return settingsView(main, me, pays, tab, () => accountView(main, { refreshMe, hrLayout, tab }));
   const until = me.plan_until && ["pro", "team"].includes(me.effective_plan) ? new Date(me.plan_until).toLocaleDateString() : null;
   render(
     h("h1", { class: "page-title" }, "Your account"),
@@ -445,6 +446,52 @@ export async function accountView(main, { refreshMe, hrLayout = false }) {
       h("p", {}, "Deletes your login and your own plans, conversations, progress and interviews. Payment records are kept for accounting, without your name. This can't be undone."),
       me.role === "admin" ? h("p", { class: "muted" }, "Admin accounts are removed from the command line.")
         : h("button", { class: "btn danger", type: "button", onclick: () => deleteDialog() }, "Delete my account")));
+}
+
+// HR console settings: a section list on the left, label-left / control-right rows on the right (#/account/<tab>).
+const SETTINGS_TABS = [["profile", "Profile", "user"], ["billing", "Plan & billing", "nav-payments"], ["privacy", "Privacy", "info"], ["account", "Account", "sliders"]];
+
+function payTable(pays) {
+  return pays.length ? h("div", { class: "table-wrap" }, h("table", { class: "data pay-table" },
+    h("thead", {}, h("tr", {}, ["Date", "Plan", "Amount", "Status", "Receipt"].map((t) => h("th", {}, t)))),
+    h("tbody", {}, pays.map((p) => h("tr", {},
+      h("td", {}, fmtTime(p.created_utc)), h("td", {}, planName(p.plan)), h("td", {}, money(p.amount_cents, p.currency)),
+      h("td", {}, h("span", { class: `tag ${p.status === "succeeded" ? "approved" : p.status === "requires_payment_method" ? "flagged" : "draft"}` },
+        p.status === "succeeded" ? "paid" : p.status.replaceAll("_", " "))),
+      h("td", {}, p.receipt_url ? h("a", { href: p.receipt_url, target: "_blank", rel: "noopener noreferrer" }, "Receipt") : "–"))))))
+    : h("p", { class: "muted" }, "No payments yet.");
+}
+
+function settingsView(main, me, pays, tab, reload) {
+  const cur = SETTINGS_TABS.some(([k]) => k === tab) ? tab : "profile";
+  const row = (label, sub, control) => h("div", { class: "set-row" },
+    h("div", {}, h("span", { class: "set-label" }, label), sub ? h("p", { class: "set-sub" }, sub) : null), h("div", { class: "set-ctl" }, control));
+  const group = (title, ...rows) => h("section", { class: "set-group" }, title ? h("h2", {}, title) : null, ...rows.filter(Boolean));
+  const signOut = async () => { await api("/api/logout", { method: "POST" }).catch(() => {}); location.reload(); };
+  const body = {
+    profile: () => [profileSection(me, reload)],
+    billing: () => [
+      group("Plan", row("Current plan", null, h("span", { class: "set-pill" }, planName(me.effective_plan)))),
+      me.role === "hr_advisor" ? subscriptionSection(reload) : null,
+      group("Payment history", payTable(pays))],
+    privacy: () => [group("Your data",
+      row("Privacy Policy", "What we collect and why.", h("a", { class: "btn sm", href: "#/privacy" }, "Read")),
+      row("Terms of Use", me.terms_version ? `You accepted the terms of ${me.terms_version}.` : null, h("a", { class: "btn sm", href: "#/terms" }, "Read")))],
+    account: () => [group("Account",
+      row("Log out", "End this session on this device.", h("button", { class: "btn sm", type: "button", onclick: signOut }, "Log out")),
+      row("Delete account", "Deletes your login and your own plans, conversations, progress and interviews. Payment records are kept for accounting, without your name.",
+        me.role === "admin" ? h("span", { class: "muted" }, "Removed from the command line.")
+          : h("button", { class: "btn sm danger", type: "button", onclick: () => deleteDialog() }, "Delete")),
+      row("Your role", null, h("span", { class: "set-pill" }, me.role === "hr_advisor" ? "HR advisor" : me.role)),
+      me.enterprise?.name ? row("Organisation", null, h("span", {}, me.enterprise.name)) : null,
+      row("Username", null, h("code", { class: "set-pill mono" }, me.username)))],
+  }[cur]().filter(Boolean);
+  main.replaceChildren(h("div", { class: "view settings-view" },
+    h("h1", { class: "page-title" }, "Settings"),
+    h("div", { class: "settings-shell" },
+      h("nav", { class: "settings-nav", "aria-label": "Settings sections" }, SETTINGS_TABS.map(([k, label, ic]) =>
+        h("a", { href: `#/account/${k}`, "aria-current": k === cur ? "page" : null }, icon(ic), h("span", {}, label)))),
+      h("div", { class: "settings-body" }, ...body))));
 }
 
 function deleteDialog() {

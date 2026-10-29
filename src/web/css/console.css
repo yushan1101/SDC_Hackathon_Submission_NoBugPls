@@ -541,3 +541,45 @@ html[data-product="hr"] main section.block > h2:first-child, html[data-product="
 html[data-product="hr"] .profile-block .issue { margin: 14px 0 0; }
 @media (max-width: 640px) { html[data-product="hr"] main section.block { padding: 16px; } }
 html[data-product="hr"] .profile-form select.input { text-overflow: ellipsis; padding-right: 32px; }
+
+/* settings (#/account/<tab>): section list on the left, plain label-left / control-right rows with hairlines, no filled cards */
+html[data-product="hr"] .settings-view { max-width: 1040px; }
+html[data-product="hr"] .settings-shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; align-items: start; margin-top: 20px; }
+html[data-product="hr"] .settings-nav { position: sticky; top: 16px; display: grid; gap: 2px; }
+html[data-product="hr"] .settings-nav a { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 10px; color: var(--ink); text-decoration: none; font-size: 15px; }
+html[data-product="hr"] .settings-nav a svg { width: 18px; height: 18px; flex: none; }
+html[data-product="hr"] .settings-nav a:hover { background: var(--card-fill); }
+html[data-product="hr"] .settings-nav a[aria-current="page"] { background: var(--card-fill-deep); font-weight: 600; }
+html[data-product="hr"] .settings-body { display: grid; gap: 36px; min-width: 0; }
+html[data-product="hr"] .settings-body section.block, html[data-product="hr"] .settings-body .set-group { padding: 0; background: none; box-shadow: none; border: 0; border-radius: 0; }
+html[data-product="hr"] .settings-body h2 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+html[data-product="hr"] .set-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 16px 0; border-bottom: 1px solid oklch(0.93 0.01 263); }
+html[data-product="hr"] .set-row:last-child { border-bottom: 0; }
+html[data-product="hr"] .set-label { font-size: 15px; }
+html[data-product="hr"] .set-sub { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); max-width: 52ch; }
+html[data-product="hr"] .set-ctl { flex: none; max-width: 50%; text-align: right; }
+html[data-product="hr"] .set-pill { display: inline-block; padding: 3px 12px; border: 1px solid oklch(0.9 0.012 263); border-radius: 999px; font-size: 13.5px; }
+/* profile form as rows too */
+html[data-product="hr"] .settings-body .profile-grid { grid-template-columns: 1fr; gap: 8px; }
+html[data-product="hr"] .settings-body .profile-photo { grid-template-columns: auto auto 1fr; justify-items: start; align-items: center; text-align: left; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid oklch(0.93 0.01 263); }
+html[data-product="hr"] .settings-body .profile-photo .avatar-lg { width: 64px; height: 64px; font-size: 26px; }
+html[data-product="hr"] .settings-body .profile-form { grid-template-columns: 1fr; gap: 0; }
+html[data-product="hr"] .settings-body .profile-form > .field { grid-template-columns: minmax(0, 1fr) minmax(0, 320px); align-items: center; gap: 6px 24px; padding: 14px 0; border-bottom: 1px solid oklch(0.93 0.01 263); }
+html[data-product="hr"] .settings-body .profile-form > .field > span { font-size: 15px; font-weight: 400; color: var(--ink); }
+html[data-product="hr"] .settings-body .profile-form > .field > :not(span:first-child) { grid-column: 2; }
+html[data-product="hr"] .settings-body .profile-form .input { background: oklch(1 0 0); border: 1px solid oklch(0.9 0.012 263); }
+html[data-product="hr"] .settings-body .profile-actions { justify-content: flex-end; padding-top: 16px; }
+html[data-product="hr"] .settings-body .profile-block .issue { margin: 10px 0 14px; }
+html[data-product="hr"] .settings-body .sub-block .profile-actions { justify-content: flex-start; }
+@media (max-width: 760px) {
+  html[data-product="hr"] .settings-shell { grid-template-columns: 1fr; gap: 16px; }
+  html[data-product="hr"] .settings-nav { position: static; display: flex; overflow-x: auto; }
+  html[data-product="hr"] .settings-nav a { white-space: nowrap; }
+  html[data-product="hr"] .settings-body .profile-form > .field { grid-template-columns: 1fr; }
+  html[data-product="hr"] .settings-body .profile-form > .field > :not(span:first-child) { grid-column: 1; }
+  html[data-product="hr"] .set-row { flex-wrap: wrap; }
+  html[data-product="hr"] .set-ctl { max-width: 100%; }
+}
+html[data-product="hr"] main .settings-body .set-ctl .btn { padding: 7px 14px; border-radius: 10px; background: var(--card-fill-deep); color: var(--ink); font-weight: 500; }
+html[data-product="hr"] main .settings-body .set-ctl .btn:hover { background: oklch(0.92 0.03 263); }
+html[data-product="hr"] main .settings-body .set-ctl .btn.danger { color: var(--danger, oklch(0.55 0.2 25)); }
