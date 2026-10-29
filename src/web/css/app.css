@@ -3714,3 +3714,11 @@ body {
 }
 /* long code or config lines scroll inside their block instead of widening the page */
 pre { max-width: 100%; overflow-x: auto; }
+
+/* agent memory: a quiet note under a reply that taught the agent something, and the list in account settings */
+.ag-memo { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 13px; color: var(--ink-2); text-decoration: none; background: var(--accent-soft, oklch(0.96 0.02 263)); }
+.ag-memo svg { width: 14px; height: 14px; }
+.memory-list { display: grid; }
+.memory-list .set-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0; border-bottom: 1px solid var(--line, oklch(0.93 0.01 263)); }
+.memory-list .set-row:last-child { border-bottom: 0; }
+.memory-list .set-sub { margin: 2px 0 0; font-size: 13px; color: var(--ink-2); }

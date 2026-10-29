@@ -161,7 +161,9 @@ export async function agentView(main, { getProfile } = {}) {
       h("div", { class: "ag-reply" }, m.agent ? h("span", { class: "ag-by" }, m.agent.name) : null, rich(m.content), actionCard(m, () => store.set(msgs)),
         h("div", { class: "ag-reply-tools" }, readAloudButton(() => m.content),
           h("button", { class: "btn ghost sm", type: "button", onclick: () => navigator.clipboard?.writeText(m.content).then(() => toast("Copied")) }, "Copy"),
-          next ? h("a", { class: "btn sm", href: next.href }, next.label, icon("flat")) : null)));
+          next ? h("a", { class: "btn sm", href: next.href }, next.label, icon("flat")) : null,
+          m.remembered?.length ? h("a", { class: "ag-memo", href: location.pathname.endsWith("enterprise.html") ? "#/account/memory" : "#/account",
+            title: `Remembered: ${m.remembered.join("; ")}` }, icon("history"), "Memory updated") : null)));
   };
   // a starter from every specialist shows what the one chat can do; guided tools open their own screen
   const empty = () => h("div", { class: "ag-empty" }, owl("coach", 132).el,
@@ -185,7 +187,7 @@ export async function agentView(main, { getProfile } = {}) {
     thread.append(typing); typing.scrollIntoView({ block: "end" });
     try {
       const r = await say(msgs, getProfile?.() || null);
-      msgs.push({ role: "assistant", content: r.reply, agent: r.agent, proposal: r.proposal, link: r.link }); store.set(msgs); draw();
+      msgs.push({ role: "assistant", content: r.reply, agent: r.agent, proposal: r.proposal, link: r.link, remembered: r.remembered }); store.set(msgs); draw();
     } catch (e) {
       typing.remove();
       msgs.pop(); store.set(msgs);  // not answered: put the question back to send again

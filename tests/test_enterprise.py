@@ -180,3 +180,27 @@ def test_hr_usage_ring_counts_the_whole_enterprise_this_month(env, monkeypatch):
     assert u["subscription"]["status"] == "active" and u["resets_in_days"] >= 1
     login(c, "stud1")
     assert c.get("/api/org/usage").status_code == 403
+
+
+def test_agent_memory_is_per_account_and_carries_across_chats(env, monkeypatch):
+    api, c = env
+    seen = []
+
+    def fake(prompt, system, **kw):
+        seen.append(prompt)
+        return "Start with SQL basics.\nREMEMBER: Wants to become a data analyst by mid-2027\nREMEMBER: my password is hunter2", {"model": "t"}
+    monkeypatch.setattr(api.llm, "generate", fake)
+    login(c, "stud1")
+    c.delete("/api/memory", headers=H)
+    r = c.post("/api/agents/coach/chat", json={"messages": [{"role": "user", "content": "I want to be a data analyst by mid-2027"}]}, headers=H).json()
+    assert r["reply"] == "Start with SQL basics." and "REMEMBER" not in r["reply"]  # memory lines never reach the person
+    facts = c.get("/api/memory").json()["facts"]
+    assert [f["fact"] for f in facts] == ["Wants to become a data analyst by mid-2027"]  # the secret is not stored
+    c.post("/api/agents/coach/chat", json={"messages": [{"role": "user", "content": "What next?"}]}, headers=H)
+    assert "data analyst by mid-2027" in seen[-1]  # a new chat starts from what was learned
+    login(c, "school1")
+    assert c.get("/api/memory").json()["facts"] == []  # one account never sees another's memory
+    assert c.delete(f"/api/memory/{facts[0]['id']}", headers=H).status_code == 404
+    login(c, "stud1")
+    assert c.delete(f"/api/memory/{facts[0]['id']}", headers=H).status_code == 200
+    assert c.get("/api/memory").json()["facts"] == []

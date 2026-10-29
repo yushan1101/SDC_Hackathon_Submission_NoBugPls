@@ -14,3 +14,8 @@ CREATE TABLE IF NOT EXISTS billing_meta(key TEXT PRIMARY KEY, value TEXT);
 
 -- a model per employee or student, set by their HR advisor (overrides the enterprise's choice for that task)
 CREATE TABLE IF NOT EXISTS member_models(username TEXT, task TEXT, spec TEXT, set_by TEXT, PRIMARY KEY(username, task));
+
+-- what the agent remembers about each person across chats (their own facts only)
+CREATE TABLE IF NOT EXISTS agent_memory(id BIGSERIAL PRIMARY KEY, username TEXT NOT NULL, fact TEXT NOT NULL, agent TEXT,
+  created_utc TEXT, used_utc TEXT);
+CREATE INDEX IF NOT EXISTS agent_memory_user ON agent_memory(username);

@@ -48,7 +48,7 @@ from core.team_import import parse_team
 from governance import workforce
 from governance.employee_ids import allocate_ids
 from core.usage import summarize
-from governance import accounts, approval, billing, challenge, deletion, demo_bootstrap, enterprise, otp, plugins, recruiting, reviews, risk
+from governance import accounts, approval, billing, challenge, deletion, demo_bootstrap, enterprise, memory, otp, plugins, recruiting, reviews, risk
 from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
@@ -86,6 +86,7 @@ with DB_LOCK:
                             PRIMARY KEY(username, task));
                             CREATE TABLE IF NOT EXISTS plan_progress(plan_id TEXT, item TEXT, done_utc TEXT,
                             PRIMARY KEY(plan_id, item));""")  # activities ticked off as done ("<days>:<skill>")
+        memory.init(db)
     interview_store.init(db)
     # demo accounts made before they were linked: the demo employee belongs to the demo HR's organisation
     db.execute("UPDATE users SET invited_by='demo_hr' WHERE username='demo_employee' AND invited_by IS NULL "
@@ -3051,14 +3052,43 @@ def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_us
             return {"reply": act["reply"], "model": None, "agent": {"id": "posts", "name": catalog.BY_ID["posts"]["name"]},
                     "proposal": act["proposal"], "link": act.get("link")}
     context = _agent_context(agent, user, body.profile)
-    talk = "\n".join(f"{'Person' if m.role == 'user' else 'You'}: {m.content}" for m in body.messages[-12:])
-    text, usage = llm.generate(f"<CONTEXT>\n{json.dumps(context, ensure_ascii=False)[:24000]}\n</CONTEXT>\n<CONVERSATION>\n{talk}\n</CONVERSATION>\n"
-                               "Reply to the person's last message.", catalog.system_prompt(agent), max_tokens=700, agent=agent["task"])
+    talk = "\n".join(f"{'Person' if m.role == 'user' else 'You'}: {m.content}" for m in body.messages[-24:])
+    with DB_LOCK, db:
+        remembered = memory.for_prompt(db, user["username"])
+    text, usage = llm.generate(f"{remembered}<CONTEXT>\n{json.dumps(context, ensure_ascii=False)[:24000]}\n</CONTEXT>\n"
+                               f"<CONVERSATION>\n{talk}\n</CONVERSATION>\nReply to the person's last message.",
+                               f"{catalog.system_prompt(agent)} {memory.PROMPT}", max_tokens=900, agent=agent["task"])
     if usage:
         _record_usage(user["username"], f"agent:{agent_id}", usage)
     if not text:
         raise HTTPException(503, "The agent can't answer right now. Please try again in a moment.")
-    return {"reply": text.strip()[:6000], "model": (usage or {}).get("model"), "agent": {"id": agent["id"], "name": agent["name"]}}
+    text, learned, forget = memory.split(text)
+    if learned or forget:
+        with DB_LOCK, db:
+            memory.apply(db, user["username"], agent["id"], learned, forget)
+            no_wait(db)
+    return {"reply": text.strip()[:6000], "remembered": learned, "model": (usage or {}).get("model"), "agent": {"id": agent["id"], "name": agent["name"]}}
+
+
+# --- what the agent remembers about the signed-in person (theirs only) --------------------------------------
+@app.get("/api/memory")
+def memory_list(user: dict = Depends(current_user)):
+    with DB_LOCK:
+        return {"facts": memory.recall(db, user["username"])}
+
+
+@app.delete("/api/memory/{fact_id}")
+def memory_forget(fact_id: int, user: dict = Depends(current_user)):
+    with DB_LOCK, db:
+        if not memory.forget_one(db, user["username"], fact_id):
+            raise HTTPException(404, "Not in your memory.")
+    return {"ok": True}
+
+
+@app.delete("/api/memory")
+def memory_clear(user: dict = Depends(current_user)):
+    with DB_LOCK, db:
+        return {"removed": memory.clear(db, user["username"])}
 
 
 # --- public application link (no account; consent required) --------------------------------------------------

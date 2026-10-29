@@ -583,3 +583,5 @@ html[data-product="hr"] .settings-body .sub-block .profile-actions { justify-con
 html[data-product="hr"] main .settings-body .set-ctl .btn { padding: 7px 14px; border-radius: 10px; background: var(--card-fill-deep); color: var(--ink); font-weight: 500; }
 html[data-product="hr"] main .settings-body .set-ctl .btn:hover { background: oklch(0.92 0.03 263); }
 html[data-product="hr"] main .settings-body .set-ctl .btn.danger { color: var(--danger, oklch(0.55 0.2 25)); }
+
+html[data-product="hr"] .settings-body .memory-block > p.muted { margin: 0 0 8px; font-size: 14px; }

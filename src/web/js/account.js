@@ -438,6 +438,7 @@ export async function accountView(main, { refreshMe, hrLayout = false, tab = nul
             p.status === "succeeded" ? "paid" : p.status.replaceAll("_", " "))),
           h("td", {}, p.receipt_url ? h("a", { href: p.receipt_url, target: "_blank", rel: "noopener noreferrer" }, "Receipt") : "–")))))
         : h("p", { class: "muted" }, "No payments yet.")),
+    memorySection(),
     h("section", { class: "block privacy-block" }, h("h2", {}, "Your data"),
       h("p", {}, "See what we collect and why in the ", h("a", { href: "#/privacy" }, "Privacy Policy"), ", and the rules in the ",
         h("a", { href: "#/terms" }, "Terms of Use"), "."),
@@ -448,8 +449,32 @@ export async function accountView(main, { refreshMe, hrLayout = false, tab = nul
         : h("button", { class: "btn danger", type: "button", onclick: () => deleteDialog() }, "Delete my account")));
 }
 
+/** What the agent remembers about this person across chats; they can remove any fact or all of them. */
+function memorySection() {
+  const list = h("div", { class: "memory-list" }, h("p", { class: "muted" }, "Loading…"));
+  const box = h("section", { class: "block memory-block" }, h("h2", {}, "Memory"),
+    h("p", { class: "muted" }, "Facts the agent learned about you in your chats, so every new chat picks up where you left off. Only you and your agent see them."),
+    list);
+  const draw = () => api("/api/memory").then(({ facts }) => {
+    list.replaceChildren(...(facts.length ? [
+      ...facts.map((f) => h("div", { class: "set-row memory-row" },
+        h("div", {}, h("span", { class: "set-label" }, f.fact), h("p", { class: "set-sub" }, `Learned ${f.since}`)),
+        h("div", { class: "set-ctl" }, h("button", { class: "btn sm", type: "button", "aria-label": `Forget: ${f.fact}`, onclick: async () => {
+          try { await api(`/api/memory/${f.id}`, { method: "DELETE" }); toast("Forgotten"); draw(); } catch (e) { toast(e.message, "err"); }
+        } }, "Forget")))),
+      h("div", { class: "set-row" }, h("span", { class: "set-label" }, "Forget everything"),
+        h("div", { class: "set-ctl" }, h("button", { class: "btn sm danger", type: "button", onclick: async () => {
+          if (!confirm("Clear everything the agent remembers about you?")) return;
+          try { await api("/api/memory", { method: "DELETE" }); toast("Memory cleared"); draw(); } catch (e) { toast(e.message, "err"); }
+        } }, "Clear memory")))]
+      : [h("p", { class: "muted" }, "Nothing yet. Tell the agent about your goals, background and how you like to learn, and it will remember.")]));
+  }).catch((e) => list.replaceChildren(h("p", { class: "issue error" }, e.message)));
+  draw();
+  return box;
+}
+
 // HR console settings: a section list on the left, label-left / control-right rows on the right (#/account/<tab>).
-const SETTINGS_TABS = [["profile", "Profile", "user"], ["billing", "Plan & billing", "nav-payments"], ["privacy", "Privacy", "info"], ["account", "Account", "sliders"]];
+const SETTINGS_TABS = [["profile", "Profile", "user"], ["memory", "Memory", "history"], ["billing", "Plan & billing", "nav-payments"], ["privacy", "Privacy", "info"], ["account", "Account", "sliders"]];
 
 function payTable(pays) {
   return pays.length ? h("div", { class: "table-wrap" }, h("table", { class: "data pay-table" },
@@ -470,6 +495,7 @@ function settingsView(main, me, pays, tab, reload) {
   const signOut = async () => { await api("/api/logout", { method: "POST" }).catch(() => {}); location.reload(); };
   const body = {
     profile: () => [profileSection(me, reload)],
+    memory: () => [memorySection()],
     billing: () => [
       group("Plan", row("Current plan", null, h("span", { class: "set-pill" }, planName(me.effective_plan)))),
       me.role === "hr_advisor" ? subscriptionSection(reload) : null,
