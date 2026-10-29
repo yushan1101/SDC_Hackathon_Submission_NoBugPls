@@ -621,7 +621,7 @@ def test_interview_access_requires_owner_owned_assessment_recommendation(client,
     assert client.post("/api/interviews", json={"recommendation_id": "not-a-real-recommendation",
         "transcript_consent": True}, headers=H).status_code == 404
 
-    accounts.create_user(api.db, "bob", PW, "employee", "E-002")
+    accounts.create_user(api.db, "bob", PW, "employee", "E-902")  # E-00x ids belong to HR team uploads in other tests
     login(client, "bob")
     assert client.get(f"/api/interview-recommendations/{recommendation_id}").status_code == 404
     assert client.post("/api/interviews", json={"recommendation_id": recommendation_id,

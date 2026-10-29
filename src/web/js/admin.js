@@ -16,8 +16,8 @@ const LEGACY_SIDEBAR_PIN_KEY = "ap.admin.sidebar.pinned";
 function storedSidebarExpanded() {
   try {
     const saved = localStorage.getItem(SIDEBAR_EXPANDED_KEY) ?? localStorage.getItem(LEGACY_SIDEBAR_PIN_KEY);
-    return saved == null ? true : saved === "true";
-  } catch { return true; }
+    return saved === "true";  // folded until the person opens it
+  } catch { return false; }
 }
 
 async function boot() {

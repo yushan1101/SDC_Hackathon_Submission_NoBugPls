@@ -1734,7 +1734,7 @@ def plan_progress(pid: str, body: ProgressIn, user: dict = Depends(current_user)
         current_plan = approval.latest(db, pid)["plan"]
         rows = db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (pid,)).fetchall()
         for item, at in _learning_progress_rows(current_plan, rows):
-            db.execute("INSERT OR IGNORE INTO plan_progress(plan_id, item, done_utc) VALUES(?,?,?)", (pid, item, at))
+            db.execute("INSERT INTO plan_progress(plan_id, item, done_utc) VALUES(?,?,?) ON CONFLICT DO NOTHING", (pid, item, at))
         if body.done:
             db.execute("INSERT INTO plan_progress(plan_id, item, done_utc) VALUES(?,?,?) "
                        "ON CONFLICT(plan_id, item) DO UPDATE SET done_utc=excluded.done_utc", (pid, body.item, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
