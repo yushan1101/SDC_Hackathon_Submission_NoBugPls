@@ -159,8 +159,8 @@ function shell() {
  *  settings laid out as a section list ([data-console] turns on console.css). */
 function userShell() {
   document.documentElement.dataset.console = "";
-  let expanded = true;
-  try { expanded = localStorage.getItem(HR_SIDEBAR_EXPANDED_KEY) !== "false"; } catch { /* expanded by default */ }
+  let expanded = false;  // folded until the person opens it
+  try { expanded = localStorage.getItem(HR_SIDEBAR_EXPANDED_KEY) === "true"; } catch { /* folded by default */ }
   const link = (href, label, ic) => h("a", { href, "data-route": href, "aria-label": label, title: label }, icon(ic),
     h("span", { class: "lbl" }, label), h("span", { class: "tip", "aria-hidden": "true" }, label));
   const tab = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), label);

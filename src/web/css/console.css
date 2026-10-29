@@ -706,5 +706,11 @@ html:is([data-product="hr"], [data-console]) .rail :focus-visible { outline: 2px
 html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] .lbl { color: var(--owl-ink); }
 html:is([data-product="hr"], [data-console]) .rail .hr-account-btn :not(.u-avatar):not(svg):not(svg *) { color: oklch(1 0 0 / 0.75); }
 html:is([data-product="hr"], [data-console]) .rail .hr-account-btn b:not(.u-avatar):not(svg):not(svg *) { color: oklch(1 0 0); }
+/* menus that open from the sidebar (account, usage, folded groups) are white cards: keep their text dark */
+html:is([data-product="hr"], [data-console]) .rail :is([popover], .is-sidebar-collapsed .rail-sub) :is(a, button, span, b, small, .lbl, .muted) { color: var(--ink); }
+html:is([data-product="hr"], [data-console]) .rail :is([popover], .is-sidebar-collapsed .rail-sub) :is(small, .muted) { color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .rail :is([popover], .is-sidebar-collapsed .rail-sub) svg { color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .rail :is([popover], .is-sidebar-collapsed .rail-sub) :is(a, button):hover { background: var(--owl-wash); color: var(--owl-ink); }
+html:is([data-product="hr"], [data-console]) .rail :is([popover], .is-sidebar-collapsed .rail-sub) :is(a, button):hover svg { color: var(--accent); }
 @media (prefers-reduced-transparency: reduce) {
   html:is([data-product="hr"], [data-console]) .rail { background: oklch(0.42 0.16 263) !important; } }

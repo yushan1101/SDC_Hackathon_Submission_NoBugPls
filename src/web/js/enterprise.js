@@ -40,8 +40,8 @@ async function boot() {
 // ---------------------------------------------------------------- shell
 function shell() {
   S.status = new OwlStatus({ size: 32, say: "Ready" });
-  let sidebarExpanded = true;
-  try { sidebarExpanded = localStorage.getItem(HR_SIDEBAR_EXPANDED_KEY) !== "false"; } catch { /* use the expanded default */ }
+  let sidebarExpanded = false;  // folded until the person opens it
+  try { sidebarExpanded = localStorage.getItem(HR_SIDEBAR_EXPANDED_KEY) === "true"; } catch { /* folded by default */ }
   let shellEl, sidebar, sidebarToggle;
   let openMenu = null;
   closeFloatingSidebarMenus = () => {
