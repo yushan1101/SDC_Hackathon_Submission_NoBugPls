@@ -159,8 +159,8 @@ function shell() {
  *  settings laid out as a section list ([data-console] turns on console.css). */
 function userShell() {
   document.documentElement.dataset.console = "";
-  let expanded = true;
-  try { expanded = localStorage.getItem(HR_SIDEBAR_EXPANDED_KEY) !== "false"; } catch { /* expanded by default */ }
+  let expanded = false;  // folded until the person opens it
+  try { expanded = localStorage.getItem(HR_SIDEBAR_EXPANDED_KEY) === "true"; } catch { /* folded by default */ }
   const link = (href, label, ic) => h("a", { href, "data-route": href, "aria-label": label, title: label }, icon(ic),
     h("span", { class: "lbl" }, label), h("span", { class: "tip", "aria-hidden": "true" }, label));
   const tab = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), label);
@@ -290,7 +290,8 @@ function route() {
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
   const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "agents", "register", "pricing", "account", "verify", "forgot", "reset", "invite", "email", "terms", "privacy"]);
-  const planSection = requested === "plans" && rest.length === 1 && ["1-30", "31-60", "61-90"].includes(rest[0]);
+  const planSection = requested === "plans" && rest.length <= 2 && ["1-30", "31-60", "61-90"].includes(rest[0]) &&
+    (rest.length < 2 || /^week-(0[1-9]|1[0-3])(?:-(?:practice|check))?$/.test(rest[1]));
   const interviewStart = requested === "interview" && id === "start" && rest.length === 1 && /^[A-Za-z0-9_-]+$/.test(rest[0]);
   // Unknown routes and malformed nested routes return home instead of showing the wrong page.
   const verifyLink = ["verify", "reset", "invite", "email"].includes(requested) && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
@@ -354,8 +355,8 @@ function route() {
   if (main.classList.contains("home-page")) homeScrollTop = window.scrollY;
   main.classList.toggle("home-page", page === "start");
   if (page === "report") reportView(main, id);
-  else if (page === "plans" && id && main.dataset.plan === id && main.querySelector(".plan-block")) main.querySelector(".plan-block").openPane(rest[0] || null, true);  // section subpage of the open plan
-  else if (page === "plans" && id) planDetail(main, id, false, rest[0]);
+  else if (page === "plans" && id && main.dataset.plan === id && main.querySelector(".plan-block")) main.querySelector(".plan-block").openPane(rest[0] || null, true, rest[1]);  // section subpage of the open plan
+  else if (page === "plans" && id) planDetail(main, id, false, rest[0], rest[1]);
   else if (page === "plans") plansView(main);
   else if (page === "build") buildView(main);
   else if (page === "interview") {
@@ -497,6 +498,7 @@ function buildView(main) {
 /** From a role match (quiz or resume): target that occupation with the skills we found, then run the agents. */
 function planFor(m, skills, query) {
   Object.assign(S.profile, { target_role: m.soc, target_title: m.title,
+    scenario: ["assistive", "agentic"].includes(m.scenario) ? m.scenario : S.profile.scenario,
     skills: skills.slice(0, 40).map(({ name, level }) => ({ name, level })) });
   saveProfile();
   start(query);
@@ -996,7 +998,7 @@ async function plansView(main) {
   draw();
 }
 
-async function planDetail(main, id, focusPlan = false, section = null) {
+async function planDetail(main, id, focusPlan = false, section = null, selectedNodeId = null) {
   delete main.dataset.plan;
   main.replaceChildren(h("p", { class: "muted" }, "Loading…"));
   let d;
@@ -1021,7 +1023,7 @@ async function planDetail(main, id, focusPlan = false, section = null) {
       h("p", { class: "plan-hero-copy" }, approved ? "Your personalised 90-day learning journey. Pick up where you left off on the right." : "Your personalised 90-day learning journey, in three 30-day sections."),
       h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days"), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`))),
     planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence, startDate: d.created_utc,
-      sectionHref: (p) => `#/plans/${id}${p ? `/${p}` : ""}`,
+      sectionHref: (p, nodeId) => `#/plans/${id}${p ? `/${p}${nodeId ? `/${nodeId}` : ""}` : ""}`, selectedNodeId,
       title: null, onChange: () => planDetail(main, id, true) }));
   let expanded = !approved;
   const panel = h("div", { class: "plan-report-panel", id: "saved-plan-report", inert: approved ? true : null,

@@ -67,4 +67,4 @@ def test_plan_activities_are_personal_and_detailed():
     assert "excel" in first.activity and "from scratch" in first.activity and "data analyst" in first.steps[1]
     assert first.activity.startswith('Learn "python"') and len(first.activity.split()) <= 20
     assert len(first.steps) == 2 and first.steps[0].startswith("Weeks 1-2") and first.outcome
-    assert {a.day_range for a in p.activities} == {"1-30", "31-60"}
+    assert {a.day_range for a in p.activities} == {"1-30", "31-60", "61-90"}

@@ -1,0 +1,243 @@
+{
+  "learner": {
+    "current_role": "",
+    "target_role": "Mobile devices technician",
+    "hours_per_week": 6.0
+  },
+  "skills": [
+    {
+      "id": "electronics_principles",
+      "name": "Electronics principles",
+      "category": "Hardware",
+      "level_now": 0,
+      "level_target": 3,
+      "priority": "high",
+      "depends_on": []
+    },
+    {
+      "id": "solve_ict_system_problems",
+      "name": "Solve ICT system problems",
+      "category": "Troubleshooting",
+      "level_now": 0,
+      "level_target": 2,
+      "priority": "medium",
+      "depends_on": [
+        "electronics_principles"
+      ]
+    },
+    {
+      "id": "distributed_directory_information_services",
+      "name": "Distributed directory information services",
+      "category": "Networking",
+      "level_now": 0,
+      "level_target": 2,
+      "priority": "medium",
+      "depends_on": [
+        "solve_ict_system_problems"
+      ]
+    }
+  ],
+  "phases": [
+    {
+      "id": "p1",
+      "name": "Days 1-30 · Foundation",
+      "start_week": 1,
+      "end_week": 4,
+      "skills": [
+        "electronics_principles",
+        "solve_ict_system_problems",
+        "distributed_directory_information_services"
+      ],
+      "milestone": "A comprehensive personal reference manual of electronic components.",
+      "hours": 25.7
+    },
+    {
+      "id": "p2",
+      "name": "Days 31-60 · Practical application",
+      "start_week": 5,
+      "end_week": 8,
+      "skills": [
+        "electronics_principles",
+        "solve_ict_system_problems",
+        "distributed_directory_information_services"
+      ],
+      "milestone": "A logbook of component-level test results and identified faults.",
+      "hours": 25.7
+    },
+    {
+      "id": "p3",
+      "name": "Days 61-90 · Portfolio and review",
+      "start_week": 9,
+      "end_week": 13,
+      "skills": [
+        "electronics_principles",
+        "solve_ict_system_problems",
+        "distributed_directory_information_services"
+      ],
+      "milestone": "A workshop presentation and peer feedback on your technical instruction.",
+      "hours": 25.7
+    }
+  ],
+  "resources": [
+    {
+      "skill_id": "electronics_principles",
+      "title": "Build a foundational knowledge base of electronic components and circuit theory using ESCO: Electronics principles.",
+      "type": "project",
+      "est_hours": 15.0,
+      "url": ""
+    },
+    {
+      "skill_id": "electronics_principles",
+      "title": "ESCO v1.2: Mobile devices technician — Electronics principles",
+      "type": "guide",
+      "est_hours": 0.0,
+      "url": "https://esco.ec.europa.eu/en/classification/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Fb37d15b3-402e-4792-8292-f18c0de7aca6"
+    },
+    {
+      "skill_id": "electronics_principles",
+      "title": "ESCO: Electronics principles (definition, related skills and occupations)",
+      "type": "guide",
+      "est_hours": 0.0,
+      "url": "https://esco.ec.europa.eu/en/classification/skill?uri=http://data.europa.eu/esco/skill/557d1221-0235-4a48-ada5-8fca73443627"
+    },
+    {
+      "skill_id": "solve_ict_system_problems",
+      "title": "Develop a systematic diagnostic framework for mobile hardware failures based on ESCO: Solve ICT system problems.",
+      "type": "project",
+      "est_hours": 10.0,
+      "url": ""
+    },
+    {
+      "skill_id": "solve_ict_system_problems",
+      "title": "ESCO v1.2: Mobile devices technician — Solve ICT system problems",
+      "type": "guide",
+      "est_hours": 0.0,
+      "url": "https://esco.ec.europa.eu/en/classification/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Fb37d15b3-402e-4792-8292-f18c0de7aca6"
+    },
+    {
+      "skill_id": "solve_ict_system_problems",
+      "title": "ESCO: Solve ICT system problems (definition, related skills and occupations)",
+      "type": "guide",
+      "est_hours": 0.0,
+      "url": "https://esco.ec.europa.eu/en/classification/skill?uri=http://data.europa.eu/esco/skill/9e06bac6-6b91-48ca-8b7d-c1f48cdecd7c"
+    },
+    {
+      "skill_id": "distributed_directory_information_services",
+      "title": "Research the architecture of distributed directory services using ESCO: Distributed directory information services.",
+      "type": "project",
+      "est_hours": 0.7,
+      "url": ""
+    },
+    {
+      "skill_id": "distributed_directory_information_services",
+      "title": "ESCO v1.2: Mobile devices technician — Distributed directory information services",
+      "type": "guide",
+      "est_hours": 0.0,
+      "url": "https://esco.ec.europa.eu/en/classification/occupation?uri=http%3A%2F%2Fdata.europa.eu%2Fesco%2Foccupation%2Fb37d15b3-402e-4792-8292-f18c0de7aca6"
+    },
+    {
+      "skill_id": "distributed_directory_information_services",
+      "title": "ESCO: Distributed directory information services (definition, related skills and occupations)",
+      "type": "guide",
+      "est_hours": 0.0,
+      "url": "https://esco.ec.europa.eu/en/classification/skill?uri=http://data.europa.eu/esco/skill/d1e954cd-d290-4d80-97c0-7969960d2928"
+    },
+    {
+      "skill_id": "electronics_principles",
+      "title": "Apply electronics principles to perform component-level testing on decommissioned mobile devices.",
+      "type": "project",
+      "est_hours": 15.0,
+      "url": ""
+    },
+    {
+      "skill_id": "solve_ict_system_problems",
+      "title": "Execute a structured diagnostic process on live repair tickets using ESCO: Solve ICT system problems.",
+      "type": "project",
+      "est_hours": 10.0,
+      "url": ""
+    },
+    {
+      "skill_id": "distributed_directory_information_services",
+      "title": "Configure a local directory service client to test connectivity and authentication protocols.",
+      "type": "project",
+      "est_hours": 0.7,
+      "url": ""
+    },
+    {
+      "skill_id": "electronics_principles",
+      "title": "Lead a technical workshop demonstrating advanced electronics troubleshooting for your team.",
+      "type": "project",
+      "est_hours": 15.0,
+      "url": ""
+    },
+    {
+      "skill_id": "solve_ict_system_problems",
+      "title": "Conduct a root-cause analysis project on recurring ICT system problems in your department.",
+      "type": "project",
+      "est_hours": 10.0,
+      "url": ""
+    },
+    {
+      "skill_id": "distributed_directory_information_services",
+      "title": "Audit and optimize the directory service settings for a fleet of mobile devices.",
+      "type": "project",
+      "est_hours": 0.7,
+      "url": ""
+    }
+  ],
+  "deferred": [
+    "Ensure proper document management",
+    "Implement ICT recovery system",
+    "Mobile operating systems",
+    "Use precision tools",
+    "Disassemble mobile devices",
+    "Perform backups",
+    "Use diagnostic tools for electronic repairs",
+    "Create solutions to problems",
+    "Identify ICT security risks",
+    "ICT system user requirements",
+    "Monitor technology trends",
+    "Perl",
+    "ABAP",
+    "Haskell",
+    "BlackBerry",
+    "ICT debugging tools",
+    "Use different communication channels",
+    "VBScript",
+    "Mobile device management",
+    "C#",
+    "Embedded systems",
+    "Windows Phone",
+    "JavaScript",
+    "Common Lisp",
+    "APL",
+    "R",
+    "Lisp",
+    "Android (mobile operating systems)",
+    "ASP.NET",
+    "OpenEdge Advanced Business Language",
+    "Scala",
+    "Visual Studio .NET",
+    "MATLAB",
+    "SAP R3",
+    "CoffeeScript",
+    "Groovy",
+    "SAS language",
+    "TypeScript",
+    "Mobile device software frameworks",
+    "ICT market",
+    "Objective-C",
+    "AJAX",
+    "Manage localisation",
+    "IOS",
+    "PHP",
+    "Hardware components",
+    "Swift (computer programming)",
+    "Software components suppliers",
+    "Erlang",
+    "COBOL",
+    "Hardware components suppliers",
+    "Software components libraries"
+  ],
+  "start_date": "2026-10-29"
+}

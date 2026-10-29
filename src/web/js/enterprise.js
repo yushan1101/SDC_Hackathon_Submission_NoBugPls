@@ -40,8 +40,8 @@ async function boot() {
 // ---------------------------------------------------------------- shell
 function shell() {
   S.status = new OwlStatus({ size: 32, say: "Ready" });
-  let sidebarExpanded = true;
-  try { sidebarExpanded = localStorage.getItem(HR_SIDEBAR_EXPANDED_KEY) !== "false"; } catch { /* use the expanded default */ }
+  let sidebarExpanded = false;  // folded until the person opens it
+  try { sidebarExpanded = localStorage.getItem(HR_SIDEBAR_EXPANDED_KEY) === "true"; } catch { /* folded by default */ }
   let shellEl, sidebar, sidebarToggle;
   let openMenu = null;
   closeFloatingSidebarMenus = () => {
@@ -428,6 +428,7 @@ function runView(main) {
   }
   async function run() {
     S.running = true; runBtn.disabled = true;
+    presetBtn.disabled = true;
     S.rows = new Map(); S.needs = [];
     const redraw = () => live.replaceChildren(needsPanel(), rosterTable() || h("p", { class: "muted" }, "Starting…"));
     redraw();
@@ -451,16 +452,24 @@ function runView(main) {
       S.status.set("confused", "Run failed");
       errors.replaceChildren(...(e.body?.errors || [e.message]).map((x) => h("li", {}, x)),
         ...(e.status === 402 ? [h("li", {}, h("a", { class: "btn sm primary", href: "#/pricing" }, "See the Team plan"))] : []));
-    } finally { S.running = false; }
+    } finally { S.running = false; presetBtn.disabled = false; }
   }
+
+  const presetBtn = h("button", { class: "btn sm", type: "button", disabled: S.running ? true : null, onclick: async () => {
+    presetBtn.disabled = true;
+    try {
+      const preset = await api("/api/sample-team");
+      dataset.value = S.dataset = preset.dataset;
+      scale.value = String(S.levelMax = preset.level_max);
+      who.value = "team"; S.external = false;
+      await setCsv(preset.csv, preset.filename, false);
+    } catch (e) { toast(`Could not load CSV: ${e.message}`, "err"); }
+    finally { presetBtn.disabled = S.running; }
+  } }, "Use sample CSV");
 
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "Analyse your team"),
-      h("div", { class: "run-actions" }, S.seg,
-        h("button", { class: "btn sm", type: "button", onclick: async () => {
-          const sample = await api("/api/sample-team");
-          setCsv(sample.csv, "sample_team.csv (fictional — excluded from workforce analytics)", true);
-        } }, "Use sample CSV"))),
+      h("div", { class: "run-actions" }, S.seg, presetBtn)),
     h("div", { class: "overview" },
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Team file")), h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, drop, describe, preview)),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Checks")),

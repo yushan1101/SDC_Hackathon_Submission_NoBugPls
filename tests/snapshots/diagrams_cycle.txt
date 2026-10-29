@@ -1,0 +1,81 @@
+## branch
+
+flowchart LR
+  root(("Data 'analyst' junior"))
+  p1["Days 1-30 · Foundation · 20 h"]:::phase
+  root --> p1
+  p1_s1["Skill 1"]:::high
+  p1 --> p1_s1
+  p1_s2["Skill 2"]:::high
+  p1 --> p1_s2
+  p1_goal(["Clean a dataset: done"]):::goal
+  p1 -.-> p1_goal
+  p2["Days 31-60 · Practice · 40 h"]:::phase
+  root --> p2
+  p2_s2["Skill 2"]:::high
+  p2 --> p2_s2
+  p2_s3["Skill 3"]:::high
+  p2 --> p2_s3
+  p2_goal(["Dashboard v1 shipped"]):::goal
+  p2 -.-> p2_goal
+  p3["Days 61-90 · Portfolio · 12 h"]:::phase
+  root --> p3
+  p3_s3["Skill 3"]:::high
+  p3 --> p3_s3
+  p3_goal(["Portfolio 1"]):::goal
+  p3 -.-> p3_goal
+  classDef high fill:#fde2e1,stroke:#c0392b,color:#5b1a12
+  classDef medium fill:#fff1d6,stroke:#c98a10,color:#5a3d00
+  classDef low fill:#e3f1e6,stroke:#3c8d52,color:#173d22
+  classDef phase fill:#e6edff,stroke:#2a5bd7,color:#13254f
+  classDef goal fill:#f3f0ff,stroke:#7a5ccf,color:#2c1f57
+  classDef later fill:#f1f2f5,stroke:#9aa1b2,color:#3b4252
+  click p1_s1 call showSkill("s1")
+  click p1_s2 call showSkill("s2")
+  click p2_s2 call showSkill("s2")
+  click p2_s3 call showSkill("s3")
+  click p3_s3 call showSkill("s3")
+
+## timeline
+
+gantt
+  title Data 'analyst' junior · 90-day roadmap
+  dateFormat YYYY-MM-DD
+  axisFormat %b %d
+  section Days 1-30 · Foundation
+    Skill 1 :p1_s1, 2026-01-05, 30d
+    Skill 2 :p1_s2, 2026-01-05, 30d
+    Clean a dataset - done :milestone, m1, 2026-02-03, 0d
+  section Days 31-60 · Practice
+    Skill 2 :p2_s2, 2026-02-04, 30d
+    Skill 3 :p2_s3, 2026-02-04, 30d
+    Dashboard v1 shipped :milestone, m2, 2026-03-05, 0d
+  section Days 61-90 · Portfolio
+    Skill 3 :p3_s3, 2026-03-06, 30d
+    Portfolio 1 :milestone, m3, 2026-04-04, 0d
+  click p1_s1 call showSkill("s1")
+  click p1_s2 call showSkill("s2")
+  click p2_s2 call showSkill("s2")
+  click p2_s3 call showSkill("s3")
+  click p3_s3 call showSkill("s3")
+
+## deps
+Circular prerequisite: Skill 1 → Skill 3 → Skill 2 → Skill 1. Fix the plan's prerequisites to draw this graph.
+
+
+## gaps
+
+{"type": "radar", "data": {"labels": ["Skill 1", "Skill 2", "Skill 3"], "ids": ["s1", "s2", "s3"], "datasets": [{"label": "Current level", "data": [1, 1, 1], "role": "now"}, {"label": "Target level", "data": [3, 3, 3], "role": "target"}]}, "options": {"scales": {"r": {"min": 0, "max": 5, "ticks": {"stepSize": 1}}}}}
+
+## skillmap
+
+mindmap
+  root((Data 'analyst' junior))
+    cat_data[Data]
+      s1[Skill 1]
+      s2[Skill 2]
+      s3[Skill 3]
+
+## effort
+Over capacity: Days 31-60 · Practice.
+{"type": "bar", "data": {"labels": ["Days 1-30 \u00b7 Foundation", "Days 31-60 \u00b7 Practice", "Days 61-90 \u00b7 Portfolio"], "over": [false, true, false], "datasets": [{"label": "Planned hours per week", "data": [4.7, 9.3, 2.8], "role": "planned"}, {"label": "Your capacity (6 h/week)", "data": [6.0, 6.0, 6.0], "type": "line", "role": "capacity"}]}, "options": {"scales": {"y": {"beginAtZero": true, "title": {"display": true, "text": "Hours per week"}}}}}

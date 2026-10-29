@@ -40,7 +40,7 @@ train = ["xgboost>=3.0"]  # offline only (scripts/train_rising.py); the server r
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["core*", "agents*", "forecasting*", "mcp_server*", "validation*", "governance*", "ui*", "tools*", "config*", "server*"]
+include = ["core*", "agents*", "forecasting*", "mcp_server*", "validation*", "governance*", "ui*", "tools*", "config*", "server*", "diagrams*"]
 
 # CPU-only PyTorch is sufficient for serving and avoids downloading CUDA libraries.
 [[tool.uv.index]]

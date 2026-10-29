@@ -1,0 +1,185 @@
+"""Small, explicit lessons used when the learning designer is unavailable.
+
+These teach concepts rather than substituting a skill name into generic advice.
+External resources still come exclusively from retrieved evidence.
+"""
+import re
+
+
+CATALOG = {
+    "design": [
+        ("Visual Hierarchy", "Size, contrast and position guide the order in which people read a layout. Give the most important message the strongest emphasis.",
+         "A workshop poster puts the event name first, the date second and registration details last.",
+         "Create two poster layouts using the same words. Change the heading size and placement; ask someone which message they notice first.",
+         "Two annotated poster layouts showing the intended reading order.", "Which change most clearly establishes a primary heading?", ["Make its size and contrast stronger than the supporting text.", "Give every line the same size and emphasis."]),
+        ("Color and Contrast", "Contrast separates information from its background. Color can reinforce meaning, but labels or shapes should carry the meaning too.",
+         "An error uses an icon and the word 'Error' as well as red, so its meaning survives grayscale.",
+         "Create a light and dark version of a small information card. Check that labels remain readable in grayscale and identify anything conveyed by color alone.",
+         "Two readable information cards with a contrast and grayscale review.", "How should a warning convey its meaning?", ["Use a clear text label or icon alongside color.", "Use red alone without a label."]),
+        ("Spacing and Alignment", "Related items should sit closer together than unrelated groups. A shared alignment edge helps readers scan a layout.",
+         "A form groups each label with its input, then leaves a larger gap before the next field group.",
+         "Redesign a cluttered form or flyer using one alignment edge and consistent spacing. Annotate three grouping decisions.",
+         "A before-and-after layout with three spacing annotations.", "Which spacing makes a label's relationship clear?", ["Keep the label closer to its own field than to other groups.", "Use identical gaps between every item regardless of meaning."]),
+        ("Translating a Design Brief", "A brief defines the audience, message, constraints and intended action. A design decision should support one of those requirements.",
+         "A sign-up poster for first-time visitors needs a clear invitation, venue and next action before decorative details.",
+         "Write a four-line brief for a workplace poster, then create a layout. Label how the headline, imagery and call to action meet the brief.",
+         "A poster and brief with three design decisions linked to requirements.", "What should guide a layout decision first?", ["The audience and intended action in the brief.", "A decorative trend unrelated to the message."]),
+    ],
+    "sql": [
+        ("Selecting and Filtering Rows", "SELECT chooses columns; WHERE keeps rows matching a condition. Filtering changes which records reach your result.",
+         "SELECT customer, total FROM orders WHERE total > 100 returns only orders above 100.",
+         "Create a five-row orders table with customer and total columns. Write a query selecting orders above 100 and predict the result before running it.",
+         "The sample rows, query, predicted output and actual output.", "Which clause restricts rows before aggregation?", ["WHERE", "ORDER BY"]),
+        ("Grouping and Aggregating", "GROUP BY creates one group per distinct key. SUM and COUNT summarize each group; include the grouping key in the result so the totals are interpretable.",
+         "SELECT region, SUM(total) FROM orders GROUP BY region produces one sales total per region.",
+         "Add two regions to your sample orders. Calculate regional totals by hand, write a GROUP BY query and reconcile its output with your calculation.",
+         "A grouped query and a reconciliation of its totals.", "What does GROUP BY region produce with SUM(total)?", ["One total for each region.", "One unchanged output row for every order."]),
+        ("Joining Tables Safely", "A join combines rows using a key. Duplicate keys can multiply rows, so check the expected relationship and compare counts before trusting totals.",
+         "Joining orders to customers on customer_id adds a name; two customer rows with the same ID would duplicate an order.",
+         "Create customers and orders samples. Join them by customer_id, introduce one duplicate customer ID, and explain the change in row count.",
+         "Two join outputs with a row-count check and duplicate-key explanation.", "Why can a joined total be too high?", ["Duplicate matching keys can multiply rows.", "A join always removes duplicates automatically."]),
+        ("Handling Missing Values", "NULL represents missing or unknown data. Test it with IS NULL; a missing value is different from zero and from an empty string.",
+         "WHERE delivered_at IS NULL finds orders with no recorded delivery date.",
+         "Add a missing date to sample orders. Compare IS NULL with a normal equality filter and explain how missing values should appear in a report.",
+         "A missing-value query and a short reporting rule.", "Which expression finds missing delivery dates?", ["delivered_at IS NULL", "delivered_at = NULL"]),
+    ],
+    "data": [
+        ("Checking Data Quality", "Check missing values, duplicate records and impossible values before interpreting a dataset. Record each rule so another person can repeat the check.",
+         "A sales sheet with negative quantities and repeated order IDs needs review before its totals become a performance report.",
+         "Build a ten-row sample dataset containing a duplicate, a blank and an impossible value. Flag each problem and propose a correction without deleting evidence.",
+         "An annotated dataset and a three-rule quality checklist.", "What should happen before interpreting a total?", ["Check the input records and document data-quality issues.", "Hide unusual rows without recording why."]),
+        ("Choosing a Chart for a Question", "Choose the chart from the comparison: bars compare categories, lines show ordered time, and a scatter plot explores relationships. Label units and keep the scale honest.",
+         "A monthly trend fits a line chart; comparing five teams at one date usually fits a bar chart.",
+         "State one workplace question, sketch two chart options for the same small dataset and explain which answers the question more clearly.",
+         "Two labeled chart sketches and a written selection rationale.", "Which chart best shows change across consecutive months?", ["A line chart with an ordered time axis.", "An unlabeled collection of category slices."]),
+        ("Explaining an Insight with Evidence", "Separate the observation, interpretation and recommended action. A pattern supports a question or hypothesis; it does not automatically prove its cause.",
+         "'Response time rose in June' is an observation. 'Staffing caused it' needs additional evidence.",
+         "Write a three-sentence stakeholder update using one chart: what changed, what remains uncertain, and one action to investigate or improve it.",
+         "A chart and a three-sentence evidence-based update.", "What can a correlation establish by itself?", ["A relationship worth investigating, without proving causation.", "Proof that one variable caused the other."]),
+    ],
+    "communication": [
+        ("Structuring a Clear Message", "Lead with the reader's decision or need, support it with a concrete fact, then state the requested action and timing.",
+         "'Please approve the revised schedule by Friday; the supplier moved delivery to Monday' is easier to act on than a long unexplained history.",
+         "Rewrite a fictional workplace update in under 100 words. Include one main message, supporting evidence and an explicit next action.",
+         "An original and revised update with the main message and action highlighted.", "Which ending makes an update actionable?", ["Please approve option B by Friday.", "Please see the information above."]),
+        ("Listening and Clarifying", "Paraphrasing checks your understanding before you respond. Ask an open question about an unclear requirement, then confirm the agreed next step.",
+         "'You need the report before the client call; which two figures are essential?' checks both timing and scope.",
+         "Write a short client conversation containing an ambiguous request, a paraphrase, two clarification questions and a confirmed next step.",
+         "A conversation script with the final agreement highlighted.", "What should you do with an ambiguous request?", ["Check your understanding and clarify the missing detail.", "Assume the request means what you would prefer."]),
+        ("Giving Specific Feedback", "Describe an observable action, explain its effect, and agree a useful next step. Comments about someone's character give them less to improve.",
+         "'The report omitted the date range, so I could not compare the totals; add it to the heading' names a fix.",
+         "Turn three vague feedback statements into observation-effect-next-step statements for a workplace task.",
+         "Three specific feedback statements and a proposed follow-up.", "Which feedback is more useful?", ["Name the missing date range and ask for it in the heading.", "Say the author is careless without an example."]),
+    ],
+    "creative": [
+        ("Reframing a Problem", "A useful problem statement identifies who needs help and what blocks their goal. Reframing changes the question before you choose a solution.",
+         "'We need an app' becomes 'Visitors need to find the right desk without asking three people.'",
+         "Write three different 'How might we' questions for one workplace problem. Compare the assumptions each question makes.",
+         "Three problem frames and a reason for choosing one.", "What makes a useful problem frame?", ["It describes a person's need without prematurely choosing a solution.", "It assumes the first proposed tool must be the answer."]),
+        ("Generating and Comparing Ideas", "Separate idea generation from evaluation. First create alternatives; then compare them against explicit criteria such as usefulness, effort and constraints.",
+         "A team lists six ways to reduce waiting before scoring them against cost and ease of use.",
+         "Generate six solutions to a small workplace problem. Score three against two stated criteria and explain your choice.",
+         "An idea list and a scored shortlist.", "When should you evaluate alternatives?", ["After generating options, using stated criteria.", "Reject every unfamiliar idea before recording it."]),
+    ],
+    "ai": [
+        ("Writing a Task-Specific AI Prompt", "Give the tool a goal, relevant context, constraints and an output format. Do not include confidential data unless your workplace explicitly permits that use.",
+         "'Summarize these fictional support notes as issue, evidence and next step; mark uncertain details' gives a checkable format.",
+         "Use fictional workplace notes to write a constrained prompt. Compare two outputs and list missing or unsupported claims.",
+         "A prompt, two outputs and an accuracy checklist.", "What makes an AI result usable at work?", ["Verify claims against the source and review the result for the task.", "Assume fluent text is evidence that every claim is correct."]),
+        ("Verifying AI Output", "A generated answer may be plausible and wrong. Trace factual claims to the original material, test calculations and keep uncertain claims visibly uncertain.",
+         "A summary that invents a deadline must be corrected by checking the original message.",
+         "Draft a fictional AI summary with two deliberate mistakes. Check it against its source notes, correct both errors and record the checks.",
+         "A corrected summary and a claim-by-claim verification note.", "How should an unsupported deadline be handled?", ["Check the original source and remove or qualify the unsupported date.", "Keep the date because it sounds plausible."]),
+    ],
+}
+
+
+def lesson_for(skill: str, week: int, current: float, resources=()):
+    name = skill.casefold()
+    family = next((family for family, pattern in [
+        ("sql", r"sql|database|query"), ("design", r"design|typograph|layout|color|colour"),
+        ("data", r"data|analytic|chart|dashboard|excel|statistic"),
+        ("creative", r"creativ|brainstorm|ideation|concept develop"),
+        ("ai", r"\bai\b|artificial intelligence|prompt"),
+        ("communication", r"communicat|listen|feedback|writ|present|lead|supervis|teamwork|collaborat"),
+    ] if re.search(pattern, name)), None)
+    if family:
+        catalog = CATALOG[family]
+        return catalog[(week - 1 + int(current // 2)) % len(catalog)]
+    # no catalog family: follow the plan's stage for this week, so repeated weeks of one skill teach different things
+    excerpts = [" ".join(getattr(resource, "excerpt", "").split())[:700] for resource in resources if getattr(resource, "excerpt", "")]
+    topic, idea, example, exercise, deliverable, question, options = GENERIC_STAGES[min(max(week, 1), 13) - 1]
+    s = skill[:1].lower() + skill[1:]
+    explanation = (excerpts[0] + " " if excerpts and week in (1, 2) else "") + idea.format(s=s)
+    return (topic.format(s=skill), explanation, example.format(s=s), exercise.format(s=s), deliverable.format(s=s),
+            question.format(s=s), [o.format(s=s) for o in options])
+
+
+# (topic, idea, example, exercise, deliverable, question, [right, wrong]); one per plan week, {s} = the skill
+GENERIC_STAGES = [
+    ("Core Ideas of {s}", "Start by naming what {s} takes as input, the decision or action it involves, and the result someone else can check.",
+     "Someone new to {s} lists one real input, the action they took and the result their supervisor would inspect.",
+     "Pick one everyday task that needs {s}. Write its input, the action and the checkable result in three lines.",
+     "A three-line input-action-result note for one {s} task.", "What makes a {s} result checkable?",
+     ["Someone else can compare it with a stated requirement.", "You feel confident it went well."]),
+    ("{s} Through a Worked Example", "A worked example shows each decision in order and why it was made, so you can reuse the reasoning.",
+     "A worked {s} example states the goal, then each step with the rule behind it, then the finished result.",
+     "Find or write one complete {s} example. Number its steps and write the reason for each step beside it.",
+     "A numbered {s} example with a reason next to every step.", "Why write the reason beside each step?",
+     ["So the reasoning can be reused on a new task.", "To make the example longer."]),
+    ("Common Mistakes in {s}", "Most errors come from skipping a check, misreading the requirement or using the wrong tool or procedure.",
+     "In {s}, starting before reading the full requirement is a typical cause of rework.",
+     "List three mistakes people make in {s}. For each, write the check that would catch it before the work is handed over.",
+     "A three-row mistake-and-check table for {s}.", "What is the best way to prevent a repeated mistake?",
+     ["Add a specific check to your routine that catches it.", "Work faster so there is time to redo it."]),
+    ("Your First {s} Deliverable", "A small finished piece of work proves more than a large unfinished one. Define done before you start.",
+     "A first {s} deliverable is small, has written acceptance criteria and is checked against them.",
+     "Write three acceptance criteria for a small {s} task, complete it and tick each criterion with evidence.",
+     "A small {s} deliverable with three ticked acceptance criteria.", "When is a deliverable done?",
+     ["When it meets acceptance criteria written beforehand.", "When the time you planned has run out."]),
+    ("{s} on a Real Task", "Real tasks add constraints: time, other people, tools and incomplete information. Name them before you start.",
+     "Using {s} on a real task means noting the deadline, who depends on the result and what information is missing.",
+     "Choose a real or realistic task that uses {s}. List its constraints, then do the task and note how each constraint changed your approach.",
+     "A completed {s} task with its constraints and their effect noted.", "Why list constraints first?",
+     ["They change which approach is realistic.", "They are only needed for reporting."]),
+    ("Checking {s} Work Against Requirements", "Compare the finished work with each requirement line by line, not with a general impression.",
+     "A {s} review lists every requirement with 'met', 'partly met' or 'not met' and the evidence for each.",
+     "Take your last {s} task and review it line by line against its requirements. Mark each one and cite the evidence.",
+     "A line-by-line requirement review of one {s} task.", "What should each review line include?",
+     ["The requirement, a verdict and the evidence.", "Only the parts that went well."]),
+    ("Getting Feedback on {s} Work", "Useful feedback is asked for with a specific question about a specific part of the work.",
+     "'Does step 3 of my {s} work meet the safety requirement?' gets a more useful answer than 'Any thoughts?'",
+     "Ask a colleague or mentor two specific questions about your {s} work. Record their answers word for word.",
+     "Two specific feedback questions about {s} work and the answers received.", "Which request gets more useful feedback?",
+     ["A specific question about one part of the work.", "A general request for any comments."]),
+    ("Improving {s} Work After Feedback", "Turn each piece of feedback into one concrete change, make it, and show the before and after.",
+     "After feedback, a {s} revision shows the original, the change and why it answers the comment.",
+     "Pick the most important feedback point on your {s} work. Make the change and record the before, the after and the reason.",
+     "A before-and-after revision of {s} work linked to one feedback point.", "What shows that feedback was used?",
+     ["A visible change linked to the specific comment.", "A note saying the feedback was read."]),
+    ("Planning Your {s} Work Sample", "A work sample needs a brief: who it is for, what problem it solves and how its quality will be judged.",
+     "A {s} work-sample brief names the audience, the problem and three quality criteria.",
+     "Write a half-page brief for a {s} work sample you could show an employer: audience, problem, scope and three quality criteria.",
+     "A half-page {s} work-sample brief.", "What should a work-sample brief define first?",
+     ["Who it is for and what problem it solves.", "Which colours and fonts to use."]),
+    ("Building Your {s} Work Sample", "Build in small checked steps, and keep a short log of decisions so you can explain the work later.",
+     "While building a {s} work sample, each session ends with a two-line log: what was done, what was decided.",
+     "Build the core of your {s} work sample from the brief. Keep a decision log with at least three entries.",
+     "A first version of the {s} work sample with a three-entry decision log.", "Why keep a decision log?",
+     ["So you can explain and defend your choices later.", "Because logs replace testing the work."]),
+    ("Reviewing Your {s} Work Sample", "Review against the brief's quality criteria, ideally with someone who works in the target role.",
+     "A {s} work-sample review scores each quality criterion from the brief and lists the weakest point.",
+     "Score your {s} work sample against each quality criterion in the brief and name its single weakest point.",
+     "A criterion-by-criterion review of the {s} work sample.", "What should a review measure the sample against?",
+     ["The quality criteria written in the brief.", "How long it took to build."]),
+    ("Refining Your {s} Work Sample", "Fix the weakest point first; one strong improvement is worth more than many cosmetic ones.",
+     "Refining a {s} work sample starts with the lowest-scoring criterion from the review.",
+     "Improve the weakest point found in your review. Re-score that criterion and record the change.",
+     "A refined {s} work sample with the re-scored criterion.", "Which point should you refine first?",
+     ["The weakest criterion from the review.", "Whatever is quickest to polish."]),
+    ("Presenting {s} Evidence", "Present the problem, what you did, the evidence it works and what you would do next, in that order.",
+     "A two-minute {s} summary covers the problem, the approach, the evidence and the next step.",
+     "Write a short summary of your {s} work sample: problem, approach, evidence and next step. Share it with one person.",
+     "A shared {s} evidence summary and your next learning step.", "What makes the summary convincing?",
+     ["Evidence that the work meets its stated criteria.", "Saying you are now an expert."]),
+]

@@ -216,6 +216,7 @@ html:is([data-product="hr"], [data-console]) .wf-foot { border-top: 1px solid va
 /* tables breathe: dates stay on one line, long reasons get a readable width, actions never clip */
 html:is([data-product="hr"], [data-console]) table :is(th, td) { padding: 12px 14px; }
 html:is([data-product="hr"], [data-console]) table td:first-child, html:is([data-product="hr"], [data-console]) table td:has(> .btn), html:is([data-product="hr"], [data-console]) table td .row-actions { white-space: nowrap; }
+html:is([data-product="hr"], [data-console]) .legal-table td:first-child { white-space: normal; }  /* legal tables hold sentences, not ids */
 html:is([data-product="hr"], [data-console]) table td ul { min-width: 240px; margin: 0; padding-left: 18px; }
 
 /* cards carry the colour, not an edge: a white page, cards filled with a soft owl blue, white controls and table rows
@@ -236,6 +237,10 @@ html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.
 html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost) { border-color: transparent; background: oklch(1 0 0); }
 html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost):hover { border-color: transparent; background: var(--card-fill-deep); }
 html:is([data-product="hr"], [data-console]) :is(.own-plan-chip, .chip, .wf-suggestion, .ag-starter) { border-color: transparent; background: oklch(1 0 0); box-shadow: none; }
+/* the white chip fill above would hide a pressed chip's white text */
+html:is([data-product="hr"], [data-console]) .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+html:is([data-product="hr"], [data-console]) .goal-chip[aria-pressed="true"] { background: var(--sdg); border-color: var(--sdg); color: #fff; }
+html:is([data-product="hr"], [data-console]) .matches-head .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 html:is([data-product="hr"], [data-console]) .ag-starter { background: var(--card-fill); }
 html:is([data-product="hr"], [data-console]) .ag-composer { border-color: transparent; background: var(--card-fill); box-shadow: none; }
 html:is([data-product="hr"], [data-console]) :is(.seg, .wf-seg) { border: 0; background: var(--card-fill-deep); }
@@ -682,3 +687,30 @@ html[data-console] .hr-main.pub-main { width: auto; margin: 0; padding: 32px cla
   html:is([data-product="hr"], [data-console]) :is(.panel, .stat, .wf-stat, .block, .entry-card, .plan-reminder, .review-entry, .rail,
     .hr-account-menu, .usage-menu, .ag-history) { background: oklch(0.972 0.014 263) !important; }
 }
+
+/* sidebar in the owl's blue (the accent, hue 263): solid, white labels, the current page a white pill */
+html:is([data-product="hr"], [data-console]) .rail {
+  background: linear-gradient(180deg, oklch(0.47 0.17 263), oklch(0.37 0.14 265)); border-right: 0; color: oklch(1 0 0 / 0.88);
+  -webkit-backdrop-filter: none; backdrop-filter: none; }
+html:is([data-product="hr"], [data-console]) .rail :is(a, button, .wordmark, .lbl, .muted, small) { color: oklch(1 0 0 / 0.88); }
+html:is([data-product="hr"], [data-console]) .rail svg { color: oklch(1 0 0 / 0.78); }
+html:is([data-product="hr"], [data-console]) .rail svg .d { opacity: 0.2; }
+html:is([data-product="hr"], [data-console]) :is(.rail a, .rail .rail-group-btn, .rail .hr-account-btn):hover { background: oklch(1 0 0 / 0.14); color: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) :is(.rail a, .rail .rail-group-btn, .rail .hr-account-btn):hover svg { color: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] {
+  background: oklch(1 0 0); color: var(--owl-ink); font-weight: 600; box-shadow: 0 6px 16px -8px oklch(0.2 0.12 263 / 0.6); }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] svg,
+html:is([data-product="hr"], [data-console]) .rail .rail-group.has-current > .rail-group-btn svg:first-child { color: var(--accent); }
+html:is([data-product="hr"], [data-console]) .rail .rail-group.has-current > .rail-group-btn { color: oklch(1 0 0); font-weight: 600; }
+html:is([data-product="hr"], [data-console]) .rail :focus-visible { outline: 2px solid oklch(1 0 0); outline-offset: 2px; }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] .lbl { color: var(--owl-ink); }
+html:is([data-product="hr"], [data-console]) .rail .hr-account-btn :not(.u-avatar):not(svg):not(svg *) { color: oklch(1 0 0 / 0.75); }
+html:is([data-product="hr"], [data-console]) .rail .hr-account-btn b:not(.u-avatar):not(svg):not(svg *) { color: oklch(1 0 0); }
+/* menus that open from the sidebar (account, usage, folded groups) are white cards: keep their text dark */
+html:is([data-product="hr"], [data-console]) .rail :is([popover], .is-sidebar-collapsed .rail-sub) :is(a, button, span, b, small, .lbl, .muted) { color: var(--ink); }
+html:is([data-product="hr"], [data-console]) .rail :is([popover], .is-sidebar-collapsed .rail-sub) :is(small, .muted) { color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .rail :is([popover], .is-sidebar-collapsed .rail-sub) svg { color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .rail :is([popover], .is-sidebar-collapsed .rail-sub) :is(a, button):hover { background: var(--owl-wash); color: var(--owl-ink); }
+html:is([data-product="hr"], [data-console]) .rail :is([popover], .is-sidebar-collapsed .rail-sub) :is(a, button):hover svg { color: var(--accent); }
+@media (prefers-reduced-transparency: reduce) {
+  html:is([data-product="hr"], [data-console]) .rail { background: oklch(0.42 0.16 263) !important; } }

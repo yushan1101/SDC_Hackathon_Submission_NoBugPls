@@ -19,7 +19,9 @@ const onView = (el, vars) => {
 };
 
 // cards and sections that the app does not animate itself (reveal() handles the rest)
-const CARDS = ".way, .entry-card, .role-card, .sdg-library > li, .plan-item, .home-today, .radar-row, .board-meta, .sdg-mine, .plan-progress, .compare-wrap, .why-rows li";
+// Score rows are inside a collapsed <details> when inserted. Animating them on
+// scroll can leave the explanation invisible after the disclosure opens.
+const CARDS = ".way, .entry-card, .role-card, .sdg-library > li, .plan-item, .home-today, .radar-row, .board-meta, .sdg-mine, .plan-progress, .compare-wrap";
 
 function hero(el) {
   const tl = gsap.timeline({ defaults: { ease: EASE } });
@@ -27,14 +29,6 @@ function hero(el) {
   if (owl) tl.from(owl, { y: -24, scale: 0.85, opacity: 0, duration: 0.7, clearProps: "transform,opacity" });
   tl.from(el.querySelectorAll("h1, p"), { y: 26, opacity: 0, duration: 0.6, stagger: 0.08, clearProps: "transform,opacity" }, owl ? "-=0.4" : 0);
   if (owl) gsap.to(owl, { y: -6, duration: 2.4, ease: "sine.inOut", yoyo: true, repeat: -1, delay: 1 });  // gentle float
-}
-
-/** Draw a line chart from left to right. */
-function drawLine(pl) {
-  const len = pl.getTotalLength?.() || 0;
-  if (!len) return;
-  gsap.fromTo(pl, { strokeDasharray: len, strokeDashoffset: len }, { strokeDashoffset: 0, duration: 1.1, ease: "power2.out",
-    clearProps: "strokeDasharray,strokeDashoffset", scrollTrigger: ST ? { trigger: pl.ownerSVGElement, start: "top 96%", once: true } : undefined });
 }
 
 /** Count a figure up from zero, keeping its format (+5.1%, 31%, 1,210). */
@@ -69,7 +63,8 @@ function enhance(root) {
   all(".radar .rd-now").forEach((p) => gsap.from(p, { scale: 0, svgOrigin: "160 160", duration: 1, ease: "back.out(1.4)",
     scrollTrigger: ST ? { trigger: p.ownerSVGElement, start: "top 90%", once: true } : undefined }));
   all(".radar .rd-prev, .radar .rd-label").forEach((p) => gsap.from(p, { opacity: 0, duration: 0.6, delay: 0.5 }));
-  all(".spark polyline, .zline polyline").forEach(drawLine);
+  // Keep trend lines visible immediately. A deferred stroke-dash animation can
+  // leave charts blank when ScrollTrigger misses a nested scrolling pane.
   all(".pp-bar i, .sb-track i, .rl-bar i").forEach((i) => onView(i, { width: 0, duration: 0.9, ease: "power2.out", clearProps: "" }));
   all(".tc-figure b, .stat b, .fit .num, .bc-figure b").forEach(countUp);
   all(".btn, .chip").forEach((b) => {  // press feedback (scales in place, so it never moves from under the pointer)

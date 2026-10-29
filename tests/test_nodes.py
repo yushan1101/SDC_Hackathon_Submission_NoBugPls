@@ -37,6 +37,7 @@ def test_ai_writes_the_plan_steps_itself_and_bad_weeks_fall_back(monkeypatch):
             yield {"delta": text[i:i + 7]}
         yield {"usage": None}
     monkeypatch.setattr(llm, "generate_stream", fake_stream)
+    monkeypatch.setattr(llm, "generate", lambda *args, **kwargs: (None, None))
     events = []
     q, _ = pathway.personalise(p, "Data analyst", [Skill(name="Excel", level=4)], gaps, "Move into analytics", learning, events.append)
     kinds = [e["t"] for e in events]
@@ -50,3 +51,65 @@ def test_ai_writes_the_plan_steps_itself_and_bad_weeks_fall_back(monkeypatch):
     assert q.activities[0].activity.startswith("Rebuild your team's weekly Excel report") and q.activities[0].steps[0].startswith("Week 1:")
     assert q.activities[-1].activity == p.activities[-1].activity  # bad weeks: the template stays
     assert [a.estimated_hours for a in q.activities] == [a.estimated_hours for a in p.activities]  # hours never change
+    assert len(q.learning_nodes) == 39 and {n.week_number for n in q.learning_nodes} == set(range(1, 14))
+    assert all(n.title and n.learning_objective and n.topics and n.instructions and n.exercise and n.completion_criteria for n in q.learning_nodes)
+
+
+def test_learning_nodes_have_role_and_gap_specific_fallback(monkeypatch):
+    from agents import llm, pathway
+    from core.state import Gap, Skill
+    monkeypatch.setattr(llm, "generate_stream", lambda *args, **kwargs: iter(()))
+    monkeypatch.setattr(llm, "generate", lambda *args, **kwargs: (None, None))
+    gaps = [Gap(skill_id="SQL", current_level=1, required_level=4, gap=3),
+            Gap(skill_id="Data storytelling", current_level=2, required_level=3, gap=1)]
+    plan = pathway.build(gaps, 6, "Data analyst", "assistive", skills=[Skill(name="Excel", level=4)])
+    journey, _ = pathway.personalise(plan, "Data analyst", [Skill(name="Excel", level=4)], gaps)
+    assert len(journey.learning_nodes) == 39
+    node = journey.learning_nodes[0]
+    assert "Selecting and Filtering Rows" in node.title and "Data analyst" in node.learning_objective
+    assert node.exercise and node.deliverable and node.completion_criteria
+    assert "SELECT" in node.learn[0] and "WHERE" in node.learn[1]
+    assert [n.type for n in journey.learning_nodes[:3]] == ["learn", "practice", "quiz"]
+    assert journey.learning_nodes[2].quiz.options == ["WHERE", "ORDER BY"]
+    assert node.content_source == "guided_fallback"
+
+
+def test_distinct_skill_lessons_and_saved_week_expansion(monkeypatch):
+    from agents import pathway
+    from core.state import Gap, LearningNode, Pathway
+    design = [Gap(skill_id="Visual design", current_level=0, required_level=3, gap=3)]
+    p = pathway.build(design, 4, "Graphic designer", "assistive")
+    seed = pathway._node_seeds(p, design, "Graphic designer", [], {})[0]
+    lesson = LearningNode(**pathway._fallback_node(seed, "Graphic designer"))
+    nodes = pathway.expand_learning_nodes([lesson])
+    assert "Visual Hierarchy" in nodes[0].title and "poster" in nodes[1].exercise
+    assert nodes[2].quiz and "heading" in nodes[2].quiz.question
+    assert sum(n.estimated_minutes for n in nodes) == lesson.estimated_minutes
+    assert pathway.expand_learning_nodes(nodes) == nodes  # reloading never duplicates steps
+    Pathway(target_role=p.target_role, scenario=p.scenario, activities=p.activities,
+            learning_nodes=[LearningNode(**node.model_dump()) for node in nodes])
+
+
+def test_ai_lessons_expand_with_matching_quizzes_and_only_retrieved_resources(monkeypatch):
+    import json
+    from agents import llm, pathway
+    from core.state import Gap
+    gaps = [Gap(skill_id="Visual design", current_level=0, required_level=3, gap=3)]
+    plan = pathway.build(gaps, 4, "Graphic designer", "assistive")
+    lessons = [pathway._fallback_node(seed, plan.target_role) for seed in pathway._node_seeds(plan, gaps, plan.target_role, [], {})]
+    for lesson in lessons:
+        lesson["resource_ids"] = ["invented-course"]
+    lessons[1]["quiz"]["answer_index"] = 99  # unusable quiz falls back with its matching lesson
+    monkeypatch.setattr(llm, "generate", lambda *args, **kwargs: (json.dumps({"nodes": lessons}), None))
+    nodes, _ = pathway._learning_nodes(plan, plan.target_role, gaps, [], {})
+    assert len(nodes) == 39 and nodes[0].content_source == "ai"
+    assert all(not node.resource_ids for node in nodes)
+    assert nodes[3].content_source == "guided_fallback" and "Color and Contrast" in nodes[3].title
+    assert nodes[5].quiz.answer_index < len(nodes[5].quiz.options)
+
+
+def test_fallback_lessons_for_an_uncatalogued_skill_differ_each_week():
+    from agents.lessons import lesson_for
+    topics = [lesson_for("Electronics principles", week, 0)[0] for week in range(1, 14)]
+    assert len(set(topics)) == 13, topics
+    assert topics[0] == "Core Ideas of Electronics principles" and "Applying" not in " ".join(topics)

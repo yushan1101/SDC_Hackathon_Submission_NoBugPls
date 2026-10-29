@@ -1,6 +1,8 @@
 // Report building blocks shared by the public report and the Enterprise review pane.
 import { api, h, icon, toast, fmtTime, ApiError, reveal, RISE, DROP, GROW } from "./lib.js";
 import { jobIcon } from "./jobicons.js";
+import { roleRanking } from "./role-ranking.js";
+import { rankScore } from "./ranking-state.js";
 
 const PHASES = ["1-30", "31-60", "61-90"];
 const CITE = /\[([^\[\]]{3,120})\]/g;
@@ -178,6 +180,23 @@ function planActivityOutcome(activity) {
 }
 
 const DAY_MS = 864e5;
+// Weeks are dated inside their phase, like the plan schedules them: weeks 1-4 = days 1-30, 5-8 = 31-60, 9-13 = 61-90.
+// A phase's last week takes its leftover days (week 4: days 22-30); week 13 is the short days 89-90.
+const WEEK_PHASES = [[1, 4, 1, 30], [5, 8, 31, 60], [9, 13, 61, 90]];
+function weekDays(week) {  // -> [first day, last day], 1-based
+  const [lo, hi, from, to] = WEEK_PHASES.find(([lo, hi]) => week >= lo && week <= hi) || WEEK_PHASES[2];
+  const first = from + (week - lo) * 7;
+  return [first, week === hi ? to : first + 6];
+}
+const dayToWeek = (day) => { for (let w = 1; w <= 13; w++) if (day <= weekDays(w)[1]) return w; return 13; };
+function weekRange(week, startDate) {
+  const start = new Date(startDate || Date.now()); start.setHours(0, 0, 0, 0);
+  const fmt = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const [a, b] = weekDays(week);
+  return `${fmt(new Date(+start + (a - 1) * DAY_MS))} – ${fmt(new Date(+start + (b - 1) * DAY_MS))}`;
+}
+// this plan's current week (1-13), from its start date
+const currentWeek = (startDate) => dayToWeek(Math.max(1, Math.floor((Date.now() - (Date.parse(startDate || "") || Date.now())) / DAY_MS) + 1));
 
 /** Open the section subpage holding an activity card and scroll to the card. */
 function jumpTo(k) {
@@ -190,7 +209,6 @@ const PHASE_WEEK = { "1-30": 1, "31-60": 5, "61-90": 9 };
 
 /** Week-by-week agenda of a plan: what to do each week, dated from startDate, with this week highlighted. */
 function planCalendar(acts, startDate, done, key) {
-  const start = new Date(startDate || Date.now()); start.setHours(0, 0, 0, 0);
   const weeks = Array.from({ length: 13 }, () => []);
   for (const a of acts) for (const step of planActivitySteps(a)) {
     const m = step.match(/^\s*weeks?\s+(\d+)(?:\s*[-–]\s*(\d+))?\s*:\s*/i);
@@ -200,13 +218,11 @@ function planCalendar(acts, startDate, done, key) {
     const text = m ? step.slice(m[0].length) : step.replace(/^\s*end of month\s*:\s*/i, "");
     for (let w = Math.max(1, from); w <= Math.min(13, to); w++) weeks[w - 1].push({ a, text });
   }
-  const now = Math.floor((Date.now() - start) / DAY_MS / 7);  // 0-based index of this week
-  const fmt = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const now = currentWeek(startDate) - 1;  // 0-based index of this week
   const jump = (a) => jumpTo(key(a));
   const week = (items, i) => {
-    const from = new Date(+start + i * 7 * DAY_MS), to = new Date(+from + 6 * DAY_MS);
     return h("li", { class: `cal-week${i === now ? " is-now" : ""}${i < now ? " is-past" : ""}`, "aria-current": i === now ? "date" : null },
-      h("div", { class: "cal-head" }, h("b", {}, `Week ${i + 1}`), h("span", {}, i === now ? "This week" : `${fmt(from)} – ${fmt(to)}`)),
+      h("div", { class: "cal-head" }, h("b", {}, `Week ${i + 1}`), h("span", {}, i === now ? "This week" : weekRange(i + 1, startDate))),
       items.length ? h("ul", {}, items.map(({ a, text }) => h("li", { class: done.has(key(a)) ? "is-done" : null },
         h("button", { type: "button", class: "cal-item", title: text, onclick: () => jump(a) }, h("span", { class: "cal-skill" }, a.skill_id), h("span", {}, text)))))
         : h("p", { class: "cal-free" }, i === 12 ? "Wrap-up week" : "Catch-up week"));
@@ -219,13 +235,21 @@ function planCalendar(acts, startDate, done, key) {
 
 /** Editable 30/60/90 plan with approval. Talks to /api/plans/:id. Calls onChange(status) after saves. */
 export function planBlock({ planId, planReference, plan, version, status, weeklyHours, onChange, approverLabel = "I have reviewed this plan and approve it", title = "Your 90-day plan",
-  progress = [], evidence = null, readOnly = false, startDate = null, sectionHref = null }) {
+  progress = [], evidence = null, readOnly = false, startDate = null, sectionHref = null, selectedNodeId = null }) {
   // sectionHref(p | null) -> URL of a section subpage; when given, opening a section goes through the router (so Back works)
   // readOnly: HR looking at a plan an employee made for themself: no hours, ticks, saving or approval
   // progress: activities ticked off as done ("<days>:<skill>", saved on the server); evidence: id -> {title, url} for course links
   const done = new Set(progress);
   const key = (a) => `${a.day_range}:${a.skill_id}`;
   const ev = evidence instanceof Map ? evidence : new Map((evidence || []).map((e) => [e.id, e]));
+  const learningNodes = Array.isArray(plan.learning_nodes) ? plan.learning_nodes : [];
+  const phaseWeekRanges = { "1-30": [1, 4], "31-60": [5, 8], "61-90": [9, 13] };
+  const selectedNodeByPhase = { "1-30": null, "31-60": null, "61-90": null };
+  const selectedWeekByPhase = { "1-30": 1, "31-60": 5, "61-90": 9 };
+  const quizState = new Map(), criteriaState = new Map(), lessonTabs = new Map();
+  const journeyHosts = {};
+  const nodeDone = (node) => done.has(`node:${node.id}`);
+  const nodeStarted = (node) => criteriaState.has(node.id) || quizState.has(node.id);
   const courses = (a) => (a.evidence_ids || []).map((id) => ev.get(id)).filter((e) => e?.url && e.id.startsWith("learn:")).slice(0, 2);
   const cap = weeklyHours ? Math.round((weeklyHours * 30) / 7 * 10) / 10 : null;
   const acts = plan.activities.map((a) => ({ ...a }));
@@ -234,11 +258,16 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
   const phaseNames = ["Foundation", "Practical application", "Portfolio & review"];
   const tracks = {}, counts = {}, panes = {};
   let blockEl;
-  function openPane(p, fromRoute = false) {  // swap the journey overview for one section's subpage (null = back to the overview)
-    if (sectionHref && !fromRoute) { location.hash = sectionHref(p); return; }
+  function openPane(p, fromRoute = false, nodeId = null) {  // swap the journey overview for one section's subpage (null = back to the overview)
+    if (sectionHref && !fromRoute) { location.hash = sectionHref(p, nodeId); return; }
     if (p && !PHASES.includes(p)) p = null;
+    if (p && nodeId) {
+      const node = learningNodes.find((item) => item.id === nodeId);
+      if (node) { selectedNodeByPhase[p] = node.id; selectedWeekByPhase[p] = node.week_number; }
+    }
     blockEl.toggleAttribute("data-view", !!p);
     PHASES.forEach((x) => { panes[x].hidden = x !== p; });
+    if (p && nodeId) renderJourney(p);
     blockEl.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   const phases = PHASES.map((p, phaseIndex) => {
@@ -255,7 +284,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
         const n = String(s).replace(/\D/g, "");
         return h("span", { class: "sdg-n", style: { "--sdg": SDG_COLORS[n] || "#888" }, title: `UN SDG ${n}`, "aria-label": `UN SDG ${n}` }, n);
       });
-      const tick = planId && !readOnly ? h("label", { class: "act-done", title: "Mark this activity as done" },
+      const tick = planId && !readOnly && !learningNodes.length ? h("label", { class: "act-done", title: "Mark this activity as done" },
         h("input", { type: "checkbox", checked: done.has(key(a)) ? true : null, onchange: (e) => mark(a, e.target.checked, e.target) }), "Done") : null;
       const links = courses(a);
       const steps = planActivitySteps(a);
@@ -280,8 +309,10 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     const budget = h("div", { class: "budget", "aria-hidden": "true" },
       h("div", { style: { transform: `scaleX(${cap ? Math.min(1, used / cap) : 1})`, "transform-origin": "left", height: "100%" } },
         reveal(h("i"), GROW, { duration: 700 })));
-    const activityList = mine.length ? h("div", { class: "phase-activities" }, activityCards)
+    const activityList = mine.length ? h("details", { class: "phase-activity-budget", open: !learningNodes.length },
+      h("summary", {}, "Skill activities and learning hours"), h("div", { class: "phase-activities" }, activityCards))
       : h("p", { class: "note" }, "No activities in this phase.");
+    journeyHosts[p] = h("div", { class: "learning-journey", hidden: !learningNodes.length });
     tracks[p] = h("ol", { class: "phase-track", "aria-label": `Days ${p} activities` });
     counts[p] = h("span", { class: "phase-count" });
     // overview row: heading, count and step track; the activity cards live on the section's own subpage
@@ -292,58 +323,216 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
           h("button", { class: `btn sm${x === p ? " primary" : ""}`, type: "button", "aria-current": x === p ? "page" : null, onclick: () => openPane(x) },
             `Days ${x}`)))),
       h("div", { class: "phase-intro" }, heading.cloneNode(true), h("p", { class: "phase-summary" }, summary)),
-      h("div", { class: "phase-content" }, budget, activityList));
+      h("div", { class: "phase-content" }, budget, journeyHosts[p], activityList));
     return h("div", { class: "phase-row", "data-phase": p },
       h("span", { class: "phase-step", "aria-hidden": "true" }, phaseIndex + 1),
       h("div", { class: "phase" }, h("div", { class: "phase-toggle" },
         h("div", { class: "phase-intro" }, heading, h("p", { class: "phase-summary" }, summary, " ", counts[p]), tracks[p]),
         h("button", { class: "btn sm phase-open", type: "button", onclick: () => openPane(p) }, "View details", icon("chevron")))));
   });
+  const phaseForWeek = (week) => week <= 4 ? "1-30" : week <= 8 ? "31-60" : "61-90";
+  const weekBounds = (week) => weekRange(week, startDate);
+  const scrollRoadTo = (phase, week) => setTimeout(() => journeyHosts[phase]?.querySelector(`.road-week[data-week="${week}"]`)?.scrollIntoView({
+    behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest", inline: "center" }), 0);
+  const renderJourney = (phase) => {
+    const host = journeyHosts[phase];
+    if (!host || !learningNodes.length) return;
+    const [lo, hi] = phaseWeekRanges[phase];
+    const nodes = learningNodes.filter((node) => node.week_number >= lo && node.week_number <= hi)
+      .sort((a, b) => a.week_number - b.week_number ||
+        ["learn", "practice", "project", "review", "quiz"].indexOf(a.type) - ["learn", "practice", "project", "review", "quiz"].indexOf(b.type));
+    const selectedWeek = selectedWeekByPhase[phase];
+    const selectedNode = learningNodes.find((node) => node.id === selectedNodeByPhase[phase]);
+    const weekNodes = (week) => nodes.filter((node) => node.week_number === week);
+    const stateForWeek = (week) => {
+      const group = weekNodes(week);
+      if (group.length && group.every(nodeDone)) return "Completed";
+      if (group.some((node) => nodeDone(node) || nodeStarted(node))) return "In progress";
+      return "Not started";
+    };
+    const weeks = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+    const calendar = h("div", { class: "learning-weeks", role: "group", "aria-label": `Weekly learning schedule for days ${phase}` },
+      ...weeks.map((week) => {
+        const weekly = weekNodes(week);
+        const state = stateForWeek(week);
+        const weeklyProgress = weekly.reduce((total, node) => total + (nodeDone(node) ? 1 : nodeStarted(node) ? 0.5 : 0), 0);
+        return h("button", { type: "button", class: `learning-week${week === selectedWeek ? " is-selected" : ""}${week === nowWeek ? " is-current" : ""}`,
+          "aria-pressed": String(week === selectedWeek), "data-week": String(week), onclick: () => {
+            selectedWeekByPhase[phase] = week; renderAllJourneys();
+            scrollRoadTo(phase, week);
+          } }, h("span", { class: "learning-week-title" }, `Week ${week}`, week === nowWeek ? h("span", { class: "learning-current" }, "Current") : null),
+          h("span", { class: "learning-week-date" }, weekBounds(week)),
+          h("span", { class: "learning-week-focus" }, [...new Set(weekly.flatMap((node) => node.topics || node.skills))].join(" · ") || "Scheduled learning"),
+          h("span", { class: "learning-week-skills" }, [...new Set(weekly.flatMap((node) => node.skills))].join(" · ")),
+          week === selectedWeek ? h("span", { class: "learning-week-selected" }, "Selected") : null,
+          h("span", { class: "learning-week-meta" }, `${weekly.length} step${weekly.length === 1 ? "" : "s"} · ${weekly.reduce((n, node) => n + node.estimated_minutes, 0)} min · ${state}`),
+          h("span", { class: "learning-week-progress", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(weekly.length),
+            "aria-valuenow": String(weeklyProgress), "aria-label": `${stateForWeek(week)}: ${weeklyProgress} of ${weekly.length} step equivalents` },
+            h("i", { style: { width: `${weekly.length ? weeklyProgress / weekly.length * 100 : 0}%` } })));
+      }));
+    const roadWeeks = weeks.map((week) => {
+      const buttons = weekNodes(week).map((node) => {
+          const complete = nodeDone(node), started = nodeStarted(node), active = node.id === selectedNodeByPhase[phase];
+          return h("button", { type: "button", class: `road-node${complete ? " is-done" : ""}${started ? " is-started" : ""}${active ? " is-active" : ""}${week === selectedWeek ? " is-week-selected" : ""}`,
+            "aria-pressed": String(active), "aria-label": `${node.title}, week ${week}, ${complete ? "completed" : started ? "in progress" : "not started"}`,
+            onclick: () => selectNode(node) },
+            h("span", { class: "road-node-icon", "aria-hidden": "true" }, icon(complete ? "check" : node.type === "learn" ? "sources" : node.type === "quiz" ? "target" : "edit")),
+            h("span", { class: "road-node-title" }, node.title), h("span", { class: "road-node-type" }, node.type === "quiz" ? "Quiz" : node.type[0].toUpperCase() + node.type.slice(1)),
+            h("span", { class: "sr-only" }, complete ? "Completed" : started ? "In progress" : "Not started"));
+      });
+      return h("div", { class: `road-week${week === selectedWeek ? " is-selected" : ""}${week === nowWeek ? " is-current" : ""}`,
+        "data-week": String(week), style: { "--steps": Math.max(1, buttons.length) } },
+        h("div", { class: "road-week-heading" }, h("h5", {}, `Week ${week}`), h("span", {}, `${buttons.length} learning steps`)), h("div", { class: "road-nodes" }, ...buttons));
+    });
+    const firstOpen = nodes.findIndex((node) => !nodeDone(node));
+    const completedPrefix = firstOpen < 0 ? nodes.length : firstOpen;
+    const road = h("div", { class: "learning-road-scroll", tabindex: "0", "aria-label": "Scrollable learning roadmap" },
+      h("div", { class: "learning-road", style: { "--road-progress-number": String(nodes.length ? completedPrefix / nodes.length : 0) } }, ...roadWeeks));
+    const controls = h("div", { class: "learning-road-controls" },
+      h("span", { class: "muted" }, "Scroll to explore all steps. Selecting a week highlights it; selecting a node opens its lesson."),
+      h("button", { class: "btn sm", type: "button", onclick: () => { const current = Math.max(lo, Math.min(hi, nowWeek)); selectedWeekByPhase[phase] = current; renderAllJourneys();
+        scrollRoadTo(phase, current); } }, "Scroll to current week"));
+    const lesson = selectedNode && phaseForWeek(selectedNode.week_number) === phase ? renderLearningLesson(selectedNode) :
+      h("section", { class: "learning-lesson learning-lesson-empty" }, h("p", {}, "Select a learning step to open its mini-lesson."));
+    host.replaceChildren(h("header", { class: "learning-journey-heading" }, h("h4", {}, `${phaseNames[PHASES.indexOf(phase)]} Learning Roadmap`),
+      h("p", {}, `Days ${phase} · One continuous journey across ${weeks.length} weeks`)), calendar,
+      h("div", { class: "learning-road-heading" }, h("h4", {}, "Connected learning path"), h("span", {}, "↔ Scroll sideways")), road, controls, lesson);
+  };
+  const renderLearningLesson = (node) => {
+    const week = node.week_number;
+    const state = quizState.get(node.id) || {};
+    const criteria = criteriaState.get(node.id) || (nodeDone(node) ? node.completion_criteria.map(() => true) : node.completion_criteria.map(() => false));
+    const quizOk = !node.quiz || state.correct === true || nodeDone(node);
+    const criteriaOk = criteria.every(Boolean);
+    const activeTab = lessonTabs.get(node.id) || (node.type === "quiz" ? "quiz" : ["practice", "project"].includes(node.type) ? "practice" : "learn");
+    const tabs = h("nav", { class: "learning-lesson-tabs", "aria-label": "Lesson sections" },
+      ...["learn", "practice", ...(node.quiz ? ["quiz"] : [])].map((tab) => h("button", {
+        type: "button", class: activeTab === tab ? "is-active" : null, "aria-pressed": String(activeTab === tab),
+        onclick: () => { lessonTabs.set(node.id, tab); renderAllJourneys(); }
+      }, tab[0].toUpperCase() + tab.slice(1))));
+    const refs = (node.resource_ids || []).map((id) => ev.get(id)).filter((e) => e?.url);
+    const journeyIndex = learningNodes.findIndex((item) => item.id === node.id);
+    const beforeNode = learningNodes[journeyIndex - 1], afterNode = learningNodes[journeyIndex + 1];
+    const stepNav = h("nav", { class: "learning-step-nav", "aria-label": "Learning step navigation" },
+      h("button", { class: "btn sm", type: "button", disabled: !beforeNode ? true : null, onclick: () => beforeNode && selectNode(beforeNode) }, "Previous step"),
+      h("span", { class: "muted" }, `${journeyIndex + 1} of ${learningNodes.length}`),
+      h("button", { class: "btn sm primary", type: "button", disabled: !afterNode ? true : null, onclick: () => afterNode && selectNode(afterNode) }, "Next step"));
+    const quiz = node.quiz ? h("section", { class: "learning-section learning-quiz" }, h("h5", {}, "Quiz · check your understanding"),
+      h("p", {}, node.quiz.question), h("div", { class: "learning-options", role: "group", "aria-label": node.quiz.question },
+        ...node.quiz.options.map((option, index) => h("button", { type: "button", class: `learning-option${state.answer === index ? state.correct ? " is-correct" : " is-wrong" : ""}`,
+          "aria-pressed": String(state.answer === index), onclick: () => { quizState.set(node.id, { answer: index, correct: index === node.quiz.answer_index }); renderAllJourneys(); } }, option))),
+      state.answer != null ? h("p", { class: `learning-feedback${state.correct ? " is-correct" : " is-wrong"}`, role: "status" },
+        state.correct ? `Correct. ${node.quiz.explanation}` : `Not quite. ${node.quiz.explanation}`,
+        !state.correct ? h("button", { type: "button", class: "btn sm", onclick: () => { quizState.delete(node.id); renderAllJourneys(); } }, "Try again") : null) : null) : null;
+    return h("section", { class: "learning-lesson", "aria-labelledby": `lesson-${node.id}` },
+      h("header", { class: "learning-lesson-header" }, h("div", {}, h("p", { class: "eyebrow" }, `Week ${week} selected · ${learningNodes.filter((item) => item.week_number === week).length} learning steps`),
+        h("h4", { id: `lesson-${node.id}` }, node.title), h("div", { class: "learning-skill-tags" }, ...node.skills.map((skill) => h("span", { class: "tag" }, skill)),
+          h("span", { class: "tag learning-source" }, node.content_source === "ai" ? "Personalized lesson" : "Guided lesson"))),
+        h("span", { class: `learning-node-status${nodeDone(node) ? " is-done" : ""}` }, nodeDone(node) ? "✓ Completed" : `${node.estimated_minutes} min`)),
+      stepNav, tabs,
+      h("section", { class: "learning-section" }, h("h5", {}, "Learning objective"), h("p", {}, node.learning_objective)),
+      h("section", { class: "learning-section", hidden: activeTab !== "learn" }, h("h5", {}, "Learn"),
+        node.topics?.length ? h("ul", { class: "learning-topics" }, ...node.topics.map((topic) => h("li", {}, topic))) : null,
+        ...node.learn.map((part) => h("p", {}, part))),
+      h("section", { class: "learning-section", hidden: activeTab !== "learn" }, h("h5", {}, "How to learn"), h("ol", {}, ...node.instructions.map((step) => h("li", {}, step)))),
+      h("section", { class: "learning-section", hidden: activeTab !== "learn" }, h("h5", {}, "Resources"), refs.length ? h("ul", { class: "learning-resources" }, ...refs.map((resource) =>
+        h("li", {}, h("a", { href: currentSourceUrl(resource.url), target: "_blank", rel: "noopener noreferrer" }, resource.title),
+          h("span", { class: "muted" }, ` · ${resource.publisher || "Verified source"} · ${resource.category || "Learning resource"}${resource.id.startsWith("learn:") ? " · Free" : ""}`)))) :
+        h("p", { class: "muted" }, "No verified resource link was retrieved for this step. Use the Learn and Practice instructions below.")),
+      h("section", { class: "learning-section", hidden: activeTab !== "practice" }, h("h5", {}, "Practice"), h("p", {}, node.exercise), h("p", {}, h("b", {}, "Deliverable: "), node.deliverable)),
+      node.quiz ? h("div", { hidden: activeTab !== "quiz" }, quiz) : null,
+      h("section", { class: "learning-section learning-completion" }, h("h5", {}, "Completion criteria"),
+        h("p", { class: "muted" }, "Check each item after doing the work. Completion records this activity; it does not change your verified skill level."),
+        ...node.completion_criteria.map((criterion, index) => h("label", { class: "learning-criterion" },
+          h("input", { type: "checkbox", checked: criteria[index] ? true : null, disabled: readOnly || nodeDone(node) ? true : null,
+            onchange: (event) => { const next = [...criteria]; next[index] = event.target.checked; criteriaState.set(node.id, next); renderAllJourneys(); } }), criterion)),
+        h("p", { class: "learning-outcome" }, h("b", {}, "Expected outcome: "), node.expected_outcome),
+        planId && !readOnly ? h("button", { class: `btn ${nodeDone(node) ? "ghost" : "primary"}`, type: "button",
+          disabled: !nodeDone(node) && (!criteriaOk || !quizOk) ? true : null, onclick: () => markNode(node, !nodeDone(node)) },
+          nodeDone(node) ? "Mark as not completed" : "Mark learning step complete") : h("p", { class: "muted" }, nodeDone(node) ? "Completed" : "Progress is read-only")));
+  };
+  function renderAllJourneys() { PHASES.forEach(renderJourney); }
+  function selectNode(node) {
+    const phase = phaseForWeek(node.week_number);
+    selectedWeekByPhase[phase] = node.week_number;
+    selectedNodeByPhase[phase] = node.id;
+    const activePhase = blockEl?.querySelector(".phase-detail:not([hidden])")?.dataset.pane;
+    if (activePhase !== phase) openPane(phase, false, node.id);
+    else { renderAllJourneys(); scrollRoadTo(phase, node.week_number); }
+  }
+  const nowWeek = currentWeek(startDate);
+  PHASES.forEach((phase) => {
+    const [lo, hi] = phaseWeekRanges[phase]; selectedWeekByPhase[phase] = Math.min(hi, Math.max(lo, nowWeek));
+    const group = learningNodes.filter((node) => node.week_number === selectedWeekByPhase[phase]);
+    selectedNodeByPhase[phase] = (group.find((node) => !nodeDone(node)) || group[0])?.id || null;
+  });
+  const routedNode = learningNodes.find((node) => node.id === selectedNodeId);
+  if (routedNode) {
+    const routedPhase = phaseForWeek(routedNode.week_number);
+    selectedNodeByPhase[routedPhase] = routedNode.id;
+    selectedWeekByPhase[routedPhase] = routedNode.week_number;
+  }
   const progressEl = h("div", { class: "plan-progress plan-stats" });
   const asideEl = h("aside", { class: "plan-aside", "aria-label": "What's next" });
-  const calEl = h("details", { class: "plan-cal-wrap", open: true }, h("summary", {}, icon("grid"), "Calendar: what to do each week"));
+  const calEl = h("details", { class: "plan-cal-wrap", open: true, hidden: learningNodes.length ? true : null }, h("summary", {}, icon("grid"), "Calendar: what to do each week"));
   const startMs = Date.parse(startDate || "") || Date.now();
   function drawProgress() {
     calEl.replaceChildren(calEl.firstChild, planCalendar(acts, startDate, done, key));
-    const total = acts.length, n = acts.filter((a) => done.has(key(a))).length, pct = total ? Math.round((100 * n) / total) : 0;
+    renderAllJourneys();
+    const total = learningNodes.length || acts.length;
+    const n = learningNodes.length ? learningNodes.filter(nodeDone).length : acts.filter((a) => done.has(key(a))).length;
+    const pct = total ? Math.round((100 * n) / total) : 0;
     const hrs = (xs) => Math.round(xs.reduce((s, a) => s + a.estimated_hours, 0) * 10) / 10;
     const inPhase = (p) => acts.filter((a) => a.day_range === p);
-    const reached = PHASES.filter((p) => inPhase(p).length && inPhase(p).every((a) => done.has(key(a))));
+    const phaseNodes = (p) => { const [lo, hi] = phaseWeekRanges[p]; return learningNodes.filter((node) => node.week_number >= lo && node.week_number <= hi); };
+    const phaseDone = (p) => learningNodes.length ? phaseNodes(p).filter(nodeDone).length : inPhase(p).filter((a) => done.has(key(a))).length;
+    const phaseTotal = (p) => learningNodes.length ? phaseNodes(p).length : inPhase(p).length;
+    const reached = PHASES.filter((p) => phaseTotal(p) && phaseDone(p) === phaseTotal(p));
     const daysLeft = Math.max(0, 90 - Math.floor((Date.now() - startMs) / DAY_MS));
-    const next = acts.find((a) => !done.has(key(a)));
+    const next = learningNodes.length ? learningNodes.find((node) => !nodeDone(node)) : acts.find((a) => !done.has(key(a)));
     progressEl.replaceChildren(
       h("div", { class: "ps-main" },
         h("div", { class: "ps-ring", style: { "--pct": pct }, role: "img", "aria-label": `${pct}% done` }, h("b", {}, `${pct}%`)),
-        h("div", { class: "ps-text" }, h("b", {}, "Overall progress"), h("span", { class: "muted" }, `${n} of ${total} activities done · ${hrs(acts.filter((a) => done.has(key(a))))} of ${hrs(acts)} h`),
+        h("div", { class: "ps-text" }, h("b", {}, "Overall progress"), h("span", { class: "muted" }, learningNodes.length
+          ? `${n} of ${total} learning steps complete · estimated activity budget ${hrs(acts)} h`
+          : `${n} of ${total} activities done · ${hrs(acts.filter((a) => done.has(key(a))))} of ${hrs(acts)} h`),
           h("div", { class: "pp-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(total), "aria-valuenow": String(n), "aria-label": "Plan progress" },
             h("i", { style: { width: `${pct}%` } })))),
       h("div", { class: "ps-stat" }, h("span", { class: "ps-icon" }, icon("target")), h("div", {}, h("b", {}, `${reached.length} of 3`), h("span", { class: "muted" }, "Milestones reached"))),
       h("div", { class: "ps-stat" }, h("span", { class: "ps-icon" }, icon("grid")), h("div", {}, h("b", {}, String(daysLeft)), h("span", { class: "muted" }, "Days remaining"))));
     PHASES.forEach((p) => {
       const xs = inPhase(p);
-      counts[p].replaceChildren(icon(xs.length && xs.every((a) => done.has(key(a))) ? "check" : "target"), `${xs.filter((a) => done.has(key(a))).length} of ${xs.length} done`);
+      counts[p].replaceChildren(icon(phaseTotal(p) && phaseDone(p) === phaseTotal(p) ? "check" : "target"), `${phaseDone(p)} of ${phaseTotal(p)} learning steps done`);
       tracks[p].replaceChildren(...xs.map((a) => {
-        const st = done.has(key(a)) ? "done" : a === next ? "now" : "todo";
+        const linked = learningNodes.filter((node) => node.activity_keys?.includes(key(a)));
+        const finished = done.has(key(a)) || (linked.length > 0 && linked.every(nodeDone));
+        const st = finished ? "done" : !learningNodes.length && a === next || learningNodes.length && linked.some((node) => node.id === next?.id) ? "now" : "todo";
         return h("li", { class: `pt-${st}` }, h("button", { type: "button", "aria-current": st === "now" ? "step" : null,
           onclick: (e) => { e.preventDefault(); e.stopPropagation(); jumpTo(key(a)); } },
           h("span", { class: "pt-dot" }, st === "done" ? icon("check") : null),
           h("span", { class: "pt-label" }, a.skill_id), h("span", { class: "pt-tag" }, `${a.estimated_hours} h`)));
       }));
     });
-    const nextPhase = PHASES.find((p) => !reached.includes(p) && inPhase(p).length);
+    const nextPhase = PHASES.find((p) => !reached.includes(p) && phaseTotal(p));
     asideEl.replaceChildren(
       next ? h("section", { class: "aside-card" },
-        h("div", { class: "aside-head" }, h("h4", {}, "Your next activity"), h("span", { class: "pt-tag" }, `Days ${next.day_range}`)),
-        h("b", { class: "aside-skill" }, next.skill_id),
-        h("p", {}, next.activity),
-        h("p", { class: "muted aside-step" }, planActivitySteps(next)[0]),
-        h("div", { class: "aside-meta" }, h("span", {}, icon("clock"), `${next.estimated_hours} h`)),
-        h("button", { class: "btn primary", type: "button", onclick: () => jumpTo(key(next)) }, "Continue learning"))
+        h("div", { class: "aside-head" }, h("h4", {}, learningNodes.length ? "Your next learning step" : "Your next activity"),
+          h("span", { class: "pt-tag" }, learningNodes.length ? `Week ${next.week_number}` : `Days ${next.day_range}`)),
+        h("b", { class: "aside-skill" }, learningNodes.length ? next.title : next.skill_id),
+        h("p", {}, learningNodes.length ? next.learning_objective : next.activity),
+        h("p", { class: "muted aside-step" }, learningNodes.length ? next.instructions[0] : planActivitySteps(next)[0]),
+        h("div", { class: "aside-meta" }, h("span", {}, icon("clock"), learningNodes.length ? `${next.estimated_minutes} min estimate` : `${next.estimated_hours} h`)),
+        h("button", { class: "btn primary", type: "button", onclick: () => {
+          if (!learningNodes.length) return jumpTo(key(next));
+          const phase = phaseForWeek(next.week_number); selectedWeekByPhase[phase] = next.week_number; selectedNodeByPhase[phase] = next.id;
+          openPane(phase, false, next.id); renderAllJourneys(); setTimeout(() => journeyHosts[phase]?.querySelector(`.road-week[data-week="${next.week_number}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" }), 160);
+        } }, "Continue learning"))
         : h("section", { class: "aside-card" }, h("h4", {}, "All activities done"), h("p", {}, "You've finished every activity in this plan.")),
       nextPhase ? h("section", { class: "aside-card" },
         h("h4", {}, `Next milestone · Day ${nextPhase.split("-")[1]}`),
         h("p", { class: "muted" }, `Finish ${phaseNames[PHASES.indexOf(nextPhase)].toLowerCase()} activities:`),
-        h("ul", { class: "aside-list" }, inPhase(nextPhase).map((a) => h("li", { class: done.has(key(a)) ? "is-done" : null },
+        h("ul", { class: "aside-list" }, learningNodes.length ? phaseNodes(nextPhase).map((node) => h("li", { class: nodeDone(node) ? "is-done" : null },
+          icon(nodeDone(node) ? "check" : "target"), node.title)) : inPhase(nextPhase).map((a) => h("li", { class: done.has(key(a)) ? "is-done" : null },
           icon(done.has(key(a)) ? "check" : "target"), a.skill_id)))) : null);
   }
   async function mark(a, value, box) {
@@ -352,6 +541,13 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     drawProgress();
     try { await api(`/api/plans/${planId}/progress`, { method: "POST", body: { item: key(a), done: value } }); }
     catch (e) { value ? done.delete(key(a)) : done.add(key(a)); box.checked = !value; box.closest(".act")?.classList.toggle("is-done", !value); drawProgress(); toast(e.message, "err"); }
+  }
+  async function markNode(node, value) {
+    const item = `node:${node.id}`;
+    value ? done.add(item) : done.delete(item);
+    drawProgress();
+    try { await api(`/api/plans/${planId}/progress`, { method: "POST", body: { item, done: value } }); }
+    catch (e) { value ? done.delete(item) : done.add(item); drawProgress(); toast(e.message, "err"); }
   }
   drawProgress();
   const planEl = h("div", { class: "plan" }, phases,
@@ -400,9 +596,108 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
       h("summary", {}, `${plan.deferred_skills.length} more skills don't fit in ${weeklyHours ? weeklyHours + " h/week" : "the weekly hours"}; the plan covers the highest-priority gaps first.`),
       h("p", {}, plan.deferred_skills.join(", "))) : null,
     h("div", { class: "plan-layout" }, h("div", { class: "plan-main" }, h("div", { class: "plan-overview" }, planEl, calEl, sdgGuide), PHASES.map((p) => panes[p])), asideEl),
+    planId ? diagramsBlock(planId, version) : null,
     errBox, readOnly ? null : bar);
   blockEl.openPane = openPane;
   return reveal(blockEl, RISE, { duration: 420 });
+}
+
+// --- plan diagrams: built on the server from the latest plan version (src/diagrams), drawn here with the vendored
+// Mermaid and Chart.js, loaded only when the section scrolls into view
+const scripts = {};
+const loadScript = (name) => scripts[name] ||= new Promise((ok, fail) => document.head.append(
+  h("script", { src: new URL(`../vendor/${name}`, import.meta.url).href, onload: ok, onerror: () => { delete scripts[name]; fail(new Error(`Could not load ${name}`)); } })));
+let diagramSeq = 0;
+
+function diagramsBlock(planId, version) {
+  const tabs = h("div", { class: "seg pd-tabs", role: "tablist", "aria-label": "Plan diagrams" });
+  const stage = h("div", { class: "pd-stage" }, h("p", { class: "muted" }, "Drawing your plan diagrams…"));
+  const side = h("aside", { class: "pd-side", "aria-live": "polite" });
+  const notes = h("div");
+  const el = h("section", { class: "pd", "aria-label": "Plan diagrams" },
+    h("header", { class: "pd-head" }, h("h4", {}, "Plan diagrams"), h("p", { class: "muted" }, "Generated from this plan version; they change when the plan changes.")),
+    notes, tabs, h("div", { class: "pd-body" }, stage, side));
+  let started = false;
+  const start = () => { if (!started && el.isConnected) { started = true; seen.disconnect(); draw(); } };
+  const seen = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && start(), { rootMargin: "300px" });
+  seen.observe(el);
+  setTimeout(start, 2000);  // background tabs never report intersection
+
+  async function draw() {
+    let data;
+    try {
+      [data] = await Promise.all([api(`/api/plans/${planId}/diagrams?v=${version || ""}`), loadScript("mermaid.min.js"), loadScript("chart.umd.min.js")]);
+    } catch (e) { stage.replaceChildren(h("p", { class: "issue error" }, `Diagrams unavailable: ${e.message}`)); return; }
+    const { plan, diagrams } = data;
+    const byId = Object.fromEntries(plan.skills.map((s) => [s.id, s]));
+    notes.replaceChildren(...data.notes.map((n) => h("p", { class: "note" }, n)));
+    const showSkill = (id) => {
+      const s = byId[id]; if (!s) return;
+      const res = plan.resources.filter((r) => r.skill_id === id);
+      side.replaceChildren(h("h5", {}, s.name),
+        h("p", {}, h("span", { class: `tag pd-${s.priority}` }, `${s.priority} priority`), " ", h("span", { class: "muted" }, s.category)),
+        h("p", {}, `Level ${s.level_now} → ${s.level_target}`),
+        h("p", {}, h("b", {}, "Phase: "), plan.phases.filter((p) => p.skills.includes(id)).map((p) => p.name).join(", ") || "not scheduled"),
+        s.depends_on.length ? h("p", {}, h("b", {}, "Learn first: "), s.depends_on.map((d) => byId[d]?.name || d).join(", ")) : "",
+        h("b", {}, "Resources"),
+        res.length ? h("ul", {}, res.map((r) => h("li", {}, r.url ? h("a", { href: r.url, target: "_blank", rel: "noopener noreferrer" }, r.title) : r.title,
+          h("span", { class: "muted" }, ` · ${r.type}${r.est_hours ? ` · ${r.est_hours} h` : ""}`)))) : h("p", { class: "muted" }, "No resources listed."),
+        h("button", { class: "btn sm ghost", type: "button", onclick: skillList }, icon("back"), "All skills"));
+    };
+    const skillList = () => side.replaceChildren(h("h5", {}, "Skills"), h("p", { class: "muted" }, "Select a skill, or a skill in a diagram."),
+      h("ul", { class: "pd-skills" }, plan.skills.map((s) => h("li", {}, h("button", { type: "button", class: "btn sm", onclick: () => showSkill(s.id) },
+        h("span", { class: `tag pd-${s.priority}` }, s.priority[0].toUpperCase()), s.name)))));
+    skillList();
+    window.showSkill = showSkill;  // Mermaid "click ... call showSkill()" targets
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light";
+    mermaid.initialize({ startOnLoad: false, securityLevel: "loose", theme: dark ? "dark" : "default", htmlLabels: false, flowchart: { htmlLabels: false },
+      gantt: { fontSize: 14, sectionFontSize: 14, barHeight: 26, barGap: 6, leftPadding: 170, useWidth: 1000 } });
+    let chart = null;
+    const save = (href, name) => h("a", { href, download: name }).click();
+    async function open(d) {
+      tabs.querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.key === d.key)));
+      chart?.destroy(); chart = null;
+      const canvas = d.lang === "chartjs" ? h("canvas", { "aria-label": d.title }) : null;
+      const host = h("div", { class: "pd-mm" });
+      const svgBtn = h("button", { class: "btn sm", type: "button", hidden: d.lang !== "mermaid" || !d.code }, "SVG");
+      const pngBtn = h("button", { class: "btn sm", type: "button", hidden: !d.code }, "PNG");
+      stage.replaceChildren(h("div", { class: "pd-bar" }, h("b", {}, d.title), h("span", { class: "pd-dl" }, svgBtn, pngBtn)),
+        d.note ? h("p", { class: "note" }, d.note) : "", canvas ? h("div", { class: "pd-canvas" }, canvas) : host);
+      if (d.lang === "mermaid" && d.code) {
+        try {
+          const { svg, bindFunctions } = await mermaid.render(`pd-${planId}-${d.key}-${++diagramSeq}`, d.code);
+          host.innerHTML = svg; bindFunctions?.(host);
+          const out = host.querySelector("svg"), vb = out?.viewBox.baseVal;  // fit to width, unless that would shrink it past readable: then scroll
+          if (vb?.width > host.clientWidth * 1.6) { out.setAttribute("width", vb.width); out.setAttribute("height", vb.height); out.style.maxWidth = "none"; }
+        } catch (e) { host.replaceChildren(h("p", { class: "issue error" }, `This diagram could not be drawn: ${e.message || e}`)); }
+      } else if (canvas) {
+        const cfg = JSON.parse(d.code), css = (v) => getComputedStyle(el).getPropertyValue(v).trim() || undefined;
+        const accent = css("--accent") || "#2a5bd7", muted = css("--ink-2") || "#5a6378", danger = css("--danger") || "#c0392b";
+        cfg.data.datasets.forEach((s) => {
+          if (s.role === "now") Object.assign(s, { borderColor: muted, backgroundColor: "rgba(90,99,120,.25)" });
+          if (s.role === "target") Object.assign(s, { borderColor: accent, backgroundColor: "rgba(42,91,215,.25)" });
+          if (s.role === "planned") s.backgroundColor = cfg.data.over.map((o) => (o ? danger : accent));
+          if (s.role === "capacity") Object.assign(s, { borderColor: danger, borderDash: [6, 4], pointRadius: 0, backgroundColor: "transparent" });
+        });
+        cfg.options = { ...cfg.options, maintainAspectRatio: false, animation: { duration: 300 },
+          onClick: (_, els) => { const i = els[0]?.index; if (i != null && cfg.data.ids) showSkill(cfg.data.ids[i]); } };
+        chart = new Chart(canvas, cfg);
+      }
+      svgBtn.onclick = () => { const svg = host.querySelector("svg"); if (svg) save(URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" })), `${d.key}.svg`); };
+      pngBtn.onclick = () => {
+        if (chart) return save(chart.toBase64Image("image/png", 1), `${d.key}.png`);
+        const svg = host.querySelector("svg"); if (!svg) return;
+        const box = svg.getBoundingClientRect(), img = new Image(), clone = svg.cloneNode(true);
+        clone.setAttribute("width", box.width); clone.setAttribute("height", box.height);
+        img.onload = () => { const c = h("canvas", { width: box.width * 2, height: box.height * 2 }), g = c.getContext("2d");
+          g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height); save(c.toDataURL("image/png"), `${d.key}.png`); };
+        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(clone));
+      };
+    }
+    tabs.replaceChildren(...diagrams.map((d) => h("button", { type: "button", role: "tab", "data-key": d.key, onclick: () => open(d) }, d.title)));
+    open(diagrams[0]);
+  }
+  return el;
 }
 
 export function historyBlock(hist) {
@@ -508,31 +803,41 @@ const effort = (m) => { const c = m.coverage - (m.stretch ? 0.15 : 0);
 const signed = (x) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(Math.round(x * 100))}%`;
 
 /** Why a role scored what it did: each part of the score, the trend effect, the effort, and the role itself (ESCO). */
+const roleDescriptionCache = new Map();
+function roleAbout(m) {
+  const about = h("div", { class: "role-about" }, h("p", { class: "muted" }, "Loading the role description…"));
+  if (!roleDescriptionCache.has(m.soc)) {
+    const request = api(`/api/occupations/${m.soc}`).catch((e) => { roleDescriptionCache.delete(m.soc); throw e; });
+    roleDescriptionCache.set(m.soc, request);
+  }
+  roleDescriptionCache.get(m.soc).then((o) => about.replaceChildren(h("h5", {}, "About this role"),
+    h("p", {}, o.description),
+    o.skills?.length ? h("p", { class: "role-skills" }, h("b", {}, "Main skills: "), o.skills.slice(0, 6).map((s) => s.name).join(", ")) : null,
+    h("a", { href: o.url, target: "_blank", rel: "noopener noreferrer" }, "Full ESCO occupation page")))
+    .catch(() => about.replaceChildren(h("p", { class: "muted" }, "Role description unavailable right now.")));
+  return about;
+}
+
 function whyScore(m) {
   const row = (label, value, hint) => h("li", {}, h("span", {}, label, hint ? h("small", {}, hint) : null), h("b", {}, value));
-  const about = h("div", { class: "role-about" }, h("p", { class: "muted" }, "Loading the role description…"));
   const d = h("details", { class: "why-score" }, h("summary", {}, icon("info"), "Why this score"),
     h("ul", { class: "why-rows" },
-      row("Skills you already have", pct(m.coverage), "share of this role's ESCO skills, weighted by importance"),
+      row("Rank Score", rankScore(m.score), "Determines position: scenario match × AI trend adjustment × training adjustment. Native score, not out of 100."),
+      row("Match Score", pct(m.fit), "Estimated fit under the selected scenario, before AI trend weighting and the training adjustment."),
+      row("Skills you already have", pct(m.coverage), "share of this scenario's required skill levels, weighted by importance"),
+      row("Scenario skill assumptions", String(m.requirement_changes?.length || 0),
+        m.scenario === "agentic" ? "Skills whose target levels changed: +1 for judgement and oversight, −1 for routine work; tools stay unchanged. Modelled assumptions."
+          : "Baseline skill requirements; AI assists you with today's work."),
+      m.requirement_changes?.length ? row("Changed targets (out of 5)", "",
+        m.requirement_changes.map((c) => `${c.skill}: ${c.assistive_required} → ${c.required}`).join("; ")) : null,
       m.alignment != null ? row("Fit with what the role values", pct(m.alignment), "how important your strongest skills are to this role") : null,
       m.text_fit != null ? row("Your résumé reads like this role", pct(m.text_fit), "meaning-based text similarity") : null,
       m.tools_matched ? row("Tools you use that it lists", String(m.tools_matched)) : null,
       m.trend_effect != null ? row(`Today's AI trends (${m.scenario === "agentic" ? "agentic" : "assistive"} AI)`, signed(m.trend_effect),
-        "growth minus automation pressure; reorders roles, never changes the match") : null,
+        "growth minus automation pressure; affects ranking in addition to the scenario match") : null,
+      row("Training adjustment", m.stretch ? "× 0.85" : "× 1.00", m.stretch ? "15% ranking penalty: this role is one training level above yours." : "No training penalty."),
       row("Effort to switch", effort(m)[0],
-        `from the share of the role you already cover${m.stretch ? "; one training level above yours" : ""}. Your 90-day plan starts with the most important gaps`)),
-    about);
-  d.addEventListener("toggle", async () => {
-    if (!d.open || d.dataset.loaded) return;
-    d.dataset.loaded = "1";
-    try {
-      const o = await api(`/api/occupations/${m.soc}`);
-      about.replaceChildren(h("h5", {}, "About this role"),
-        h("p", {}, o.description.length > 420 ? o.description.slice(0, 420) + "…" : o.description),
-        o.skills?.length ? h("p", { class: "role-skills" }, h("b", {}, "Main skills: "), o.skills.slice(0, 6).map((s) => s.name).join(", ")) : null,
-        h("a", { href: o.url, target: "_blank", rel: "noopener noreferrer" }, "Full ESCO occupation page"));
-    } catch { about.replaceChildren(h("p", { class: "muted" }, "Role description unavailable right now.")); }
-  });
+        `from the share of the role you already cover${m.stretch ? "; one training level above yours" : ""}. Your 90-day plan starts with the most important gaps`)));
   return d;
 }
 
@@ -542,7 +847,8 @@ function compareTable(rows) {
   return h("div", { class: "compare-wrap" }, h("table", { class: "compare" },
     h("thead", {}, h("tr", {}, h("td"), rows.map((m) => h("th", { scope: "col" }, jobIcon(m.soc, { size: 28 }), m.title)))),
     h("tbody", {},
-      line("Match", (m) => pct(m.fit)),
+      line("Rank Score", (m) => rankScore(m.score)),
+      line("Scenario match", (m) => pct(m.fit)),
       line("Skills you already have", (m) => pct(m.coverage)),
       line("AI trend effect", (m) => m.trend_effect != null ? signed(m.trend_effect) : "–"),
       line("Effort to switch", (m) => effort(m)[0]),
@@ -550,60 +856,29 @@ function compareTable(rows) {
       line("UN goals", (m) => (m.sdgs || []).map((g) => `SDG ${g.goal}`).join(", ") || "–"))));
 }
 
-export function matchesBlock(matches, { onPlan, onInterview, title = "Roles you could grow into", note, scenario, onScenario } = {}) {
-  if (!matches?.length) return block("Role matches", h("h3", {}, title), h("p", { class: "note" }, "No matches yet. Add a few more skills."));
-  const picked = new Set();
-  const compareHost = h("div");
-  const drawCompare = () => compareHost.replaceChildren(picked.size >= 2 ? compareTable(matches.filter((m) => picked.has(m.soc))) :
-    picked.size === 1 ? h("p", { class: "note" }, "Tick one more role to compare.") : "");
-  // filter by UN goal: only goals that appear in these matches
-  const goals = [...new Map(matches.flatMap((m) => m.sdgs || []).map((g) => [g.goal, g])).values()].sort((a, b) => a.goal - b.goal);
-  let goal = null;
-  const list = h("ol", { class: "matches" }, matches.map((m, i) => reveal(h("li", { "data-goals": (m.sdgs || []).map((g) => g.goal).join(" ") },
-    h("span", { class: "rank num" }, i + 1),
+export function matchesBlock(matches, { onPlan, onInterview, ...options } = {}) {
+  return roleRanking(matches || [], { ...options, compare: compareTable, renderDetails: (m) =>
     h("div", { class: "match-content" },
-      h("div", { class: "match-head" },
-        h("div", { class: "who" },
-          h("div", { class: "job-line", title: `ESCO ${m.soc}` },
-            jobIcon(m.soc, { size: 44, labelled: true }), h("b", {}, m.title),
-            h("span", { class: "match-badges" }, momentum(m), h("span", { class: `tag effort ${effort(m)[1]}`, title: "Effort to switch, from the share of this role you already cover" }, effort(m)[0])))),
-        h("div", { class: "fit" },
-          h("span", { class: "num" }, pct(m.fit)), h("span", { class: "note" }, "match"),
-          h("span", { class: "fitbar", "aria-hidden": "true" }, reveal(h("i", { style: { width: pct(Math.min(1, m.fit)) } }), GROW, { duration: 700, delay: i * 50 })))),
-      h("div", { class: "gaps" }, m.top_gaps?.length
-        ? [icon("target"), h("b", {}, "To learn"), h("span", { class: "gap-chips" }, m.top_gaps.slice(0, 3).map((gap) => h("span", { class: "gap-chip" }, gap))),
-          m.top_gaps.length > 3 ? h("details", { class: "more-gaps" }, h("summary", {}, `+${m.top_gaps.length - 3} more`),
-            h("ul", {}, m.top_gaps.slice(3).map((gap) => h("li", {}, gap)))) : null]
-        : [icon("check"), h("b", {}, "To learn"), h("span", {}, "No skill gaps identified")]),
+      roleAbout(m),
+      h("div", { class: "match-badges" }, momentum(m),
+        h("span", { class: `tag effort ${effort(m)[1]}` }, effort(m)[0])),
+      h("div", { class: "gaps" }, icon(m.top_gaps?.length ? "target" : "check"), h("b", {}, "To learn"),
+        m.top_gaps?.length ? h("span", { class: "gap-chips" }, m.top_gaps.map((gap) => {
+          const detail = m.top_gap_details?.find((item) => item.skill === gap);
+          const change = detail ? detail.required - detail.assistive_required : 0;
+          return h("span", { class: "gap-chip" }, gap, detail ? h("small", {},
+            `Target ${detail.required}/5${change ? ` · ${change > 0 ? "↑" : "↓"} from ${detail.assistive_required}/5` : ""}`) : null);
+        })) : h("span", {}, "No skill gaps identified")),
+      m.scenario === "agentic" ? h("p", { class: "note gap-scenario-note" },
+        m.requirement_changes?.length
+          ? `Agentive AI adjusts ${m.requirement_changes.length} skill targets for this role. A skill can remain on this list if it is still one of your largest gaps.`
+          : "This role has no modelled skill target changes under Agentive AI; its AI outlook can still affect its ranking.") : null,
       m.sdgs?.length ? h("div", { class: "match-sdgs" },
-        h("div", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))),
-        sdgMatchDetails(m.sdgs)) : null,
-      whyScore(m)),
-    h("div", { class: "match-actions" },
-      onPlan ? h("button", { class: "btn sm primary match-plan", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null,
-      onInterview && m.recommendation_id ? h("button", { class: "btn sm", type: "button", onclick: () => onInterview(m) }, "Practice interview") : null,
-      h("label", { class: "compare-pick" }, h("input", { type: "checkbox", onchange: (e) => {
-        if (e.target.checked && picked.size >= 3) { e.target.checked = false; toast("Compare up to 3 roles at a time.", "err"); return; }
-        e.target.checked ? picked.add(m.soc) : picked.delete(m.soc); drawCompare(); } }), "Compare"))),
-    DROP, { delay: Math.min(i, 8) * 45 })));
-  const filterGoal = (g) => {
-    goal = g;
-    goalBar.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.goal || 0) === (g || 0))));
-    list.querySelectorAll(":scope > li").forEach((li) => { li.hidden = !!g && !li.dataset.goals.split(" ").includes(String(g)); });
-  };
-  const goalBar = goals.length > 1 ? h("div", { class: "goal-filter", role: "group", "aria-label": "Show roles serving a UN goal" },
-    h("span", { class: "muted" }, "UN goal:"),
-    h("button", { type: "button", class: "chip", "aria-pressed": "true", onclick: () => filterGoal(null) }, "All"),
-    goals.map((g) => h("button", { type: "button", class: "chip goal-chip", "data-goal": g.goal, "aria-pressed": "false", style: { "--sdg": g.color },
-      title: `SDG ${g.goal}: ${g.short}`, onclick: () => filterGoal(goal === g.goal ? null : g.goal) }, `${g.goal} · ${g.short}`))) : null;
-  const scenSeg = onScenario ? h("div", { class: "seg", role: "group", "aria-label": "AI scenario for the ranking" },
-    [["assistive", "Assistive AI"], ["agentic", "Agentic AI"]].map(([k, l]) => h("button", { type: "button", "aria-pressed": String((scenario || "assistive") === k),
-      title: k === "agentic" ? "AI agents take over routine work: automation pressure and AI-driven growth weigh more" : "AI helps people do today's work",
-      onclick: () => k !== (scenario || "assistive") && onScenario(k) }, l))) : null;
-  return block("Role matches",
-    h("div", { class: "matches-head" }, h("h3", {}, title), scenSeg),
-    goalBar, compareHost, list,
-    h("p", { class: "note" }, note || "Match combines how much of each role's ESCO skills you have, how well your skills fit what it values, and (with a résumé) how closely your experience reads like it. Today's AI trends reorder roles, never change the match. Open \"Why this score\" on any role."));
+        h("div", { class: "sdg-nums" }, m.sdgs.map((g) => sdgChip(g, { compact: true }))), sdgMatchDetails(m.sdgs)) : null,
+      whyScore(m),
+      h("div", { class: "match-actions" },
+        onPlan ? h("button", { class: "btn sm primary match-plan", type: "button", onclick: () => onPlan(m) }, "Plan for this role") : null,
+        onInterview && m.recommendation_id ? h("button", { class: "btn sm", type: "button", onclick: () => onInterview(m) }, "Practice interview") : null)) });
 }
 
 export function sdgBlock(sdgs) {
