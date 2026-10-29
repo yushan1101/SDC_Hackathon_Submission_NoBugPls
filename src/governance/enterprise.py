@@ -113,7 +113,14 @@ def finish_email_change(con, username: str) -> str:
 
 # ---------------------------------------------------------------- Cloudflare R2 (S3 API, SigV4)
 def r2_configured(cfg) -> bool:
-    return bool(cfg.r2_account_id and cfg.r2_access_key_id and cfg.r2_secret_access_key)
+    return bool((cfg.r2_endpoint or cfg.r2_account_id) and cfg.r2_access_key_id and cfg.r2_secret_access_key)
+
+
+def _r2_host(cfg) -> str:
+    """FixIt-style R2_ENDPOINT (https://<account>.r2.cloudflarestorage.com) or an account id."""
+    if cfg.r2_endpoint:
+        return cfg.r2_endpoint.split("://", 1)[-1].strip("/").split("/")[0]
+    return f"{cfg.r2_account_id}.r2.cloudflarestorage.com"
 
 
 def _sign(key: bytes, msg: str) -> bytes:
@@ -123,7 +130,7 @@ def _sign(key: bytes, msg: str) -> bytes:
 def _r2(cfg, method: str, key: str, body: bytes = b"", content_type: str | None = None) -> httpx.Response:
     if not r2_configured(cfg):
         raise EnterpriseError("photo storage is not set up on this server")
-    host = f"{cfg.r2_account_id}.r2.cloudflarestorage.com"
+    host = _r2_host(cfg)
     path = f"/{cfg.r2_bucket}/{quote(key)}"
     now = datetime.now(timezone.utc)
     amz, day = now.strftime("%Y%m%dT%H%M%SZ"), now.strftime("%Y%m%d")

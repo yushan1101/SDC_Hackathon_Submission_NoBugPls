@@ -73,7 +73,8 @@ class Settings(BaseSettings):
     price_team_cents: int = Field(9900, gt=0)        # RM 99.00 for 30 days
     plan_days: int = Field(30, gt=0)
     # Cloudflare R2 (S3 API) for profile photos: the fixit bucket, under its own folder
-    r2_account_id: str = ""
+    r2_endpoint: str = ""     # https://<account>.r2.cloudflarestorage.com, the same line FixIt's .env uses
+    r2_account_id: str = ""   # or just the account id
     r2_access_key_id: str = ""
     r2_secret_access_key: SecretStr | None = None
     r2_bucket: str = "fixit"
