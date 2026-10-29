@@ -338,3 +338,5 @@ html[data-product="hr"] .wf-bloom-owl .owl { width: 100%; height: 100%; }
 html[data-product="hr"] .wf-bloom-core { filter: drop-shadow(0 6px 14px oklch(0.4 0.12 263 / 0.22)); }
 html[data-product="hr"] .wf-bloom-avg { margin: 0; font-size: 13px; color: var(--ink-2); }
 html[data-product="hr"] .wf-bloom-avg b { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); margin-right: 4px; }
+/* the review stats row on Overview sits in a plain wrapper: give it the same breathing room as the rest of the page */
+html[data-product="hr"] .stats + .overview { margin-top: 20px; }
