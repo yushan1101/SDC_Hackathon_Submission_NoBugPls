@@ -348,6 +348,34 @@ Upload `dist-web/` to any static host (nginx, Cloudflare Pages, Netlify), then a
 **Admin → Frontend sites**. Sign-in works across domains (a Bearer token where browsers block third-party cookies),
 and email links and plugin sign-ins return to the site the person used.
 
+### Plan reports with diagrams
+
+Export a saved plan as a Markdown and/or a single-file HTML report with five diagrams built from the plan data
+(`src/diagrams/`, no LLM inside, so the same plan always gives the same diagrams):
+
+| Diagram | Built from | Markdown | HTML |
+|---|---|---|---|
+| `timeline` | phases and milestones | Mermaid `gantt` | Mermaid |
+| `deps` | skill prerequisites, coloured by priority | Mermaid `flowchart LR` | Mermaid, click a skill |
+| `gaps` | current vs target level | table | Chart.js radar/bar |
+| `skillmap` | skills grouped by category | Mermaid `mindmap` | Mermaid |
+| `effort` | hours per week by phase vs your weekly hours | table, ⚠ over capacity | Chart.js bar + capacity line |
+
+```bash
+cd src
+python scripts/plan_report.py --plan-id <plan id> --format both --out reports/
+python scripts/plan_report.py --input plan.json --format html --diagrams timeline,deps --no-ai
+```
+
+- `--format md|html|both`, `--diagrams all|timeline,deps,gaps,skillmap,effort`, `--out <folder>`.
+- `--input` takes a saved report (the `report` of `/api/plans/<id>`) or a `ReskillPlan` JSON (`diagrams.ReskillPlan`).
+- Skill categories and prerequisites are not in ESCO, so by default one LLM call adds them (validated, retried once with the errors).
+  If it still fails, or with `--no-ai`, the report is drawn without prerequisite links and says so.
+- The diagrams follow the scheduled skills; gaps the plan defers past 90 days are listed, not drawn. Circular
+  prerequisites are reported instead of drawn; more than 25 skills fold low-priority ones per category.
+- The HTML file loads Mermaid 11.4.1 and Chart.js 4.4.7 from jsDelivr, and has tabs, clickable skills (phase and
+  resources), a light/dark toggle and SVG/PNG download per diagram.
+
 ### Run Tests
 
 ```bash
