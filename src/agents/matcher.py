@@ -5,8 +5,9 @@ credit[skill] = level of the person's most similar skill (cosine >= MATCH; one l
 skill_fit = F1 of (coverage: share of the role's importance-weighted required levels the person meets,
                    alignment: how important the person's strongest skills are to this role)  + tool-overlap bonus
 text_fit  = MiniLM similarity between the person's own words (resume / summary) and the occupation (optional)
-fit       = skill_fit, or 0.55 * skill_fit + 0.45 * text_fit_rescaled when text is given
-score     = fit * (1 + 0.15 * clip(emergence, -1, 2) - 0.10 * clip(pressure, 0, 2))   (ranking only, from the daily board)
+fit       = skill_fit against scenario-adjusted requirements, optionally blended with text_fit
+score     = fit * (1 + growth_weight * clip(emergence, -1, 2) - pressure_weight * clip(pressure, 0, 2))
+Both required levels and trend weights follow the selected scenario; the person's recorded skills stay unchanged.
 Importance and required levels are model predictions (trained offline on O*NET ratings); O*NET is not read here.
 """
 from functools import lru_cache
@@ -15,6 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from agents.knowledge import snapshot
+from agents.gap_analyst import required_level
 from agents.skillmap import MATCH, PARTIAL, vectors, vocabulary
 
 FUTURE_WEIGHT, PRESSURE_WEIGHT, TOOL_BONUS, STRETCH = 0.15, 0.10, 0.06, 0.85
@@ -70,6 +72,18 @@ def _credit(have: dict[str, int]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return credit, S, lv
 
 
+@lru_cache(maxsize=2)
+def _scenario_requirements(scenario: str) -> dict[str, np.ndarray]:
+    """Use the same scenario assumptions as the plan's gap analysis; never alter cached base levels."""
+    out = {}
+    for soc, o in snapshot()["occupations"].items():
+        tools = {t["name"] for t in o["tech"]}
+        out[soc] = np.array([required_level(d["required"], d.get("agentic", 0),
+                                          "tool" if name in tools else "skill", scenario)
+                             for name, d in o["skills"].items()], float)
+    return out
+
+
 def _text_fit(text: str) -> dict[str, float]:
     from agents.skillmap import encode
     socs, vecs = occupation_vectors()
@@ -112,11 +126,12 @@ def match_roles(levels: dict[str, int], top_k: int = 8, board: dict | None = Non
 def _score(soc: str, credit: np.ndarray, S: np.ndarray, lv: np.ndarray, per_occ: dict, tf: dict | None,
            scenario: str = "assistive") -> dict:
     o = snapshot()["occupations"][soc]
-    idx, w, req, is_tool = _occ_index()[soc]
+    idx, w, base_req, is_tool = _occ_index()[soc]
+    req = _scenario_requirements(scenario)[soc]
     cur = np.minimum(credit[idx], req)
     coverage = float((w * cur).sum() / max((w * req).sum(), 1e-9))
     if len(lv):  # each of the person's skills: the importance this role gives its closest requirement
-        best_imp = np.where(S[:, idx] >= MATCH, w[None, :], 0).max(1)
+        best_imp = np.where((S[:, idx] >= MATCH) & (req[None, :] > 0), w[None, :], 0).max(1)
         alignment = float((lv * best_imp).sum() / (5.0 * lv.sum()))
     else:
         alignment = 0.0
@@ -131,11 +146,18 @@ def _score(soc: str, credit: np.ndarray, S: np.ndarray, lv: np.ndarray, per_occ:
     score = fit * (1 + trend)
     names = list(o["skills"])
     gap = req - cur
-    order = np.argsort(-(gap * w))
+    order = np.argsort(-(gap * w), kind="stable")
+    changes = [{"skill": names[i], "assistive_required": int(base_req[i]), "required": int(req[i])}
+               for i in range(len(names)) if req[i] != base_req[i]]
+    top_gap_indices = [int(i) for i in order if gap[i] > 0][:3]
     return {"soc": soc, "title": o["title"], "fit": round(fit, 3), "score": round(float(score), 3),
             "coverage": round(coverage, 3), "tools_matched": tool_hit, "emergence": em, "pressure": pr,
             # the parts of the score, so the UI can explain it
             "skill_fit": round(float(skill_fit), 3), "alignment": round(alignment, 3),
             "text_fit": round(float(tf[soc]), 3) if tf else None, "trend_effect": round(trend, 3), "scenario": scenario,
+            "requirement_changes": changes,
             "job_zone": o.get("job_zone"), "isco": o.get("isco"),
-            "top_gaps": [names[i] for i in order[:3] if gap[i] > 0], "gap_levels": int(gap.sum())}
+            "top_gaps": [names[i] for i in top_gap_indices],
+            "top_gap_details": [{"skill": names[i], "required": int(req[i]), "assistive_required": int(base_req[i])}
+                                for i in top_gap_indices],
+            "gap_levels": int(gap.sum())}
