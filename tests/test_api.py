@@ -363,6 +363,76 @@ def test_trend_history_is_public(client):
     assert previous["direction"]["ai-customer-service"] == "rising"
 
 
+def test_team_assessment_csv_reaches_review_heatmap_and_common_skill_plan(client, monkeypatch):
+    from pathlib import Path
+    import server.api as api
+    from agents import gap_analyst, knowledge, pathway
+
+    login(client, "hr1")
+    preset = client.get("/api/sample-team").json()
+    csv = preset["csv"]
+    assert csv == (Path(api.ROOT) / "data/samples/team_skill_assessments.csv").read_text(encoding="utf-8")
+    assert preset["filename"] == "team_skill_assessments.csv" and not preset["sample"]
+    assert preset["level_max"] == 5 and not preset["external"]
+
+    def analysis(request):
+        occupation = knowledge.occupation(request.target_role)
+        levels = {skill.name: skill.level for skill in request.profile.skills}
+        requirements = {name: {**details, "kind": "skill", "evidence_id": f"esco:{request.target_role}:skill:{name}"}
+                        for name, details in occupation["skills"].items()}
+        gaps = gap_analyst.analyze(levels, requirements, request.scenario)
+        yield "update", "reviewer", {}
+        yield "final", None, {"request": request, "occupation": occupation, "levels": levels,
+                              "skill_gaps": gaps, "status": "draft",
+                              "draft_pathway": pathway.build(gaps, 4, occupation["title"], request.scenario)}
+
+    monkeypatch.setattr(api.graph, "stream", analysis)
+    monkeypatch.setattr(api, "_plan", lambda user: "team")
+    login(client, "hr1")
+    body = {"csv": csv, "scenario": "assistive", "dataset": preset["dataset"], "level_max": preset["level_max"], "sample": preset["sample"]}
+    checked = client.post("/api/team/validate", json=body, headers={"X-AP": "1"}).json()
+    assert checked["employees"] == 8 and not checked["errors"]
+    uploaded = events(client.post("/api/team", json=body, headers={"X-AP": "1"}))
+    ready = [item for item in uploaded if item["t"] == "employee"]
+    assert len(ready) == 8 and all(not item.get("error") for item in ready)
+    ids = {item["plan_id"] for item in ready}
+    assert ids <= {item["plan_id"] for item in client.get("/api/reviews?status=all").json()}
+    assert all(client.get(f"/api/plans/{pid}").json()["report"]["workforce"]["source"] == "team_csv" for pid in ids)
+    # An earlier upload of the same roles must not contaminate this cohort's AI plan.
+    earlier = events(client.post("/api/team", json={**body, "dataset": "Prior period workforce"}, headers={"X-AP": "1"}))
+    assert len([item for item in earlier if item["t"] == "employee"]) == 8
+    heatmap = client.get("/api/hr/workforce?scenario=assistive&dataset=Analytics%20workforce").json()
+    assert heatmap["overview"]["employees"] == 8 and not heatmap["policy"]["sample_preview"]
+    common = {item["skill"]: item["employees"] for item in heatmap["overview"]["common_missing"]}
+    assert common == {"Interpret current data": 7, "Data quality assessment": 6, "Visual presentation techniques": 5}
+    chosen = [cell for cell in heatmap["cells"] if cell["skill"] in common and cell["affected"]]
+    assert len(chosen) == 6 and all(cell["employees"] == 4 and cell["coverage"] == 100 for cell in chosen)
+
+    def generate(prompt, system, **kwargs):
+        data = json.loads(prompt.split("<ASSESSMENT_DATA>\n", 1)[1].split("\n</ASSESSMENT_DATA>", 1)[0])
+        assert data["role_composition"] == {"Data analyst": 4, "Data scientist": 4}
+        assert len(data["selected_assessed_gaps"]) == 6
+        return json.dumps({"name": "Analytics skills development", "overview": "Prioritise the shared gaps shown by the assessed counts.",
+                           "priorities": [{"skill": cell["skill"], "group": cell["group"],
+                                           "reason": f"{cell['employees_below_target']} of {cell['employees_assessed']} are below target."}
+                                          for cell in data["selected_assessed_gaps"]],
+                           "shared_steps": ["Practise data interpretation, quality checks and visual explanations."],
+                           "role_tracks": [], "progress_checks": ["Reassess the selected skills against their role targets."]}), None
+
+    monkeypatch.setattr(api.llm, "generate", generate)
+    plan_events = events(client.post("/api/hr/team-plans/generate", json={"scenario": "assistive",
+                         "datasets": ["Analytics workforce"],
+                         "gaps": [{"skill": cell["skill"], "group": cell["group"]} for cell in chosen]}, headers={"X-AP": "1"}))
+    draft = next(item["draft"] for item in plan_events if item["t"] == "draft")
+    assert draft["cohort"]["employees"] == 8 and len(draft["priorities"]) == 6 and not draft["sample_preview"]
+    saved = client.post("/api/hr/team-plans", json={"scenario": "assistive", "datasets": ["Analytics workforce"],
+        "gaps": [{"skill": cell["skill"], "group": cell["group"]} for cell in chosen],
+        **{key: draft[key] for key in ("name", "overview", "shared_steps", "role_tracks", "progress_checks")},
+        "priorities": [{key: item[key] for key in ("skill", "group", "reason")} for item in draft["priorities"]]}, headers={"X-AP": "1"})
+    assert saved.status_code == 200 and saved.json()["cohort"]["employees"] == 8
+    assert saved.json()["cohort"]["datasets"] == ["Analytics workforce"] and not saved.json()["sample_preview"]
+
+
 def test_team_stream_ticks_and_validation(client):
     login(client, "hr1")
     bad = client.post("/api/team", json={"csv": "employee_id,target_role\nx@y.com,Data Analyst", "scenario": "assistive"},

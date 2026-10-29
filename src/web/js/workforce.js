@@ -291,6 +291,7 @@ export async function workforceView(root) {
     const chosen = data.cells.filter((c) => SELECTED.has(cellKey(c)) && c.status === "ready" && c.affected);
     if (!chosen.length) return;
     const payload = { scenario: selected.scenario, category: selected.category, department: selected.department, role: selected.role,
+      datasets: [...selected.datasets],
       gaps: chosen.map((c) => ({ skill: c.skill, group: c.group })), sample_preview: selected.samplePreview };
     const status = h("p", { class: "wf-generation-status", role: "status" }, "Analysing team skill gaps…");
     const editor = h("div", { class: "wf-plan-editor" });

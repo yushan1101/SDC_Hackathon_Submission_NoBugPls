@@ -1,0 +1,337 @@
+employee_id,target_role,weekly_hours,skill,level
+WF-201,Data analyst,4,Information categorisation,4
+WF-201,Data analyst,4,Information structure,4
+WF-201,Data analyst,4,Unstructured data,4
+WF-201,Data analyst,4,Information confidentiality,4
+WF-201,Data analyst,4,Information extraction,4
+WF-201,Data analyst,4,Interpret current data,1
+WF-201,Data analyst,4,Perform data mining,4
+WF-201,Data analyst,4,Define data quality criteria,4
+WF-201,Data analyst,4,Handle data samples,4
+WF-201,Data analyst,4,Data quality assessment,1
+WF-201,Data analyst,4,Establish data processes,4
+WF-201,Data analyst,4,Implement data quality processes,4
+WF-201,Data analyst,4,Data mining,4
+WF-201,Data analyst,4,Manage data,4
+WF-201,Data analyst,4,Perform data cleansing,4
+WF-201,Data analyst,4,Collect ICT data,3
+WF-201,Data analyst,4,Apply statistical analysis techniques,4
+WF-201,Data analyst,4,Business intelligence,4
+WF-201,Data analyst,4,Normalise data,3
+WF-201,Data analyst,4,Integrate ICT data,3
+WF-201,Data analyst,4,Analyse big data,4
+WF-201,Data analyst,4,Data models,3
+WF-201,Data analyst,4,Documentation types,3
+WF-201,Data analyst,4,Visual presentation techniques,1
+WF-201,Data analyst,4,Statistics,3
+WF-201,Data analyst,4,Resource description framework query language,3
+WF-201,Data analyst,4,Query languages,2
+WF-201,Data analyst,4,Execute analytical mathematical calculations,2
+WF-201,Data analyst,4,LINQ,3
+WF-201,Data analyst,4,Manage data collection systems,3
+WF-201,Data analyst,4,XQuery,3
+WF-201,Data analyst,4,SPARQL,2
+WF-201,Data analyst,4,Report analysis results,2
+WF-201,Data analyst,4,Information architecture,2
+WF-201,Data analyst,4,Online analytical processing,2
+WF-201,Data analyst,4,LDAP,2
+WF-201,Data analyst,4,Web analytics,2
+WF-201,Data analyst,4,Data storage,2
+WF-201,Data analyst,4,Gather data for forensic purposes,2
+WF-201,Data analyst,4,Cloud technologies,2
+WF-201,Data analyst,4,Deliver visual presentation of data,2
+WF-201,Data analyst,4,Create data models,2
+WF-201,Data analyst,4,Database,2
+WF-201,Data analyst,4,N1QL,2
+WF-201,Data analyst,4,MDX,2
+WF-202,Data analyst,4,Information categorisation,3
+WF-202,Data analyst,4,Information structure,3
+WF-202,Data analyst,4,Unstructured data,3
+WF-202,Data analyst,4,Information confidentiality,3
+WF-202,Data analyst,4,Information extraction,3
+WF-202,Data analyst,4,Interpret current data,1
+WF-202,Data analyst,4,Perform data mining,3
+WF-202,Data analyst,4,Define data quality criteria,3
+WF-202,Data analyst,4,Handle data samples,3
+WF-202,Data analyst,4,Data quality assessment,2
+WF-202,Data analyst,4,Establish data processes,3
+WF-202,Data analyst,4,Implement data quality processes,3
+WF-202,Data analyst,4,Data mining,3
+WF-202,Data analyst,4,Manage data,3
+WF-202,Data analyst,4,Perform data cleansing,3
+WF-202,Data analyst,4,Collect ICT data,2
+WF-202,Data analyst,4,Apply statistical analysis techniques,3
+WF-202,Data analyst,4,Business intelligence,3
+WF-202,Data analyst,4,Normalise data,2
+WF-202,Data analyst,4,Integrate ICT data,2
+WF-202,Data analyst,4,Analyse big data,3
+WF-202,Data analyst,4,Data models,2
+WF-202,Data analyst,4,Documentation types,2
+WF-202,Data analyst,4,Visual presentation techniques,1
+WF-202,Data analyst,4,Statistics,2
+WF-202,Data analyst,4,Resource description framework query language,2
+WF-202,Data analyst,4,Query languages,1
+WF-202,Data analyst,4,Execute analytical mathematical calculations,1
+WF-202,Data analyst,4,LINQ,2
+WF-202,Data analyst,4,Manage data collection systems,2
+WF-202,Data analyst,4,XQuery,2
+WF-202,Data analyst,4,SPARQL,1
+WF-202,Data analyst,4,Report analysis results,1
+WF-202,Data analyst,4,Information architecture,1
+WF-202,Data analyst,4,Online analytical processing,1
+WF-202,Data analyst,4,LDAP,1
+WF-202,Data analyst,4,Web analytics,1
+WF-202,Data analyst,4,Data storage,1
+WF-202,Data analyst,4,Gather data for forensic purposes,1
+WF-202,Data analyst,4,Cloud technologies,1
+WF-202,Data analyst,4,Deliver visual presentation of data,1
+WF-202,Data analyst,4,Create data models,1
+WF-202,Data analyst,4,Database,1
+WF-202,Data analyst,4,N1QL,1
+WF-202,Data analyst,4,MDX,1
+WF-203,Data analyst,4,Information categorisation,3
+WF-203,Data analyst,4,Information structure,3
+WF-203,Data analyst,4,Unstructured data,3
+WF-203,Data analyst,4,Information confidentiality,3
+WF-203,Data analyst,4,Information extraction,3
+WF-203,Data analyst,4,Interpret current data,2
+WF-203,Data analyst,4,Perform data mining,3
+WF-203,Data analyst,4,Define data quality criteria,3
+WF-203,Data analyst,4,Handle data samples,3
+WF-203,Data analyst,4,Data quality assessment,2
+WF-203,Data analyst,4,Establish data processes,3
+WF-203,Data analyst,4,Implement data quality processes,3
+WF-203,Data analyst,4,Data mining,3
+WF-203,Data analyst,4,Manage data,3
+WF-203,Data analyst,4,Perform data cleansing,3
+WF-203,Data analyst,4,Collect ICT data,2
+WF-203,Data analyst,4,Apply statistical analysis techniques,3
+WF-203,Data analyst,4,Business intelligence,3
+WF-203,Data analyst,4,Normalise data,2
+WF-203,Data analyst,4,Integrate ICT data,2
+WF-203,Data analyst,4,Analyse big data,3
+WF-203,Data analyst,4,Data models,2
+WF-203,Data analyst,4,Documentation types,2
+WF-203,Data analyst,4,Visual presentation techniques,1
+WF-203,Data analyst,4,Statistics,2
+WF-203,Data analyst,4,Resource description framework query language,2
+WF-203,Data analyst,4,Query languages,1
+WF-203,Data analyst,4,Execute analytical mathematical calculations,1
+WF-203,Data analyst,4,LINQ,2
+WF-203,Data analyst,4,Manage data collection systems,2
+WF-203,Data analyst,4,XQuery,2
+WF-203,Data analyst,4,SPARQL,1
+WF-203,Data analyst,4,Report analysis results,1
+WF-203,Data analyst,4,Information architecture,1
+WF-203,Data analyst,4,Online analytical processing,1
+WF-203,Data analyst,4,LDAP,1
+WF-203,Data analyst,4,Web analytics,1
+WF-203,Data analyst,4,Data storage,1
+WF-203,Data analyst,4,Gather data for forensic purposes,1
+WF-203,Data analyst,4,Cloud technologies,1
+WF-203,Data analyst,4,Deliver visual presentation of data,1
+WF-203,Data analyst,4,Create data models,1
+WF-203,Data analyst,4,Database,1
+WF-203,Data analyst,4,N1QL,1
+WF-203,Data analyst,4,MDX,1
+WF-204,Data analyst,4,Information categorisation,4
+WF-204,Data analyst,4,Information structure,4
+WF-204,Data analyst,4,Unstructured data,4
+WF-204,Data analyst,4,Information confidentiality,4
+WF-204,Data analyst,4,Information extraction,4
+WF-204,Data analyst,4,Interpret current data,2
+WF-204,Data analyst,4,Perform data mining,4
+WF-204,Data analyst,4,Define data quality criteria,4
+WF-204,Data analyst,4,Handle data samples,4
+WF-204,Data analyst,4,Data quality assessment,3
+WF-204,Data analyst,4,Establish data processes,4
+WF-204,Data analyst,4,Implement data quality processes,4
+WF-204,Data analyst,4,Data mining,4
+WF-204,Data analyst,4,Manage data,4
+WF-204,Data analyst,4,Perform data cleansing,4
+WF-204,Data analyst,4,Collect ICT data,3
+WF-204,Data analyst,4,Apply statistical analysis techniques,4
+WF-204,Data analyst,4,Business intelligence,4
+WF-204,Data analyst,4,Normalise data,3
+WF-204,Data analyst,4,Integrate ICT data,3
+WF-204,Data analyst,4,Analyse big data,4
+WF-204,Data analyst,4,Data models,3
+WF-204,Data analyst,4,Documentation types,3
+WF-204,Data analyst,4,Visual presentation techniques,2
+WF-204,Data analyst,4,Statistics,3
+WF-204,Data analyst,4,Resource description framework query language,3
+WF-204,Data analyst,4,Query languages,2
+WF-204,Data analyst,4,Execute analytical mathematical calculations,2
+WF-204,Data analyst,4,LINQ,3
+WF-204,Data analyst,4,Manage data collection systems,3
+WF-204,Data analyst,4,XQuery,3
+WF-204,Data analyst,4,SPARQL,2
+WF-204,Data analyst,4,Report analysis results,2
+WF-204,Data analyst,4,Information architecture,2
+WF-204,Data analyst,4,Online analytical processing,2
+WF-204,Data analyst,4,LDAP,2
+WF-204,Data analyst,4,Web analytics,2
+WF-204,Data analyst,4,Data storage,2
+WF-204,Data analyst,4,Gather data for forensic purposes,2
+WF-204,Data analyst,4,Cloud technologies,2
+WF-204,Data analyst,4,Deliver visual presentation of data,2
+WF-204,Data analyst,4,Create data models,2
+WF-204,Data analyst,4,Database,2
+WF-204,Data analyst,4,N1QL,2
+WF-204,Data analyst,4,MDX,2
+WF-205,Data scientist,4,Information categorisation,3
+WF-205,Data scientist,4,Interpret current data,1
+WF-205,Data scientist,4,Data mining,3
+WF-205,Data scientist,4,Information extraction,3
+WF-205,Data scientist,4,Manage data collection systems,3
+WF-205,Data scientist,4,Establish data processes,3
+WF-205,Data scientist,4,Normalise data,2
+WF-205,Data scientist,4,Implement data quality processes,3
+WF-205,Data scientist,4,Handle data samples,3
+WF-205,Data scientist,4,Data models,3
+WF-205,Data scientist,4,Perform data cleansing,2
+WF-205,Data scientist,4,Collect ICT data,2
+WF-205,Data scientist,4,Report analysis results,2
+WF-205,Data scientist,4,Deliver visual presentation of data,2
+WF-205,Data scientist,4,Visual presentation techniques,1
+WF-205,Data scientist,4,Online analytical processing,2
+WF-205,Data scientist,4,Develop data processing applications,1
+WF-205,Data scientist,4,Statistics,2
+WF-205,Data scientist,4,Build recommender systems,2
+WF-205,Data scientist,4,Execute analytical mathematical calculations,2
+WF-205,Data scientist,4,Resource description framework query language,1
+WF-205,Data scientist,4,Query languages,1
+WF-205,Data scientist,4,Design database scheme,1
+WF-205,Data scientist,4,LINQ,2
+WF-205,Data scientist,4,Perform data mining,2
+WF-205,Data scientist,4,Unstructured data,2
+WF-205,Data scientist,4,XQuery,2
+WF-205,Data scientist,4,Define data quality criteria,2
+WF-205,Data scientist,4,Data quality assessment,1
+WF-205,Data scientist,4,Manage data,2
+WF-205,Data scientist,4,SPARQL,1
+WF-205,Data scientist,4,Manage ICT data classification,1
+WF-205,Data scientist,4,Business intelligence,1
+WF-205,Data scientist,4,Integrate ICT data,1
+WF-205,Data scientist,4,LDAP,1
+WF-205,Data scientist,4,Create data models,1
+WF-205,Data scientist,4,Manage ICT data architecture,1
+WF-205,Data scientist,4,N1QL,1
+WF-205,Data scientist,4,MDX,1
+WF-206,Data scientist,4,Information categorisation,3
+WF-206,Data scientist,4,Interpret current data,2
+WF-206,Data scientist,4,Data mining,3
+WF-206,Data scientist,4,Information extraction,3
+WF-206,Data scientist,4,Manage data collection systems,3
+WF-206,Data scientist,4,Establish data processes,3
+WF-206,Data scientist,4,Normalise data,2
+WF-206,Data scientist,4,Implement data quality processes,3
+WF-206,Data scientist,4,Handle data samples,3
+WF-206,Data scientist,4,Data models,3
+WF-206,Data scientist,4,Perform data cleansing,2
+WF-206,Data scientist,4,Collect ICT data,2
+WF-206,Data scientist,4,Report analysis results,2
+WF-206,Data scientist,4,Deliver visual presentation of data,2
+WF-206,Data scientist,4,Visual presentation techniques,1
+WF-206,Data scientist,4,Online analytical processing,2
+WF-206,Data scientist,4,Develop data processing applications,1
+WF-206,Data scientist,4,Statistics,2
+WF-206,Data scientist,4,Build recommender systems,2
+WF-206,Data scientist,4,Execute analytical mathematical calculations,2
+WF-206,Data scientist,4,Resource description framework query language,1
+WF-206,Data scientist,4,Query languages,1
+WF-206,Data scientist,4,Design database scheme,1
+WF-206,Data scientist,4,LINQ,2
+WF-206,Data scientist,4,Perform data mining,2
+WF-206,Data scientist,4,Unstructured data,2
+WF-206,Data scientist,4,XQuery,2
+WF-206,Data scientist,4,Define data quality criteria,2
+WF-206,Data scientist,4,Data quality assessment,1
+WF-206,Data scientist,4,Manage data,2
+WF-206,Data scientist,4,SPARQL,1
+WF-206,Data scientist,4,Manage ICT data classification,1
+WF-206,Data scientist,4,Business intelligence,1
+WF-206,Data scientist,4,Integrate ICT data,1
+WF-206,Data scientist,4,LDAP,1
+WF-206,Data scientist,4,Create data models,1
+WF-206,Data scientist,4,Manage ICT data architecture,1
+WF-206,Data scientist,4,N1QL,1
+WF-206,Data scientist,4,MDX,1
+WF-207,Data scientist,4,Information categorisation,4
+WF-207,Data scientist,4,Interpret current data,2
+WF-207,Data scientist,4,Data mining,4
+WF-207,Data scientist,4,Information extraction,4
+WF-207,Data scientist,4,Manage data collection systems,4
+WF-207,Data scientist,4,Establish data processes,4
+WF-207,Data scientist,4,Normalise data,3
+WF-207,Data scientist,4,Implement data quality processes,4
+WF-207,Data scientist,4,Handle data samples,4
+WF-207,Data scientist,4,Data models,4
+WF-207,Data scientist,4,Perform data cleansing,3
+WF-207,Data scientist,4,Collect ICT data,3
+WF-207,Data scientist,4,Report analysis results,3
+WF-207,Data scientist,4,Deliver visual presentation of data,3
+WF-207,Data scientist,4,Visual presentation techniques,2
+WF-207,Data scientist,4,Online analytical processing,3
+WF-207,Data scientist,4,Develop data processing applications,1
+WF-207,Data scientist,4,Statistics,3
+WF-207,Data scientist,4,Build recommender systems,3
+WF-207,Data scientist,4,Execute analytical mathematical calculations,3
+WF-207,Data scientist,4,Resource description framework query language,2
+WF-207,Data scientist,4,Query languages,2
+WF-207,Data scientist,4,Design database scheme,2
+WF-207,Data scientist,4,LINQ,3
+WF-207,Data scientist,4,Perform data mining,3
+WF-207,Data scientist,4,Unstructured data,3
+WF-207,Data scientist,4,XQuery,3
+WF-207,Data scientist,4,Define data quality criteria,3
+WF-207,Data scientist,4,Data quality assessment,1
+WF-207,Data scientist,4,Manage data,3
+WF-207,Data scientist,4,SPARQL,2
+WF-207,Data scientist,4,Manage ICT data classification,2
+WF-207,Data scientist,4,Business intelligence,2
+WF-207,Data scientist,4,Integrate ICT data,2
+WF-207,Data scientist,4,LDAP,2
+WF-207,Data scientist,4,Create data models,2
+WF-207,Data scientist,4,Manage ICT data architecture,2
+WF-207,Data scientist,4,N1QL,2
+WF-207,Data scientist,4,MDX,2
+WF-208,Data scientist,4,Information categorisation,3
+WF-208,Data scientist,4,Interpret current data,3
+WF-208,Data scientist,4,Data mining,3
+WF-208,Data scientist,4,Information extraction,3
+WF-208,Data scientist,4,Manage data collection systems,3
+WF-208,Data scientist,4,Establish data processes,3
+WF-208,Data scientist,4,Normalise data,2
+WF-208,Data scientist,4,Implement data quality processes,3
+WF-208,Data scientist,4,Handle data samples,3
+WF-208,Data scientist,4,Data models,3
+WF-208,Data scientist,4,Perform data cleansing,2
+WF-208,Data scientist,4,Collect ICT data,2
+WF-208,Data scientist,4,Report analysis results,2
+WF-208,Data scientist,4,Deliver visual presentation of data,2
+WF-208,Data scientist,4,Visual presentation techniques,2
+WF-208,Data scientist,4,Online analytical processing,2
+WF-208,Data scientist,4,Develop data processing applications,2
+WF-208,Data scientist,4,Statistics,2
+WF-208,Data scientist,4,Build recommender systems,2
+WF-208,Data scientist,4,Execute analytical mathematical calculations,2
+WF-208,Data scientist,4,Resource description framework query language,1
+WF-208,Data scientist,4,Query languages,1
+WF-208,Data scientist,4,Design database scheme,1
+WF-208,Data scientist,4,LINQ,2
+WF-208,Data scientist,4,Perform data mining,2
+WF-208,Data scientist,4,Unstructured data,2
+WF-208,Data scientist,4,XQuery,2
+WF-208,Data scientist,4,Define data quality criteria,2
+WF-208,Data scientist,4,Data quality assessment,2
+WF-208,Data scientist,4,Manage data,2
+WF-208,Data scientist,4,SPARQL,1
+WF-208,Data scientist,4,Manage ICT data classification,1
+WF-208,Data scientist,4,Business intelligence,1
+WF-208,Data scientist,4,Integrate ICT data,1
+WF-208,Data scientist,4,LDAP,1
+WF-208,Data scientist,4,Create data models,1
+WF-208,Data scientist,4,Manage ICT data architecture,1
+WF-208,Data scientist,4,N1QL,1
+WF-208,Data scientist,4,MDX,1

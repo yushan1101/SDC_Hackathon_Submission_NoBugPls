@@ -1927,6 +1927,7 @@ class TeamPlanGenerateIn(BaseModel):
     category: str = Field(default="all", pattern="^(all|skill|tool)$")
     department: str = Field(default="", max_length=100)
     role: str = Field(default="", max_length=160)
+    datasets: list[str] = Field(default=[], max_length=50)
     gaps: list[TeamPlanGapIn] = Field(min_length=1, max_length=35)
     sample_preview: bool = False
 
@@ -1952,7 +1953,9 @@ class TeamPlanSaveIn(TeamPlanGenerateIn):
 
 def _team_plan_data(body: TeamPlanGenerateIn, owner: str):
     records = workforce.load_reports(db, owner, body.scenario, body.sample_preview)
-    data = workforce.aggregate(records, [], body.category, body.sample_preview, body.department, body.role)
+    if body.datasets:
+        records = [record for record in records if record.get("dataset", "Earlier uploads") in body.datasets]
+    data = workforce.aggregate(records, [], body.category, body.sample_preview, body.department, body.role, datasets=body.datasets)
     allowed = {(cell["skill"], cell["group"]): cell for cell in data["cells"]
                if cell["status"] == "ready" and cell["affected"]}
     wanted = list(dict.fromkeys((gap.skill, gap.group) for gap in body.gaps))
@@ -2170,7 +2173,9 @@ def forecasts(body: ForecastIn, user: dict = Depends(current_user)):
 
 @app.get("/api/sample-team")
 def sample_team(user: dict = Depends(need("hr_advisor"))):
-    return {"csv": (ROOT / "data" / "samples" / "sample_team.csv").read_text(encoding="utf-8")}
+    return {"csv": (ROOT / "data" / "samples" / "team_skill_assessments.csv").read_text(encoding="utf-8"),
+            "filename": "team_skill_assessments.csv", "dataset": "Analytics workforce",
+            "level_max": 5, "external": False, "sample": False}
 
 
 # --- AI-trend signals (daily board) ----------------------------------------------------------------------
