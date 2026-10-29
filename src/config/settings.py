@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     price_pro_cents: int = Field(1900, gt=0)         # RM 19.00 for 30 days
     price_team_cents: int = Field(9900, gt=0)        # RM 99.00 for 30 days
     plan_days: int = Field(30, gt=0)
+    enterprise_ai_budget_usd: float = Field(10.0, gt=0)  # monthly AI allowance per enterprise, shown as the usage ring
     # Cloudflare R2 (S3 API) for profile photos: the fixit bucket, under its own folder
     r2_endpoint: str = ""     # https://<account>.r2.cloudflarestorage.com, the same line FixIt's .env uses
     r2_account_id: str = ""   # or just the account id
@@ -80,6 +81,10 @@ class Settings(BaseSettings):
     r2_bucket: str = "fixit"
     r2_prefix: str = "aiversepulse/avatars/"
     free_monthly_briefings: int = Field(3, ge=0)     # new briefings per calendar month on the free plan
+    # AI tokens (input + output) each person may use per calendar month, by plan; "org" = members of an enterprise
+    monthly_tokens_free: int = Field(150_000, ge=0)
+    monthly_tokens_pro: int = Field(2_000_000, ge=0)
+    monthly_tokens_org: int = Field(1_000_000, ge=0)
     # --- email one-time codes at sign-up; empty host = no email (the code is written to the server log instead) ---
     smtp_host: str = ""
     smtp_port: int = 587

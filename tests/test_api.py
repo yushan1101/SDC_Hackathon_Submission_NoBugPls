@@ -1230,16 +1230,18 @@ def test_wildcard_frontend_site_covers_subdomains_only(client):
     assert not allowed("https://x.replit.dev")
 
 
-def test_hr_chooses_the_model_per_task_from_the_admins_list(client, monkeypatch):
+def test_admin_sets_the_enterprise_model_per_task_and_hr_sees_it(client, monkeypatch):
     from agents import llm
     H = {"X-AP": "1"}
     monkeypatch.setattr(llm, "providers", lambda: {"openai": True, "gemini": True})
     _admin(client)
     assert client.post("/api/admin/models", json={"spec": "rm -rf /"}, headers=H).status_code == 422
     assert client.post("/api/admin/models", json={"spec": "openai:gpt-test-1", "label": "GPT test"}, headers=H).status_code == 200
+    assert client.post("/api/admin/enterprises/hr1/models", json={"task": "coach", "spec": "openai:not-allowed"}, headers=H).status_code == 422
+    assert client.post("/api/admin/enterprises/hr1/models", json={"task": "coach", "spec": "openai:gpt-test-1"}, headers=H).status_code == 200
     login(client, "hr1")
-    assert client.post("/api/org/models", json={"task": "coach", "spec": "openai:not-allowed"}, headers=H).status_code == 422
-    assert client.post("/api/org/models", json={"task": "coach", "spec": "openai:gpt-test-1"}, headers=H).status_code == 200
+    # one place sets the enterprise's model: the admin. HR picks per person instead (/api/org/members/.../models)
+    assert client.post("/api/org/models", json={"task": "coach", "spec": "openai:gpt-test-1"}, headers=H).status_code == 403
     got = {t["id"]: t for t in client.get("/api/org/models").json()["tasks"]}
     assert got["coach"]["chosen"] == "openai:gpt-test-1"
     # the choice applies to this organisation's requests only, and model_for() follows it
@@ -1426,6 +1428,26 @@ def test_interview_order_shuffles_after_the_warm_up_and_next_questions_follow_it
     _, nq, index, done = service.evaluate_and_choose(sess, current, "My answer.", [])
     assert seen["next_stage"] == "workplace_scenario" and nq["stage"] == "workplace_scenario" and index == 1 and not done
     assert seen["suggested_focus_for_next_question"] and any("reaction" in r for r in seen["rules"])
+
+
+def test_interviewer_replies_to_a_question_back_without_scoring_it(monkeypatch):
+    """'Sorry, what do you mean by triage?' is conversation: Mina answers, the question stays open, nothing is stored."""
+    from interview import service
+    reply = {"evaluation": {"scores": {d: None for d in service.DIMENSIONS}}, "action": "respond",
+             "reply": "Good question. By triage I mean deciding which patient needs care first. How would you do that?",
+             "next_question": None}
+    monkeypatch.setattr(service, "_llm", lambda prompt, system, max_tokens=900: (reply, None))
+    context = service.build_context("2221.2", [])
+    sess = {"stage_index": 1, "role_title": "Nurse", "context": context, "difficulty": "intermediate", "status": "in_progress"}
+    current = {"question_id": "q1", "question_text": "How do you triage?", "stage": "technical", "target_skills": [], "criteria": [], "parent_question_id": None}
+    prepared = service.prepare_answer(sess, current, "Sorry, what do you mean by triage?", [])
+    assert prepared == {"reply": reply["reply"]}
+
+    class NoWrites:
+        def execute(self, *a):
+            raise AssertionError("a reply must not be stored as an answer")
+    out = service.persist_answer(NoWrites(), sess, current, "Sorry, what do you mean by triage?", prepared)
+    assert out == {"status": "in_progress", "reply": reply["reply"], "question_id": "q1"}
 
 
 def test_hr_sees_the_employees_plan_progress(client):

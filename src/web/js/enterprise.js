@@ -1,7 +1,7 @@
 // AiversePulse Enterprise (HR advisors): overview, upload + live team run, review queue, plans register.
 import "./motion.js";  // GSAP animations for whatever the app renders
 import { jobIcon } from "./jobicons.js";
-import { api, stream, h, $, icon, toast, fmtTime, ApiError, SCENARIO_HELP } from "./lib.js";
+import { api, apiBlobUrl, stream, h, $, icon, toast, fmtTime, ApiError, SCENARIO_HELP } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
 import { gapsBlock, comparisonBlock, outlookBlock, planBlock, historyBlock, sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { openingsView, openingDetail, signalsView } from "./recruit.js";
@@ -113,17 +113,63 @@ function shell() {
     sidebarToggle.setAttribute("aria-label", sidebarExpanded ? "Collapse sidebar" : "Expand sidebar");
     sidebarToggle.title = sidebarExpanded ? "Collapse sidebar" : "Expand sidebar";
   };
-  // The person's menu: a small window that pops up from their name at the foot of the rail.
-  const name = S.me.display_name || "Account";
+  // The person's menu, as on any dashboard: their photo and details on top, then settings, then sign out.
+  const name = S.me.display_name || S.me.username || "Account";
+  const ent = S.me.enterprise;
   const close = () => account.hidePopover?.();
+  const avatar = (cls) => {  // photo when they have one, initials until it loads (or if they don't)
+    const el = h("span", { class: `u-avatar ${cls}`, "aria-hidden": "true" }, name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase());
+    const show = (url) => url && apiBlobUrl(url).then((u) => { if (u) el.replaceChildren(h("img", { src: u, alt: "" })); });
+    show(S.me.avatar_url);
+    addEventListener("ap:avatar", (e) => { S.me.avatar_url = e.detail; show(e.detail); });
+    return el;
+  };
+  const item = (href, ic, label, keys) => h("a", { href, "data-route": href, onclick: close }, icon(ic), h("span", {}, label), keys ? h("kbd", {}, keys) : null);
   const account = h("div", { id: "hr-account", class: "hr-account-menu", popover: "auto", "aria-label": "Account" },
-    h("div", { class: "hr-account-who" }, h("span", { class: "rv-avatar", "aria-hidden": "true" }, name.slice(0, 2).toUpperCase()),
-      h("div", {}, h("b", {}, name), h("span", { class: "muted" }, "HR advisor"))),
-    h("a", { href: "#/models", "data-route": "#/models", onclick: close }, icon("model"), "AI models"),
-    h("a", { href: "#/account", "data-route": "#/account", onclick: close }, icon("user"), "Plan & billing"),
-    h("button", { type: "button", onclick: () => { close(); signOut(); } }, icon("out"), "Sign out"));
+    h("div", { class: "hr-account-who" }, avatar("sm"), h("b", {}, name)),
+    h("div", { class: "acct-sep", role: "separator" }),
+    item("#/people", "nav-team", "Invite teammates"),
+    item("#/account", "user", "Profile & settings"),
+    item("#/account/billing", "nav-payments", "Plan & billing"),
+    item("#/models", "nav-models", "AI models"),
+    h("div", { class: "acct-sep", role: "separator" }),
+    h("button", { type: "button", class: "acct-signout", onclick: () => { close(); signOut(); } }, icon("nav-signout"), h("span", {}, "Log out")));
   const accountBtn = h("button", { type: "button", class: "rail-group-btn hr-account-btn", popovertarget: "hr-account", "aria-haspopup": "true", title: name },
-    icon("user"), h("span", { class: "lbl" }, name), h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
+    avatar("sm"), h("span", { class: "lbl acct-lbl" }, h("b", {}, name), h("small", {}, ent && ent.name !== name ? ent.name : "HR advisor")),
+    h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
+
+  // Usage ring: how much of this month's AI allowance the enterprise has left; opens the numbers behind it.
+  const NS = "http://www.w3.org/2000/svg";
+  const ring = document.createElementNS(NS, "svg");
+  ring.setAttribute("viewBox", "0 0 24 24"); ring.setAttribute("class", "usage-ring"); ring.setAttribute("aria-hidden", "true");
+  ring.innerHTML = '<circle cx="12" cy="12" r="9" class="track"/><circle cx="12" cy="12" r="9" class="used" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90 12 12)"/>';
+  const usagePop = h("div", { id: "hr-usage", class: "hr-account-menu usage-menu", popover: "auto", "aria-label": "Usage" });
+  const usageBtn = h("button", { type: "button", class: "usage-btn", popovertarget: "hr-usage", "aria-haspopup": "true", title: "AI usage this month" }, ring);
+  const row = (label, value, tone) => h("div", { class: "usage-row" }, h("span", {}, label), h("b", { class: tone || null }, value));
+  const drawUsage = (u) => {
+    const used = 100 - u.left_pct;
+    ring.querySelector(".used").setAttribute("stroke-dasharray", `${used} 100`);
+    ring.classList.toggle("low", u.left_pct <= 20);
+    usageBtn.title = `AI budget: ${u.left_pct}% left this month`;
+    const sub = u.subscription, live = sub && ["active", "trialing"].includes(sub.status);
+    usagePop.replaceChildren(
+      h("p", { class: "usage-src" }, `Usage source: ${ent?.name || "Your organisation"} · ${u.month}`),
+      h("div", { class: "acct-sep", role: "separator" }),
+      row("Monthly AI budget", `${u.left_pct}% left`, u.left_pct <= 20 ? "warn" : null),
+      row("AI calls this month", u.calls.toLocaleString()),
+      row("Resets in", `${u.resets_in_days} day${u.resets_in_days === 1 ? "" : "s"}`),
+      row("Subscription", live ? (sub.cancelling ? "Ends soon" : "Active") : "Not subscribed", live ? null : "warn"),
+      h("div", { class: "acct-sep", role: "separator" }),
+      h("a", { href: "#/account", onclick: () => usagePop.hidePopover?.() }, h("span", {}, "Manage usage")));
+  };
+  const loadUsage = () => api("/api/org/usage").then(drawUsage).catch(() => { usagePop.replaceChildren(h("p", { class: "usage-src" }, "Usage could not be loaded.")); });
+  loadUsage();
+  usagePop.addEventListener("beforetoggle", (e) => {
+    if (e.newState !== "open") return;
+    loadUsage();
+    const r = usageBtn.getBoundingClientRect(), side = shellEl.classList.contains("is-sidebar-collapsed");
+    Object.assign(usagePop.style, side ? { left: `${r.right + 10}px`, bottom: `${innerHeight - r.bottom}px` } : { left: `${r.left}px`, bottom: `${innerHeight - r.top + 8}px` });
+  });
   account.addEventListener("beforetoggle", (e) => {  // pop up above the button, or beside it when the rail is icon-only
     if (e.newState !== "open") return;
     const r = accountBtn.getBoundingClientRect(), side = shellEl.classList.contains("is-sidebar-collapsed");
@@ -137,7 +183,7 @@ function shell() {
       group("Hiring", "nav-hiring", link("#/openings", "Openings", "nav-openings"), link("#/plugins", "Hiring plugins", "nav-plugins")),
       group("AI trends", "nav-trends", link("#/signals", "Market trends", "nav-market"), link("#/heatmap", "Skills gap heatmap", "nav-heatmap")),
       h("div", { style: { flex: 1 } }),
-      accountBtn, account);
+      h("div", { class: "rail-foot" }, accountBtn, usageBtn), account, usagePop);
   shellEl = h("div", { class: "hr-shell" },
     sidebar,
     h("main", { id: "main", class: "hr-main", tabindex: "-1" }),
@@ -197,7 +243,7 @@ function route() {
   const [page = "overview", id, ...extra] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
   if (page === "plans") { location.replace(`#/review${id ? `/${id}` : ""}`); return; }  // the plans register is part of the review page now
   const pages = new Set(["overview", "run", "review", "openings", "signals", "heatmap", "plugins", "people", "models", "agents", "account", "pricing", "privacy", "terms"]);
-  if (!pages.has(page) || extra.length || (id && !["review", "openings", "plugins", "agents"].includes(page))) {
+  if (!pages.has(page) || extra.length || (id && !["review", "openings", "plugins", "agents", "people", "account"].includes(page))) {
     location.replace("#/overview");
     return;
   }
@@ -222,8 +268,8 @@ function route() {
   if (page !== "review" || !main.querySelector(".review")) main.scrollTop = 0;
   const views = { run: runView, review: () => reviewView(main, id),
     openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status), heatmap: () => heatmapView(main),
-    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)),
-    account: () => accountView(main, { refreshMe: async () => { S.me = await api("/api/me"); return S.me; }, hrLayout: true }),
+    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status, id ? decodeURIComponent(id) : null), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)),
+    account: () => accountView(main, { refreshMe: async () => { S.me = await api("/api/me"); return S.me; }, hrLayout: true, tab: id }),
     pricing: () => pricingView(main, { me: S.me }),
     terms: () => termsView(main, { hrLayout: true }), privacy: () => privacyView(main, { hrLayout: true }) };
   Promise.resolve((views[page] || overview)(main)).catch((e) => {
