@@ -48,7 +48,7 @@ from core.team_import import parse_team
 from governance import workforce
 from governance.employee_ids import allocate_ids
 from core.usage import summarize
-from governance import accounts, approval, billing, challenge, deletion, demo_bootstrap, otp, plugins, recruiting, reviews, risk
+from governance import accounts, approval, billing, challenge, deletion, demo_bootstrap, enterprise, otp, plugins, recruiting, reviews, risk
 from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
@@ -311,7 +311,9 @@ def logout(request: HttpRequest, response: Response):
 def me(user: dict = Depends(current_user)):
     with DB_LOCK:
         a = accounts.account(db, user["username"]) or {}
+        prof = enterprise.profile(db, user)
     return user | {k: a.get(k) for k in ("email", "status", "plan", "plan_until", "effective_plan", "account_type")} \
+        | {"profile": prof, "avatar_url": prof["avatar_url"], "enterprise": prof["enterprise"]} \
         | {"terms_version": a.get("terms_version"), "terms_current": accounts.TERMS_VERSION,
            "hr_can_view": bool(a.get("invited_by")) and user["role"] == "employee"}  # their HR advisor sees their own plans (read-only)
 
@@ -651,20 +653,22 @@ def billing_intent(body: IntentIn, request: HttpRequest, user: dict = Depends(cu
         raise HTTPException(403, "This payment was blocked for your account's safety. Contact support.")
     try:
         with DB_LOCK:
-            return billing.create_intent(db, cfg, user, body.plan)
+            return billing.subscribe(db, cfg, user) if body.plan == "team" else billing.create_intent(db, cfg, user, body.plan)
     except billing.BillingError as e:
         raise HTTPException(503 if not billing.configured(cfg) else 400, str(e))
 
 
 class ConfirmIn(BaseModel):
-    intent_id: str = Field(max_length=80)
+    intent_id: str = Field(default="", max_length=80)
+    subscription_id: str = Field(default="", max_length=80)
 
 
 @app.post("/api/billing/confirm")
 def billing_confirm(body: ConfirmIn, request: HttpRequest, user: dict = Depends(current_user)):
     try:
         with DB_LOCK:
-            r = billing.confirm(db, cfg, user, body.intent_id)
+            r = (billing.confirm_subscription(db, cfg, user, body.subscription_id) if body.subscription_id
+                 else billing.confirm(db, cfg, user, body.intent_id))
             if r["status"] in ("requires_payment_method", "canceled"):
                 risk.assess(db, "payment_failed", user["username"], _ip(request), None)
             return r | {"me": accounts.account(db, user["username"])}
@@ -689,7 +693,120 @@ async def billing_webhook(request: HttpRequest):
                     risk.assess(db, "payment_failed", (obj.get("metadata") or {}).get("username"), None, {"device_id": "stripe"})
         except billing.BillingError:
             pass  # not one of ours
+    elif event.get("type") in ("invoice.paid", "invoice.payment_failed", "customer.subscription.updated", "customer.subscription.deleted"):
+        try:
+            with DB_LOCK:
+                billing.on_subscription_event(db, cfg, obj)
+        except billing.BillingError:
+            pass  # not one of ours
     return {"received": True}
+
+
+@app.get("/api/billing/subscription")
+def billing_subscription(user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        sub = billing.subscription(db, user["username"])
+    return {"subscription": sub, "price_cents": cfg.price_team_cents, "currency": cfg.currency, "enabled": billing.configured(cfg)}
+
+
+class RenewalIn(BaseModel):
+    renew: bool
+
+
+@app.post("/api/billing/subscription/renewal")
+def billing_renewal(body: RenewalIn, user: dict = Depends(need("hr_advisor"))):
+    try:
+        with DB_LOCK:
+            return billing.set_renewal(db, cfg, user, body.renew)
+    except billing.BillingError as e:
+        raise HTTPException(400, str(e))
+
+
+# ---------------------------------------------------------------- profiles: details, photo (Cloudflare R2), verified email change
+class ProfileIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    display_name: str | None = Field(default=None, max_length=80)
+    phone: str | None = Field(default=None, max_length=30)
+    title: str | None = Field(default=None, max_length=80)
+    department: str | None = Field(default=None, max_length=80)
+    org_name: str | None = Field(default=None, max_length=100)
+    org_kind: str | None = Field(default=None, pattern="^(company|school)$")
+
+
+@app.get("/api/profile")
+def profile_get(user: dict = Depends(current_user)):
+    with DB_LOCK:
+        return enterprise.profile(db, user)
+
+
+@app.post("/api/profile")
+def profile_set(body: ProfileIn, user: dict = Depends(current_user)):
+    try:
+        with DB_LOCK:
+            enterprise.update_profile(db, user, body.model_dump())
+            return enterprise.profile(db, user)
+    except enterprise.EnterpriseError as e:
+        raise HTTPException(422, str(e))
+
+
+class EmailChangeIn(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+
+
+@app.post("/api/profile/email")
+def profile_email(body: EmailChangeIn, request: HttpRequest, user: dict = Depends(current_user)):
+    """Email the new address a confirmation link; the account keeps its current email until it is opened."""
+    try:
+        with DB_LOCK:
+            new = enterprise.start_email_change(db, user["username"], body.email)
+            sent = otp.issue(db, cfg, user["username"], new, _base_url(request), purpose="email")
+    except enterprise.EnterpriseError as e:
+        raise HTTPException(422, str(e))
+    return {"pending": new, "sent": sent}
+
+
+class EmailVerifyIn(BaseModel):
+    username: str = Field(min_length=3, max_length=40)
+    token: str = Field(min_length=10, max_length=80)
+
+
+@app.post("/api/profile/email/verify")
+def profile_email_verify(body: EmailVerifyIn):
+    with DB_LOCK:
+        if not otp.check_link(db, body.username, body.token, purpose="email"):
+            raise HTTPException(400, "This link has expired or was already used. Ask for a new one from your account page.")
+        try:
+            email = enterprise.finish_email_change(db, body.username)
+        except enterprise.EnterpriseError as e:
+            raise HTTPException(400, str(e))
+    return {"email": email}
+
+
+@app.post("/api/profile/avatar")
+async def profile_avatar(file: UploadFile = File(...), user: dict = Depends(current_user)):
+    data = await file.read(enterprise.AVATAR_MAX + 1)
+    try:
+        with DB_LOCK:
+            enterprise.save_avatar(db, cfg, user["username"], data)
+            return enterprise.profile(db, user)
+    except enterprise.EnterpriseError as e:
+        raise HTTPException(503 if not enterprise.r2_configured(cfg) else 422, str(e))
+
+
+@app.get("/api/avatar/{username}")
+def avatar(username: str, user: dict = Depends(current_user)):
+    """A profile photo, for its owner, people in the same enterprise, and admins (never public)."""
+    with DB_LOCK:
+        me_ = accounts.account(db, user["username"]) or {}
+        them = accounts.account(db, username) or {}
+        mine = enterprise.owner_of(user, me_)
+        theirs = username if them.get("role") == "hr_advisor" else them.get("invited_by")
+        if not them or not (user["role"] == "admin" or username == user["username"] or (mine and mine == theirs)):
+            raise HTTPException(404, "not found")
+        got = enterprise.load_avatar(db, cfg, username)
+    if not got:
+        raise HTTPException(404, "no photo")
+    return Response(got[0], media_type=got[1], headers={"Cache-Control": "private, max-age=300"})
 
 
 @app.get("/api/billing/payments")
@@ -2520,6 +2637,36 @@ SPEC = r"^(openai|gemini):[\w.\-/:]{1,80}$"
 class ModelIn(BaseModel):
     spec: str = Field(pattern=SPEC)
     label: str = Field(default="", max_length=60)
+
+
+@app.get("/api/admin/enterprises")
+def admin_enterprises(month: str = "", user: dict = Depends(need("admin"))):
+    with DB_LOCK:
+        return enterprise.enterprises(db, cfg, month) | {"tasks": llm.TASKS}
+
+
+@app.get("/api/admin/enterprises/{owner}/bill")
+def admin_enterprise_bill(owner: str, month: str = "", user: dict = Depends(need("admin"))):
+    try:
+        with DB_LOCK:
+            return enterprise.bill(db, cfg, owner, month)
+    except enterprise.EnterpriseError as e:
+        raise HTTPException(404, str(e))
+
+
+class EnterpriseModelIn(BaseModel):
+    task: str = Field(max_length=40)
+    spec: str = Field(default="", max_length=90)  # "" = the default
+
+
+@app.post("/api/admin/enterprises/{owner}/models")
+def admin_enterprise_model(owner: str, body: EnterpriseModelIn, user: dict = Depends(need("admin"))):
+    try:
+        with DB_LOCK:
+            enterprise.set_model(db, owner, body.task, body.spec, llm.TASKS, llm.usable)
+            return {"models": dict(db.execute("SELECT task, spec FROM org_models WHERE owner=?", (owner,)).fetchall())}
+    except enterprise.EnterpriseError as e:
+        raise HTTPException(422, str(e))
 
 
 @app.get("/api/admin/models")
