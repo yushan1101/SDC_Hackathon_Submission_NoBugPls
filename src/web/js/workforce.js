@@ -6,7 +6,7 @@ const SELECTED = new Set();
 const cellKey = (c) => `${c.skill}\u001f${c.group}`;
 
 export async function workforceView(root) {
-  const selected = { skill: new Set(), category: "all", scenario: "assistive", department: "", role: "", samplePreview: false, sampleDismissed: false };
+  const selected = { skill: new Set(), category: "all", scenario: "assistive", department: "", role: "", source: "", samplePreview: false, sampleDismissed: false };
   let request = 0, data, plans = [];
   const output = h("div", { class: "wf-output", "aria-live": "polite" });
   const filters = h("div", { class: "wf-filters" });
@@ -37,13 +37,15 @@ export async function workforceView(root) {
       select("Job role", "role", [["", "All roles"], ...roleOptions.map((v) => [v, v])]), skills,
       select("Category", "category", [["all", "Skills & tools"], ["skill", "Skills"], ["tool", "Tools"]]),
       select("AI scenario", "scenario", [["assistive", "Assistive"], ["agentic", "Agentic"]]),
-      h("button", { type: "button", class: "btn sm", onclick: () => { Object.assign(selected, { skill: new Set(), category: "all", scenario: "assistive", department: "", role: "" }); SELECTED.clear(); drawFilters(); load(); } }, "Reset filters"));
+      data.policy.sample_preview ? null : select("Source", "source", [["", "All sources"], ...(data.sources || []).map((x) => [x.key, `${x.label} (${x.employees})`])]),
+      h("button", { type: "button", class: "btn sm", onclick: () => { Object.assign(selected, { skill: new Set(), category: "all", scenario: "assistive", department: "", role: "", source: "" }); SELECTED.clear(); drawFilters(); load(); } }, "Reset filters"));
   }
 
   async function load() {
     const version = ++request;
     const params = new URLSearchParams({ scenario: selected.scenario, category: selected.category, department: selected.department, role: selected.role });
     if (selected.samplePreview) params.set("sample_preview", "true");
+    else if (selected.source) params.set("source", selected.source);
     selected.skill.forEach((value) => params.append("skill", value));
     status.textContent = "Loading workforce assessments…";
     output.setAttribute("aria-busy", "true"); refresh.disabled = true;
@@ -51,7 +53,7 @@ export async function workforceView(root) {
       const next = await api(`/api/hr/workforce?${params}`);
       if (version !== request || !root.isConnected) return;
       const hasHeatmap = next.cells?.some((c) => c.status === "ready");
-      if (!selected.samplePreview && !selected.sampleDismissed && !hasHeatmap && next.sample_available) {
+      if (!selected.samplePreview && !selected.sampleDismissed && !selected.source && !hasHeatmap && next.sample_available) {
         selected.samplePreview = true; await load(); return;
       }
       const optionsChanged = !data || JSON.stringify(data.options) !== JSON.stringify(next.options);
@@ -60,7 +62,7 @@ export async function workforceView(root) {
       previewBanner.replaceChildren(...(next.policy.sample_preview ? [h("strong", {}, "SAMPLE DATA · PREVIEW ONLY"),
         h("span", {}, "40 fictional employees across five departments. Sample results are for demonstration and do not represent a real workforce."),
         h("button", { type: "button", class: "btn sm", onclick: () => { selected.samplePreview = false; selected.sampleDismissed = true; SELECTED.clear(); load(); } }, "View real assessments")]
-        : selected.sampleDismissed ? [h("strong", {}, "REAL ASSESSMENTS"), h("span", {}, "Showing authorized stored workforce assessments for this organization."),
+        : selected.sampleDismissed ? [h("strong", {}, "REAL ASSESSMENTS"), h("span", {}, `Your organisation's analyses: ${(next.sources || []).map((x) => `${x.employees} ${x.label.toLowerCase()}`).join(" · ")}.`),
           h("button", { type: "button", class: "btn sm", onclick: () => { selected.samplePreview = true; selected.sampleDismissed = false; SELECTED.clear(); load(); } }, "View sample preview")] : []));
       if (optionsChanged || !filters.childElementCount) drawFilters();
       status.textContent = "";
@@ -131,8 +133,11 @@ export async function workforceView(root) {
       !SELECTED.size ? h("span", { id: "wf-team-action-hint", class: "wf-team-action-hint" }, "Select a suggested priority below to enable plan creation.") : null);
     const heatmap = h("section", { class: "panel" }, h("header", { class: "wf-panel-header" }, h("div", {}, h("h2", {}, "Team skill gaps"),
       h("p", { class: "muted" }, "Each cell shows employees below their role’s target proficiency.")), teamAction),
-      h("div", { class: "pad wf-matrix" }, suggestions, matrix, legend,
-        h("p", { class: "muted wf-policy" }, data.policy.sample_preview ? "Fictional data uses role-specific targets on a 0–5 scale. Select a cell to inspect it and add its gap to a draft team plan." : "Gap percentage is employees below their role-specific required proficiency divided by employees assessed for that skill. Missing assessments are excluded; assessed 0% is shown in green.")));
+      h("div", { class: "pad wf-matrix" }, suggestions, matrix,
+        data.total_skills > data.rows.length && !selected.skill.size ? h("p", { class: "muted wf-policy" },
+          `Showing the ${data.rows.length} most-assessed of ${data.total_skills} skills. Use the Skills filter to pick others.`) : null,
+        legend,
+        h("p", { class: "muted wf-policy" }, data.policy.sample_preview ? "Fictional data uses role-specific targets on a 0–5 scale. Select a cell to inspect it and add its gap to a draft team plan." : "Built from your organisation's analyses: resumes and quizzes your invited employees ran for themselves, and the team files you uploaded. Gap percentage is employees below their role's required proficiency divided by employees assessed for that skill; missing assessments are excluded.")));
     const savedPlan = (p) => {
       const gapCount = (p.gaps || p.skills || []).length;
       const priorityList = h("ul", {}, (p.priorities || p.skills || []).map((item) =>

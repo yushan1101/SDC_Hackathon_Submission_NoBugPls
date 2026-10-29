@@ -38,8 +38,8 @@ def create_demo_accounts(con) -> list[dict[str, str]]:
         for item in credentials:
             salt = secrets.token_bytes(16)
             con.execute(
-                "INSERT INTO users(username,pw_hash,salt,role,employee_id,display_name,created_utc) "
-                "VALUES(?,?,?,?,?,?,?)",
+                "INSERT INTO users(username,pw_hash,salt,role,employee_id,display_name,created_utc,invited_by) "
+                "VALUES(?,?,?,?,?,?,?,?)",
                 (
                     item["username"],
                     accounts._hash(item["password"], salt),
@@ -48,6 +48,7 @@ def create_demo_accounts(con) -> list[dict[str, str]]:
                     item["employee_id"] or None,
                     item["display_name"],
                     now(),
+                    "demo_hr" if item["role"] == "employee" else None,  # the demo employee is in the demo HR's organisation
                 ),
             )
 
