@@ -171,7 +171,7 @@ export async function workforceView(root) {
         data.total_skills > data.rows.length && !selected.skill.size ? h("p", { class: "muted wf-policy" },
           `Showing the ${data.rows.length} most-assessed of ${data.total_skills} skills. Use the Skills filter to pick others.`) : null,
         selected.view === "bloom" ? null : legend,
-        h("p", { class: "muted wf-policy" }, data.policy.sample_preview ? "Fictional data uses role-specific targets on a 0–5 scale. Select a cell to inspect it and add its gap to a draft team plan." : "Built from your organisation's analyses: resumes and quizzes your invited employees ran for themselves, and the team files you uploaded. Gap percentage is employees below their role's required proficiency divided by employees assessed for that skill; missing assessments are excluded.")));
+        h("p", { class: "muted wf-policy" }, data.policy.sample_preview ? "Fictional data uses role-specific targets on a 0–5 scale. Select a cell to inspect it and add its gap to a draft team plan." : "Built from HR-managed team assessment uploads. Employees' individual analyses stay separate and are not included here. Gap percentage is employees below their role's required proficiency divided by employees assessed for that skill; missing assessments are excluded.")));
     const savedPlan = (p) => {
       const gapCount = (p.gaps || p.skills || []).length;
       const priorityList = h("ul", {}, (p.priorities || p.skills || []).map((item) =>
