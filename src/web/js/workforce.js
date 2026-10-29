@@ -1,5 +1,6 @@
 // HR overview: cohort comparisons, sample preview, and separate team plans.
 import { api, h, icon, stream } from "./lib.js";
+import { Owl } from "./owl.js";
 
 const SEVERITY = { low: ["Low", "0–24%"], moderate: ["Moderate", "25–49%"], high: ["High", "50–74%"], critical: ["Critical", "75–100%"] };
 const SELECTED = new Set();
@@ -224,9 +225,12 @@ export async function workforceView(root) {
       chart.append(g);
     });
     const people = data.overview.employees, avg = Math.round(skills.reduce((t, x) => t + x.pct, 0) / skills.length);
-    chart.append(svg("circle", { cx: C, cy: C, r: R0 - 6, class: "wf-bloom-core" }),
-      Object.assign(svg("text", { x: C, y: C + 4, class: "wf-bloom-num" }), { textContent: `${avg}%` }),
-      Object.assign(svg("text", { x: C, y: C + 22, class: "wf-bloom-cap" }), { textContent: "avg gap" }));
+    chart.append(svg("circle", { cx: C, cy: C, r: R0 - 4, class: "wf-bloom-core" }));
+    // the owl sits in the flower; its mood follows the data: rings a reminder for large gaps, celebrates small ones,
+    // and thinks while a petal is pointed at
+    const mood = avg >= 70 ? "reminder" : avg < 25 ? "celebrating" : "idle";
+    const owl = new Owl({ size: 64, state: mood });
+    chart.querySelectorAll(".wf-petal").forEach((p) => { p.addEventListener("mouseenter", () => owl.set("thinking")); p.addEventListener("mouseleave", () => owl.set(mood)); });
     // one dot per person up to ten people; above that ten dots, each a tenth of the people assessed
     const dots = (x) => { const per = x.employees <= 10, n = per ? x.employees : 10, on = per ? x.affected : Math.round(x.pct / 10);
       return h("span", { class: "wf-dots", "aria-hidden": "true", title: per ? "One dot per person" : "Each dot is 10% of the people assessed" },
@@ -238,7 +242,9 @@ export async function workforceView(root) {
       dots(x), h("span", { class: "wf-rank-pct" }, `${x.pct}%`, h("small", {}, `${x.affected}/${x.employees}`))))));
     const scale = h("div", { class: "wf-bloom-scale", "aria-hidden": "true" }, h("span", {}, "Smaller gap"), [1, 2, 3, 4, 5].map((k) => h("i", { class: `s${k}` })), h("span", {}, "Larger gap"));
     return h("div", { class: "wf-bloom-wrap" },
-      h("figure", { class: "wf-bloom-fig" }, chart, h("figcaption", {}, scale, h("span", { class: "muted" }, `${people} people · petal length = share below target`))),
+      h("figure", { class: "wf-bloom-fig" }, h("div", { class: "wf-bloom-stage" }, chart, h("div", { class: "wf-bloom-owl" }, owl.el)),
+        h("figcaption", {}, h("p", { class: "wf-bloom-avg" }, h("b", {}, `${avg}%`), " average gap across these skills"),
+          scale, h("span", { class: "muted" }, `${people} people · petal length = share below target`))),
       list, tip);
   }
 

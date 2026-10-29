@@ -336,3 +336,10 @@ html[data-product="hr"] .wf-petal.s3 path { fill: url(#wf-bl-3); }
 html[data-product="hr"] .wf-petal.s4 path { fill: url(#wf-bl-4); }
 html[data-product="hr"] .wf-petal.s5 path { fill: url(#wf-bl-5); }
 html[data-product="hr"] .wf-dots { flex-wrap: nowrap; max-width: none; }
+/* the owl in the centre of the bloom */
+html[data-product="hr"] .wf-bloom-stage { position: relative; width: 100%; max-width: 380px; }
+html[data-product="hr"] .wf-bloom-owl { position: absolute; left: 50%; top: 50%; width: 18%; aspect-ratio: 1; translate: -50% -52%; display: grid; place-items: center; pointer-events: none; }
+html[data-product="hr"] .wf-bloom-owl .owl { width: 100%; height: 100%; }
+html[data-product="hr"] .wf-bloom-core { filter: drop-shadow(0 6px 14px oklch(0.4 0.12 263 / 0.22)); }
+html[data-product="hr"] .wf-bloom-avg { margin: 0; font-size: 13px; color: var(--ink-2); }
+html[data-product="hr"] .wf-bloom-avg b { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); margin-right: 4px; }
