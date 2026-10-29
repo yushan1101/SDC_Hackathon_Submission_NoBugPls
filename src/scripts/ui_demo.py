@@ -68,8 +68,8 @@ def enterprise_demo(page, base_url: str, username: str, password: str) -> None:
 
     page.get_by_role("link", name="Run team").click()
     page.get_by_role("button", name="Use sample CSV").click()
-    page.get_by_role("button", name="Run analysis for 5 employees").wait_for(timeout=30_000)
-    page.get_by_role("button", name="Run analysis for 5 employees").click()
+    page.get_by_role("button", name="Run analysis for 8 employees").wait_for(timeout=30_000)
+    page.get_by_role("button", name="Run analysis for 8 employees").click()
     page.get_by_role("link", name="Open review queue").wait_for(timeout=180_000)
     page.get_by_role("link", name="Open review queue").click()
     page.locator('nav[aria-label="Review queue"]').wait_for(timeout=30_000)
