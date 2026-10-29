@@ -498,6 +498,7 @@ function buildView(main) {
 /** From a role match (quiz or resume): target that occupation with the skills we found, then run the agents. */
 function planFor(m, skills, query) {
   Object.assign(S.profile, { target_role: m.soc, target_title: m.title,
+    scenario: ["assistive", "agentic"].includes(m.scenario) ? m.scenario : S.profile.scenario,
     skills: skills.slice(0, 40).map(({ name, level }) => ({ name, level })) });
   saveProfile();
   start(query);

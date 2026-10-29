@@ -2326,7 +2326,7 @@ def match(body: MatchIn, user: dict = Depends(current_user)):
         with DB_LOCK, db:
             assessment_id = interview_store.save_recommendations(db, user["employee_id"], "resume",
                 [s.model_dump() for s in body.skills], matches, parent_assessment_id=body.assessment_id)
-    return {"matches": matches, "assessment_id": assessment_id}
+    return {"matches": matches, "assessment_id": assessment_id, "suggestions": resume.role_advice(matches)}
 
 
 async def _read(file: UploadFile) -> bytes:

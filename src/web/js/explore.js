@@ -4,6 +4,7 @@ import { Owl } from "./owl.js";
 import { jobIcon } from "./jobicons.js";
 import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
 import { brandMark } from "./brands.js";
+import { createScenarioCache } from "./ranking-state.js";
 
 const KEYS = ["A", "B", "C", "D"];
 // Keep assessment results available while moving between SPA routes. The
@@ -274,12 +275,34 @@ export async function quizView(main, ctx) {
   function showResults(result) {
     owl.set("celebrating");
     ctx.status?.set("matched", "Matches ready");
+    const cache = createScenarioCache();
+    const body = { answers: { ...st.answers }, fields: [...st.fields], zone: st.zone };
+    const inputKey = JSON.stringify(body);
+    cache.seed(inputKey, result.scenario, result);
+    let requestId = 0;
+    const rankings = matchesBlock(result.matches, {
+      onPlan: (m) => ctx.planFor(m, result.skills),
+      onInterview: ctx.onInterview ? (m) => ctx.onInterview(m, result.skills) : null,
+      scenario: result.scenario,
+      onScenario: async (next) => {
+        const request = ++requestId;
+        rankings.setPending(next);
+        try {
+          const r = await cache.get(inputKey, next, () => api("/api/quiz/score", { method: "POST", body: { ...body, scenario: next } }));
+          if (request !== requestId || !rankings.isConnected) return;
+          st.scenario = next;
+          lastQuickMatch = { ...r, scenario: next, answers: body.answers, fields: body.fields, zone: body.zone };
+          rankings.update(r.matches, { scenario: next });
+        } catch (e) {
+          if (request === requestId && rankings.isConnected) rankings.setError(e.message);
+        }
+      },
+    });
     stage.replaceChildren(reveal(h("div", { class: "q result" },
       h("h2", {}, "Your quick match"),
       h("p", { class: "muted" }, "A fast estimate from 13 answers. For an evidence-backed analysis, ", h("a", { href: "#/resume" }, "upload your resume"), "."),
       h("ul", { class: "skill-chips" }, result.skills.sort((a, b) => b.level - a.level).map((s) => h("li", {}, s.name, h("b", { class: "num" }, ` ${s.level}/5`)))),
-      matchesBlock(result.matches, { onPlan: (m) => ctx.planFor(m, result.skills), onInterview: ctx.onInterview ? (m) => ctx.onInterview(m, result.skills) : null,
-        scenario: result.scenario, onScenario: (k) => { st.scenario = k; finish(); } }),
+      rankings,
       h("div", { class: "row-actions" }, h("button", { class: "btn", type: "button", onclick: () => {
         lastQuickMatch = null; st.answers = {}; st.fields.clear(); st.zone = null; st.scenario = "assistive"; go(-1);
       } }, "Play again"))), RISE));
@@ -383,26 +406,53 @@ export function resumeView(main, ctx) {
       ? Number(r.years_experience) : null;
     const matchHost = h("div");
     let scenario = r.scenario || "assistive";
+    const scenarioCache = createScenarioCache();
+    const skillKey = () => JSON.stringify(skills.map(({ name, level }) => ({ name, level })));
+    scenarioCache.seed(skillKey(), scenario, { matches: r.matches, assessment_id: r.assessment_id, suggestions: r.insight?.advice });
+    let rankingView = null;
     const saveResumeResults = (matches = r.matches) => {
       lastResumeAnalysis = { ...r, skills: skills.map((s) => ({ ...s })), matches, scenario };
     };
     const lv = (s) => h("div", { class: "seg levels", role: "group", "aria-label": `${s.name} level` },
       [1, 2, 3, 4, 5].map((n) => h("button", { type: "button", "aria-pressed": String(s.level === n), "aria-label": `level ${n}`,
         onclick: (e) => { s.level = n; e.currentTarget.parentElement.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(i + 1 === n))); saveResumeResults(); rematch.disabled = false; } }, n)));
-    const remeasure = async () => {
+    let rematchRequest = 0;
+    const remeasure = async (nextScenario = scenario) => {
+      const request = ++rematchRequest;
+      const inputKey = skillKey();
+      rematch.disabled = true;
       owl.set("analyzing");
-      const m = await api("/api/match", { method: "POST", body: { skills: skills.map(({ name, level }) => ({ name, level })),
-        text: markdown.slice(0, 20000), scenario, assessment_id: r.assessment_id || null } });
-      r.assessment_id = m.assessment_id || r.assessment_id;
-      owl.set("matched"); drawMatches(m.matches);
+      rankingView?.setPending(nextScenario);
+      try {
+        const m = await scenarioCache.get(inputKey, nextScenario, () => api("/api/match", { method: "POST", body: { skills: JSON.parse(inputKey),
+          text: markdown.slice(0, 20000), scenario: nextScenario, assessment_id: r.assessment_id || null } }));
+        if (request !== rematchRequest || !matchHost.isConnected) return;
+        if (inputKey !== skillKey()) {
+          rankingView?.setError("Your skills changed during the update. Select Update matches to use your latest skills.");
+          rematch.disabled = false; return;
+        }
+        r.assessment_id = m.assessment_id || r.assessment_id;
+        scenario = nextScenario;
+        if (r.insight && m.suggestions) r.insight = { ...r.insight, advice: m.suggestions };
+        owl.set("matched"); drawMatches(m.matches); drawAdvice();
+      } catch (e) {
+        if (request !== rematchRequest) return;
+        owl.set("confused"); rematch.disabled = false;
+        rankingView?.setError(e.message);
+        toast(`Could not update matches: ${e.message}`, "err");
+      }
     };
     const rematch = h("button", { class: "btn", type: "button", disabled: true, onclick: () => { rematch.disabled = true; remeasure(); } }, "Update matches");
     const drawMatches = (m) => {
       r.matches = m;
       saveResumeResults(m);
-      matchHost.replaceChildren(matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))),
-      onInterview: ctx.onInterview ? (x) => ctx.onInterview(x, skills.map(({ name, level }) => ({ name, level }))) : null,
-      scenario, onScenario: (k) => { scenario = k; remeasure(); } }));
+      if (rankingView) rankingView.update(m, { scenario });
+      else {
+        rankingView = matchesBlock(m, { onPlan: (x) => ctx.planFor(x, skills.map(({ name, level }) => ({ name, level }))),
+          onInterview: ctx.onInterview ? (x) => ctx.onInterview(x, skills.map(({ name, level }) => ({ name, level }))) : null,
+          scenario, onScenario: (k) => remeasure(k) });
+        matchHost.replaceChildren(rankingView);
+      }
     };
     // the person can correct what was found: change levels, remove a wrong skill, add a missing one
     const skillsUl = h("ul");
@@ -444,6 +494,16 @@ export function resumeView(main, ctx) {
       skillsCollapse] : [skillsList, addSkillRow];  // no skills found: the add box is shown straight away
     const ins = r.insight;
     const mine = () => skills.map(({ name, level }) => ({ name, level }));
+    const adviceHost = h("div", { class: "cv-advice" });
+    const drawAdvice = () => adviceHost.replaceChildren(...(r.insight?.advice || []).map((a, i) => {
+      const m = r.matches.find((x) => x.soc === a.soc || x.title === a.role);
+      return h("article", { class: "brief-card advice-card" },
+        h("header", { class: "bc-head" }, a.soc ? jobIcon(a.soc, { size: 40, labelled: true }) : h("span", { class: "bc-ic" }, icon("target")),
+          h("span", { class: "adv-n" }, `Step ${i + 1}`)),
+        h("h4", {}, a.action), a.why ? h("p", { class: "bc-line" }, a.why) : null,
+        m ? h("button", { class: "btn sm primary", type: "button", onclick: () => ctx.planFor(m, mine()) }, icon("spark"), "Plan for this role") : null);
+    }));
+    drawAdvice();
     const insight = ins ? h("section", { class: "cv-insight" },
       h("div", { class: "brief-card cv-profile" },
         h("header", { class: "bc-head" }, h("span", { class: "bc-ic" }, icon("user")), h("h3", {}, "Your profile"),
@@ -452,14 +512,7 @@ export function resumeView(main, ctx) {
         h("p", { class: "cv-headline" }, ins.headline),
         ins.strengths?.length ? h("ul", { class: "cv-strengths" }, ins.strengths.map((s) =>
           h("li", {}, icon("check"), h("span", {}, h("b", {}, s.skill), h("q", {}, s.quote))))) : null),
-      ins.advice?.length ? h("div", { class: "cv-advice" }, ins.advice.map((a, i) => {
-        const m = r.matches.find((x) => x.title === a.role);
-        return h("article", { class: "brief-card advice-card" },
-          h("header", { class: "bc-head" }, a.soc ? jobIcon(a.soc, { size: 40, labelled: true }) : h("span", { class: "bc-ic" }, icon("target")),
-            h("span", { class: "adv-n" }, `Step ${i + 1}`)),
-          h("h4", {}, a.action), a.why ? h("p", { class: "bc-line" }, a.why) : null,
-          m ? h("button", { class: "btn sm primary", type: "button", onclick: () => ctx.planFor(m, mine()) }, icon("spark"), "Plan for this role") : null);
-      })) : null) : null;
+      adviceHost) : null;
     out.replaceChildren(
       insight,
       integrityBlock(r.integrity, "self"),

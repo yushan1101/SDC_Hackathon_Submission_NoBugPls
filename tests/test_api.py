@@ -328,10 +328,15 @@ def test_matches_explain_their_score_and_follow_the_scenario(client):
     login(client, "ana")
     skills = [{"name": "Python", "level": 3}, {"name": "SQL", "level": 3}, {"name": "data analysis", "level": 3}]
     a = client.post("/api/match", json={"skills": skills}, headers={"X-AP": "1"}).json()["matches"]
-    g = client.post("/api/match", json={"skills": skills, "scenario": "agentic"}, headers={"X-AP": "1"}).json()["matches"]
+    response = client.post("/api/match", json={"skills": skills, "scenario": "agentic"}, headers={"X-AP": "1"}).json()
+    g = response["matches"]
     assert {"coverage", "alignment", "skill_fit", "trend_effect", "scenario"} <= set(a[0]) and a[0]["scenario"] == "assistive"
     assert "recommendation_id" not in a[0]  # raw matching is not a completed assessment and cannot unlock an interview
     assert g[0]["scenario"] == "agentic"
+    assert "requirement_changes" in g[0]
+    assert [s["soc"] for s in response["suggestions"]] == [m["soc"] for m in g[:3]]
+    assert response["suggestions"][0]["skills"] == g[0]["top_gaps"][:2]
+    assert "agentic AI" in response["suggestions"][0]["why"]
     assert client.post("/api/match", json={"skills": skills, "scenario": "doom"}, headers={"X-AP": "1"}).status_code == 422
 
 
