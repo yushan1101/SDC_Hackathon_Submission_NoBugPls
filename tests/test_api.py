@@ -805,12 +805,12 @@ def test_paid_plan_activates_only_from_stripes_own_record(client, monkeypatch):
     pi = {"id": "pi_test_123", "object": "payment_intent", "status": "succeeded", "amount": api.cfg.price_pro_cents,
           "amount_received": api.cfg.price_pro_cents, "currency": api.cfg.currency,
           "metadata": {"username": "payer1", "plan": "pro"}, "latest_charge": {"receipt_url": "https://pay.stripe.com/receipts/x"}}
-    monkeypatch.setattr(billing, "_stripe", lambda cfg, method, path, data=None: pi)
+    monkeypatch.setattr(billing, "_stripe", lambda cfg, method, path, data=None, version=None: pi)
     r = client.post("/api/billing/confirm", json={"intent_id": "pi_test_123"}, headers={"X-AP": "1"})
     assert r.status_code == 200 and r.json()["activated"] and r.json()["me"]["effective_plan"] == "pro"
     assert client.get("/api/billing/payments").json()[0]["receipt_url"].startswith("https://pay.stripe.com/")
     pi2 = pi | {"id": "pi_test_456", "amount_received": 100}  # paid less than the price: no plan
-    monkeypatch.setattr(billing, "_stripe", lambda cfg, method, path, data=None: pi2)
+    monkeypatch.setattr(billing, "_stripe", lambda cfg, method, path, data=None, version=None: pi2)
     assert client.post("/api/billing/confirm", json={"intent_id": "pi_test_456"}, headers={"X-AP": "1"}).json()["activated"] is False
     login(client, "ana")  # someone else's payment
     assert client.post("/api/billing/confirm", json={"intent_id": "pi_test_123"}, headers={"X-AP": "1"}).status_code == 400

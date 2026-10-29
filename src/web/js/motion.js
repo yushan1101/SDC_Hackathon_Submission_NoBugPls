@@ -54,6 +54,12 @@ function enhance(root) {
   all(".lp").forEach(landing);
   all(".today-title").forEach(todayHeading);
   all(".board").forEach(board);
+  if (document.documentElement.dataset.product === "hr") {
+    all(".view-head h1, .view > h1").forEach(consoleTitle);
+    // cards that arrive with their data, after the title, lift in the same way
+    all(".stats > .stat, .wf-stats > .wf-stat, .view > .panel").forEach((el) => onView(el, { y: 14, opacity: 0, duration: 0.5, ease: "power3.out",
+      delay: Math.min([...el.parentElement.children].indexOf(el), 6) * 0.04 }));
+  }
   // "what changed since yesterday" fills in after the board (it needs the history), item by item
   all(".trend-changes > *").forEach((el) => onView(el, { y: 16, opacity: 0, duration: 0.5, ease: EASE,
     delay: Math.min([...el.parentElement.children].indexOf(el), 6) * 0.06 }));
@@ -124,6 +130,32 @@ function words(h) {
 }
 
 const view = (el, start = "top 82%") => (ST ? { trigger: el, start, once: true } : undefined);
+
+/** SplitText (after React Bits' SplitText): split a heading into characters, kept inside per-word spans so lines
+ *  still wrap between words; screen readers keep the whole heading (aria-label). */
+function chars(h) {
+  const text = h.textContent;
+  h.setAttribute("aria-label", text);
+  h.replaceChildren(...text.split(/(\s+)/).map((w) => {
+    if (/^\s+$/.test(w)) return document.createTextNode(w);
+    const word = document.createElement("span");
+    word.className = "sw"; word.setAttribute("aria-hidden", "true");
+    word.append(...[...w].map((c) => Object.assign(document.createElement("span"), { className: "sc", textContent: c })));
+    return word;
+  }));
+  return h.querySelectorAll(".sc");
+}
+
+// ---------------------------------------------------------------- HR and admin consoles: one moment per page
+/** The page title's letters rise in (SplitText: from y + transparent, power3.out, short stagger), then the page's
+ *  stat cards and panels lift in after it. */
+function consoleTitle(h1) {
+  const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+  tl.from(chars(h1), { y: 18, opacity: 0, duration: 0.6, stagger: 0.022 });
+  const view = h1.closest(".view, .hr-main") || document;
+  const blocks = [...view.querySelectorAll(":scope .stats > .stat, :scope .wf-stats > .wf-stat, :scope > .panel, :scope .view > .panel, :scope .wf-filters, :scope .grid2 > .panel")].filter(once).slice(0, 10);
+  if (blocks.length) tl.from(blocks, { y: 14, opacity: 0, duration: 0.5, stagger: 0.04, clearProps: "transform,opacity" }, "-=0.45");
+}
 
 function landing(lp) {
   const $ = (sel) => lp.querySelector(sel), $$ = (sel) => [...lp.querySelectorAll(sel)];

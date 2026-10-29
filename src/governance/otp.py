@@ -25,6 +25,9 @@ PURPOSES = {
     "reset": ("reset:", "reset", timedelta(minutes=10), "Reset your AiversePulse password", "Reset your password",
               ["Open this link in the browser where you asked for it to choose a new password.",
                "On another device, it shows a 6-digit code to type in that browser instead."], "Reset password"),
+    "email": ("email:", "email", timedelta(minutes=30), "Confirm your new AiversePulse email", "Confirm your new email",
+              ["Open this link to use this address for your AiversePulse account ({username}).",
+               "Until you do, your account keeps its current email."], "Confirm email"),
     "invite": ("invite:", "invite", timedelta(days=7), "You're invited to AiversePulse", "Join your team on AiversePulse",
                ["{inviter} invited you to AiversePulse, your organisation's reskilling and career-planning space.",
                 "Your username is {username}. Open the link to choose a password; no sign-up needed."], "Accept invite"),
@@ -60,10 +63,10 @@ def issue(con, cfg, username: str, email: str, base_url: str, purpose: str = "si
                     "tries=excluded.tries, link_hash=excluded.link_hash",
                     (key, _later(ttl), _h(key, "link:" + token)))
     link = f"{base_url.rstrip('/')}/#/{route}/{username}/{token}"
-    lasts = "7 days" if ttl.days else "10 minutes"
+    lasts = "7 days" if ttl.days else f"{ttl.seconds // 60} minutes"
     return mailer.send(cfg, email, subject, heading, [t.format(inviter=inviter or "Your HR team", username=username) for t in lines],
                        button, link, f"The link works once and expires in {lasts}. If you weren't expecting this, ignore it.",
-                       owl_state={"signup": "update", "reset": "reminder", "invite": "greeting"}[purpose])
+                       owl_state={"signup": "update", "reset": "reminder", "invite": "greeting", "email": "update"}[purpose])
 
 
 def _row(con, key: str):

@@ -74,12 +74,12 @@ function shell() {
   sidebar = h("nav", { id: "admin-sidebar", class: "rail admin-rail", "aria-label": "Admin navigation",
     onclick: (event) => { if (isMobile() && event.target.closest("a")) closeMobile(true); } },
     h("div", { class: "admin-rail-head" }, brand, sidebarToggle, closeButton),
-    link("#/overview", "Overview", "grid"), link("#/accounts", "Accounts", "people"), link("#/usage", "Token use", "pulse"),
-    link("#/fraud", "Fraud monitoring", "flag"), link("#/payments", "Payments", "file"),
-    link("#/models", "AI models", "model"), link("#/sites", "Frontend sites", "globe"),
+    link("#/overview", "Overview", "nav-overview"), link("#/enterprises", "Enterprises", "nav-hiring"), link("#/accounts", "Accounts", "nav-team"), link("#/usage", "Token use", "nav-tokens"),
+    link("#/fraud", "Fraud monitoring", "nav-fraud"), link("#/payments", "Payments", "nav-payments"),
+    link("#/models", "AI models", "nav-models"), link("#/sites", "Frontend sites", "nav-sites"),
     h("div", { class: "admin-rail-spacer" }),
     h("a", { class: "admin-nav-link admin-signout", href: "#", "aria-label": "Sign out", title: "Sign out", onclick: (e) => { e.preventDefault(); signOut(); } },
-      icon("out"), h("span", { class: "lbl" }, "Sign out"), h("span", { class: "tip", "aria-hidden": "true" }, "Sign out")));
+      icon("nav-signout"), h("span", { class: "lbl" }, "Sign out"), h("span", { class: "tip", "aria-hidden": "true" }, "Sign out")));
   let wasMobile = isMobile();
   addEventListener("keydown", (event) => {
     if (event.key === "Escape" && mobileOpen) { event.preventDefault(); closeMobile(true); }
@@ -102,7 +102,7 @@ function shell() {
     h("header", { class: "hr-top admin-top" }, mobileToggle, S.crumb = h("div", { class: "crumb" }),
       h("div", { class: "who" }, h("div", {}, S.me.display_name || S.me.username), h("div", { class: "muted" }, "Administrator"))),
     h("main", { id: "main", class: "hr-main", tabindex: "-1" }),
-    h("nav", { class: "hr-tabbar", "aria-label": "Primary" }, tab("#/overview", "Overview", "grid"), tab("#/accounts", "Accounts", "people"),
+    h("nav", { class: "hr-tabbar", "aria-label": "Primary" }, tab("#/overview", "Overview", "grid"), tab("#/enterprises", "Enterprises", "job"), tab("#/accounts", "Accounts", "people"),
       tab("#/usage", "Tokens", "pulse"), tab("#/fraud", "Fraud", "flag"), tab("#/payments", "Payments", "file"),
       tab("#/models", "Models", "model"), tab("#/sites", "Sites", "globe")));
   app.replaceChildren(shellEl);
@@ -113,9 +113,9 @@ async function signOut() { await api("/api/logout", { method: "POST" }).catch(()
 
 function route() {
   const page = (location.hash.slice(2) || "overview").split("/")[0];
-  const views = { overview, accounts, usage, fraud, payments, models, sites };
+  const views = { overview, enterprises, accounts, usage, fraud, payments, models, sites };
   if (!views[page]) { location.replace("#/overview"); return; }
-  const names = { overview: "Overview", accounts: "Accounts", usage: "Token use", fraud: "Fraud monitoring", payments: "Payments", models: "AI models", sites: "Frontend sites" };
+  const names = { overview: "Overview", enterprises: "Enterprises", accounts: "Accounts", usage: "Token use", fraud: "Fraud monitoring", payments: "Payments", models: "AI models", sites: "Frontend sites" };
   S.crumb.textContent = names[page];
   document.querySelectorAll("[data-route]").forEach((a) => {
     if (a.dataset.route === `#/${page}`) a.setAttribute("aria-current", "page");
@@ -252,6 +252,68 @@ async function payments(main) {
       h("td", {}, h("span", { class: `tag ${tone(p.status)}`, title: p.failure || "" }, p.status === "succeeded" ? "paid" : p.status.replaceAll("_", " "))),
       h("td", { class: "mono muted" }, p.intent_id), h("td", {}, p.receipt_url ? h("a", { href: p.receipt_url, target: "_blank", rel: "noopener noreferrer" }, "Receipt") : "–"))),
       "No payments yet.")));
+}
+
+// ---------------------------------------------------------------- enterprises: each one's monthly bill and AI models
+async function enterprises(main, month = "") {
+  const [d, cat] = await Promise.all([api(`/api/admin/enterprises${month ? `?month=${month}` : ""}`), api("/api/admin/models")]);
+  const ready = cat.catalog.filter((m) => m.ready);
+  const usd = (n) => `$${Number(n || 0).toFixed(n && n < 1 ? 4 : 2)}`;
+  const monthPick = h("input", { class: "input admin-month", type: "month", value: d.month, "aria-label": "Billing month",
+    onchange: () => monthPick.value && enterprises(main, monthPick.value) });
+  const kindTag = (k) => h("span", { class: "tag" }, k === "school" ? "School" : "Company");
+  const planCell = (e) => {
+    const live = e.plan === "team";
+    const s = e.subscription;
+    return h("div", { class: "ent-plan" }, h("span", { class: `tag ${live ? "approved" : "draft"}` }, live ? "Enterprise" : "Not paid"),
+      h("small", { class: "muted" }, s ? (s.cancelling ? `ends ${fmtTime(s.renews)}` : s.renews ? `renews ${fmtTime(s.renews)}` : s.status) : "no subscription"));
+  };
+  const manage = (e) => {
+    const dlg = h("dialog", { class: "drawer ent-drawer", "aria-label": `${e.name} details`, onclose: () => dlg.remove() });
+    const body = h("div", { class: "pad" }, h("p", { class: "muted" }, "Loading…"));
+    dlg.append(h("header", {}, h("h2", {}, e.name), h("button", { class: "btn sm", type: "button", onclick: () => dlg.close() }, "Close")), body);
+    document.body.append(dlg); dlg.showModal();
+    api(`/api/admin/enterprises/${encodeURIComponent(e.owner)}/bill?month=${d.month}`).then((b) => {
+      const models = { ...e.models };
+      const picks = Object.entries(d.tasks).map(([task, label]) => {
+        const sel = h("select", { class: "input", "aria-label": `${label} model`, onchange: async () => {
+          try { const r = await api(`/api/admin/enterprises/${encodeURIComponent(e.owner)}/models`, { method: "POST", body: { task, spec: sel.value } });
+            Object.assign(models, r.models); toast(`${label}: ${sel.value || "default"}`); }
+          catch (ex) { toast(ex.message, "err"); sel.value = models[task] || ""; }
+        } }, h("option", { value: "" }, `Default (${cat.defaults[task] || "rule-based"})`),
+          ready.map((m) => h("option", { value: m.spec, selected: models[task] === m.spec ? true : null }, m.label || m.spec)));
+        return h("label", { class: "field" }, h("span", {}, label), sel);
+      });
+      body.replaceChildren(
+        h("p", { class: "muted" }, `${e.kind === "school" ? "School" : "Company"} · ${e.members} ${e.members_label.toLowerCase()} · ${e.email || "no email"}`),
+        h("h3", {}, "AI model for each task"),
+        h("p", { class: "muted" }, "Everyone in this enterprise uses these; Default follows the server's .env."),
+        h("div", { class: "ent-models" }, picks),
+        h("h3", {}, `Bill for ${b.month}`),
+        h("div", { class: "stats ent-bill" },
+          h("div", { class: "stat" }, h("b", {}, money(b.subscription_paid_cents, b.currency)), h("span", {}, "subscription paid")),
+          h("div", { class: "stat" }, h("b", {}, usd(b.ai_usd)), h("span", {}, `AI usage · ${b.ai_calls} calls`))),
+        h("h3", {}, "Subscription payments"),
+        table(["Date", "Amount", "Status", "Receipt"], b.payments.map((p) => h("tr", {}, h("td", {}, fmtTime(p.date)), h("td", { class: "n" }, money(p.amount_cents, p.currency)),
+          h("td", {}, h("span", { class: `tag ${p.status === "succeeded" ? "approved" : "draft"}` }, p.status === "succeeded" ? "paid" : p.status)),
+          h("td", {}, p.receipt_url ? h("a", { href: p.receipt_url, target: "_blank", rel: "noopener noreferrer" }, "Invoice") : "–"))), "No subscription payments this month."),
+        h("h3", {}, "AI usage by person"),
+        table(["Account", "Calls", "Tokens", "Est. cost"], b.usage.map((u) => h("tr", {}, h("td", {}, u.username), h("td", { class: "n" }, num(u.calls)),
+          h("td", { class: "n" }, num(u.tokens)), h("td", { class: "n" }, usd(u.usd)))), "No AI usage this month."));
+    }).catch((ex) => body.replaceChildren(h("p", { class: "issue error" }, ex.message)));
+  };
+  const rows = d.enterprises.map((e) => h("tr", {},
+    h("td", {}, h("div", { class: "who" }, h("b", {}, e.name), h("span", { class: "muted" }, e.email || e.owner))),
+    h("td", {}, kindTag(e.kind), h("small", { class: "muted ent-members" }, `${e.members} ${e.members_label.toLowerCase()}`)),
+    h("td", {}, planCell(e)),
+    h("td", { class: "n" }, money(e.paid_cents, e.currency), h("small", { class: "muted" }, ` of ${money(e.monthly_fee_cents, e.currency)}`)),
+    h("td", { class: "n" }, usd(e.ai_usd), h("small", { class: "muted" }, ` · ${num(e.ai_calls)} calls`)),
+    h("td", {}, Object.keys(e.models).length ? `${Object.keys(e.models).length} custom` : h("span", { class: "muted" }, "defaults")),
+    h("td", {}, h("button", { class: "btn sm", type: "button", onclick: () => manage(e) }, "Manage"))));
+  main.replaceChildren(view("Enterprises",
+    h("div", { class: "admin-filters" }, h("label", { class: "field" }, h("span", {}, "Month"), monthPick),
+      h("p", { class: "muted" }, "Each enterprise pays a monthly subscription; AI usage is the estimated model cost of everyone in it.")),
+    table(["Enterprise", "Type", "Plan", "Subscription", "AI usage", "Models", ""], rows, "No enterprises yet: HR accounts appear here.")));
 }
 
 async function models(main) {

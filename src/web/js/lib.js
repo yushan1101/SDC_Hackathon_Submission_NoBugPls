@@ -54,6 +54,13 @@ export async function postForBlob(path, body, signal) {
   return res.blob();
 }
 
+/** A private image (e.g. a profile photo) as an object URL, fetched with the session like any API call. */
+export async function apiBlobUrl(path) {
+  const res = await fetch(apiUrl(path), { credentials: CREDS, headers: { "X-AP": "1", ...auth() } });
+  if (!res.ok) return null;
+  return URL.createObjectURL(await res.blob());
+}
+
 export async function upload(path, form, signal) {
   const res = await fetch(apiUrl(path), { method: "POST", body: form, signal, credentials: CREDS, headers: { "X-AP": "1", ...auth() } });
   const data = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
@@ -113,6 +120,25 @@ export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 // Static SVG icons: Lucide (lucide.dev, v0.460.0, ISC licence), copied in so the site needs no icon CDN. Key -> Lucide name.
 const ICONS = {
+  // sidebar set: two-tone; the class "d" shape is a tint that fills in on the current page
+  "nav-overview": '<rect class="d" x="3" y="3" width="7" height="9" rx="1.5"/><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  "nav-agent": '<path class="d" d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20l1.2-4.8A8.5 8.5 0 1 1 21 11.5z"/><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20l1.2-4.8A8.5 8.5 0 1 1 21 11.5z"/><path d="M12.5 7.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
+  "nav-team": '<circle class="d" cx="9" cy="8" r="4"/><circle cx="9" cy="8" r="4"/><path d="M2 21v-.5A5.5 5.5 0 0 1 7.5 15h3a5.5 5.5 0 0 1 5.5 5.5v.5"/><path d="M16 3.6a4 4 0 0 1 0 8.8"/><path d="M22 21v-.5a5.5 5.5 0 0 0-3.5-5.1"/>',
+  "nav-analyse": '<path class="d" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 17.5v-6"/><path d="m9.5 14 2.5-2.5 2.5 2.5"/>',
+  "nav-review": '<path class="d" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="m9 14 2 2 4-4"/>',
+  "nav-member": '<circle class="d" cx="12" cy="8" r="4.5"/><circle cx="12" cy="8" r="4.5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  "nav-hiring": '<rect class="d" x="2.5" y="7" width="19" height="14" rx="2"/><rect x="2.5" y="7" width="19" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M2.5 13h19"/><path d="M11 13h2"/>',
+  "nav-openings": '<path class="d" d="M3 10.5v3a1 1 0 0 0 1 1h2.5L12 19V5L6.5 9.5H4a1 1 0 0 0-1 1z"/><path d="M3 10.5v3a1 1 0 0 0 1 1h2.5L12 19V5L6.5 9.5H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>',
+  "nav-plugins": '<path class="d" d="M18 8v5a6 6 0 0 1-12 0V8z"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/><path d="M12 22v-3"/><path d="M9 8V2"/><path d="M15 8V2"/>',
+  "nav-trends": '<path class="d" d="M7 15l4-4 3 3 6-6v12H7z"/><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m7 15 4-4 3 3 6-6"/><path d="M16 8h4v4"/>',
+  "nav-market": '<path class="d" d="M6 22h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2z"/><path d="M4 22h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M17 14h-7"/><path d="M14 18h-4"/><rect x="10" y="6" width="7" height="4" rx="1"/>',
+  "nav-heatmap": '<rect class="d" x="9.5" y="3" width="5" height="5" rx="1"/><rect class="d" x="3" y="9.5" width="5" height="5" rx="1"/><rect class="d" x="16" y="16" width="5" height="5" rx="1"/><rect x="3" y="3" width="5" height="5" rx="1"/><rect x="9.5" y="3" width="5" height="5" rx="1"/><rect x="16" y="3" width="5" height="5" rx="1"/><rect x="3" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><rect x="16" y="9.5" width="5" height="5" rx="1"/><rect x="3" y="16" width="5" height="5" rx="1"/><rect x="9.5" y="16" width="5" height="5" rx="1"/><rect x="16" y="16" width="5" height="5" rx="1"/>',
+  "nav-tokens": '<path class="d" d="M3.3 18.5A9.5 9.5 0 1 1 20.7 18.5z"/><path d="M3.3 18.5A9.5 9.5 0 1 1 20.7 18.5z"/><path d="m12 14 4.5-4.5"/><circle cx="12" cy="14" r="1.2"/>',
+  "nav-fraud": '<path class="d" d="M12 22s8-3.5 8-10V5.2L12 2 4 5.2V12c0 6.5 8 10 8 10z"/><path d="M12 22s8-3.5 8-10V5.2L12 2 4 5.2V12c0 6.5 8 10 8 10z"/><path d="M12 8v4.5"/><path d="M12 16h.01"/>',
+  "nav-payments": '<rect class="d" x="2" y="5" width="20" height="14" rx="2.5"/><rect x="2" y="5" width="20" height="14" rx="2.5"/><path d="M2 10h20"/><path d="M6 15h4"/>',
+  "nav-models": '<rect class="d" x="5" y="5" width="14" height="14" rx="2.5"/><rect x="5" y="5" width="14" height="14" rx="2.5"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>',
+  "nav-sites": '<circle class="d" cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19"/><path d="M12 2.5a14.5 14.5 0 0 1 0 19 14.5 14.5 0 0 1 0-19z"/>',
+  "nav-signout": '<path d="M15 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3"/><path d="m10 17-5-5 5-5"/><path d="M5 12h11"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',  // info
   flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',  // flag
   home: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',  // house

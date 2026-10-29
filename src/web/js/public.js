@@ -28,7 +28,7 @@ const S = {
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
 // ---------------------------------------------------------------- boot
-const PUBLIC_PAGES = new Set(["", "start", "today", "signin", "sdgs", "register", "pricing", "verify", "forgot", "reset", "invite", "terms", "privacy"]);  // everything else needs an account
+const PUBLIC_PAGES = new Set(["", "start", "today", "signin", "sdgs", "register", "pricing", "verify", "forgot", "reset", "invite", "email", "terms", "privacy"]);  // everything else needs an account
 
 async function boot() {
   try {
@@ -135,7 +135,7 @@ function shell() {
             h("a", { class: "btn sm primary top-signin", href: "#/signin" }, icon("user"), "Sign in"))
         : h("div", { class: "top-actions" }, h("a", { class: "btn sm plan-pill", href: "#/account", "data-route": "#/account", title: "Your plan and payments" },
             icon("user"), planName(S.me.effective_plan || "org")),
-          h("button", { class: "btn sm signout", onclick: signOut }, icon("out"), "Sign out"))),
+          h("button", { class: "btn sm signout", "aria-label": "Sign out", title: "Sign out", onclick: signOut }, icon("out"), h("span", { class: "lbl" }, "Sign out")))),
     h("main", { id: "main", class: "pub-main", tabindex: "-1" }),
     guest ? null : h("nav", { class: "tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/agents", "Agent", "ask"), tab("#/today", "AI trends", "pulse"), tab("#/plans", "Plans", "plans")),
     S.me?.role === "employee" ? (S.capsule = employeeCapsule({
@@ -173,12 +173,13 @@ function route() {
   disposeAgentSwitch();
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "agents", "register", "pricing", "account", "verify", "forgot", "reset", "invite", "terms", "privacy"]);
+  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "agents", "register", "pricing", "account", "verify", "forgot", "reset", "invite", "email", "terms", "privacy"]);
+  const planSection = requested === "plans" && rest.length === 1 && ["1-30", "31-60", "61-90"].includes(rest[0]);
   const interviewStart = requested === "interview" && id === "start" && rest.length === 1 && /^[A-Za-z0-9_-]+$/.test(rest[0]);
   // Unknown routes and malformed nested routes return home instead of showing the wrong page.
-  const verifyLink = ["verify", "reset", "invite"].includes(requested) && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
-  if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart && !verifyLink) || (["verify", "reset", "invite"].includes(requested) && !verifyLink) ||
-      (id && !["signin", "plans", "report", "interview", "agents", "verify", "reset", "invite"].includes(requested)) || (requested === "agents" && id && !/^[a-z-]{2,20}$/.test(id))) {
+  const verifyLink = ["verify", "reset", "invite", "email"].includes(requested) && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
+  if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart && !verifyLink && !planSection) || (["verify", "reset", "invite", "email"].includes(requested) && !verifyLink) ||
+      (id && !["signin", "plans", "report", "interview", "agents", "verify", "reset", "invite", "email"].includes(requested)) || (requested === "agents" && id && !/^[a-z-]{2,20}$/.test(id))) {
     location.replace("#/start");
     return;
   }
@@ -192,6 +193,14 @@ function route() {
       S.me = await api("/api/me"); S.meta = await api("/api/meta");
       history.replaceState(null, "", "#/start"); shell(); toast("Email verified. Welcome!"); route();
     } });
+    return;
+  }
+  if (page === "email") {  // the link sent to a new email address: switch the account to it
+    app.replaceChildren(h("main", { class: "pub-main" }, h("p", { class: "muted" }, "Confirming your new email…")));
+    api("/api/profile/email/verify", { method: "POST", body: { username: id, token: rest[0] } })
+      .then((r) => { toast(`Your email is now ${r.email}`); location.replace(S.me ? "#/account" : "#/signin"); })
+      .catch((e) => app.replaceChildren(h("main", { class: "pub-main" }, h("div", { class: "issue error", role: "alert" }, e.message),
+        h("a", { class: "btn", href: S.me ? "#/account" : "#/signin" }, S.me ? "Back to your account" : "Sign in"))));
     return;
   }
   if (page === "forgot") { if (S.me) { location.replace("#/account"); return; } forgotView(app); return; }
@@ -229,7 +238,8 @@ function route() {
   if (main.classList.contains("home-page")) homeScrollTop = window.scrollY;
   main.classList.toggle("home-page", page === "start");
   if (page === "report") reportView(main, id);
-  else if (page === "plans" && id) planDetail(main, id);
+  else if (page === "plans" && id && main.dataset.plan === id && main.querySelector(".plan-block")) main.querySelector(".plan-block").openPane(rest[0] || null, true);  // section subpage of the open plan
+  else if (page === "plans" && id) planDetail(main, id, false, rest[0]);
   else if (page === "plans") plansView(main);
   else if (page === "build") buildView(main);
   else if (page === "interview") {
@@ -812,7 +822,8 @@ async function plansView(main) {
   draw();
 }
 
-async function planDetail(main, id, focusPlan = false) {
+async function planDetail(main, id, focusPlan = false, section = null) {
+  delete main.dataset.plan;
   main.replaceChildren(h("p", { class: "muted" }, "Loading…"));
   let d;
   try { d = await api(`/api/plans/${id}`); } catch (e) { main.replaceChildren(h("div", { class: "issue error" }, e.message)); return; }
@@ -831,13 +842,13 @@ async function planDetail(main, id, focusPlan = false) {
     r?.issues?.length ? issuesBlock(r.issues) : null);
   const planFocus = h("section", { class: "plan-focus", tabindex: "-1", "aria-label": approved ? "Approved plan and implementation" : "Proposed plan" },
     h("div", { class: "plan-hero" },
-      h("div", { class: "plan-hero-title" }, h("div", {}, h("p", { class: "eyebrow" }, "90-day learning roadmap"),
-        h("h2", {}, "Your learning roadmap")), h("span", { class: `tag ${d.status}` }, d.status)),
-      h("p", { class: "plan-hero-copy" }, approved ? "Your approved plan is ready. Follow the phases below to put it into action." : "Your learning plan, organized into three practical phases."),
+      h("div", { class: "plan-hero-title" }, h("div", {},
+        h("h2", {}, "Become a ", h("span", { class: "plan-hero-role" }, r?.occupation?.title || d.plan.target_role))), h("span", { class: `tag ${d.status}` }, d.status)),
+      h("p", { class: "plan-hero-copy" }, approved ? "Your personalised 90-day learning journey. Pick up where you left off on the right." : "Your personalised 90-day learning journey, in three 30-day sections."),
       h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days"), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`))),
-    planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence,
-      title: approved ? "Your approved 90-day plan" : "Your proposed 90-day plan",
-      onChange: () => planDetail(main, id, true) }));
+    planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence, startDate: d.created_utc,
+      sectionHref: (p) => `#/plans/${id}${p ? `/${p}` : ""}`,
+      title: null, onChange: () => planDetail(main, id, true) }));
   let expanded = !approved;
   const panel = h("div", { class: "plan-report-panel", id: "saved-plan-report", inert: approved ? true : null,
     "aria-hidden": String(approved) }, reportContent);
@@ -860,12 +871,15 @@ async function planDetail(main, id, focusPlan = false) {
     h("section", { class: "block" }, h("h3", {}, "History"), historyBlock(d.history)));
   const pdf = h("button", { class: "btn sm no-print", type: "button", onclick: () => {  // the browser's "Save as PDF", every section open
     main.querySelectorAll("details").forEach((x) => { x.open = true; });
+    main.querySelectorAll(".phase-detail").forEach((x) => { x.hidden = false; });
     main.querySelectorAll(".plan-report-panel").forEach((x) => { x.inert = false; x.removeAttribute("aria-hidden"); });
     main.querySelector(".plan-report")?.setAttribute("data-expanded", "true");
     print();
   } }, icon("file"), "Download PDF");
   main.replaceChildren(h("div", { class: "plan-top-actions no-print" }, h("a", { href: "#/plans", class: "btn ghost sm" }, icon("back"), "All plans"), pdf),
     h("h1", { class: "page-title plan-detail-title", style: { "margin-top": "12px" } }, r?.occupation?.title || d.plan.target_role), blocks);
+  main.dataset.plan = id;
+  if (section) main.querySelector(".plan-block")?.openPane(section, true);
   if (focusPlan) planFocus.focus({ preventScroll: true });
 }
 

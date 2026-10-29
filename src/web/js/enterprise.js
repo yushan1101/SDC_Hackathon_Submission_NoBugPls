@@ -10,6 +10,7 @@ import { agentView, hrCapsule } from "./agents.js";
 import { setVoice } from "./voice.js";
 import { accountView, pricingView } from "./account.js";
 import { termsView, privacyView } from "./legal.js";
+import { workforceView } from "./workforce.js";
 
 const app = $("#app");
 const AGENTS = ["supervisor", "profiler", "knowledge_search", "gap_analysis", "market_analyst", "pathway", "coach", "reviewer"];
@@ -84,7 +85,7 @@ function shell() {
       title: SCENARIO_HELP[k], "aria-description": SCENARIO_HELP[k],
       onclick: (e) => { S.scenario = k; S.seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === e.currentTarget))); S.onScenarioChange?.(); } },
       k === "assistive" ? "Assistive" : "Agentic")));
-  const review = link("#/review", "Review", "review"); review.append(S.badge);
+  const review = link("#/review", "Review", "nav-review"); review.append(S.badge);
   const more = h("div", { id: "hr-more", class: "hr-more", popover: "auto", "aria-label": "Additional pages" },
     h("a", { href: "#/agents", onclick: () => more.hidePopover?.() }, icon("ask"), "Agent"),
     h("a", { href: "#/openings", onclick: () => more.hidePopover?.() }, icon("people"), "Hiring"),
@@ -92,6 +93,7 @@ function shell() {
     h("a", { href: "#/people", onclick: () => more.hidePopover?.() }, icon("user"), "Team members"),
     h("a", { href: "#/models", onclick: () => more.hidePopover?.() }, icon("model"), "AI models"),
     h("a", { href: "#/signals", onclick: () => more.hidePopover?.() }, icon("pulse"), "AI trends"),
+    h("a", { href: "#/heatmap", onclick: () => more.hidePopover?.() }, icon("grid"), "Skills gap heatmap"),
     h("a", { href: "#/account", "data-route": "#/account" }, icon("user"), "Plan & billing"),
     h("button", { type: "button", onclick: signOut }, icon("out"), "Sign out"));
   sidebarToggle = h("button", { class: "hr-sidebar-toggle", type: "button", "aria-expanded": String(sidebarExpanded),
@@ -130,10 +132,10 @@ function shell() {
   sidebar = h("nav", { class: "rail hr-rail", "aria-label": "Primary" },
       h("div", { class: "hr-rail-head" },
         h("a", { class: "logo", href: "#/overview", "aria-label": "AiversePulse Enterprise home" }, S.logo = h("span", { class: "logo-owl" }), h("span", { class: "lbl wordmark" }, "AiversePulse")), sidebarToggle),
-      link("#/overview", "Overview", "grid"), link("#/agents", "Agent", "ask"),
-      group("Team", "people", link("#/run", "Analyse team", "upload"), review, link("#/people", "Team members", "user")),
-      group("Hiring", "job", link("#/openings", "Openings", "people"), link("#/plugins", "Hiring plugins", "plug")),
-      link("#/signals", "AI trends", "pulse"),
+      link("#/overview", "Overview", "nav-overview"), link("#/agents", "Agent", "nav-agent"),
+      group("Team", "nav-team", link("#/run", "Analyse team", "nav-analyse"), review, link("#/people", "Team members", "nav-member")),
+      group("Hiring", "nav-hiring", link("#/openings", "Openings", "nav-openings"), link("#/plugins", "Hiring plugins", "nav-plugins")),
+      group("AI trends", "nav-trends", link("#/signals", "Market trends", "nav-market"), link("#/heatmap", "Skills gap heatmap", "nav-heatmap")),
       h("div", { style: { flex: 1 } }),
       accountBtn, account);
   shellEl = h("div", { class: "hr-shell" },
@@ -152,7 +154,7 @@ function shell() {
   updateSidebar();
   // the owl lives in the rail's logo spot; on phones (no rail) it moves back next to the status text
   S.logo.append(S.status.owl.el);
-  refreshPlans();
+  refreshPlans().catch((e) => toast(`Plans could not be loaded. ${e.message}`, "err"));
 }
 
 /** The floating agent capsule: every page and the console's main actions, searchable and runnable from anywhere. */
@@ -166,6 +168,7 @@ function capsule() {
       page("#/openings", "Hiring", "people", "openings jobs applicants"),
       page("#/plugins", "Hiring plugins", "plug", "linkedin post share"), page("#/people", "Team members", "user", "invite users"),
       page("#/models", "AI models", "model", "llm settings"), page("#/signals", "AI trends", "pulse", "signals news"),
+      page("#/heatmap", "Skills gap heatmap", "grid", "workforce skills gap team ai trends"),
       page("#/account", "Plan & billing", "user", "pricing subscription")],
     actions: [{ label: "Analyse a team CSV", icon: "upload", words: "start new run import", run: () => { location.hash = "#/run"; } },
       { label: "Review the next pending plan", icon: "review", words: "approve open next", run: () => {
@@ -193,14 +196,14 @@ function route() {
   const hash = location.hash || "#/overview";
   const [page = "overview", id, ...extra] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
   if (page === "plans") { location.replace(`#/review${id ? `/${id}` : ""}`); return; }  // the plans register is part of the review page now
-  const pages = new Set(["overview", "run", "review", "openings", "signals", "plugins", "people", "models", "agents", "account", "pricing", "privacy", "terms"]);
+  const pages = new Set(["overview", "run", "review", "openings", "signals", "heatmap", "plugins", "people", "models", "agents", "account", "pricing", "privacy", "terms"]);
   if (!pages.has(page) || extra.length || (id && !["review", "openings", "plugins", "agents"].includes(page))) {
     location.replace("#/overview");
     return;
   }
   document.querySelectorAll("[data-route]").forEach((a) => {
     const dest = a.dataset.route;
-    const active = dest === "#/more" ? ["openings", "signals", "plugins", "people", "models", "agents"].includes(page) :
+    const active = dest === "#/more" ? ["openings", "signals", "heatmap", "plugins", "people", "models", "agents"].includes(page) :
       hash === dest || hash.startsWith(dest + "/");
     if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
@@ -218,7 +221,7 @@ function route() {
   S.routeVersion = (S.routeVersion || 0) + 1;
   if (page !== "review" || !main.querySelector(".review")) main.scrollTop = 0;
   const views = { run: runView, review: () => reviewView(main, id),
-    openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status),
+    openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status), heatmap: () => heatmapView(main),
     plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)),
     account: () => accountView(main, { refreshMe: async () => { S.me = await api("/api/me"); return S.me; }, hrLayout: true }),
     pricing: () => pricingView(main, { me: S.me }),
@@ -278,24 +281,54 @@ function rosterTable() {
 // newest plan per employee, so a re-run doesn't list the same person twice
 const latestPerEmployee = (plans) => [...plans.reduce((m, p) => (!m.has(p.subject_id) || m.get(p.subject_id).created_utc < p.created_utc ? m.set(p.subject_id, p) : m), new Map()).values()];
 
+// AI trends > Skills gap heatmap: the Overview heatmap on a page of its own
+function heatmapView(main) {
+  const workforce = h("div", { class: "workforce" });
+  main.replaceChildren(h("div", { class: "view" },
+    h("div", { class: "view-head" }, h("h1", {}, "AI trends"), h("a", { class: "btn sm", href: "#/signals" }, icon("pulse"), "Market trends")),
+    workforce));
+  workforceView(workforce);
+}
+
+// Overview: only what needs attention. The key numbers on top, the review queue beside the three biggest skill gaps,
+// then the team. The full heatmap lives under AI trends > Skills gap heatmap.
 async function overview(main) {
   const version = S.routeVersion;
-  await refreshPlans();
-  if (version !== S.routeVersion) return;
+  const top = h("div"), body = h("div");
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "Overview"), h("a", { class: "btn primary sm", href: "#/run" }, icon("upload"), "Analyse team")),
-    stats(), h("div", { class: "overview" }, needsPanel(),
+    top, body));
+  const gaps = h("section", { class: "panel overview-gaps" },
+    h("header", {}, h("h2", {}, "Biggest skill gaps"), h("a", { class: "btn sm", href: "#/heatmap" }, "Open heatmap")),
+    h("div", { class: "pad" }, h("p", { class: "muted" }, "Loading…")));
+  api("/api/hr/workforce?scenario=assistive&category=all&department=&role=").then((d) => {
+    if (version !== S.routeVersion) return;
+    const list = (d.priorities || []).slice(0, 3);
+    gaps.lastElementChild.replaceChildren(list.length
+      ? h("ol", { class: "gap-top" }, list.map((c) => h("li", {},
+          h("span", { class: "gap-pct" }, `${c.gap_percent}%`),
+          h("span", { class: "gap-main" }, h("b", {}, c.skill), h("small", {}, `${c.group} · ${c.affected} of ${c.employees} below target`)))))
+      : h("p", { class: "muted" }, "No assessed gaps yet. Analyse your team to see them here."));
+  }).catch(() => { if (version === S.routeVersion) gaps.lastElementChild.replaceChildren(h("p", { class: "muted" }, "Skill gaps could not be loaded.")); });
+  try { await refreshPlans(); } catch (e) {
+    if (version === S.routeVersion) body.replaceChildren(h("p", { class: "issue error", role: "alert" }, `Review queue could not be loaded. ${e.message}`), gaps);
+    return;
+  }
+  if (version !== S.routeVersion) return;
+  top.replaceChildren(stats());
+  body.replaceChildren(...[h("div", { class: "overview overview-main" },
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Needs your review")),
         h("div", { class: "pad review-list" }, latestPerEmployee(S.plans.filter((p) => p.audience === "hr" && !p.review?.archived && p.review?.review_status === "pending")).slice(0, 6).map((p) =>
           h("a", { href: `#/review/${p.plan_id}`, class: "review-row" },
             h("span", { class: "who" }, h("b", {}, p.subject_id), h("span", { class: "muted" }, `${p.target_role} · v${p.version} · ${fmtTime(p.created_utc)}`)), h("span", { class: `tag ${p.status}` }, p.status))),
-          S.plans.some((p) => p.audience === "hr" && p.status !== "approved") ? null : h("p", { class: "muted" }, "You're all caught up.")))),
-    rosterTable()));
+          S.plans.some((p) => p.audience === "hr" && p.status !== "approved") ? null : h("p", { class: "muted" }, "You're all caught up."))),
+      gaps),
+    rosterTable()].filter(Boolean));  // no team table yet: nothing, not the text "null"
 }
 
 // ---------------------------------------------------------------- upload & run
 function runView(main) {
-  S.onScenarioChange = () => { if (S.csv) setCsv(S.csv, "current file"); };
+  S.onScenarioChange = () => { if (S.csv) setCsv(S.csv, "current file", S.csvSample); };
   const preview = h("div");
   const schema = h("ul", { class: "schema", "aria-label": "Required columns" });
   const errors = h("ul", { class: "errors", role: "alert" });
@@ -306,6 +339,7 @@ function runView(main) {
     ondragleave: () => drop.classList.remove("over"), ondrop: (e) => { e.preventDefault(); drop.classList.remove("over"); load(e.dataTransfer.files[0]); } },
     file, icon("upload"), h("strong", {}, "Drop a team CSV or choose a file"),
     h("span", { class: "muted mono", style: { "font-size": "14px" } }, "employee_id, target_role, weekly_hours, skill, level"),
+    h("span", { class: "muted", style: { "font-size": "14px" } }, "Levels: 0–5. Omitted skills remain unassessed in the heatmap."),
     h("span", { class: "muted", style: { "font-size": "14px" } }, "target_role: any ESCO job title or code · max 5,000 rows · 500 employees · pseudonymous IDs only"));
 
   async function load(f) {
@@ -313,8 +347,9 @@ function runView(main) {
     if (f.size > 2_000_000) { toast("File is larger than 2 MB.", "err"); return; }
     setCsv(await f.text(), f.name);
   }
-  async function setCsv(text, name) {
+  async function setCsv(text, name, sample = false) {
     S.csv = text;
+    S.csvSample = sample;
     const lines = text.trim().split(/\r?\n/);
     const head = lines[0].split(",").map((s) => s.trim());
     schema.replaceChildren(...["employee_id", "target_role", "weekly_hours", "skill", "level"].map((c) => h("li", { class: head.includes(c) ? "ok" : "bad" }, c)));
@@ -336,7 +371,7 @@ function runView(main) {
     let raf = 0;
     const soon = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(redraw); };
     try {
-      await stream("/api/team", { csv: S.csv, scenario: S.scenario }, (ev) => {
+      await stream("/api/team", { csv: S.csv, scenario: S.scenario, sample: !!S.csvSample }, (ev) => {
         if (ev.t === "owl") S.status.set(ev.state, ev.say);
         else if (ev.t === "roster") { const orig = Object.fromEntries(Object.entries(ev.original_ids || {}).map(([o, id]) => [id, o])); ev.ids.forEach((id) => S.rows.set(id, { id, original: orig[id], role: ev.roles[id], status: "running", ticks: new Set() })); }
         else if (ev.t === "tick") S.rows.get(ev.id)?.ticks.add(ev.node);
@@ -359,7 +394,7 @@ function runView(main) {
       h("div", { class: "run-actions" }, S.seg,
         h("button", { class: "btn sm", type: "button", onclick: async () => {
           const sample = await api("/api/sample-team");
-          setCsv(sample.csv, "sample_team.csv (fictional — fresh employee IDs on each run)");
+          setCsv(sample.csv, "sample_team.csv (fictional — excluded from workforce analytics)", true);
         } }, "Use sample CSV"))),
     h("div", { class: "overview" },
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Team file")), h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, drop, preview)),
@@ -367,7 +402,7 @@ function runView(main) {
         h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, schema, errors,
           runBtn, h("p", { class: "muted", style: { "font-size": "14px" } }, "Each run assigns new employee IDs. You can change them later under Edit review. Plans stay drafts until you approve them.")))),
     live));
-  if (S.csv) setCsv(S.csv, "current file");
+  if (S.csv) setCsv(S.csv, "current file", S.csvSample);
 }
 
 // ---------------------------------------------------------------- review queue (three panes)
@@ -582,7 +617,7 @@ async function loadDetail(id, detail, wrap) {
   const contact = [[d.review.candidate_email, "mail"], [d.review.candidate_phone, "user"]].filter(([v]) => v);
   // Plan, the analysis behind it, HR's notes, the sources and the audit trail sit on tabs instead of one long page.
   const panes = {
-    plan: () => planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: d.report?.evidence,
+    plan: () => planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: d.report?.evidence, startDate: d.created_utc,
       approverLabel: "I have reviewed this plan", title: "90-day plan", onChange: async (next) => {
         if (next === "approved") S.status.set("celebrating", `${d.subject_id} approved`);
         await reviewView($("#main"), id);
