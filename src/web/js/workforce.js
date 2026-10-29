@@ -7,7 +7,8 @@ const SELECTED = new Set();
 const cellKey = (c) => `${c.skill}\u001f${c.group}`;
 
 export async function workforceView(root) {
-  const selected = { skill: new Set(), category: "all", scenario: "assistive", department: "", role: "", source: "", samplePreview: false, sampleDismissed: false, view: "bloom" };
+  const selected = { skill: new Set(), datasets: new Set(), category: "all", scenario: "assistive", department: "", role: "", source: "", groupBy: "auto", group: "",
+    samplePreview: false, sampleDismissed: false, view: "bloom" };
   let request = 0, data, plans = [];
   const output = h("div", { class: "wf-output", "aria-live": "polite" });
   const filters = h("div", { class: "wf-filters" });
@@ -19,7 +20,9 @@ export async function workforceView(root) {
   root.replaceChildren(heading, previewBanner, filters, status, output);
 
   // one toolbar: scenario toggle, three dropdowns, the rest under "More filters"; Reset only when something is filtered
-  const DEFAULTS = { category: "all", scenario: "assistive", department: "", role: "", source: "" };
+  const DEFAULTS = { category: "all", scenario: "assistive", department: "", role: "", source: "", groupBy: "auto", group: "" };
+  const COMPARE = [["auto", "Compare: automatic"], ["department", "Compare departments"], ["role", "Compare roles"], ["dataset", "Compare data sets"],
+    ["group", "Compare groups"], ["source", "Compare sources"]];
   const changed = () => { SELECTED.clear(); drawFilters(); load(); };
   function drawFilters() {
     const select = (label, key, options, resetOnChange = false) => h("select", { class: "input wf-select-sm", "aria-label": label,
@@ -31,12 +34,19 @@ export async function workforceView(root) {
     const scenario = h("div", { class: "seg wf-seg", role: "group", "aria-label": "AI scenario" }, [["assistive", "Assistive"], ["agentic", "Agentic"]].map(([value, text]) =>
       h("button", { type: "button", "aria-pressed": String(selected.scenario === value), onclick: () => { if (selected.scenario !== value) { selected.scenario = value; changed(); } } }, text)));
     const roleOptions = data.options.roles.filter((r) => !selected.department || data.cells.some((c) => c.department === selected.department && c.roles.includes(r)));
-    const more = (selected.category !== "all") + selected.skill.size;
+    const more = (selected.category !== "all") + selected.skill.size + selected.datasets.size;
+    const sets = data.options.datasets || [];
     // skill ticks keep the menu open; the count and Reset catch up when it closes
     const moreMenu = h("details", { class: "wf-filter wf-more", ontoggle: (e) => { if (!e.target.open) drawFilters(); } },
       h("summary", {}, icon("sliders"), "More filters", more ? h("span", { class: "wf-count" }, String(more)) : null),
       h("div", { class: "wf-filter-options" },
         h("label", { class: "wf-select" }, h("span", {}, "Category"), select("Category", "category", [["all", "Skills & tools"], ["skill", "Skills"], ["tool", "Tools"]])),
+        sets.length > 1 ? [h("div", { class: "wf-more-head" }, h("span", {}, "Data sets"),
+          selected.datasets.size ? h("button", { type: "button", class: "btn sm ghost", onclick: () => { selected.datasets.clear(); changed(); } }, "All") : null),
+          sets.map((d) => h("label", {}, h("input", { type: "checkbox", value: d.name, checked: selected.datasets.has(d.name), onchange: (e) => {
+            if (e.target.checked) selected.datasets.add(d.name); else selected.datasets.delete(d.name);
+            SELECTED.clear(); load();
+          } }), h("span", {}, d.name), d.external ? h("span", { class: "wf-ext" }, "external") : null, h("span", { class: "muted" }, String(d.people))))] : null,
         h("div", { class: "wf-more-head" }, h("span", {}, "Skills"), selected.skill.size ? h("button", { type: "button", class: "btn sm ghost", onclick: () => { selected.skill.clear(); changed(); } }, "Clear") : null),
         h("input", { class: "input wf-skill-search", type: "search", placeholder: "Search skills", "aria-label": "Search skills", oninput: (e) => {
           const q = e.target.value.trim().toLowerCase();
@@ -51,14 +61,18 @@ export async function workforceView(root) {
       select("Department", "department", [["", "All departments"], ...data.options.departments.map((v) => [v, v])], true),
       select("Job role", "role", [["", "All roles"], ...roleOptions.map((v) => [v, v])]),
       data.policy.sample_preview ? null : select("Source", "source", [["", "All sources"], ...(data.sources || []).map((x) => [x.key, `${x.label} (${x.employees})`])]),
+      data.options.groups?.length ? select("Group", "group", [["", "All groups"], ...data.options.groups.map((v) => [v, v])]) : null,
+      select("Compare by", "groupBy", COMPARE),
       moreMenu, h("span", { class: "wf-spacer" }),
-      active ? h("button", { type: "button", class: "btn sm ghost", onclick: () => { Object.assign(selected, DEFAULTS, { skill: new Set() }); changed(); } }, "Reset") : null,
+      active ? h("button", { type: "button", class: "btn sm ghost", onclick: () => { Object.assign(selected, DEFAULTS, { skill: new Set(), datasets: new Set() }); changed(); } }, "Reset") : null,
       refresh].filter(Boolean));
   }
 
   async function load() {
     const version = ++request;
-    const params = new URLSearchParams({ scenario: selected.scenario, category: selected.category, department: selected.department, role: selected.role });
+    const params = new URLSearchParams({ scenario: selected.scenario, category: selected.category, department: selected.department, role: selected.role,
+      group_by: selected.groupBy, group: selected.group });
+    selected.datasets.forEach((value) => params.append("dataset", value));
     if (selected.samplePreview) params.set("sample_preview", "true");
     else if (selected.source) params.set("source", selected.source);
     selected.skill.forEach((value) => params.append("skill", value));
@@ -69,7 +83,7 @@ export async function workforceView(root) {
       if (version !== request || !root.isConnected) return;
       const hasHeatmap = next.cells?.some((c) => c.status === "ready");
       // the fictional preview only stands in when the organisation has no data at all, never for a filter that matches nothing
-      const filtered = selected.skill.size || selected.department || selected.role || selected.source || selected.category !== "all";
+      const filtered = selected.skill.size || selected.datasets.size || selected.department || selected.role || selected.source || selected.group || selected.category !== "all";
       if (!selected.samplePreview && !selected.sampleDismissed && !filtered && !hasHeatmap && next.sample_available) {
         selected.samplePreview = true; await load(); return;
       }
@@ -120,7 +134,7 @@ export async function workforceView(root) {
       h("div", { class: "wf-group-head wf-avg-head" }, "Skill average"),
       rows.flatMap((row, r) => [h("div", { class: "wf-skill-name", title: row.skill, dataset: { r } }, row.skill), ...row.cells.map((c, i) => cellButton(c, r, i)),
         avgCell(avg(row), `${row.skill} average gap`, { group: "Skill average", r })]),
-      h("div", { class: "wf-skill-name wf-foot" }, "Department average"),
+      h("div", { class: "wf-skill-name wf-foot" }, `${{ department: "Department", role: "Role", dataset: "Data set", group: "Group", source: "Source" }[data.groups[0]?.kind] || "Group"} average`),
       data.groups.map((g, i) => avgCell(colAvg(i), `${g.label} average gap`, { group: g.label, c: i })),
       avgCell(allAvg, "Overall average gap", { group: "Overall" })) : null;
     function cross(el) {  // dim everything outside the hovered cell's row and column

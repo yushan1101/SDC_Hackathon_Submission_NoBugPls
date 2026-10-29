@@ -45,7 +45,7 @@ from agents.knowledge import learning_resources, occupation, resolve_occupation,
 from config.settings import get_settings
 from core import graph, screening
 from core.state import Pathway, Profile, Request, Skill
-from core.team_import import parse_team
+from core.team_import import normalize_team, parse_team
 from governance import workforce
 from governance.employee_ids import allocate_ids
 from core.usage import summarize
@@ -1741,27 +1741,38 @@ class TeamIn(BaseModel):
     csv: str = Field(max_length=2_000_000)
     scenario: str = Field(pattern="^(assistive|agentic)$")
     sample: bool = False
+    dataset: str = Field(default="", max_length=80)   # a name for this upload, e.g. "ICU nurses Q4" or "Partner clinic"
+    external: bool = False                            # people outside the organisation (a partner, a cohort, applicants)
+    level_max: int = 5                                # the file's level scale: 5, 10 or 100
 
 
 @app.post("/api/team/validate")
 def team_validate(body: TeamIn, user: dict = Depends(need("hr_advisor"))):
-    reqs, errs = _parse(body)
-    return {"employees": len(reqs), "errors": errs}
+    reqs, errs, meta, notes = _parse(body)
+    return {"employees": len(reqs), "errors": errs, "notes": notes,
+            "departments": sorted({m["department"] for m in meta.values() if m.get("department")}),
+            "groups": sorted({m["group"] for m in meta.values() if m.get("group")})}
 
 
 def _parse(body: TeamIn):
     try:
-        df = pd.read_csv(StringIO(body.csv))
+        df = pd.read_csv(StringIO(body.csv), sep=None, engine="python")  # comma, semicolon or tab
     except Exception:
-        return [], ["could not read CSV"]
-    return parse_team(df, resolve_occupation, body.scenario, cfg.max_upload_rows, cfg.max_team_size)
+        return [], ["could not read CSV"], {}, []
+    df, meta, notes = normalize_team(df, body.level_max)
+    if notes and notes[-1].startswith(("level scale", "no skill columns")):
+        return [], [notes[-1]], {}, []
+    reqs, errs = parse_team(df, resolve_occupation, body.scenario, cfg.max_upload_rows, cfg.max_team_size)
+    return reqs, errs, meta, notes
 
 
 @app.post("/api/team")
 def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", "org"}, "Team analysis"))):
-    reqs, errs = _parse(body)
+    reqs, errs, meta, _ = _parse(body)
     if errs:
         return JSONResponse({"detail": "invalid team file", "errors": errs}, status_code=422)
+    batch = uuid.uuid4().hex[:12]
+    dataset = " ".join(body.dataset.split()) or f"{'External' if body.external else 'Team'} upload {datetime.now(timezone.utc):%Y-%m-%d %H:%M}"
     sample_csv = (ROOT / "data" / "samples" / "sample_team.csv").read_text(encoding="utf-8")
     is_sample = body.sample or body.csv.strip().replace("\r\n", "\n") == sample_csv.strip().replace("\r\n", "\n")
 
@@ -1808,7 +1819,8 @@ def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", 
                 s = payload
                 out = serialise(s)
                 out["workforce"] = {"owner": user["username"], "employee_key": original[r.employee_id],
-                                    "source": "sample" if is_sample else "team_csv"}
+                                    "source": "sample" if is_sample else "team_csv", "dataset": dataset, "dataset_id": batch,
+                                    "external": body.external, **meta.get(original[r.employee_id], {})}
                 with DB_LOCK:
                     pid = approval.create(db, out["plan"], r.employee_id, "hr", out["issues"])
                     with db:
@@ -1840,15 +1852,17 @@ def team(body: TeamIn, user: dict = Depends(paid_feature("hr_advisor", {"team", 
 @app.get("/api/hr/workforce")
 def workforce_heatmap(response: Response, scenario: str = "assistive", skill: list[str] = Query(default=[]), category: str = "all",
                       department: str = "", role: str = "", sample_preview: bool = False, source: str = "",
+                      dataset: list[str] = Query(default=[]), group_by: str = "auto", group: str = "",
                       user: dict = Depends(need("hr_advisor"))):
-    if scenario not in {"assistive", "agentic"} or category not in {"all", "skill", "tool"} or source not in {"", *workforce.SOURCES}:
-        raise HTTPException(422, "invalid scenario, skill category or source")
-    if len(skill) > 500 or len(department) > 100 or len(role) > 160:
+    if scenario not in {"assistive", "agentic"} or category not in {"all", "skill", "tool"} or source not in {"", *workforce.SOURCES} \
+            or group_by not in workforce.GROUP_BY:
+        raise HTTPException(422, "invalid scenario, skill category, source or grouping")
+    if len(skill) > 500 or len(department) > 100 or len(role) > 160 or len(dataset) > 100 or len(group) > 100:
         raise HTTPException(422, "filter is too long")
     with DB_LOCK:
         records = workforce.load_reports(db, user["username"], scenario, sample_preview)
     response.headers["Cache-Control"] = "private, no-store"
-    result = workforce.aggregate(records, skill, category, sample_preview, department, role, source)
+    result = workforce.aggregate(records, skill, category, sample_preview, department, role, source, dataset, group_by, group)
     # A fictional preview is available to every HR demo account; it is never stored as an assessment.
     result["sample_available"] = True
     return result

@@ -378,14 +378,27 @@ function runView(main) {
   const preview = h("div");
   const schema = h("ul", { class: "schema", "aria-label": "Required columns" });
   const errors = h("ul", { class: "errors", role: "alert" });
+  const notes = h("ul", { class: "import-notes" });
+  // each upload is a named data set: your team, or an external group (a partner site, a cohort, applicants)
+  const dataset = h("input", { class: "input", maxlength: 80, placeholder: "e.g. ICU nurses Q4, Partner clinic", value: S.dataset || "",
+    oninput: () => { S.dataset = dataset.value; } });
+  const who = h("select", { class: "input", onchange: () => { S.external = who.value === "external"; } },
+    h("option", { value: "team", selected: !S.external ? true : null }, "My team or organisation"),
+    h("option", { value: "external", selected: S.external ? true : null }, "External group (partner, cohort, applicants)"));
+  const scale = h("select", { class: "input", onchange: () => { S.levelMax = Number(scale.value); if (S.csv) setCsv(S.csv, "current file", S.csvSample); } },
+    [[5, "0 – 5"], [10, "0 – 10"], [100, "0 – 100 (percent)"]].map(([v, t]) => h("option", { value: v, selected: (S.levelMax || 5) === v ? true : null }, t)));
+  const describe = h("div", { class: "dataset-fields" },
+    h("label", { class: "field" }, h("span", {}, "Data set name"), dataset),
+    h("label", { class: "field" }, h("span", {}, "Whose data"), who),
+    h("label", { class: "field" }, h("span", {}, "Skill levels in the file"), scale));
   const runBtn = h("button", { class: "btn primary", type: "button", disabled: !S.csv || S.running ? true : null, onclick: run }, "Run analysis");
   const live = h("div", { style: { display: "grid", gap: "16px" } });
   const file = h("input", { type: "file", accept: ".csv,text/csv", class: "sr-only", onchange: (e) => load(e.target.files[0]) });
   const drop = h("label", { class: "drop", ondragover: (e) => { e.preventDefault(); drop.classList.add("over"); },
     ondragleave: () => drop.classList.remove("over"), ondrop: (e) => { e.preventDefault(); drop.classList.remove("over"); load(e.dataTransfer.files[0]); } },
-    file, icon("upload"), h("strong", {}, "Drop a team CSV or choose a file"),
-    h("span", { class: "muted mono", style: { "font-size": "14px" } }, "employee_id, target_role, weekly_hours, skill, level"),
-    h("span", { class: "muted", style: { "font-size": "14px" } }, "Levels: 0–5. Omitted skills remain unassessed in the heatmap."),
+    file, icon("upload"), h("strong", {}, "Drop a CSV from any HR system or choose a file"),
+    h("span", { class: "muted", style: { "font-size": "14px" } }, "Needs an ID and a job title per person, and skill levels: one row per skill, or one column per skill."),
+    h("span", { class: "muted", style: { "font-size": "14px" } }, "Optional: weekly hours, department, group (site, cohort, company). Comma, semicolon or tab separated."),
     h("span", { class: "muted", style: { "font-size": "14px" } }, "target_role: any ESCO job title or code · max 5,000 rows · 500 employees · pseudonymous IDs only"));
 
   async function load(f) {
@@ -397,14 +410,18 @@ function runView(main) {
     S.csv = text;
     S.csvSample = sample;
     const lines = text.trim().split(/\r?\n/);
-    const head = lines[0].split(",").map((s) => s.trim());
-    schema.replaceChildren(...["employee_id", "target_role", "weekly_hours", "skill", "level"].map((c) => h("li", { class: head.includes(c) ? "ok" : "bad" }, c)));
+    const sep = [",", ";", "\t"].sort((a, b) => lines[0].split(b).length - lines[0].split(a).length)[0];
+    const head = lines[0].split(sep).map((s) => s.trim());
+    schema.replaceChildren();
     preview.replaceChildren(h("p", { class: "muted", style: { "font-size": "14px" } }, `${name} · ${lines.length - 1} rows`),
       h("div", { class: "table-wrap", style: { "max-height": "220px" } }, h("table", { class: "data" },
         h("thead", {}, h("tr", {}, head.map((c) => h("th", {}, c)))),
-        h("tbody", {}, lines.slice(1, 9).map((l) => h("tr", {}, l.split(",").map((c) => h("td", { class: "mono" }, c))))))));
-    const v = await api("/api/team/validate", { method: "POST", body: { csv: text, scenario: S.scenario } }).catch((e) => ({ errors: [e.message] }));
+        h("tbody", {}, lines.slice(1, 9).map((l) => h("tr", {}, l.split(sep).map((c) => h("td", { class: "mono" }, c))))))));
+    const v = await api("/api/team/validate", { method: "POST", body: { csv: text, scenario: S.scenario, level_max: S.levelMax || 5 } }).catch((e) => ({ errors: [e.message] }));
     errors.replaceChildren(...(v.errors || []).map((e) => h("li", {}, e)));
+    notes.replaceChildren(...(v.notes || []).map((n) => h("li", {}, icon("check"), n)),
+      ...(v.departments?.length ? [h("li", {}, icon("check"), `Departments: ${v.departments.join(", ")}`)] : []),
+      ...(v.groups?.length ? [h("li", {}, icon("check"), `Groups: ${v.groups.join(", ")}`)] : []));
     runBtn.disabled = !!v.errors?.length || S.running;
     runBtn.textContent = v.errors?.length ? "Fix the errors to run" : `Run analysis for ${v.employees} employees`;
     S.status.set(v.errors?.length ? "confused" : "idle", v.errors?.length ? `${v.errors.length} problems in the file` : `${v.employees} employees ready`);
@@ -417,7 +434,8 @@ function runView(main) {
     let raf = 0;
     const soon = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(redraw); };
     try {
-      await stream("/api/team", { csv: S.csv, scenario: S.scenario, sample: !!S.csvSample }, (ev) => {
+      await stream("/api/team", { csv: S.csv, scenario: S.scenario, sample: !!S.csvSample, dataset: dataset.value,
+        external: who.value === "external", level_max: S.levelMax || 5 }, (ev) => {
         if (ev.t === "owl") S.status.set(ev.state, ev.say);
         else if (ev.t === "roster") { const orig = Object.fromEntries(Object.entries(ev.original_ids || {}).map(([o, id]) => [id, o])); ev.ids.forEach((id) => S.rows.set(id, { id, original: orig[id], role: ev.roles[id], status: "running", ticks: new Set() })); }
         else if (ev.t === "tick") S.rows.get(ev.id)?.ticks.add(ev.node);
@@ -427,7 +445,8 @@ function runView(main) {
         soon();
       });
       await refreshPlans();
-      live.append(h("a", { class: "btn primary", href: "#/review" }, "Open review queue"));
+      live.append(h("div", { class: "run-actions" }, h("a", { class: "btn primary", href: "#/review" }, "Open review queue"),
+        h("a", { class: "btn", href: "#/heatmap" }, icon("nav-heatmap"), "See it on the heatmap")));
     } catch (e) {
       S.status.set("confused", "Run failed");
       errors.replaceChildren(...(e.body?.errors || [e.message]).map((x) => h("li", {}, x)),
@@ -443,9 +462,9 @@ function runView(main) {
           setCsv(sample.csv, "sample_team.csv (fictional — excluded from workforce analytics)", true);
         } }, "Use sample CSV"))),
     h("div", { class: "overview" },
-      h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Team file")), h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, drop, preview)),
+      h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Team file")), h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, drop, describe, preview)),
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Checks")),
-        h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, schema, errors,
+        h("div", { class: "pad", style: { display: "grid", gap: "14px" } }, schema, notes, errors,
           runBtn, h("p", { class: "muted", style: { "font-size": "14px" } }, "Each run assigns new employee IDs. You can change them later under Edit review. Plans stay drafts until you approve them.")))),
     live));
   if (S.csv) setCsv(S.csv, "current file", S.csvSample);
