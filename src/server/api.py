@@ -1484,7 +1484,7 @@ def plan(pid: str, user: dict = Depends(current_user)):
                   "original_employee_id": (db.execute("SELECT original_id FROM plan_original_ids WHERE plan_id=?", (pid,))
                                            .fetchone() or [None])[0]} if user["role"] == "hr_advisor" and not read_only else {}
     report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else None
-    return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], **cur, "history": hist, "report": report,
+    return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], "created_utc": created, **cur, "history": hist, "report": report,
             "progress": done, "progress_summary": _progress_summary(cur.get("plan") or {}, done_rows, created),
             "read_only": read_only, **review}
 

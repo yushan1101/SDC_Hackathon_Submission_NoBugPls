@@ -83,20 +83,46 @@ export async function workforceView(root) {
       card(o.employees, "Employees analyzed", "In the selected workforce group"),
       card(o.assessed_skills, "Skills assessed", "With assessment data"),
       card(o.critical, "Critical gaps", "Groups with gaps of 75% or higher"),
-      card(common.length ? common.map((v) => v.skill).join(" · ") : "—", "Top shared gaps", common.map((v) => `${v.employees} below target`).join(" · ") || "No assessed gaps"));
-    const matrix = data.groups.length && data.rows.length ? h("div", { class: "wf-matrix-grid", style: { "--wf-cols": data.groups.length } },
+      h("div", { class: "wf-stat" }, h("span", { class: "muted" }, "Top shared gaps"),
+        common.length ? h("ol", { class: "wf-top-gaps" }, common.map((v) => h("li", {}, h("b", {}, v.skill), h("span", { class: "muted" }, `${v.employees} below`))))
+          : h("strong", {}, "—")));
+    // worst skill first; the last column is the skill's average gap across the groups that have assessments
+    const avg = (row) => { const xs = row.cells.filter((c) => c.status === "ready").map((c) => c.gap_percent); return xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null; };
+    const rows = [...data.rows].sort((a, b) => (avg(b) ?? -1) - (avg(a) ?? -1));
+    const mean = (xs) => xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null;
+    const colAvg = (i) => mean(rows.map((r) => r.cells[i]).filter((c) => c?.status === "ready").map((c) => c.gap_percent));
+    const avgCell = (a, label, extra) => h("div", { class: `wf-cell wf-avg${a == null ? " wf-unknown" : " wf-heat"}`, style: a == null ? null : { "--g": a }, dataset: extra, role: "cell", "aria-label": `${label}: ${a ?? "no assessment"}${a == null ? "" : "%"}` },
+      h("strong", {}, a == null ? "—" : `${a}%`), a == null ? null : h("i", { class: "wf-bar", "aria-hidden": "true" }));
+    const allAvg = mean(rows.flatMap((r) => r.cells.filter((c) => c.status === "ready").map((c) => c.gap_percent)));
+    const grid = data.groups.length && data.rows.length ? h("div", { class: "wf-matrix-grid", style: { "--wf-cols": data.groups.length + 1 },
+      onmouseover: (e) => cross(e.target.closest("[data-r],[data-c]")), onmouseleave: () => cross(null), onfocusin: (e) => cross(e.target.closest("[data-r],[data-c]")) },
       h("div", { class: "wf-skill-head" }, "Required skill"),
-      data.groups.map((g) => h("div", { class: "wf-group-head", title: g.label }, g.label)),
-      data.rows.flatMap((row) => [h("div", { class: "wf-skill-name", title: row.skill }, row.skill), ...row.cells.map((c) => cellButton(c))]))
+      data.groups.map((g, i) => h("div", { class: "wf-group-head", title: g.label, dataset: { c: i } }, g.label)),
+      h("div", { class: "wf-group-head wf-avg-head" }, "Skill average"),
+      rows.flatMap((row, r) => [h("div", { class: "wf-skill-name", title: row.skill, dataset: { r } }, row.skill), ...row.cells.map((c, i) => cellButton(c, r, i)),
+        avgCell(avg(row), `${row.skill} average gap`, { group: "Skill average", r })]),
+      h("div", { class: "wf-skill-name wf-foot" }, "Department average"),
+      data.groups.map((g, i) => avgCell(colAvg(i), `${g.label} average gap`, { group: g.label, c: i })),
+      avgCell(allAvg, "Overall average gap", { group: "Overall" })) : null;
+    function cross(el) {  // dim everything outside the hovered cell's row and column
+      if (!grid) return;
+      const { r, c } = el?.dataset || {};
+      grid.toggleAttribute("data-cross", r != null || c != null);
+      grid.querySelectorAll("[data-r],[data-c]").forEach((x) => x.classList.toggle("is-cross", (r != null && x.dataset.r === r) || (c != null && x.dataset.c === c)));
+    }
+    const matrix = grid ? h("div", { class: "wf-matrix-scroll" }, grid)
       : h("div", { class: "empty-state wf-empty" }, icon("upload"), h("h3", {}, "No assessments in this view"),
         h("p", {}, selected.samplePreview ? "The fictional preview has no matching assessed skills. Reset filters to see the full sample workforce." : "No authorized real assessments match these filters."),
         !selected.samplePreview ? h("a", { class: "btn primary sm", href: "#/run" }, "Analyse team") : null);
     const suggestions = data.priorities.length ? h("div", { class: "wf-suggestions" }, h("strong", {}, "Suggested priorities · highest gaps"),
       data.priorities.map((c) => h("button", { type: "button", class: `wf-suggestion${SELECTED.has(cellKey(c)) ? " is-selected" : ""}`,
         "aria-pressed": SELECTED.has(cellKey(c)), onclick: () => { if (SELECTED.has(cellKey(c))) SELECTED.delete(cellKey(c)); else SELECTED.add(cellKey(c)); render(); } },
-        `${SELECTED.has(cellKey(c)) ? "✓ Selected · " : "Select · "}${c.skill} · ${c.group} · ${c.affected}/${c.employees} · ${c.gap_percent}%`))) : null;
-    const legend = h("div", { class: "wf-legend", "aria-label": "Skill gap severity legend" },
-      Object.entries(SEVERITY).map(([key, [label, range]]) => h("span", {}, h("i", { class: `wf-${key}` }), `${label} · ${range}`)),
+        h("span", { class: "wf-sug-pct wf-heat", style: { "--g": c.gap_percent } }, `${c.gap_percent}%`),
+        h("span", {}, h("b", {}, c.skill), ` · ${c.group}`), h("span", { class: "muted" }, `${c.affected}/${c.employees}`),
+        SELECTED.has(cellKey(c)) ? icon("check") : h("span", { class: "wf-sug-add", "aria-hidden": "true" }, "+")))) : null;
+    const legend = h("div", { class: "wf-legend", "aria-label": "Skill gap colour scale" },
+      h("span", { class: "wf-scale" }, h("b", {}, "0%"), h("i", { class: "wf-ramp", "aria-hidden": "true" }), h("b", {}, "100% below target")),
+      h("span", { class: "muted" }, Object.values(SEVERITY).map(([label, range]) => `${label} ${range}`).join(" · ")),
       h("span", {}, h("i", { class: "wf-unknown" }), "No assessment"));
     const teamButton = h("button", { type: "button", class: "btn primary", disabled: !SELECTED.size,
       "aria-describedby": !SELECTED.size ? "wf-team-action-hint" : null, onclick: startPlanGeneration },
@@ -133,12 +159,14 @@ export async function workforceView(root) {
         : h("p", { class: "muted" }, "No team plans yet. Select heatmap gaps and create a draft for HR review.")));
     output.replaceChildren(stats, heatmap, section);
   }
-  function cellButton(c) {
+  function cellButton(c, r, i) {
     const status = c.status === "ready" ? `${c.affected} of ${c.employees} employees` : "No assessment";
-    return h("button", { type: "button", class: `wf-cell wf-${c.severity || "unknown"}${SELECTED.has(cellKey(c)) ? " is-selected" : ""}`,
-      dataset: { group: c.group }, title: `${c.skill} · ${c.group}: ${status}`, "aria-label": `${c.skill}, ${c.group}: ${c.gap_percent ?? "No assessment"}${c.gap_percent != null ? `% · ${status}` : ""}`,
+    return h("button", { type: "button", class: `wf-cell ${c.status === "ready" ? "wf-heat" : "wf-unknown"}${SELECTED.has(cellKey(c)) ? " is-selected" : ""}`,
+      style: c.status === "ready" ? { "--g": c.gap_percent } : null,
+      dataset: { group: c.group, r, c: i }, title: `${c.skill} · ${c.group}: ${status}`, "aria-label": `${c.skill}, ${c.group}: ${c.gap_percent ?? "No assessment"}${c.gap_percent != null ? `% · ${status}` : ""}`,
       onclick: () => detail(c) }, h("strong", {}, c.status === "ready" ? `${c.gap_percent}%` : "—"),
-      h("span", {}, c.status === "ready" ? `${c.affected}/${c.employees} employees` : "No assessment"));
+      h("span", {}, c.status === "ready" ? `${c.affected} of ${c.employees}` : "No data"),
+      c.status === "ready" ? h("i", { class: "wf-bar", "aria-hidden": "true" }) : null);
   }
   function detail(c) {
     let dialog;
