@@ -290,7 +290,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
         h("button", { class: "btn ghost sm phase-back", type: "button", onclick: () => openPane(null) }, icon("back"), "Back to journey"),
         h("div", { class: "phase-tabs-nav", role: "group", "aria-label": "Switch section" }, PHASES.map((x, i) =>
           h("button", { class: `btn sm${x === p ? " primary" : ""}`, type: "button", "aria-current": x === p ? "page" : null, onclick: () => openPane(x) },
-            `${i + 1} · Days ${x}`)))),
+            `Days ${x}`)))),
       h("div", { class: "phase-intro" }, heading.cloneNode(true), h("p", { class: "phase-summary" }, summary)),
       h("div", { class: "phase-content" }, budget, activityList));
     return h("div", { class: "phase-row", "data-phase": p },
@@ -341,8 +341,8 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
         h("button", { class: "btn primary", type: "button", onclick: () => jumpTo(key(next)) }, "Continue learning"))
         : h("section", { class: "aside-card" }, h("h4", {}, "All activities done"), h("p", {}, "You've finished every activity in this plan.")),
       nextPhase ? h("section", { class: "aside-card" },
-        h("p", { class: "eyebrow" }, "Upcoming milestone"),
-        h("h4", {}, `Day ${nextPhase.split("-")[1]}: ${phaseNames[PHASES.indexOf(nextPhase)]}`),
+        h("h4", {}, `Next milestone · Day ${nextPhase.split("-")[1]}`),
+        h("p", { class: "muted" }, `Finish ${phaseNames[PHASES.indexOf(nextPhase)].toLowerCase()} activities:`),
         h("ul", { class: "aside-list" }, inPhase(nextPhase).map((a) => h("li", { class: done.has(key(a)) ? "is-done" : null },
           icon(done.has(key(a)) ? "check" : "target"), a.skill_id)))) : null);
   }
@@ -393,8 +393,8 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     }
   }
   blockEl = h("section", { class: "block plan-block", "aria-label": "30, 60, 90 day plan" },
-    h("h3", {}, title),
-    planId ? h("p", { class: "muted mono" }, `Plan ID: ${planReference || planId}`) : null,
+    title ? h("h3", {}, title) : null,
+    planId ? h("p", { class: "muted mono plan-ref" }, `Plan ID ${planReference || planId}`) : null,
     progressEl,
     plan.deferred_skills?.length ? h("details", { class: "note deferred" },
       h("summary", {}, `${plan.deferred_skills.length} more skills don't fit in ${weeklyHours ? weeklyHours + " h/week" : "the weekly hours"}; the plan covers the highest-priority gaps first.`),

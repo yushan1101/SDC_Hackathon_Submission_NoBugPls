@@ -944,7 +944,7 @@ async function renderReport(main, report, callbacks = {}) {
   const sources = report.source ? h("div", { class: "fine" }, "Question context: ", h("a", { href: report.source.url, target: "_blank", rel: "noopener noreferrer" }, report.source.title),
     ` · ${report.source.publisher} · retrieved ${report.source.access_date}`) : h("p", { class: "muted" }, "No external question source was recorded.");
   main.replaceChildren(h("div", { class: "interview-page interview-report-page" },
-    h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "YOUR PRACTICE REPORT"),
+    h("div", { class: "interview-heading" }, h("div", {},
       h("h1", { class: "page-title" }, `${report.role_title} interview assessment`),
       h("p", { class: "lede" }, `Completed ${fmtTime(report.completed_utc)} · ${report.difficulty} difficulty`))),
     hero, glance,
