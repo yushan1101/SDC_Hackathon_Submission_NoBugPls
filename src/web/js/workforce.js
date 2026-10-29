@@ -11,34 +11,48 @@ export async function workforceView(root) {
   const output = h("div", { class: "wf-output", "aria-live": "polite" });
   const filters = h("div", { class: "wf-filters" });
   const status = h("p", { class: "muted", role: "status" });
-  const refresh = h("button", { type: "button", class: "btn sm", onclick: load }, "Refresh data");
+  const refresh = h("button", { type: "button", class: "btn sm wf-icon-btn", onclick: load, title: "Refresh data", "aria-label": "Refresh data" }, icon("replay"));
   const heading = h("div", { class: "wf-heading" }, h("div", {}, h("h2", {}, "Workforce skills gap heatmap"),
-    h("p", { class: "muted" }, "Compare role-specific proficiency gaps across your workforce.")), refresh);
+    h("p", { class: "muted" }, "Compare role-specific proficiency gaps across your workforce.")));
   const previewBanner = h("div", { class: "wf-sample-banner", role: "status", hidden: true });
   root.replaceChildren(heading, previewBanner, filters, status, output);
 
+  // one toolbar: scenario toggle, three dropdowns, the rest under "More filters"; Reset only when something is filtered
+  const DEFAULTS = { category: "all", scenario: "assistive", department: "", role: "", source: "" };
+  const changed = () => { SELECTED.clear(); drawFilters(); load(); };
   function drawFilters() {
-    const select = (label, key, options, resetOnChange = false) => h("label", { class: "wf-select" }, h("span", {}, label),
-      h("select", { class: "input", onchange: (e) => {
+    const select = (label, key, options, resetOnChange = false) => h("select", { class: "input wf-select-sm", "aria-label": label,
+      onchange: (e) => {
         selected[key] = e.target.value;
         if (resetOnChange && !data.options.roles.includes(selected.role)) selected.role = "";
-        SELECTED.clear(); load();
-      } }, options.map(([value, text]) => h("option", { value, selected: selected[key] === value }, text))));
-    const skillSummary = h("summary", {}, `Skills: ${selected.skill.size ? `${selected.skill.size} selected` : "All skills"}`);
-    const skills = h("details", { class: "wf-filter" }, skillSummary,
-      h("div", { class: "wf-filter-options" }, h("button", { type: "button", class: "btn sm", onclick: () => { selected.skill.clear(); SELECTED.clear(); drawFilters(); load(); } }, "All skills"),
-        data.options.skills.map((s) => h("label", {}, h("input", { type: "checkbox", value: s.name, checked: selected.skill.has(s.name), onchange: (e) => {
-          if (e.target.checked) selected.skill.add(s.name); else selected.skill.delete(s.name);
-          skillSummary.textContent = `Skills: ${selected.skill.size ? `${selected.skill.size} selected` : "All skills"}`;
-          SELECTED.clear(); load();
-        } }), h("span", {}, s.name)))));
+        changed();
+      } }, options.map(([value, text]) => h("option", { value, selected: selected[key] === value }, text)));
+    const scenario = h("div", { class: "seg wf-seg", role: "group", "aria-label": "AI scenario" }, [["assistive", "Assistive"], ["agentic", "Agentic"]].map(([value, text]) =>
+      h("button", { type: "button", "aria-pressed": String(selected.scenario === value), onclick: () => { if (selected.scenario !== value) { selected.scenario = value; changed(); } } }, text)));
     const roleOptions = data.options.roles.filter((r) => !selected.department || data.cells.some((c) => c.department === selected.department && c.roles.includes(r)));
-    filters.replaceChildren(select("Department", "department", [["", "All departments"], ...data.options.departments.map((v) => [v, v])], true),
-      select("Job role", "role", [["", "All roles"], ...roleOptions.map((v) => [v, v])]), skills,
-      select("Category", "category", [["all", "Skills & tools"], ["skill", "Skills"], ["tool", "Tools"]]),
-      select("AI scenario", "scenario", [["assistive", "Assistive"], ["agentic", "Agentic"]]),
+    const more = (selected.category !== "all") + selected.skill.size;
+    // skill ticks keep the menu open; the count and Reset catch up when it closes
+    const moreMenu = h("details", { class: "wf-filter wf-more", ontoggle: (e) => { if (!e.target.open) drawFilters(); } },
+      h("summary", {}, icon("sliders"), "More filters", more ? h("span", { class: "wf-count" }, String(more)) : null),
+      h("div", { class: "wf-filter-options" },
+        h("label", { class: "wf-select" }, h("span", {}, "Category"), select("Category", "category", [["all", "Skills & tools"], ["skill", "Skills"], ["tool", "Tools"]])),
+        h("div", { class: "wf-more-head" }, h("span", {}, "Skills"), selected.skill.size ? h("button", { type: "button", class: "btn sm ghost", onclick: () => { selected.skill.clear(); changed(); } }, "Clear") : null),
+        h("input", { class: "input wf-skill-search", type: "search", placeholder: "Search skills", "aria-label": "Search skills", oninput: (e) => {
+          const q = e.target.value.trim().toLowerCase();
+          e.target.parentElement.querySelectorAll("label[data-skill]").forEach((l) => { l.hidden = !!q && !l.dataset.skill.includes(q); });
+        } }),
+        data.options.skills.map((sk) => h("label", { dataset: { skill: sk.name.toLowerCase() } }, h("input", { type: "checkbox", value: sk.name, checked: selected.skill.has(sk.name), onchange: (e) => {
+          if (e.target.checked) selected.skill.add(sk.name); else selected.skill.delete(sk.name);
+          SELECTED.clear(); load();
+        } }), h("span", {}, sk.name)))));
+    const active = more || Object.entries(DEFAULTS).some(([k, v]) => k !== "category" && selected[k] !== v);
+    filters.replaceChildren(...[scenario,
+      select("Department", "department", [["", "All departments"], ...data.options.departments.map((v) => [v, v])], true),
+      select("Job role", "role", [["", "All roles"], ...roleOptions.map((v) => [v, v])]),
       data.policy.sample_preview ? null : select("Source", "source", [["", "All sources"], ...(data.sources || []).map((x) => [x.key, `${x.label} (${x.employees})`])]),
-      h("button", { type: "button", class: "btn sm", onclick: () => { Object.assign(selected, { skill: new Set(), category: "all", scenario: "assistive", department: "", role: "", source: "" }); SELECTED.clear(); drawFilters(); load(); } }, "Reset filters"));
+      moreMenu, h("span", { class: "wf-spacer" }),
+      active ? h("button", { type: "button", class: "btn sm ghost", onclick: () => { Object.assign(selected, DEFAULTS, { skill: new Set() }); changed(); } }, "Reset") : null,
+      refresh].filter(Boolean));
   }
 
   async function load() {
@@ -53,7 +67,9 @@ export async function workforceView(root) {
       const next = await api(`/api/hr/workforce?${params}`);
       if (version !== request || !root.isConnected) return;
       const hasHeatmap = next.cells?.some((c) => c.status === "ready");
-      if (!selected.samplePreview && !selected.sampleDismissed && !selected.source && !hasHeatmap && next.sample_available) {
+      // the fictional preview only stands in when the organisation has no data at all, never for a filter that matches nothing
+      const filtered = selected.skill.size || selected.department || selected.role || selected.source || selected.category !== "all";
+      if (!selected.samplePreview && !selected.sampleDismissed && !filtered && !hasHeatmap && next.sample_available) {
         selected.samplePreview = true; await load(); return;
       }
       const optionsChanged = !data || JSON.stringify(data.options) !== JSON.stringify(next.options);
