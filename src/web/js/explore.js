@@ -465,7 +465,7 @@ export function resumeView(main, ctx) {
       })) : null) : null;
     out.replaceChildren(
       insight,
-      integrityBlock(r.integrity, "self"),
+      integrityBlock(r.integrity, "self") || "",  // null when clean; replaceChildren would print "null"
       h("div", { class: "cv-grid" },
         h("details", { class: "cv-md", open: matchMedia("(min-width: 900px)").matches || null },
           h("summary", {}, h("b", {}, "Extracted text"), h("span", { class: "note" }, ` · ${markdown.length.toLocaleString()} characters`)),
