@@ -1,6 +1,7 @@
 """Enterprises (company or school), full profiles, the monthly enterprise subscription, and the admin's per-enterprise
 models and bills."""
 import os
+from datetime import datetime, timezone
 
 import pytest
 
@@ -112,7 +113,7 @@ def test_admin_sees_bills_and_sets_models_per_enterprise(env, monkeypatch):
     api, c = env
     with api.db:
         api.db.execute("INSERT INTO llm_usage(at_utc,username,feature,node,model,calls,input_tokens,output_tokens,est_usd) "
-                       "VALUES(datetime('now'),'stud1','coach','n','m',3,100,50,0.02)")
+                       "VALUES(?,'stud1','coach','n','m',3,100,50,0.02)", (datetime.now(timezone.utc).isoformat(),))  # SQLite and Postgres
         api.db.execute("INSERT INTO model_catalog(spec,label,created_utc) VALUES('openai:gpt-test','GPT test','now') ON CONFLICT DO NOTHING")
     login(c, "school1")
     assert c.get("/api/admin/enterprises").status_code == 403
