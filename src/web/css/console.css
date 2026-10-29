@@ -63,13 +63,9 @@ html[data-product="hr"] table :is(th, td) { border-color: var(--c-line); }
 html[data-product="hr"] .cap-bar { border-radius: 12px; border-color: var(--c-line-strong); background: oklch(1 0 0); -webkit-backdrop-filter: none; backdrop-filter: none;
   box-shadow: 0 12px 32px -16px oklch(0.25 0.04 262 / 0.35); }
 html[data-product="hr"] .cap-panel { border-radius: 12px; }
-html[data-product="hr"] .hr-capsule.folded .cap-bar { border-radius: 50%; background: var(--ink); border-color: var(--ink); }
-html[data-product="hr"] .cap-fab > * { display: none; }
-html[data-product="hr"] .cap-fab::before { content: ""; width: 20px; height: 20px; background: currentColor;
-  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>') center / contain no-repeat;
-  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>') center / contain no-repeat; }
-html[data-product="hr"] .cap-fab { color: var(--ink-2); }
-html[data-product="hr"] .hr-capsule.folded .cap-fab { color: oklch(1 0 0); }
+/* folded: the owl in a white circle with a soft owl-blue lift (no glass) */
+html[data-product="hr"] .hr-capsule.folded .cap-bar { border-radius: 50%; background: oklch(1 0 0); border-color: transparent;
+  box-shadow: 0 10px 26px -12px oklch(0.4 0.12 263 / 0.45); }
 
 /* heatmap and team-plan pieces inside the console */
 html[data-product="hr"] .wf-sample-banner { border-radius: 10px; }
