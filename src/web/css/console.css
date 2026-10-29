@@ -687,3 +687,24 @@ html[data-console] .hr-main.pub-main { width: auto; margin: 0; padding: 32px cla
   html:is([data-product="hr"], [data-console]) :is(.panel, .stat, .wf-stat, .block, .entry-card, .plan-reminder, .review-entry, .rail,
     .hr-account-menu, .usage-menu, .ag-history) { background: oklch(0.972 0.014 263) !important; }
 }
+
+/* sidebar in the owl's blue (the accent, hue 263): solid, white labels, the current page a white pill */
+html:is([data-product="hr"], [data-console]) .rail {
+  background: linear-gradient(180deg, oklch(0.47 0.17 263), oklch(0.37 0.14 265)); border-right: 0; color: oklch(1 0 0 / 0.88);
+  -webkit-backdrop-filter: none; backdrop-filter: none; }
+html:is([data-product="hr"], [data-console]) .rail :is(a, button, .wordmark, .lbl, .muted, small) { color: oklch(1 0 0 / 0.88); }
+html:is([data-product="hr"], [data-console]) .rail svg { color: oklch(1 0 0 / 0.78); }
+html:is([data-product="hr"], [data-console]) .rail svg .d { opacity: 0.2; }
+html:is([data-product="hr"], [data-console]) :is(.rail a, .rail .rail-group-btn, .rail .hr-account-btn):hover { background: oklch(1 0 0 / 0.14); color: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) :is(.rail a, .rail .rail-group-btn, .rail .hr-account-btn):hover svg { color: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] {
+  background: oklch(1 0 0); color: var(--owl-ink); font-weight: 600; box-shadow: 0 6px 16px -8px oklch(0.2 0.12 263 / 0.6); }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] svg,
+html:is([data-product="hr"], [data-console]) .rail .rail-group.has-current > .rail-group-btn svg:first-child { color: var(--accent); }
+html:is([data-product="hr"], [data-console]) .rail .rail-group.has-current > .rail-group-btn { color: oklch(1 0 0); font-weight: 600; }
+html:is([data-product="hr"], [data-console]) .rail :focus-visible { outline: 2px solid oklch(1 0 0); outline-offset: 2px; }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] .lbl { color: var(--owl-ink); }
+html:is([data-product="hr"], [data-console]) .rail .hr-account-btn :not(.u-avatar):not(svg):not(svg *) { color: oklch(1 0 0 / 0.75); }
+html:is([data-product="hr"], [data-console]) .rail .hr-account-btn b:not(.u-avatar):not(svg):not(svg *) { color: oklch(1 0 0); }
+@media (prefers-reduced-transparency: reduce) {
+  html:is([data-product="hr"], [data-console]) .rail { background: oklch(0.42 0.16 263) !important; } }
