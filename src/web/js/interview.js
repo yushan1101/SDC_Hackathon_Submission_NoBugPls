@@ -747,7 +747,7 @@ function reportDisclosure(key, title, description, content, ic = "spark") {
     h("span", { class: "interview-disclosure-icon", "aria-hidden": "true" }, icon(ic)),
     h("span", { class: "interview-disclosure-copy" }, h("b", {}, title), h("small", {}, description)),
     h("span", { class: "interview-disclosure-chevron", "aria-hidden": "true" }, icon("chevron")));
-  const disclosure = h("details", { class: "interview-disclosure" }, summary,
+  const disclosure = h("details", { class: "interview-disclosure", "data-section": key }, summary,
     h("div", { id: panelId, class: "interview-disclosure-panel" }, content));
   disclosure.addEventListener("toggle", () => summary.setAttribute("aria-expanded", String(disclosure.open)));
   return disclosure;
@@ -760,88 +760,293 @@ async function renderReport(main, report, callbacks = {}) {
   const comparable = history.filter((x) => x.status === "completed" && x.role_id === report.role_id && x.interview_id !== report.interview_id)
     .sort((a, b) => String(a.created_utc).localeCompare(String(b.created_utc)));
   const previous = comparable.at(-1);
-  const delta = (current, prior) => prior == null ? "First completed attempt" : `${Number(current) - Number(prior) >= 0 ? "+" : ""}${Number(current) - Number(prior)} points vs previous attempt`;
-  const dimensions = h("ul", { class: "interview-dimension-list" }, Object.entries(report.dimensions || {}).map(([key, item]) =>
-    h("li", {}, h("div", {}, h("b", {}, LABELS[key] || key), h("p", {}, item.reason || "No explanation was recorded for this criterion."),
-      h("small", { class: "muted" }, `${item.weight}% rubric weight · ${item.evidence_count} answer${item.evidence_count === 1 ? "" : "s"} scored`)),
-      h("span", { class: "num" }, item.score == null ? "Not assessed" : pct(item.score)))));
+  const scoreText = (value) => value == null ? "Not available" : pct(value);
+  const delta = (current, prior) => current == null ? "Score unavailable for comparison"
+    : prior == null ? "No previous score available" : `${Number(current) - Number(prior) >= 0 ? "+" : ""}${Number(current) - Number(prior)} points vs previous attempt`;
   const competencies = report.competencies || [];
+  const questionItems = report.question_feedback || [];
   const assessedCompetencies = competencies.filter((c) => c.interview_score != null);
   const unassessedCompetencies = competencies.filter((c) => c.interview_score == null);
-  const competencyGroup = (title, entries, assessed) => h("section", { class: "interview-competency-group" },
-    h("h3", {}, title, h("span", { class: "muted" }, ` · ${entries.length}`)),
-    entries.length ? h("div", { class: "interview-competencies" }, entries.map((c) =>
-      h("article", { class: "interview-competency" },
-        h("div", { class: "interview-competency-heading" }, h("b", {}, c.name),
-          h("span", { class: assessed ? "tag hot" : "tag" }, assessed ? pct(c.interview_score) : "Not assessed")),
-        assessed ? h("div", { class: "interview-meter", role: "img", "aria-label": `${c.name}: ${pct(c.interview_score)}` },
-          h("i", { style: { width: pct(c.interview_score) } })) : null,
-        h("small", { class: "muted" }, `Profile ${c.profile_level}/5 · role level ${c.required_level}/5`),
-        c.evidence?.length ? h("ul", { class: "interview-evidence-list" }, c.evidence.map((quote) => h("li", {}, h("q", {}, quote)))) : null)))
-      : h("p", { class: "muted" }, assessed ? "No competencies were assessed in the interview."
-        : competencies.length ? "All listed competencies have interview evidence." : "No competency data was available for this report."));
-  const competencyContent = h("div", { class: "interview-report-scroll interview-competency-scroll" },
-    competencyGroup("Assessed competencies", assessedCompetencies, true),
-    competencyGroup("Not assessed", unassessedCompetencies, false));
-  const list = (rows, empty, kind) => rows?.length ? h("ul", { class: "interview-list" }, rows.map((x) =>
-    h("li", {}, h("div", { class: "interview-list-heading" }, h("b", {}, x.name || x.skill),
-      x.interview_score != null ? h("span", { class: "tag hot" }, pct(x.interview_score)) : null),
-      h("span", {}, x.reason || x.evidence?.[0] || (x.interview_score == null
-        ? "This competency was not directly assessed in your answers."
-        : kind === "strength" ? "No supporting quote was stored for this competency." : "No answer-specific explanation was stored.")))))
-    : h("p", { class: "muted" }, empty);
-  const strengthsAndGaps = h("div", { class: "interview-two-col interview-strengths-grid" },
-    h("section", { class: "interview-feedback-group" }, h("h3", {}, "Your Strengths"),
-      list(report.strengths, "No specific strengths were recorded for this attempt.", "strength")),
-    h("section", { class: "interview-feedback-group" }, h("h3", {}, "Areas for Improvement"),
-      list(report.gaps, "No specific skill gaps were identified from this attempt.", "gap")));
-  const recommendations = report.recommendations?.length ? h("ol", { class: "interview-recommendations" }, report.recommendations.map((x) => {
-    const competency = competencies.find((c) => c.name?.toLowerCase() === String(x.skill || "").toLowerCase());
-    return h("li", {}, h("div", { class: "interview-recommendation-heading" }, h("b", {}, x.skill),
-      x.priority ? h("span", { class: "tag" }, `${x.priority} priority`) : null),
-      h("p", {}, x.reason),
-      competency ? h("small", { class: "muted" }, `Profile ${competency.profile_level}/5 · role level ${competency.required_level}/5`) : null,
-      h("p", {}, h("b", {}, "Practice: "), x.exercise),
-      x.resources?.length ? h("div", { class: "interview-resource-links" }, x.resources.map((r) => h("a", { href: r.url, target: "_blank", rel: "noopener noreferrer" }, r.title)))
-        : h("small", { class: "muted" }, "No curated learning link is currently indexed for this skill."));
-  })) : h("p", { class: "muted" }, "Keep practicing with new role-specific questions.");
-  const seenStages = new Set();
-  const questionFeedback = report.question_feedback?.length ? h("div", { class: "interview-question-review" }, report.question_feedback.map((item, i) => {
+  const rubricEntries = Object.entries(report.dimensions || {});
+  const bySkill = (rows) => [...(rows || [])].sort((a, b) => Number(b.interview_score ?? -1) - Number(a.interview_score ?? -1));
+  const byGap = (rows) => [...(rows || [])].sort((a, b) => Number(a.interview_score ?? Infinity) - Number(b.interview_score ?? Infinity));
+  const assessmentSourceLabel = assessmentSource === "questionnaire" ? "Quick Match" : assessmentSource === "resume" ? "Resume assessment" : "Role recommendation";
+  const band = (n) => n == null ? "na" : n >= 70 ? "good" : n >= 50 ? "mid" : "low";
+  const clamp = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+  const perf = report.performance == null ? null : clamp(report.performance);
+  const verdict = perf == null ? ["Not available", "An overall performance score was not saved for this interview."]
+    : perf >= 80 ? ["Interview-ready", "Strong answers across the rubric. Keep practising to stay sharp."]
+    : perf >= 65 ? ["Nearly there", "Solid answers. A few focused improvements will lift your readiness."]
+    : perf >= 50 ? ["Developing", "Good foundations. Work on the focus areas below before a real interview."]
+    : ["Early stage", "Start with the focus areas below, then practise again."];
+  const dimensions = rubricEntries.length ? h("ul", { class: "interview-dimension-list" }, rubricEntries.map(([key, item]) =>
+    h("li", {}, h("div", {}, h("b", {}, LABELS[key] || key), h("p", {}, item.reason || "No explanation was recorded for this criterion."),
+      h("small", { class: "muted" }, `${item.weight == null ? "Weight not recorded" : `${item.weight}% rubric weight`} · ${item.evidence_count == null ? "Answer count not recorded" : `${item.evidence_count} answer${item.evidence_count === 1 ? "" : "s"} scored`}`)),
+      h("span", { class: "num" }, item.score == null ? "Not assessed" : pct(item.score)))))
+    : h("p", { class: "muted" }, "No rubric details were saved for this interview.");
+  const sideScore = (label, key, hint, prior) => {
+    const rawScore = report[key], n = rawScore == null ? null : clamp(rawScore);
+    const difference = n == null || prior == null ? null : n - clamp(prior);
+    return h("div", { class: "ir-side-score", title: hint },
+      h("div", { class: "ir-side-top" }, h("span", {}, label),
+        h("b", { class: "num" }, n == null ? "Not available" : pct(n), difference == null ? null : h("small", { class: `ir-delta ${difference >= 0 ? "up" : "down"}` }, `${difference >= 0 ? "+" : ""}${difference}`))),
+      h("div", { class: `ir-bar band-${band(n)}`, role: "progressbar", "aria-label": label, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": n == null ? "0" : String(n) },
+        h("i", { style: { width: n == null ? "0" : pct(n) } })), h("small", { class: "muted" }, hint));
+  };
+  const hero = h("section", { class: "ir-hero", "aria-label": "Interview performance summary" },
+    h("div", { class: "ir-hero-main" },
+      h("div", { class: `ps-ring ir-ring band-${band(perf)}`, style: { "--pct": perf ?? 0 }, role: "img", "aria-label": `Interview performance ${perf == null ? "not available" : `${perf}%`}` },
+        h("div", {}, h("b", { class: "num" }, perf == null ? "—" : `${perf}%`), h("small", {}, "Interview Performance"))),
+      h("div", { class: "ir-verdict" }, h("span", { class: `ir-pill band-${band(perf)}` }, verdict[0]),
+        h("p", {}, verdict[1]), h("small", { class: "muted" }, previous ? delta(report.performance, previous.performance) : "First completed attempt for this role"))),
+    h("div", { class: "ir-hero-side" },
+      sideScore("Job readiness", "readiness", "Interview performance plus how well your profile covers the role", previous?.readiness),
+      sideScore("Role Alignment", "competitiveness", "Simulated index: 70% demonstrated role competency and 30% profile coverage; not a job-offer probability", previous?.competitiveness)));
+  const strengths = bySkill(report.strengths).slice(0, 3);
+  const gaps = byGap(report.gaps).slice(0, 3);
+  const recommendationFor = (skill) => (report.recommendations || []).find((item) =>
+    String(item.skill || "").toLowerCase() === String(skill || "").toLowerCase());
+  const questionsForSkill = (skill) => questionItems.map((item, index) => ({ item, index })).filter(({ item }) =>
+    (item.target_skills || []).some((name) => String(name).toLowerCase() === String(skill || "").toLowerCase())
+    || (item.evaluation?.demonstrated_skills || []).some((entry) => String(entry.name || "").toLowerCase() === String(skill || "").toLowerCase()));
+  const findingCards = (items, empty, kind) => items.length ? h("ul", { class: "ir-finding-list" }, items.map((item) => {
+    const name = item.name || item.skill || "Competency";
+    const recommendation = recommendationFor(name);
+    const explanation = item.reason || item.evidence?.[0] || (kind === "strength"
+      ? "No additional explanation was saved for this result."
+      : recommendation?.reason || "No additional improvement guidance was saved for this result.");
+    return h("li", {}, h("div", { class: "ir-finding-heading" }, h("b", {}, name),
+      item.interview_score != null ? h("span", { class: `tag band-${band(item.interview_score)}` }, pct(item.interview_score)) : null),
+      h("p", {}, explanation));
+  })) : h("p", { class: "muted" }, empty);
+  const overview = h("div", { class: "ir-tab-content ir-overview" },
+    h("div", { class: "ir-glance" },
+      h("section", { class: "ir-card" }, h("h3", {}, icon("check"), "What Went Well"),
+        findingCards(strengths, "No meaningful strengths were recorded for this interview.", "strength")),
+      h("section", { class: "ir-card" }, h("h3", {}, icon("target"), "Focus Next"),
+        findingCards(gaps, "No specific improvement areas were recorded for this interview.", "gap"))),
+    h("div", { class: "ir-overview-lower" },
+      h("section", { class: "ir-card" }, h("h3", {}, icon("review"), "How Your Answers Scored"),
+        rubricEntries.length ? h("ul", { class: "ir-rows ir-rows-rubric" }, rubricEntries.map(([key, item]) =>
+          h("li", {}, h("span", { class: "ir-row-name" }, LABELS[key] || key),
+            h("div", { class: `ir-bar band-${band(item.score)}`, role: "progressbar", "aria-label": LABELS[key] || key,
+              "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": item.score == null ? "0" : String(clamp(item.score)) },
+              h("i", { style: { width: item.score == null ? "0" : pct(item.score) } })),
+            h("span", { class: "num ir-row-val" }, item.score == null ? "Not assessed" : pct(item.score)))))
+          : h("p", { class: "muted" }, "No rubric scores were saved for this interview."),
+        h("button", { class: "btn ghost sm", type: "button", onclick: () => activateTab("details", "rubric") }, "Understand My Scores →")),
+      h("section", { class: "ir-card" }, h("h3", {}, icon("spark"), "Key Feedback"),
+        report.recommendations?.length ? h("ul", { class: "ir-feedback-list" }, report.recommendations.slice(0, 2).map((item) =>
+          h("li", {}, h("b", {}, item.skill), h("p", {}, item.reason || "No coaching explanation was saved."),
+            item.exercise ? h("small", { class: "muted" }, `Practice: ${item.exercise}`) : null)))
+          : gaps.length ? findingCards(gaps.slice(0, 2), "No specific feedback was saved.", "gap")
+            : h("p", { class: "muted" }, "No additional coaching feedback was saved for this attempt."))));
+
+  const levelSummary = (c) => h("small", { class: "muted" },
+    c.profile_level == null && c.required_level == null ? "Profile and role levels were not saved."
+      : `Profile ${c.profile_level == null ? "not available" : `${c.profile_level}/5`} · role level ${c.required_level == null ? "not available" : `${c.required_level}/5`}`);
+  const skillCards = assessedCompetencies.length ? h("div", { class: "ir-skill-list" }, bySkill(assessedCompetencies).map((c) => {
+    const evidenceId = `ir-competency-evidence-${competencies.indexOf(c)}`;
+    const evidenceButton = h("button", { type: "button", class: "btn ghost sm", onclick: () => activateTab("details", evidenceId) }, "View interview evidence");
+    const recommendation = recommendationFor(c.name);
+    const relatedQuestions = questionsForSkill(c.name);
+    const evidence = c.evidence?.length ? h("ul", { class: "interview-evidence-list" }, c.evidence.map((quote) => h("li", {}, h("q", {}, quote))))
+      : h("p", { class: "muted" }, "No supporting interview quotation was saved for this competency.");
+    const row = h("details", { class: "ir-skill-card" },
+      h("summary", {}, h("span", {}, h("b", {}, c.name), levelSummary(c),
+        h("span", { class: `ir-bar band-${band(c.interview_score)}`, role: "img", "aria-label": `${c.name} ${pct(c.interview_score)}` },
+          h("i", { style: { width: pct(c.interview_score) } }))),
+        h("span", { class: `ir-skill-score tag band-${band(c.interview_score)}` }, pct(c.interview_score))),
+      h("div", { class: "ir-skill-body" }, c.reason || c.explanation ? h("p", {}, c.reason || c.explanation) : null,
+        h("h4", {}, "Interview evidence"), evidence,
+        relatedQuestions.length ? h("div", {}, h("h4", {}, "Related Questions"), h("ul", { class: "ir-related-questions" }, relatedQuestions.map(({ item, index }) =>
+          h("li", {}, h("b", {}, `Question ${index + 1}`), ` · ${item.question || "Question text was not saved."}`)))) : null,
+        recommendation?.reason ? h("div", {}, h("h4", {}, "Improvement guidance"), h("p", {}, recommendation.reason)) : null,
+        recommendation?.exercise ? h("p", { class: "fine" }, h("b", {}, "Practice: "), recommendation.exercise) : null,
+        evidenceButton));
+    row.addEventListener("toggle", () => { if (row.open) skillsPanel.querySelectorAll(".ir-skill-card[open]").forEach((other) => { if (other !== row) other.open = false; }); });
+    return row;
+  })) : h("p", { class: "muted" }, "No competencies were assessed in this interview.");
+  const unassessed = unassessedCompetencies.length ? h("details", { class: "ir-unassessed" },
+    h("summary", {}, `Show Unassessed Skills · ${unassessedCompetencies.length}`),
+    h("ul", { class: "ir-unassessed-list" }, unassessedCompetencies.map((c) =>
+      h("li", {}, h("b", {}, c.name), h("span", { class: "tag" }, "Not Assessed"), levelSummary(c),
+        c.evidence?.length ? h("ul", { class: "interview-evidence-list" }, c.evidence.map((quote) => h("li", {}, h("q", {}, quote)))) : null))))
+    : h("p", { class: "muted" }, "There are no unassessed competencies in this report.");
+  const skillsPanel = h("div", { class: "ir-tab-content ir-skills" },
+    h("div", { class: "ir-section-heading" }, h("h2", {}, "Skills Shown in Your Answers"),
+      h("p", { class: "muted" }, "Open a competency to review its score, evidence, profile levels, and saved guidance.")),
+    skillCards, unassessed,
+    report.recommendations?.length ? h("details", { class: "ir-all-recommendations" },
+      h("summary", {}, `All Interview Recommendations · ${report.recommendations.length}`),
+      h("ol", { class: "interview-recommendations" }, report.recommendations.map((item) => {
+        const competency = competencies.find((c) => String(c.name || "").toLowerCase() === String(item.skill || "").toLowerCase());
+        return h("li", {}, h("div", { class: "interview-recommendation-heading" }, h("b", {}, item.skill || "Skill recommendation"),
+          item.priority ? h("span", { class: "tag" }, `${item.priority} priority`) : null),
+          h("p", {}, item.reason || "No recommendation explanation was saved."),
+          competency ? levelSummary(competency) : null,
+          item.exercise ? h("p", {}, h("b", {}, "Practice: "), item.exercise) : null,
+          item.resources?.length ? h("div", { class: "interview-resource-links" }, item.resources.map((resource) =>
+            h("a", { href: resource.url, target: "_blank", rel: "noopener noreferrer" }, resource.title)))
+            : h("small", { class: "muted" }, "No curated learning link is currently indexed for this skill."));
+      }))) : null);
+
+  let questionIndex = 0;
+  const questionContent = h("div", { class: "ir-question-view" });
+  const questionCounter = h("strong", { class: "ir-question-counter", "aria-live": "polite" });
+  const questionProgress = h("div", { class: "ir-question-progress", role: "progressbar", "aria-label": "Question review progress",
+    "aria-valuemin": "0", "aria-valuemax": String(questionItems.length), "aria-valuenow": "0" }, h("i", {}));
+  const previousQuestion = h("button", { class: "btn", type: "button", onclick: () => showQuestion(questionIndex - 1) }, "← Previous Question");
+  const nextQuestion = h("button", { class: "btn primary", type: "button", onclick: () => showQuestion(questionIndex + 1) }, "Next Question →");
+  function showQuestion(index) {
+    if (!questionItems.length) return;
+    questionIndex = Math.max(0, Math.min(questionItems.length - 1, index));
+    const item = questionItems[questionIndex], evaluation = item.evaluation || {};
     const stage = String(item.stage || "");
-    const followUp = item.is_follow_up ?? seenStages.has(stage);
-    seenStages.add(stage);
-    const inferredNumber = STAGE_ORDER.indexOf(stage) + 1;
-    const mainNumber = item.question_number || (inferredNumber > 0 ? inferredNumber : i + 1);
-    const evaluation = item.evaluation || {};
-    const scores = Object.entries(evaluation.scores || {});
-    const assessedScores = scores.filter(([, value]) => value != null);
-    const improve = assessedScores.filter(([, value]) => Number(value) < 3);
-    const strengths = evaluation.demonstrated_skills || [];
-    const answerReview = h("div", { class: "interview-question-review-body" },
-      h("p", { class: "interview-question-review-q" }, item.question || "Question text was not saved."),
-      h("div", { class: "interview-answer-transcript" }, h("b", {}, "Your answer"), h("p", {}, item.answer || "No confirmed transcript was saved.")),
-      h("p", { class: "fine" }, "Grounded in role requirements: ", (item.source_refs || []).join(" · "),
-        report.source?.url ? [" ", h("a", { href: report.source.url, target: "_blank", rel: "noopener noreferrer" }, "Open source")] : null),
-      h("h4", {}, "AI feedback"),
-      scores.length ? h("ul", { class: "interview-dimension-list" }, scores.map(([key, value]) =>
-        h("li", {}, h("div", {}, h("b", {}, LABELS[key] || key), h("p", {}, evaluation.rationale?.[key] || "No explanation was recorded."),
-          evaluation.evidence?.[key] ? h("small", { class: "muted" }, `Evidence: “${evaluation.evidence[key]}”`) : null),
-          h("span", { class: "num" }, value == null ? "Not assessed" : `${value}/4`))))
-        : h("p", { class: "muted" }, "No rubric feedback was saved for this answer."),
-      h("div", { class: "interview-two-col interview-answer-insights" },
-        h("section", {}, h("h4", {}, "Strengths shown"), strengths.length
-          ? h("ul", { class: "interview-compact-list" }, strengths.map((s) => h("li", {}, h("b", {}, s.name), s.evidence ? ` · “${s.evidence}”` : "")))
-          : h("p", { class: "muted" }, "No specific competency strength was recorded for this answer.")),
-        h("section", {}, h("h4", {}, "Areas to strengthen"), improve.length
-          ? h("ul", { class: "interview-compact-list" }, improve.map(([key]) => h("li", {}, h("b", {}, LABELS[key] || key), ` · ${evaluation.rationale?.[key] || "This rubric dimension scored below 3/4."}`)))
-          : h("p", { class: "muted" }, assessedScores.length ? "No assessed rubric dimension scored below 3/4." : "There is not enough assessment data to identify an answer-specific improvement."))),
+    const inferredFollowUp = questionItems.slice(0, questionIndex).some((previousItem) => String(previousItem.stage || "") === stage);
+    const followUp = item.is_follow_up ?? inferredFollowUp;
+    const questionType = TYPES[item.type] || TYPES[stage] || "Interview";
+    const scoreRows = Object.entries(evaluation.scores || {});
+    const demonstrated = evaluation.demonstrated_skills || [];
+    const related = [...new Set([...(item.target_skills || []), ...demonstrated.map((skill) => skill.name).filter(Boolean)])];
+    questionCounter.textContent = `Question ${questionIndex + 1} of ${questionItems.length}`;
+    questionProgress.setAttribute("aria-valuenow", String(questionIndex + 1));
+    questionProgress.firstElementChild.style.width = `${((questionIndex + 1) / questionItems.length) * 100}%`;
+    previousQuestion.disabled = questionIndex === 0;
+    nextQuestion.disabled = questionIndex === questionItems.length - 1;
+    const evaluationList = scoreRows.length ? h("ul", { class: "interview-dimension-list" }, scoreRows.map(([key, score]) =>
+      h("li", {}, h("div", {}, h("b", {}, LABELS[key] || key),
+        h("p", {}, evaluation.rationale?.[key] || "No explanation was recorded for this scoring category."),
+        evaluation.evidence?.[key] ? h("small", { class: "muted" }, `Evidence: “${evaluation.evidence[key]}”`) : null),
+        h("span", { class: "num" }, score == null ? "Not assessed" : `${score}/4`))))
+      : h("p", { class: "muted" }, "No AI rubric feedback was saved for this answer.");
+    const answerCard = h("article", { class: "ir-answer-card" },
+      h("section", {}, h("div", { class: "ir-question-heading" }, h("h3", {}, "Interview Question"),
+        h("span", { class: "tag" }, followUp ? `Follow-up · ${questionType}` : questionType)),
+        h("p", { class: "interview-question-review-q" }, item.question || "Question text was not saved.")),
+      h("section", { class: "interview-answer-transcript" }, h("h3", {}, "Your Answer"),
+        h("p", {}, item.answer || "No confirmed transcript was saved for this question.")),
+      h("section", {}, h("h3", {}, "AI Feedback"), evaluationList),
       item.suggested_improved_answer || item.suggested_answer
-        ? h("section", { class: "interview-suggested-answer" }, h("h4", {}, "Suggested stronger answer"), h("p", {}, item.suggested_improved_answer || item.suggested_answer)) : null);
-    return h("details", { class: "interview-question-review-card" },
-      h("summary", {}, h("span", { class: "interview-question-review-number" }, followUp ? `Follow-up to Question ${mainNumber}` : `Main Question ${mainNumber}`),
-        h("span", {}, `${TYPES[item.type] || TYPES[stage] || "Interview"} · ${(item.target_skills || []).join(", ") || "Role skills"}`)),
-      answerReview);
-  })) : h("p", { class: "muted" }, "No question-by-question feedback was saved for this attempt.");
+        ? h("section", { class: "interview-suggested-answer" }, h("h3", {}, "Suggested Stronger Response"),
+          h("p", {}, item.suggested_improved_answer || item.suggested_answer))
+        : h("section", {}, h("h3", {}, "Suggested Stronger Response"), h("p", { class: "muted" }, "No example response was saved for this answer.")),
+      h("section", {}, h("h3", {}, "Related Competencies"), related.length
+        ? h("ul", { class: "ir-related-skills" }, related.map((skill) => h("li", {}, skill)))
+        : h("p", { class: "muted" }, "No related competencies were recorded for this answer.")),
+      item.source_refs?.length ? h("p", { class: "fine" }, "Grounded in role requirements: ", item.source_refs.join(" · "),
+        report.source?.url ? [" ", h("a", { href: report.source.url, target: "_blank", rel: "noopener noreferrer" }, "Open source")] : null) : null);
+    questionContent.replaceChildren(answerCard);
+  }
+  if (questionItems.length) showQuestion(0);
+  else {
+    questionCounter.textContent = "No saved answers";
+    previousQuestion.disabled = true; nextQuestion.disabled = true;
+    questionContent.replaceChildren(h("p", { class: "muted" }, "No question-by-question feedback was saved for this attempt."));
+  }
+  const answersPanel = h("div", { class: "ir-tab-content ir-answers" }, questionCounter, questionProgress, questionContent,
+    h("div", { class: "ir-question-nav" }, previousQuestion, nextQuestion));
+
+  const competencyEvidence = h("div", { class: "ir-evidence-list" }, competencies.length ? competencies.map((c, index) => {
+    const relatedQuestions = questionsForSkill(c.name);
+    const entry = h("details", { class: "ir-evidence-item", id: `ir-competency-evidence-${index}` },
+      h("summary", {}, h("span", {}, h("b", {}, c.name), levelSummary(c)),
+        h("span", { class: `tag ${c.interview_score == null ? "" : `band-${band(c.interview_score)}`}` },
+          c.interview_score == null ? "Not Assessed" : pct(c.interview_score))),
+      h("div", {}, c.reason || c.explanation ? h("p", {}, c.reason || c.explanation) : null,
+        c.evidence?.length ? h("ul", { class: "interview-evidence-list" }, c.evidence.map((quote) => h("li", {}, h("q", {}, quote))))
+          : h("p", { class: "muted" }, "No supporting quotation was saved for this competency."),
+        relatedQuestions.length ? h("div", {}, h("h4", {}, "Related Questions"), h("ul", { class: "ir-related-questions" }, relatedQuestions.map(({ item, index: questionNumber }) =>
+          h("li", {}, h("b", {}, `Question ${questionNumber + 1}`), ` · ${item.question || "Question text was not saved."}`)))) : null));
+    entry.addEventListener("toggle", () => { if (entry.open) competencyEvidence.querySelectorAll(".ir-evidence-item[open]").forEach((other) => { if (other !== entry) other.open = false; }); });
+    return entry;
+  }) : h("p", { class: "muted" }, "No competency evidence was saved for this report."));
+  const competencyDetails = h("div", {}, competencyEvidence,
+    h("div", { class: "ir-details-subsection" }, h("h3", {}, "Strengths and Improvement Areas"),
+      h("div", { class: "interview-two-col" },
+        h("section", {}, h("h4", {}, "Strengths"), findingCards(bySkill(report.strengths), "No specific strengths were recorded.", "strength")),
+        h("section", {}, h("h4", {}, "Areas for Improvement"), findingCards(byGap(report.gaps), "No specific gaps were recorded.", "gap")))));
+  const historyPanel = h("div", {},
+    previous ? h("section", { class: "ir-history-current" }, h("h3", {}, "Current Attempt"),
+      h("p", {}, `${fmtTime(report.completed_utc)} · ${report.difficulty} difficulty`),
+      h("div", { class: "interview-compare" }, [["Interview Performance", report.performance, previous.performance],
+        ["Job Readiness", report.readiness, previous.readiness], ["Role Alignment", report.competitiveness, previous.competitiveness]].map(([label, now, before]) =>
+        h("div", {}, h("b", {}, label), h("span", { class: "num" }, `${scoreText(now)} · ${delta(now, before)}`),
+          h("div", { class: "interview-meter" }, h("i", { style: { width: now == null ? "0" : pct(now) } }))))))
+      : h("p", { class: "muted" }, comparable.length ? "Previous completed attempts are listed below." : "This is your first completed interview for this role."),
+    comparable.length ? h("ul", { class: "ir-attempt-list" }, [...comparable].reverse().map((attempt) =>
+      h("li", {}, h("div", {}, h("b", {}, `${fmtTime(attempt.created_utc)} · ${attempt.difficulty || "Interview"}`),
+        h("span", { class: "muted" }, `${attempt.performance == null ? "Performance not available" : `${scoreText(attempt.performance)} performance`} · ${attempt.readiness == null ? "Job readiness not available" : `${scoreText(attempt.readiness)} job readiness`}`)),
+        h("a", { class: "btn ghost sm", href: `#/interview/${encodeURIComponent(attempt.interview_id)}` }, "Open report"))))
+      : null);
+  const sources = report.source ? h("div", { class: "ir-source-record" }, h("h3", {}, "Question Source"),
+    h("p", {}, report.source.url ? h("a", { href: report.source.url, target: "_blank", rel: "noopener noreferrer" }, report.source.title || report.source.url)
+      : report.source.title || "Source details were recorded without a URL.",
+      report.source.publisher ? ` · ${report.source.publisher}` : "",
+      report.source.access_date ? ` · retrieved ${report.source.access_date}` : ""))
+    : h("p", { class: "muted" }, "No external question source was recorded.");
+  const methodPanel = h("div", { class: "ir-method" }, sources,
+    h("section", {}, h("h3", {}, "Scoring Method"),
+      h("p", {}, `Interview performance is the weighted rubric score. Job readiness = 65% interview performance + 35% profile coverage (${report.profile_coverage == null ? "not available" : pct(report.profile_coverage)}). Role Alignment is the presentation label for the Hiring Competitiveness Index: 70% demonstrated role competency (${report.demonstrated_fit == null ? "not available" : pct(report.demonstrated_fit)}) + 30% profile coverage.`),
+      h("p", {}, "Rubric weights: job-relevant knowledge 30%, answer relevance and completeness 25%, problem-solving and reasoning 20%, communication and clarity 15%, and practical examples and evidence 10%.")),
+    h("section", {}, h("h3", {}, "Assessment Limitations"),
+      h("p", {}, report.disclaimer || "Simulated coaching assessment, not a verified probability of receiving a job offer. Actual outcomes depend on employer requirements, other applicants, experience, interviewers, and market conditions."),
+      h("p", {}, "Unassessed competencies are excluded from demonstrated-skill averages. Role skill levels are AiversePulse estimates derived from an O*NET-trained model; they are not ESCO ratings.")),
+    h("section", {}, h("h3", {}, "Assessment Context"),
+      h("p", {}, `Source: ${assessmentSourceLabel}. Difficulty: ${report.difficulty || "Not recorded"}. Completed: ${fmtTime(report.completed_utc)}.`)));
+  const detailsPanel = h("div", { class: "ir-tab-content ir-details" },
+    reportDisclosure("rubric", "Rubric Details", "Scores, weights, explanations, and answer counts.",
+      h("div", {}, dimensions, rubricEntries.length ? h("p", { class: "fine" }, `Evidence covered ${report.evidence_coverage == null ? "not available" : pct(report.evidence_coverage)} of the rubric.`) : null), "review"),
+    reportDisclosure("competencies", "Competency Evidence", "Saved scores and quotations from your interview answers.", competencyDetails, "grid"),
+    reportDisclosure("comparison", "Previous Attempts", "Completed interviews for this role and score changes.", historyPanel, "history"),
+    reportDisclosure("sources", "Sources & Method", "Question sources, scoring calculations, and assessment limitations.", methodPanel, "sources"));
+
+  const tabs = [
+    { id: "overview", label: "Overview", panel: overview },
+    { id: "skills", label: "Skills", panel: skillsPanel },
+    { id: "answers", label: "Answers", panel: answersPanel },
+    { id: "details", label: "Details", panel: detailsPanel },
+  ];
+  const tabButtons = tabs.map(({ id, label }, index) => h("button", { type: "button", role: "tab", id: `ir-tab-${id}`,
+    "aria-controls": `ir-panel-${id}`, "aria-selected": index === 0, tabindex: index === 0 ? "0" : "-1", "data-tab": id,
+    onclick: () => activateTab(id) }, label));
+  const tabContent = h("div", { class: "ir-tabpanels" }, ...tabs.map(({ id, panel }, index) => {
+    panel.id = `ir-panel-${id}`; panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-labelledby", `ir-tab-${id}`);
+    if (index) panel.hidden = true;
+    return panel;
+  }));
+  const tabNav = h("div", { class: "ir-tabs", role: "tablist", "aria-label": "Interview report sections" }, tabButtons);
+  function activateTab(id, disclosureId = null) {
+    const target = tabs.find((item) => item.id === id);
+    if (!target) return;
+    tabs.forEach((item, index) => {
+      const button = tabNav.querySelector(`[data-tab="${item.id}"]`);
+      button.setAttribute("aria-selected", String(item.id === id));
+      button.tabIndex = item.id === id ? 0 : -1;
+      item.panel.hidden = item.id !== id;
+    });
+    if (disclosureId) {
+      const disclosure = id === "details" ? detailsPanel.querySelector(`.interview-disclosure[data-section="${disclosureId === "rubric" ? "rubric" : disclosureId === "competency-evidence" || disclosureId.startsWith("ir-competency-evidence-") ? "competencies" : disclosureId}"]`) : null;
+      if (disclosure) disclosure.open = true;
+      requestAnimationFrame(() => {
+        const evidence = detailsPanel.querySelector(`[id="${disclosureId}"]`);
+        const section = evidence || disclosure;
+        if (evidence?.matches("details")) evidence.open = true;
+        section?.scrollIntoView({ block: "start", behavior: "smooth" });
+        if (evidence?.matches("details")) evidence.focus({ preventScroll: true });
+        else disclosure?.querySelector("summary")?.focus({ preventScroll: true });
+      });
+    }
+  }
+  tabNav.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const current = tabs.findIndex((item) => tabNav.querySelector(`[data-tab="${item.id}"]`) === document.activeElement);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
+      : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    tabButtons[next].focus(); activateTab(tabs[next].id);
+  });
+
   let planPanel = h("p", { class: "muted" }, "No plan was linked to this interview.");
   if (report.plan_id) {
     planPanel = h("a", { class: "btn sm", href: `#/plans/${report.plan_id}` }, "Open your learning plan");
@@ -875,99 +1080,30 @@ async function renderReport(main, report, callbacks = {}) {
       planForRole.disabled = false;
     }
   } }, "Plan for This Role");
-  // at-a-glance: score bands, a verdict, competency and rubric bars (good >= 70, mid >= 50, low < 50, na = not assessed)
-  const band = (n) => n == null ? "na" : n >= 70 ? "good" : n >= 50 ? "mid" : "low";
-  const clamp = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
-  const perf = clamp(report.performance);
-  const verdict = perf >= 80 ? ["Interview-ready", "Strong answers across the rubric. Keep practising to stay sharp."]
-    : perf >= 65 ? ["Nearly there", "Solid answers. A few focused improvements will lift your readiness."]
-    : perf >= 50 ? ["Developing", "Good foundations. Work on the focus areas below before a real interview."]
-    : ["Early stage", "Start with the focus areas below, then practise again."];
-  const sideScore = (label, key, hint, prior) => {
-    const n = clamp(report[key]), d = prior == null ? null : n - clamp(prior);
-    return h("div", { class: "ir-side-score", title: hint },
-      h("div", { class: "ir-side-top" }, h("span", {}, label),
-        h("b", { class: "num" }, pct(n), d == null ? null : h("small", { class: `ir-delta ${d >= 0 ? "up" : "down"}` }, `${d >= 0 ? "+" : ""}${d}`))),
-      h("div", { class: `ir-bar band-${band(n)}`, role: "progressbar", "aria-label": label, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(n) },
-        h("i", { style: { width: pct(n) } })),
-      h("small", { class: "muted" }, hint));
-  };
-  const hero = h("section", { class: "ir-hero" },
-    h("div", { class: "ir-hero-main" },
-      h("div", { class: `ps-ring ir-ring band-${band(perf)}`, style: { "--pct": perf }, role: "img", "aria-label": `Interview performance ${perf}%` },
-        h("div", {}, h("b", { class: "num" }, `${perf}%`), h("small", {}, "Performance"))),
-      h("div", { class: "ir-verdict" }, h("span", { class: `ir-pill band-${band(perf)}` }, verdict[0]), h("p", {}, verdict[1]),
-        h("small", { class: "muted" }, previous ? delta(report.performance, previous.performance) : "First completed attempt for this role"))),
-    h("div", { class: "ir-hero-side" },
-      sideScore("Job readiness", "readiness", "Interview performance plus how well your profile covers the role", previous?.readiness),
-      sideScore("Hiring competitiveness", "competitiveness", "Simulated: demonstrated role skills plus profile coverage", previous?.competitiveness)));
-  const chip = (x) => h("li", { class: `ir-chip band-${band(x.interview_score)}` },
-    h("b", {}, x.name || x.skill), h("span", { class: "num" }, x.interview_score == null ? "Not assessed" : pct(x.interview_score)));
-  const glance = h("div", { class: "ir-glance" },
-    h("section", { class: "ir-card" }, h("h3", {}, icon("check"), "What went well"),
-      report.strengths?.length ? h("ul", { class: "ir-chips" }, report.strengths.map(chip))
-        : h("p", { class: "muted" }, "No standout strengths recorded this time.")),
-    h("section", { class: "ir-card" }, h("h3", {}, icon("target"), "Focus next"),
-      report.gaps?.length ? h("ul", { class: "ir-chips" }, report.gaps.slice(0, 4).map(chip))
-        : h("p", { class: "muted" }, "No skill gaps identified.")));
-  const levelDots = (have, need) => h("span", { class: "ir-levels", title: `Profile ${have}/5 · role needs ${need}/5`, role: "img", "aria-label": `Profile ${have} of 5, role needs ${need} of 5` },
-    [1, 2, 3, 4, 5].map((i) => h("i", { class: `${i <= have ? "have" : ""}${i === need ? " need" : ""}` })));
-  const sortedComps = [...competencies].sort((a, b) => (b.interview_score ?? -1) - (a.interview_score ?? -1));
-  const compChart = h("section", { class: "ir-card" }, h("h3", {}, icon("grid"), "Skills shown in your answers"),
-    sortedComps.length ? h("ul", { class: "ir-rows" }, sortedComps.map((c) => h("li", {},
-      h("span", { class: "ir-row-name" }, c.name),
-      h("div", { class: `ir-bar band-${band(c.interview_score)}` }, h("i", { style: { width: c.interview_score == null ? "0" : pct(c.interview_score) } })),
-      h("span", { class: "num ir-row-val" }, c.interview_score == null ? "—" : pct(c.interview_score)),
-      levelDots(c.profile_level, c.required_level))))
-      : h("p", { class: "muted" }, "No competency data was available for this report."),
-    h("p", { class: "fine" }, "Dots show your profile level out of 5; the ringed dot is the level the role needs. A dash means the skill was not asked about."));
-  const rubricChart = h("section", { class: "ir-card" }, h("h3", {}, icon("review"), "How your answers scored"),
-    h("ul", { class: "ir-rows ir-rows-rubric" }, Object.entries(report.dimensions || {}).map(([key, item]) => h("li", { title: item.reason || "" },
-      h("span", { class: "ir-row-name" }, LABELS[key] || key, h("small", { class: "muted" }, ` · ${item.weight}%`)),
-      h("div", { class: `ir-bar band-${band(item.score)}` }, h("i", { style: { width: item.score == null ? "0" : pct(item.score) } })),
-      h("span", { class: "num ir-row-val" }, item.score == null ? "—" : pct(item.score))))),
-    h("p", { class: "fine" }, `Each criterion is weighted by the % after its name. Evidence covered ${pct(report.evidence_coverage)} of the rubric.`));
   const resultsRoute = assessmentSource === "questionnaire" ? "#/quiz" : "#/resume";
-  const nextSteps = h("section", { class: "interview-card interview-next-steps" },
-    h("h2", {}, "Ready to Improve Your Skills?"),
-    h("p", { class: "muted" }, "Based on your interview performance, we've identified areas you can improve. Would you like to create a personalized learning plan for this role?"),
-    h("div", { class: "interview-report-actions" }, planForRole,
-      h("a", { class: "btn ghost", href: resultsRoute }, "Back to Career Results")), planStatus);
-  const compare = previous ? h("section", { class: "interview-card" }, h("h2", {}, "Progress since your last attempt"),
-    h("p", { class: "muted" }, `${previous.role_title} · ${fmtTime(previous.created_utc)} · ${previous.difficulty} difficulty`),
-    h("div", { class: "interview-compare" }, [["Interview performance", report.performance, previous.performance],
-      ["Job readiness", report.readiness, previous.readiness], ["Hiring Competitiveness Index", report.competitiveness, previous.competitiveness]].map(([label, now, before]) =>
-      h("div", {}, h("b", {}, label), h("span", { class: "num" }, `${pct(now)} · ${delta(now, before)}`),
-        h("div", { class: "interview-meter" }, h("i", { style: { width: pct(now) } }))))))
-    : h("section", { class: "interview-card" }, h("h2", {}, "Progress comparison"),
-      h("p", { class: "muted" }, "This is your first completed interview for this role. Complete another attempt to compare scores."));
-  const sources = report.source ? h("div", { class: "fine" }, "Question context: ", h("a", { href: report.source.url, target: "_blank", rel: "noopener noreferrer" }, report.source.title),
-    ` · ${report.source.publisher} · retrieved ${report.source.access_date}`) : h("p", { class: "muted" }, "No external question source was recorded.");
-  main.replaceChildren(h("div", { class: "interview-page interview-report-page" },
+  const reportStatus = currentAttempt?.status
+    ? currentAttempt.status.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase()) : "Completed";
+  const results = h("div", { class: "interview-page interview-report-page" },
     h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "YOUR PRACTICE REPORT"),
-      h("h1", { class: "page-title" }, `${report.role_title} interview assessment`),
-      h("p", { class: "lede" }, `Completed ${fmtTime(report.completed_utc)} · ${report.difficulty} difficulty`))),
-    hero, glance,
-    h("div", { class: "ir-charts" }, compChart, rubricChart),
-    reportDisclosure("answers", "Answer-by-answer review", `${report.question_feedback?.length || 0} answers with AI feedback and stronger example answers.`,
-      h("div", { class: "interview-report-scroll interview-question-scroll" }, questionFeedback), "ask"),
-    reportDisclosure("recommendations", "How to improve", `${report.recommendations?.length || 0} practice actions and learning links.`,
-      h("div", { class: "interview-recommendation-content" }, recommendations, planPanel), "target"),
-    reportDisclosure("competencies", "Competency evidence", "The quotes from your answers behind each skill score.",
-      h("div", {}, competencyContent, strengthsAndGaps,
-        h("p", { class: "fine" }, "Role skill levels are AiversePulse estimates derived from an O*NET-trained model; they are not ESCO ratings.")), "grid"),
-    reportDisclosure("rubric", "Rubric details", "Why each criterion scored the way it did.", dimensions, "review"),
-    reportDisclosure("comparison", "Previous attempts", previous ? "Compare with your last attempt for this role." : "Your first completed attempt for this role.", compare, "history"),
-    reportDisclosure("sources", "Sources & method", "Where the questions came from and how scores are calculated.",
-      h("div", {}, sources,
-        h("p", { class: "fine" }, `Interview performance is the weighted rubric score. Job readiness = 65% interview performance + 35% profile coverage (${pct(report.profile_coverage)}). Hiring competitiveness = 70% demonstrated role competency (${pct(report.demonstrated_fit)}) + 30% profile coverage.`),
-        h("p", { class: "fine" }, "Unassessed competencies are excluded from demonstrated-skill averages. Hiring Competitiveness Index is simulated and is not a verified probability of an offer.")), "sources"),
+      h("h1", { class: "page-title" }, report.role_title || "Interview assessment"),
+      h("p", { class: "lede" }, `Completed ${fmtTime(report.completed_utc) || "Date not recorded"} · ${report.difficulty || "Difficulty not recorded"} difficulty`)),
+      h("span", { class: "tag interview-report-status" }, reportStatus)),
+    hero,
     h("p", { class: "interview-disclaimer" }, report.disclaimer || "Simulated coaching assessment, not a verified probability of receiving a job offer. Actual outcomes depend on employer requirements, other applicants, experience, interviewers, and market conditions."),
-    nextSteps,
-    h("div", { class: "interview-report-actions" },
-      h("a", { class: "btn primary", href: "#/quiz" }, "Retake Quick Match"),
-      h("a", { class: "btn", href: "#/resume" }, "Upload resume"),
-      h("a", { class: "btn ghost", href: "#/interview" }, "Interview history"))));
+    tabNav, tabContent,
+    h("section", { class: "interview-card interview-next-steps", id: "ir-whats-next" },
+      h("h2", {}, "What's Next?"),
+      h("p", { class: "muted" }, "You've completed your interview assessment. Would you like AiversePulse to help you improve the skills identified in your interview?"),
+      h("div", { class: "ir-plan-card" }, h("div", {}, h("h3", {}, "Create Your Personalized Learning Plan"),
+        h("p", { class: "muted" }, "Use your interview results and target role to generate a personalized 30/60/90-day reskilling plan."),
+        h("div", { class: "ir-plan-tags" }, h("span", {}, "AI personalized"), h("span", {}, "Career-focused"), h("span", {}, "Optional"))),
+        h("div", { class: "ir-plan-actions" }, planForRole, h("a", { class: "btn ghost", href: resultsRoute }, "Back to Career Results"))),
+      planStatus, planPanel),
+    h("div", { class: "interview-report-actions ir-secondary-actions", "aria-label": "More interview actions" },
+      h("a", { class: "btn", href: "#/quiz" }, "Retake Quick Match"),
+      h("a", { class: "btn ghost", href: "#/resume" }, "Upload Resume"),
+      h("a", { class: "btn ghost", href: "#/interview" }, "Interview History")));
+  main.replaceChildren(results);
 }
 
 function renderEnded(main) {
