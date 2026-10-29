@@ -411,3 +411,40 @@ html[data-product="hr"] .view.slide-back { animation: people-in-left 340ms cubic
 html[data-product="hr"] .people-table td { white-space: nowrap; }
 html[data-product="hr"] .people-table td:first-child { white-space: normal; }
 html[data-product="hr"] .person-sub { font-size: 13px; overflow-wrap: anywhere; }
+
+/* review queue: compact rows in a blue card, owl-blue filter chips, a quiet current row */
+html[data-product="hr"] nav.queue { background: var(--card-fill); border-radius: var(--c-radius); padding: 6px; }
+html[data-product="hr"] .rv-head { display: flex; align-items: center; gap: 10px; padding: 10px 10px 12px; border-bottom: 0; }
+html[data-product="hr"] .rv-head strong { font-size: 16px; }
+html[data-product="hr"] .rv-count { padding: 1px 8px; border-radius: 99px; background: var(--card-fill-deep); color: var(--owl-ink); font-size: 12px; font-weight: 600; }
+html[data-product="hr"] .rv-head kbd { margin-left: auto; border: 0; background: oklch(1 0 0); color: var(--ink-2); font-size: 11px; border-radius: 6px; padding: 2px 6px; }
+html[data-product="hr"] nav.queue input:not([type=checkbox]) { min-height: 36px; border-radius: 8px; border: 0; background: oklch(1 0 0); padding: 0 12px; margin: 0 4px; width: calc(100% - 8px); box-sizing: border-box; }
+html[data-product="hr"] .rv-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 4px; border-bottom: 0; }
+html[data-product="hr"] .rv-chip { min-height: 28px; padding: 0 12px; border-radius: 99px; border: 0; background: oklch(1 0 0); color: var(--owl-ink); font: 500 13px var(--font-ui); cursor: pointer; }
+html[data-product="hr"] .rv-chip:hover { background: var(--card-fill-deep); }
+html[data-product="hr"] .rv-chip[aria-pressed="true"], html[data-product="hr"] .rv-chip.is-active, html[data-product="hr"] .rv-chip[aria-current="true"] { background: var(--accent); color: oklch(1 0 0); }
+html[data-product="hr"] .review-entry { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0 4px; margin-top: 2px; border: 0; border-radius: 10px; background: oklch(1 0 0); padding: 0 6px 0 10px; }
+html[data-product="hr"] .review-entry:has(.queue-item[aria-current="true"]) { background: var(--accent-soft); }
+html[data-product="hr"] .queue-item { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 12px; padding: 10px 8px; border: 0; border-radius: 10px; background: transparent; text-align: left; min-height: 0; }
+html[data-product="hr"] .queue-item[aria-current="true"] { background: transparent; box-shadow: none; }
+html[data-product="hr"] .rv-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--card-fill-deep); color: var(--owl-ink); font: 600 12px var(--font-ui); }
+html[data-product="hr"] .queue-item[aria-current="true"] .rv-avatar { background: var(--accent); color: oklch(1 0 0); }
+html[data-product="hr"] .rv-main { display: grid; gap: 3px; min-width: 0; }
+html[data-product="hr"] .rv-main .l1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+html[data-product="hr"] .rv-main .id { font-size: 14px; font-weight: 600; color: var(--ink); }
+html[data-product="hr"] .queue-item[aria-current="true"] .id { color: var(--accent); }
+html[data-product="hr"] .rv-main .l2 { font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-product="hr"] .rv-main .tag { font-size: 11.5px; line-height: 20px; }
+html[data-product="hr"] .rv-progress { display: grid; grid-template-columns: minmax(0, 1fr) 34px; align-items: center; gap: 8px; margin-top: 2px; }
+html[data-product="hr"] .rv-progress::before { content: none; }
+html[data-product="hr"] .rv-progress i { display: block; height: 4px; border-radius: 99px; background: var(--accent); min-width: 0; }
+html[data-product="hr"] .rv-progress { background: linear-gradient(var(--card-fill-deep), var(--card-fill-deep)) left center / calc(100% - 42px) 4px no-repeat; }
+html[data-product="hr"] .rv-progress b { font-size: 11px; font-weight: 600; color: var(--ink-2); text-align: right; font-family: var(--font-ui); }
+html[data-product="hr"] .rv-check { margin: 0 2px; accent-color: var(--accent); }
+html[data-product="hr"] .review-entry > .queue-item { width: 100%; justify-self: stretch; box-sizing: border-box; }
+html[data-product="hr"] .rv-main { width: 100%; }
+html[data-product="hr"] .review-entry > .rv-check { grid-column: 1; grid-row: 1; position: static; }
+html[data-product="hr"] .review-entry > .queue-item { grid-column: 2; grid-row: 1; }
+html[data-product="hr"] .review-entry > .review-menu { grid-column: 3; grid-row: 1; }
+html[data-product="hr"] .review-entry > .rv-check { align-self: center; }
+html[data-product="hr"] .rv-head { background: var(--card-fill); border-radius: 10px 10px 0 0; z-index: 2; }

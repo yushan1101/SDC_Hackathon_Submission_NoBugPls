@@ -3509,7 +3509,9 @@ body {
 .cal-block { display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: var(--sunken); }
 .cal-block h5 { margin: 0; font-size: 14px; font-weight: 600; }
 .cal-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
-@media (min-width: 720px) { .cal-grid { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); } }
+/* one row per 30 days only when the calendar itself is wide; in a side panel the weeks wrap into readable cards */
+.plan-main, .plan-cal-wrap { container-type: inline-size; }
+@container (min-width: 720px) { .cal-grid { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); } }
 .cal-week { display: grid; align-content: start; gap: 6px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); min-width: 0; }
 .cal-week.is-past { opacity: .6; }
 .cal-week.is-now { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }

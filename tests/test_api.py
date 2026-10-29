@@ -1230,16 +1230,18 @@ def test_wildcard_frontend_site_covers_subdomains_only(client):
     assert not allowed("https://x.replit.dev")
 
 
-def test_hr_chooses_the_model_per_task_from_the_admins_list(client, monkeypatch):
+def test_admin_sets_the_enterprise_model_per_task_and_hr_sees_it(client, monkeypatch):
     from agents import llm
     H = {"X-AP": "1"}
     monkeypatch.setattr(llm, "providers", lambda: {"openai": True, "gemini": True})
     _admin(client)
     assert client.post("/api/admin/models", json={"spec": "rm -rf /"}, headers=H).status_code == 422
     assert client.post("/api/admin/models", json={"spec": "openai:gpt-test-1", "label": "GPT test"}, headers=H).status_code == 200
+    assert client.post("/api/admin/enterprises/hr1/models", json={"task": "coach", "spec": "openai:not-allowed"}, headers=H).status_code == 422
+    assert client.post("/api/admin/enterprises/hr1/models", json={"task": "coach", "spec": "openai:gpt-test-1"}, headers=H).status_code == 200
     login(client, "hr1")
-    assert client.post("/api/org/models", json={"task": "coach", "spec": "openai:not-allowed"}, headers=H).status_code == 422
-    assert client.post("/api/org/models", json={"task": "coach", "spec": "openai:gpt-test-1"}, headers=H).status_code == 200
+    # one place sets the enterprise's model: the admin. HR picks per person instead (/api/org/members/.../models)
+    assert client.post("/api/org/models", json={"task": "coach", "spec": "openai:gpt-test-1"}, headers=H).status_code == 403
     got = {t["id"]: t for t in client.get("/api/org/models").json()["tasks"]}
     assert got["coach"]["chosen"] == "openai:gpt-test-1"
     # the choice applies to this organisation's requests only, and model_for() follows it

@@ -2781,14 +2781,8 @@ class OrgModelIn(BaseModel):
 
 @app.post("/api/org/models")
 def org_models_set(body: OrgModelIn, user: dict = Depends(need("hr_advisor"))):
-    with DB_LOCK, db:
-        if not body.spec:
-            db.execute("DELETE FROM org_models WHERE owner=? AND task=?", (user["username"], body.task))
-            return {"task": body.task, "spec": None}
-        if not db.execute("SELECT 1 FROM model_catalog WHERE spec=?", (body.spec,)).fetchone() or not llm.usable(body.spec):
-            raise HTTPException(422, "Pick a model from the list.")
-        db.execute("INSERT INTO org_models(owner, task, spec) VALUES(?,?,?) ON CONFLICT(owner, task) DO UPDATE SET spec=excluded.spec", (user["username"], body.task, body.spec))
-    return {"task": body.task, "spec": body.spec}
+    # the enterprise's model per task is the admin's choice (Admin > Enterprises); HR chooses per person instead
+    raise HTTPException(403, "Your administrator sets your organisation's models. Choose a model per person on their page.")
 
 
 # --- voice and plain-language features (paid plans) -------------------------------------------------------

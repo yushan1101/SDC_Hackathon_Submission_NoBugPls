@@ -234,23 +234,15 @@ export async function publishPanel(id, status, isOpen) {
 }
 
 // ---------------------------------------------------------------- AI models per task, for this organisation
+/** Read-only: the models the administrator set for this enterprise. HR's own choice is per person (on their page). */
 export async function modelsView(main, status) {
   const d = await api("/api/org/models");
-  const row = (t) => {
-    const pick = h("select", { class: "input", "aria-label": `Model for ${t.label}`, onchange: async () => {
-      try {
-        await api("/api/org/models", { method: "POST", body: { task: t.id, spec: pick.value } });
-        toast(pick.value ? `${t.label}: now using ${pick.selectedOptions[0].textContent}` : `${t.label}: back to the default`);
-        status.set("matched", "Model saved");
-      } catch (e) { toast(e.message, "err"); }
-    } },
-      h("option", { value: "" }, `Default${t.default ? ` (${t.default.split(":")[1]})` : ""}`),
-      d.catalog.map((m) => h("option", { value: m.spec, selected: m.spec === t.chosen }, m.label)));
-    return h("div", { class: "model-row" }, h("div", {}, h("b", {}, t.label), h("div", { class: "muted mono" }, t.id)), pick);
-  };
+  const name = (spec) => (spec ? (d.catalog.find((m) => m.spec === spec)?.label || spec.split(":")[1]) : null);
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "AI models"),
-      h("span", { class: "muted", style: { "font-size": "14px" } }, "Choose the model for each task. Applies to you and the team members you invited.")),
-    h("section", { class: "panel" }, h("div", { class: "pad model-list" }, d.tasks.map(row),
-      d.catalog.length ? null : h("p", { class: "muted" }, "Only the default model is available. Your administrator can add more.")))));
+      h("span", { class: "muted", style: { "font-size": "14px" } }, "Your administrator sets these for your organisation.")),
+    h("section", { class: "panel" }, h("div", { class: "pad model-list" }, d.tasks.map((t) => h("div", { class: "model-row" },
+      h("div", {}, h("b", {}, t.label)),
+      h("span", { class: t.chosen ? "tag approved" : "tag" }, name(t.chosen) || `Default${t.default ? ` (${t.default.split(":")[1]})` : ""}`))))),
+    h("p", { class: "note" }, "To give one person a different model, open them under ", h("a", { href: "#/people" }, "Team members"), " and change it in their AI models.")));
 }
