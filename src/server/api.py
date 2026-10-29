@@ -1289,6 +1289,8 @@ def interview_answer(interview_id: str, body: InterviewAnswer, user: dict = Depe
         result = interview_service.persist_answer(db, latest, current, answer_text, prepared)
     if (result.get("question") or {}).get("text"):
         _speech(result["question"]["text"])
+    if result.get("reply"):
+        _speech(result["reply"])
     if result["status"] == "completed":
         report = result["report"]
         for recommendation in report.get("recommendations", [])[:3]:
@@ -1488,6 +1490,30 @@ def plans(user: dict = Depends(current_user)):
     with DB_LOCK:
         rows = approval.list_plans(db, user)
         return [p | {"review": reviews.get(db, p["plan_id"])} for p in rows] if user["role"] == "hr_advisor" else rows
+
+
+@app.get("/api/plans/reminder")
+def plan_reminder(user: dict = Depends(current_user)):
+    """The home-page nudge: the person's newest plan, how far into its 90 days they are, the pace, and the next step
+    they haven't ticked (in the phase they should be on now). {"plan": null} when they have none."""
+    with DB_LOCK:
+        rows = [p for p in approval.list_plans(db, user) if p["status"] != "rejected"]
+        if not rows:
+            return {"plan": None}
+        p = max(rows, key=lambda r: r["created_utc"])
+        plan = (approval.latest(db, p["plan_id"]) or {}).get("plan") or {}
+        done_rows = db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (p["plan_id"],)).fetchall()
+    summary = _progress_summary(plan, done_rows, p["created_utc"])
+    done = {item for item, _ in done_rows}
+    acts = plan.get("activities", [])
+    phase_now = next((a.get("day_range") for a in acts if int(str(a.get("day_range", "1-30")).split("-")[-1]) >= summary["day"]), None)
+    todo = [a for a in acts if f"{a.get('day_range')}:{a.get('skill_id')}" not in done]
+    nxt = next((a for a in todo if a.get("day_range") == phase_now), todo[0] if todo else None)
+    elapsed_over = summary["day"] >= 90 and summary["pace"] != "done"
+    return {"plan": {"plan_id": p["plan_id"], "title": (occupation(p["target_role"]) or {}).get("title", p["target_role"]),
+                     "from_hr": p.get("audience") == "hr", **summary, "time_up": elapsed_over,
+                     "next": {"days": nxt.get("day_range"), "skill": nxt.get("skill_id"), "activity": nxt.get("activity"),
+                              "hours": nxt.get("estimated_hours")} if nxt else None}}
 
 
 @app.get("/api/reviews")
@@ -3028,6 +3054,34 @@ def _agent_context(agent: dict, user: dict, profile: dict | None) -> dict:
     return {"target_job": str(p.get("target_title") or "")[:80] or None, "my_skills": skills, "my_plans": _my_plans(user)}
 
 
+def _token_limit(plan: str) -> int:
+    return {"free": cfg.monthly_tokens_free, "pro": cfg.monthly_tokens_pro}.get(plan, cfg.monthly_tokens_org)
+
+
+def _my_usage(user: dict) -> dict:
+    """The signed-in person's limits and what they have used: AI tokens this month, agent messages today, and (free
+    plan) new plans this month."""
+    plan = _plan(user)
+    now_ = datetime.now(timezone.utc)
+    month, today = now_.strftime("%Y-%m"), now_.date().isoformat()
+    with DB_LOCK:
+        tokens = db.execute("SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM llm_usage WHERE username=? AND substr(at_utc,1,7)=?",
+                            (user["username"], month)).fetchone()[0]
+        messages = db.execute("SELECT COUNT(*) FROM agent_log WHERE username=? AND substr(at_utc,1,10)=?", (user["username"], today)).fetchone()[0]
+        plans = db.execute("SELECT COUNT(*) FROM briefing_log WHERE username=? AND substr(at_utc,1,7)=?", (user["username"], month)).fetchone()[0]
+    limit = _token_limit(plan)
+    nxt = (now_.replace(day=1) + timedelta(days=32)).replace(day=1)
+    return {"plan": plan, "month": month, "tokens_used": int(tokens), "tokens_limit": limit,
+            "left_pct": max(0, round(100 * (1 - tokens / limit))) if limit else 0, "resets_in_days": max(1, (nxt - now_).days + 1),
+            "messages_today": messages, "messages_limit": AGENT_DAILY.get(plan, AGENT_DAILY_MAX),
+            "plans_this_month": plans, "plans_limit": cfg.free_monthly_briefings if plan == "free" else None}
+
+
+@app.get("/api/me/usage")
+def my_usage(user: dict = Depends(current_user)):
+    return _my_usage(user)
+
+
 @app.post("/api/agents/{agent_id}/chat")
 def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_user)):
     # "auto": the one agent people talk to; it hands each message to the right specialist
@@ -3037,6 +3091,11 @@ def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_us
         raise HTTPException(404, "No such agent for your account.")
     if body.messages[-1].role != "user":
         raise HTTPException(422, "The last message must be yours.")
+    mine = _my_usage(user)
+    if mine["tokens_used"] >= mine["tokens_limit"]:
+        raise HTTPException(402 if mine["plan"] == "free" else 429,
+                            f"You've used this month's AI allowance ({mine['tokens_limit']:,} tokens). It resets in {mine['resets_in_days']} days."
+                            + (" Pro has more. See plans to upgrade." if mine["plan"] == "free" else ""))
     limit = AGENT_DAILY.get(_plan(user), AGENT_DAILY_MAX)
     today = datetime.now(timezone.utc).date().isoformat()
     with DB_LOCK, db:

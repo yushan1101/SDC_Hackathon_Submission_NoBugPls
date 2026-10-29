@@ -294,3 +294,37 @@ def test_pages_may_show_photos_loaded_as_blobs(env):
     csp = c.get("/enterprise.html").headers.get("content-security-policy", "")
     img = next(p for p in csp.split(";") if p.strip().startswith("img-src"))
     assert "blob:" in img.split()
+
+
+def test_each_user_sees_their_limits_and_the_token_cap_holds(env, monkeypatch):
+    api, c = env
+    login(c, "stud1")
+    u = c.get("/api/me/usage").json()
+    assert {"tokens_used", "tokens_limit", "left_pct", "messages_today", "messages_limit", "resets_in_days"} <= set(u)
+    monkeypatch.setattr(api.cfg, "monthly_tokens_org", max(1, u["tokens_used"]))  # already at this month's allowance
+    monkeypatch.setattr(api.cfg, "monthly_tokens_free", max(1, u["tokens_used"]))
+    with api.db:
+        api.db.execute("INSERT INTO llm_usage(at_utc,username,feature,node,model,calls,input_tokens,output_tokens,est_usd) "
+                       "VALUES(?,'stud1','agent','n','m',1,10,10,0)", (datetime.now(timezone.utc).isoformat(),))
+    r = c.post("/api/agents/coach/chat", json={"messages": [{"role": "user", "content": "hi"}]}, headers=H)
+    assert r.status_code in (402, 429) and "allowance" in r.json()["detail"]
+    assert c.get("/api/me/usage").json()["left_pct"] == 0
+
+
+def test_home_reminds_people_of_their_plan_and_next_step(env):
+    api, c = env
+    from governance import approval
+    acts = [{"day_range": "1-30", "skill_id": "sql", "activity": "Finish the SQL basics course", "estimated_hours": 6},
+            {"day_range": "31-60", "skill_id": "python", "activity": "Automate one report", "estimated_hours": 8}]
+    with api.DB_LOCK:
+        pid = approval.create(api.db, {"status": "draft", "target_role": "2511.1", "activities": acts}, "S-001", "hr")
+        api.db.commit()
+    login(c, "stud1")
+    r = c.get("/api/plans/reminder").json()["plan"]
+    assert r["plan_id"] == pid and r["day"] == 1 and r["pace"] == "not_started" and not r["time_up"]
+    assert r["next"]["activity"] == "Finish the SQL basics course" and r["total"] == 2
+    with api.db:
+        api.db.execute("UPDATE plans SET created_utc=? WHERE plan_id=?", ("2020-01-01T00:00:00+00:00", pid))
+    assert c.get("/api/plans/reminder").json()["plan"]["time_up"]
+    login(c, "boss")
+    assert c.get("/api/plans/reminder").json() == {"plan": None}

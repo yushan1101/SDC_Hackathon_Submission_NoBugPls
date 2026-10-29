@@ -30,6 +30,34 @@ export function startView(main, { name, guest } = {}) {
       option("#/quiz", "quiz", "Explore my strengths", "Answer 13 everyday work questions. About 2 minutes.", "Quick Match", true),
       option("#/report", "target", "I have a target job", "Compare your skills with the requirements for a job you choose.", "Build a plan"),
       option("#/resume", "file", "Use my resume", "Upload PDF, Word or text to find skills supported by evidence.", "Upload resume"))));  // today's signals are one tap away in the header (Today)
+  planReminder(main.querySelector(".home-hero"));
+}
+
+const PACE = { ahead: ["Ahead of schedule", "good"], on_track: ["On track", "good"], behind: ["Falling behind", "warn"],
+  not_started: ["Not started yet", "warn"], done: ["All steps done", "good"] };
+/** Your plan, picked up where you left it: day N of 90, progress against where you'd expect to be, the next step. */
+async function planReminder(after) {
+  let r;
+  try { r = (await api("/api/plans/reminder")).plan; } catch { return; }
+  if (!r || !after?.isConnected) return;
+  const [paceLabel, tone] = r.time_up ? ["The 90 days are up", "warn"] : PACE[r.pace] || PACE.on_track;
+  const head = r.time_up ? `Your ${r.title} plan has reached day 90`
+    : r.pace === "done" ? `You finished your ${r.title} plan`
+    : r.pace === "not_started" ? `Your ${r.title} plan is ready to start` : `Day ${r.day} of 90: ${r.title}`;
+  const line = r.time_up ? `You finished ${r.done} of ${r.total} steps. Review what's left, or start your next plan.`
+    : r.pace === "done" ? "Every step is ticked off. Time for a mock interview, or your next plan."
+    : r.next ? `Next: ${r.next.activity || r.next.skill}${r.next.hours ? ` · about ${r.next.hours} h` : ""}` : "";
+  const bar = h("div", { class: "reminder-bar", role: "img", "aria-label": `${r.pct}% done; ${r.expected_pct}% expected by today` },
+    h("i", { style: { width: `${r.pct}%` } }), h("b", { style: { left: `${r.expected_pct}%` }, title: "Where you'd expect to be today" }));
+  after.after(h("section", { class: `plan-reminder is-${tone}`, "aria-label": "Your plan" },
+    h("span", { class: "reminder-icon" }, icon(r.time_up ? "clock" : "plans")),
+    h("div", { class: "reminder-copy" },
+      h("p", { class: "reminder-head" }, h("strong", {}, head), h("span", { class: `reminder-pace ${tone}` }, paceLabel), r.from_hr ? h("span", { class: "muted" }, "from your HR advisor") : null),
+      line ? h("p", { class: "reminder-next" }, line) : null,
+      bar, h("p", { class: "reminder-meta muted" }, `${r.done} of ${r.total} steps · ${r.pct}% done`)),
+    h("div", { class: "reminder-actions" },
+      h("a", { class: "btn primary sm", href: `#/plans/${r.plan_id}` }, r.time_up || r.pace === "done" ? "Review plan" : "Continue plan"),
+      r.time_up || r.pace === "done" ? h("a", { class: "btn sm", href: "#/report" }, "Start next plan") : null)));
 }
 
 // The landing page for visitors who are not signed in. Every picture of the product is the product's own UI,

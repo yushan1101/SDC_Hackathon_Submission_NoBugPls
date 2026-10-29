@@ -188,6 +188,37 @@ function userShell() {
   const accountBtn = h("button", { type: "button", class: "rail-group-btn hr-account-btn", popovertarget: "hr-account", "aria-haspopup": "true", title: name },
     avatar(), h("span", { class: "lbl acct-lbl" }, h("b", {}, name), h("small", { class: "plan-pill" }, who)),
     h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
+  // Usage ring: this month's AI allowance left; opens every limit on the account (tokens, agent messages, plans).
+  const ring = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  ring.setAttribute("viewBox", "0 0 24 24"); ring.setAttribute("class", "usage-ring"); ring.setAttribute("aria-hidden", "true");
+  ring.innerHTML = '<circle cx="12" cy="12" r="9" class="track"/><circle cx="12" cy="12" r="9" class="used" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90 12 12)"/>';
+  const usagePop = h("div", { id: "hr-usage", class: "hr-account-menu usage-menu", popover: "auto", "aria-label": "Usage" });
+  const usageBtn = h("button", { type: "button", class: "usage-btn", popovertarget: "hr-usage", "aria-haspopup": "true", title: "AI usage this month" }, ring);
+  const row = (label, value, tone) => h("div", { class: "usage-row" }, h("span", {}, label), h("b", { class: tone || null }, value));
+  const n = (x) => Number(x).toLocaleString();
+  const drawUsage = (u) => {
+    ring.querySelector(".used").setAttribute("stroke-dasharray", `${100 - u.left_pct} 100`);
+    ring.classList.toggle("low", u.left_pct <= 20);
+    usageBtn.title = `AI allowance: ${u.left_pct}% left this month`;
+    usagePop.replaceChildren(...[  // filter: a skipped row would print as "null"
+      h("p", { class: "usage-src" }, `Usage source: ${planName(u.plan)} plan · ${u.month}`),
+      h("div", { class: "acct-sep", role: "separator" }),
+      row("Monthly AI allowance", `${u.left_pct}% left`, u.left_pct <= 20 ? "warn" : null),
+      row("Tokens used", `${n(u.tokens_used)} / ${n(u.tokens_limit)}`),
+      row("Agent messages today", `${n(u.messages_today)} / ${n(u.messages_limit)}`, u.messages_today >= u.messages_limit ? "warn" : null),
+      u.plans_limit !== null ? row("New plans this month", `${u.plans_this_month} / ${u.plans_limit}`, u.plans_this_month >= u.plans_limit ? "warn" : null) : null,
+      row("Resets in", `${u.resets_in_days} day${u.resets_in_days === 1 ? "" : "s"}`),
+      h("div", { class: "acct-sep", role: "separator" }),
+      h("a", { href: "#/account/billing", onclick: () => usagePop.hidePopover?.() }, h("span", {}, "Manage usage"))].filter(Boolean));
+  };
+  const loadUsage = () => api("/api/me/usage").then(drawUsage).catch(() => usagePop.replaceChildren(h("p", { class: "usage-src" }, "Usage could not be loaded.")));
+  loadUsage();
+  usagePop.addEventListener("beforetoggle", (e) => {
+    if (e.newState !== "open") return;
+    loadUsage();
+    const r = usageBtn.getBoundingClientRect();
+    Object.assign(usagePop.style, expanded ? { left: `${r.left}px`, bottom: `${innerHeight - r.top + 8}px` } : { left: `${r.right + 10}px`, bottom: `${innerHeight - r.bottom}px` });
+  });
   let shellEl;
   const toggle = h("button", { class: "hr-sidebar-toggle", type: "button", onclick: () => {
     expanded = !expanded;
@@ -214,7 +245,7 @@ function userShell() {
       link("#/report", "Career report", "nav-analyse"), link("#/plans", "My plans", "nav-review"),
       employee ? null : link("enterprise.html", "Back to console", "back"),
       h("div", { style: { flex: 1 } }),
-      h("div", { class: "rail-foot" }, accountBtn), menu),
+      h("div", { class: "rail-foot" }, accountBtn, usageBtn), menu, usagePop),
     h("main", { id: "main", class: "hr-main pub-main", tabindex: "-1" }),
     h("nav", { class: "hr-tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/agents", "Agent", "nav-agent"),
       tab("#/today", "Trends", "pulse"), tab("#/plans", "Plans", "plans"), tab("#/account", "Account", "user")));

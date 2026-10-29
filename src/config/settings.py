@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     r2_bucket: str = "fixit"
     r2_prefix: str = "aiversepulse/avatars/"
     free_monthly_briefings: int = Field(3, ge=0)     # new briefings per calendar month on the free plan
+    # AI tokens (input + output) each person may use per calendar month, by plan; "org" = members of an enterprise
+    monthly_tokens_free: int = Field(150_000, ge=0)
+    monthly_tokens_pro: int = Field(2_000_000, ge=0)
+    monthly_tokens_org: int = Field(1_000_000, ge=0)
     # --- email one-time codes at sign-up; empty host = no email (the code is written to the server log instead) ---
     smtp_host: str = ""
     smtp_port: int = 587

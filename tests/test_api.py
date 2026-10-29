@@ -1430,6 +1430,26 @@ def test_interview_order_shuffles_after_the_warm_up_and_next_questions_follow_it
     assert seen["suggested_focus_for_next_question"] and any("reaction" in r for r in seen["rules"])
 
 
+def test_interviewer_replies_to_a_question_back_without_scoring_it(monkeypatch):
+    """'Sorry, what do you mean by triage?' is conversation: Mina answers, the question stays open, nothing is stored."""
+    from interview import service
+    reply = {"evaluation": {"scores": {d: None for d in service.DIMENSIONS}}, "action": "respond",
+             "reply": "Good question. By triage I mean deciding which patient needs care first. How would you do that?",
+             "next_question": None}
+    monkeypatch.setattr(service, "_llm", lambda prompt, system, max_tokens=900: (reply, None))
+    context = service.build_context("2221.2", [])
+    sess = {"stage_index": 1, "role_title": "Nurse", "context": context, "difficulty": "intermediate", "status": "in_progress"}
+    current = {"question_id": "q1", "question_text": "How do you triage?", "stage": "technical", "target_skills": [], "criteria": [], "parent_question_id": None}
+    prepared = service.prepare_answer(sess, current, "Sorry, what do you mean by triage?", [])
+    assert prepared == {"reply": reply["reply"]}
+
+    class NoWrites:
+        def execute(self, *a):
+            raise AssertionError("a reply must not be stored as an answer")
+    out = service.persist_answer(NoWrites(), sess, current, "Sorry, what do you mean by triage?", prepared)
+    assert out == {"status": "in_progress", "reply": reply["reply"], "question_id": "q1"}
+
+
 def test_hr_sees_the_employees_plan_progress(client):
     import server.api as api
     from governance import approval

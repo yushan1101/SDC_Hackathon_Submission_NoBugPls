@@ -3743,3 +3743,40 @@ pre { max-width: 100%; overflow-x: auto; }
 .ag-tools-used summary::-webkit-details-marker { display: none; }
 .ag-tools-used svg { width: 14px; height: 14px; }
 .ag-tools-used ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 2px; overflow-wrap: anywhere; }
+
+/* hologram interviewer: a dark projection room, the copy in light ink on a dark wash */
+.interview-stage.is-holo { background: #050a16; color: #e6eeff; }
+.interview-stage.is-holo .interview-stage-copy { background: linear-gradient(90deg, #050a16f2 0%, #050a16cc 65%, #050a1600 100%); }
+.interview-stage.is-holo .interview-stage-copy .page-title { color: #f2f6ff; }
+.interview-stage.is-holo .interview-stage-copy :is(.eyebrow, .lede) { color: #b9c8e6; }
+.interview-stage.is-holo .interview-stage-bubble { background: #0d1a33e6; color: #e6eeff; border: 1px solid #6fa8ff80; box-shadow: 0 0 24px -6px #6fa8ff99; }
+@media (max-width: 760px) {
+  .interview-stage.is-holo .interview-stage-copy { background: var(--surface); }
+  .interview-stage.is-holo .interview-stage-copy .page-title { color: var(--ink); }
+  .interview-stage.is-holo .interview-stage-copy :is(.eyebrow, .lede) { color: var(--ink-2); }
+}
+
+/* conversation mode: Mina's spoken reply as a caption, and the dock toggle */
+.interview-mina-line { margin: 0 0 8px; padding: 10px 14px; border-radius: 14px; background: #0d1a33e0; color: #e6eeff;
+  border: 1px solid #6fa8ff66; box-shadow: 0 0 22px -8px #6fa8ff; font-size: 15px; line-height: 1.45; }
+.interview-mina-line::before { content: "Mina · "; font-weight: 600; color: #9cc0ff; }
+.dock-btn.dock-talk[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink, #fff); }
+
+/* home: the plan reminder under the greeting */
+.plan-reminder { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px 18px; align-items: center; width: min(920px, 100%);
+  margin: 0 auto 24px; padding: 18px 20px; border-radius: 16px; background: var(--card-fill, var(--accent-soft)); }
+.plan-reminder.is-warn { box-shadow: inset 3px 0 0 var(--warn, oklch(0.72 0.15 70)); }
+.reminder-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--surface, #fff); color: var(--accent); }
+.reminder-icon svg { width: 22px; height: 22px; }
+.reminder-copy { display: grid; gap: 6px; min-width: 0; }
+.reminder-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0; font-size: 16px; }
+.reminder-pace { padding: 1px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+.reminder-pace.good { background: oklch(0.94 0.05 150); color: oklch(0.42 0.12 150); }
+.reminder-pace.warn { background: oklch(0.95 0.06 75); color: oklch(0.48 0.12 60); }
+.reminder-next { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.reminder-bar { position: relative; height: 6px; border-radius: 999px; background: var(--card-fill-deep, oklch(0.92 0.02 263)); max-width: 520px; }
+.reminder-bar i { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--accent); }
+.reminder-bar b { position: absolute; top: -4px; width: 2px; height: 14px; background: var(--ink); opacity: 0.45; }
+.reminder-meta { margin: 0; font-size: 13px; }
+.reminder-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+@media (max-width: 640px) { .plan-reminder { grid-template-columns: auto minmax(0, 1fr); } .reminder-actions { grid-column: 1 / -1; justify-content: flex-start; } }

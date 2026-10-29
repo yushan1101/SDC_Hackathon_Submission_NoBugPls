@@ -12,6 +12,7 @@ const TYPES = { behavioral: "HR / behavioral", technical: "Technical", situation
 const STAGE_ORDER = ["behavioral", "technical", "situational", "problem_solving", "workplace_scenario"];
 const pct = (n) => `${Math.max(0, Math.min(100, Math.round(Number(n) || 0)))}%`;
 const OFFICE = () => window.AP_CONFIG?.VIRTUAL_INTERVIEW_3D === true;
+const HOLOGRAM = () => window.AP_CONFIG?.INTERVIEW_HOLOGRAM !== false;  // Mina projected as a hologram (set false for the office)
 /** Resolves once `el` has a size (a just-inserted room can measure 0 for a frame or two); gives up after ~1 s. */
 const sized = (el) => new Promise((resolve) => {
   let frames = 0;
@@ -30,11 +31,12 @@ function interviewerStage({ eyebrow, title, text, greeting, actions = [] }) {
   stage.mount = () => {
     const owl = () => { scene.querySelector("canvas")?.remove(); scene.append(new Owl({ size: 168, state: "greeting" }).el); stage.classList.add("is-owl"); };
     if (!OFFICE()) { owl(); return; }
+    if (HOLOGRAM()) stage.classList.add("is-holo");
     import("./virtual-office.js").then(async ({ mountVirtualOffice }) => {
       await sized(scene);
       if (!scene.isConnected) return;
       // wide: look left of the interviewer so they sit on the right, clear of the heading; phones: centred
-      const unmount = mountVirtualOffice(scene, { onFailure: owl, aimX: (w) => (w > 760 ? -1 : 0.12) });
+      const unmount = mountVirtualOffice(scene, { onFailure: owl, hologram: HOLOGRAM(), aimX: (w) => (w > 760 ? -1 : 0.12) });
       const leave = () => { removeEventListener("hashchange", leave); unmount(); };  // the page is replaced on any route
       addEventListener("hashchange", leave);
     }).catch(owl);
@@ -228,6 +230,13 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     if (next === "type") requestAnimationFrame(() => transcript.focus({ preventScroll: true }));
   };
   const livePreview = h("p", { class: "interview-live-preview", "aria-live": "polite", hidden: true });
+  // Conversation mode: like talking to a person. Her turn ends, the microphone opens; your pause ends your turn and
+  // the answer goes. Off: record, review, send by hand.
+  let conversation = true;
+  try { conversation = localStorage.getItem("ap.interview.conversation") !== "false"; } catch { /* on */ }
+  let micGranted = false, heardSpeech = false, lastVoiceAt = 0;
+  const SILENCE_MS = 2200;
+  const minaLine = h("p", { class: "interview-mina-line", "aria-live": "polite", hidden: true });
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
   // Server ASR (the configured speech model, MiMo) whenever the interview offers it: the answer is recorded here and
   // transcribed when you stop. The browser's own recogniser is only the fallback.
@@ -353,6 +362,11 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       });
       if (recording && !muted && !interviewerSpeaking && !speechError) {
         // Touch the DOM only on a change; the throttled branch below tells the avatar.
+        if (volume > 0.025) { heardSpeech = true; lastVoiceAt = performance.now(); }
+        else if (conversation && heardSpeech && !finishPromise && performance.now() - lastVoiceAt > SILENCE_MS) {
+          heardSpeech = false;
+          void finishRecording(false, false).then(() => { if (transcript.value.trim()) form.requestSubmit(); else listenAgain(); });
+        }
         const [state, message] = volume > 0.025 ? ["speaking", "Speaking"]
           : ["listening", speechAvailable ? "Listening" : "Listening · no transcription here; type your answer"];
         if (voicePanel.dataset.state !== state || status.textContent !== message) setMicState(state, message, false);
@@ -507,6 +521,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
         recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
         recorder.start(1000);
       }
+      micGranted = true; heardSpeech = false; lastVoiceAt = performance.now();
       starting = false; recording = true; muted = false; muteBtn.setAttribute("aria-pressed", "false"); muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration(); updateControls();
       if (asr) setMicState("listening", "Listening");
       else if (recognizer) {
@@ -555,8 +570,8 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   });
   // The interviewer reads each question in the app's own voice (the same as Read aloud in chat), whatever voices the
   // browser has. Her lips follow the loudness of that audio.
-  const playQuestion = async () => {
-    const text = qText.textContent;
+  const listenAgain = () => { if (conversation && micGranted && !paused && !discarded) void startRecording(); };
+  const playQuestion = async (text = qText.textContent) => {
     if (!text) return;
     interviewerSpeaking = true; voicePlaying = false; updateControls(); setMicState("processing", "Getting ready to ask…");
     if (recording || micStream) await finishRecording(false, false);
@@ -576,7 +591,8 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     cancelAnimationFrame(lips);
     if (currentUtterance !== voice) return;
     currentUtterance = null; interviewerSpeaking = false; voicePlaying = false; speechCue = null; speechLevel = 0; updateControls();
-    setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : "Ready to answer · microphone off");
+    setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : conversation && micGranted ? "Your turn" : "Ready to answer · microphone off");
+    listenAgain();
   };
   const dispose = () => {
     discarded = true; recording = false; muted = false; pauseDuration();
@@ -620,8 +636,16 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     answerBtn.disabled = true; pause.disabled = true; setMicState("processing", "Submitting answer for feedback…");
     try {
       const result = await api(`/api/interviews/${sessionId}/answer`, { method: "POST", body: { question_id: current.question_id, answer } });
-      showEvaluation(responseFeedback, result.evaluation);
       transcript.value = "";
+      recordedText = ""; resetDuration();
+      if (result.reply) {
+        minaLine.textContent = result.reply; minaLine.hidden = false;
+        answerBtn.disabled = false; pause.disabled = false; updateControls();
+        await playQuestion(result.reply);
+        return;
+      }
+      minaLine.hidden = true;
+      showEvaluation(responseFeedback, result.evaluation);
       recordedText = ""; recordingAttempted = false; resetDuration();
       if (result.status === "completed") { dispose(); await renderReport(main, result.report, callbacks); return; }
       stageIndex = result.stage_index;
@@ -629,8 +653,17 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     } catch (e) { setMicState("captured", "Answer captured · review or edit before sending"); toast(e.message, "err"); }
     answerBtn.disabled = false; pause.disabled = false; updateControls();
   } }, h("label", { class: "field interview-type-sheet" }, h("span", { class: "sr-only" }, "Your answer"), transcript),
-    livePreview, voicePanel);
+    minaLine, livePreview, voicePanel);
   const repeat = dockIcon(h("button", { type: "button", onclick: () => { void playQuestion(); } }), "volume", "Replay question");
+  const talkBtn = h("button", { type: "button", "aria-pressed": String(conversation), onclick: () => {
+    conversation = !conversation; talkBtn.setAttribute("aria-pressed", String(conversation));
+    talkBtn.title = conversation ? "Conversation mode on: speak, pause, and she replies" : "Conversation mode off: record, review, send";
+    try { localStorage.setItem("ap.interview.conversation", String(conversation)); } catch { /* this visit */ }
+    toast(conversation ? "Conversation mode: just talk. Pause when you're done and she'll reply." : "Manual mode: record, review, then send.");
+    if (conversation && !recording && !interviewerSpeaking) listenAgain();
+  } });
+  dockIcon(talkBtn, "ask", "Conversation mode", "dock-talk");
+  talkBtn.setAttribute("aria-pressed", String(conversation));
   const pause = h("button", { class: "btn sm", type: "button", onclick: () => {
     paused = !paused;
     if (paused) {
@@ -647,7 +680,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   } });
   dockIcon(pause, "pause", "Pause interview");
   form.append(h("nav", { class: "interview-dock", "aria-label": "Interview controls" }, viewSwitch,
-    h("span", { class: "dock-gap" }), repeat, pause, retryBtn, muteBtn, startBtn, stopBtn, answerBtn,
+    h("span", { class: "dock-gap" }), talkBtn, repeat, pause, retryBtn, muteBtn, startBtn, stopBtn, answerBtn,
     h("span", { class: "dock-gap" }), settingsBtn), settings);
   setView(transcript.value || !speechAvailable ? "type" : "voice");
   const end = h("button", { class: "interview-exit-button", type: "button", onclick: async () => {
@@ -722,7 +755,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     };
     // a minute is long enough on a slow connection; after that the plain room is the better experience
     const giveUp = setTimeout(() => { if (!officeReady && !discarded) fallbackOffice(new Error("The interviewer took too long to load.")); }, 60_000);
-    import("./virtual-office.js").then(async ({ mountVirtualOffice }) => (await sized(officeHost), mountVirtualOffice(officeHost, { onFailure: fallbackOffice,
+    import("./virtual-office.js").then(async ({ mountVirtualOffice }) => (await sized(officeHost), mountVirtualOffice(officeHost, { onFailure: fallbackOffice, hologram: HOLOGRAM(),
       onProgress: showProgress, onReady: () => { clearTimeout(giveUp); showProgress(1); markOfficeReady(); } }))).then((unmount) => {
       if (discarded || !officeHost.isConnected) { unmount(); return; }
       officeDisposer = unmount;
