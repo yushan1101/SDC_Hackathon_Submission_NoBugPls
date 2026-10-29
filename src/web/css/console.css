@@ -119,3 +119,48 @@ html[data-product="hr"] .wf-filters { flex-wrap: nowrap; }
 html[data-product="hr"] .wf-filters .wf-select-sm { flex-basis: 140px; padding-right: 24px; }
 html[data-product="hr"] .wf-filters > .wf-icon-btn { flex: 0 0 32px; width: 32px; }
 html[data-product="hr"] .wf-filters > .btn.ghost { flex: 0 0 auto; width: auto; }
+
+/* no grey outlines: surfaces separate by tone (white on the pale field, pale field inside white) and one soft,
+   wide shadow, as on cluely.com. Lines stay only where they divide rows of data. */
+html[data-product="hr"] {
+  --c-lift: 0 1px 2px oklch(0.25 0.04 262 / 0.04), 0 10px 30px -18px oklch(0.25 0.06 262 / 0.18);
+  --c-fill: oklch(0.965 0.008 262);
+}
+html[data-product="hr"] :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .empty-state, .wf-filters) { border: 0; box-shadow: var(--c-lift); }
+html[data-product="hr"] .panel > header { border-bottom: 0; padding-bottom: 4px; }
+html[data-product="hr"] .rail { border-right: 0; }
+html[data-product="hr"] .rail a[aria-current="page"] { box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.06); }
+html[data-product="hr"] :is(.hr-top, .admin-top) { border-bottom: 0; background: transparent; }
+/* controls: tinted fills instead of outlines; the primary keeps its blue */
+html[data-product="hr"] :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more summary) { border-color: transparent; background-color: var(--c-fill); }
+html[data-product="hr"] :is(.input, select.input, textarea.input):hover { background-color: oklch(0.95 0.01 262); }
+html[data-product="hr"] :is(.input, select.input, textarea.input):focus { border-color: var(--accent); background-color: oklch(1 0 0); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost) { border-color: transparent; background: var(--c-fill); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost):hover { background: oklch(0.945 0.012 262); }
+html[data-product="hr"] .wf-more[open] summary { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
+html[data-product="hr"] .wf-seg { border: 0; background: var(--c-fill); }
+html[data-product="hr"] .wf-seg button[aria-pressed="true"] { box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.12); }
+html[data-product="hr"] .wf-suggestion { border-color: transparent; background: var(--c-fill); }
+html[data-product="hr"] .wf-suggestion.is-selected { background: var(--accent-soft); box-shadow: none; }
+html[data-product="hr"] .wf-more .wf-filter-options { border: 0; box-shadow: 0 2px 6px oklch(0.25 0.04 262 / 0.06), 0 20px 44px -18px oklch(0.25 0.06 262 / 0.35); }
+html[data-product="hr"] .wf-more .wf-select { border-bottom: 0; }
+/* tables: no frame, header on the pale fill, faint row dividers only */
+html[data-product="hr"] table { border: 0; }
+html[data-product="hr"] table :is(th, td) { border-color: oklch(0.95 0.006 258); }
+html[data-product="hr"] .table-wrap { border: 0; }
+/* heatmap: "no data" is a quiet fill, not a hatched grey box; averages lose their outline ring */
+html[data-product="hr"] .wf-cell.wf-unknown { background: var(--c-fill); color: var(--ink-2); }
+html[data-product="hr"] .wf-cell { border: 0; }
+html[data-product="hr"] .wf-avg, html[data-product="hr"] .wf-avg:hover { box-shadow: none; font-weight: 600; }
+html[data-product="hr"] .wf-skill-name, html[data-product="hr"] .wf-skill-head { box-shadow: none; }
+html[data-product="hr"] .wf-foot { border-top: 0; }
+html[data-product="hr"] .wf-legend i { border: 0; }
+/* agent page in the console: fills and one soft lift instead of grey outlines; no mascot above the question */
+html[data-product="hr"] .ag-starter { border-color: transparent; background: oklch(1 0 0); box-shadow: var(--c-lift); border-radius: 10px; }
+html[data-product="hr"] .ag-starter:hover { background: var(--accent-soft); }
+html[data-product="hr"] .ag-composer { border-color: transparent; border-radius: 14px; box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.05), 0 14px 36px -18px oklch(0.25 0.06 262 / 0.3); }
+html[data-product="hr"] .ag-composer:focus-within { box-shadow: 0 0 0 2px var(--accent-soft), 0 14px 36px -18px oklch(0.25 0.06 262 / 0.3); }
+html[data-product="hr"] .ag-empty > .owl { display: none; }
+html[data-product="hr"] :is(.own-plan-chip, .chip) { border-color: transparent; background: var(--c-fill); border-radius: 8px; }
+html[data-product="hr"] .own-plan-chip { text-align: left; }
+html[data-product="hr"] :is(.own-plan-chip, .chip):hover { background: var(--accent-soft); }
