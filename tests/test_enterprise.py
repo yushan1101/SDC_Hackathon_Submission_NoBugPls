@@ -126,3 +126,18 @@ def test_admin_sees_bills_and_sets_models_per_enterprise(env, monkeypatch):
     r = c.post("/api/admin/enterprises/school1/models", json={"task": "coach", "spec": "openai:gpt-test"}, headers=H)
     assert r.status_code == 200 and r.json()["models"] == {"coach": "openai:gpt-test"}
     assert c.post("/api/admin/enterprises/school1/models", json={"task": "coach", "spec": ""}, headers=H).json()["models"] == {}
+
+
+def test_stripe_webhook_needs_its_signature_not_the_csrf_header(env, monkeypatch):
+    """Stripe can't send X-AP: the webhook is exempt from the CSRF header and is checked by its signature instead."""
+    import hashlib, hmac, json, time
+    from pydantic import SecretStr
+    api, c = env
+    monkeypatch.setattr(api.cfg, "stripe_webhook_secret", SecretStr("whsec_test"))
+    body = json.dumps({"type": "ping.test", "data": {"object": {}}}).encode()
+    t = str(int(time.time()))
+    sig = hmac.new(b"whsec_test", f"{t}.".encode() + body, hashlib.sha256).hexdigest()
+    ok = c.post("/api/billing/webhook", content=body, headers={"stripe-signature": f"t={t},v1={sig}"})
+    assert ok.status_code == 200 and ok.json() == {"received": True}
+    assert c.post("/api/billing/webhook", content=body, headers={"stripe-signature": f"t={t},v1=deadbeef"}).status_code == 400
+    assert c.post("/api/profile", json={"phone": "123456"}).status_code == 403  # every other POST still needs X-AP
