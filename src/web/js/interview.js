@@ -741,12 +741,12 @@ function showEvaluation(host, evaluation) {
         h("span", { class: "num" }, score == null ? "Not assessed" : `${score}/4`)))));
 }
 
-function reportDisclosure(key, title, description, content) {
+function reportDisclosure(key, title, description, content, ic = "spark") {
   const panelId = `interview-report-${key}`;
   const summary = h("summary", { class: "interview-disclosure-summary", "aria-controls": panelId, "aria-expanded": "false" },
-    h("span", { class: "interview-disclosure-icon", "aria-hidden": "true" }, icon("spark")),
+    h("span", { class: "interview-disclosure-icon", "aria-hidden": "true" }, icon(ic)),
     h("span", { class: "interview-disclosure-copy" }, h("b", {}, title), h("small", {}, description)),
-    h("span", { class: "interview-disclosure-chevron", "aria-hidden": "true" }, "⌄"));
+    h("span", { class: "interview-disclosure-chevron", "aria-hidden": "true" }, icon("chevron")));
   const disclosure = h("details", { class: "interview-disclosure" }, summary,
     h("div", { id: panelId, class: "interview-disclosure-panel" }, content));
   disclosure.addEventListener("toggle", () => summary.setAttribute("aria-expanded", String(disclosure.open)));
@@ -761,16 +761,6 @@ async function renderReport(main, report, callbacks = {}) {
     .sort((a, b) => String(a.created_utc).localeCompare(String(b.created_utc)));
   const previous = comparable.at(-1);
   const delta = (current, prior) => prior == null ? "First completed attempt" : `${Number(current) - Number(prior) >= 0 ? "+" : ""}${Number(current) - Number(prior)} points vs previous attempt`;
-  const scoreCard = (label, key, note) => {
-    const score = Math.max(0, Math.min(100, Math.round(Number(report[key]) || 0)));
-    return h("section", { class: "interview-score-card" },
-      h("span", { class: "interview-score-label" }, label),
-      h("b", { class: "interview-big-score num" }, pct(score)),
-      h("div", { class: "interview-meter", role: "progressbar", "aria-label": label,
-        "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(score) },
-        h("i", { style: { width: pct(score) } })),
-      h("p", { class: "interview-score-note" }, note));
-  };
   const dimensions = h("ul", { class: "interview-dimension-list" }, Object.entries(report.dimensions || {}).map(([key, item]) =>
     h("li", {}, h("div", {}, h("b", {}, LABELS[key] || key), h("p", {}, item.reason || "No explanation was recorded for this criterion."),
       h("small", { class: "muted" }, `${item.weight}% rubric weight · ${item.evidence_count} answer${item.evidence_count === 1 ? "" : "s"} scored`)),
@@ -885,6 +875,58 @@ async function renderReport(main, report, callbacks = {}) {
       planForRole.disabled = false;
     }
   } }, "Plan for This Role");
+  // at-a-glance: score bands, a verdict, competency and rubric bars (good >= 70, mid >= 50, low < 50, na = not assessed)
+  const band = (n) => n == null ? "na" : n >= 70 ? "good" : n >= 50 ? "mid" : "low";
+  const clamp = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+  const perf = clamp(report.performance);
+  const verdict = perf >= 80 ? ["Interview-ready", "Strong answers across the rubric. Keep practising to stay sharp."]
+    : perf >= 65 ? ["Nearly there", "Solid answers. A few focused improvements will lift your readiness."]
+    : perf >= 50 ? ["Developing", "Good foundations. Work on the focus areas below before a real interview."]
+    : ["Early stage", "Start with the focus areas below, then practise again."];
+  const sideScore = (label, key, hint, prior) => {
+    const n = clamp(report[key]), d = prior == null ? null : n - clamp(prior);
+    return h("div", { class: "ir-side-score", title: hint },
+      h("div", { class: "ir-side-top" }, h("span", {}, label),
+        h("b", { class: "num" }, pct(n), d == null ? null : h("small", { class: `ir-delta ${d >= 0 ? "up" : "down"}` }, `${d >= 0 ? "+" : ""}${d}`))),
+      h("div", { class: `ir-bar band-${band(n)}`, role: "progressbar", "aria-label": label, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(n) },
+        h("i", { style: { width: pct(n) } })),
+      h("small", { class: "muted" }, hint));
+  };
+  const hero = h("section", { class: "ir-hero" },
+    h("div", { class: "ir-hero-main" },
+      h("div", { class: `ps-ring ir-ring band-${band(perf)}`, style: { "--pct": perf }, role: "img", "aria-label": `Interview performance ${perf}%` },
+        h("div", {}, h("b", { class: "num" }, `${perf}%`), h("small", {}, "Performance"))),
+      h("div", { class: "ir-verdict" }, h("span", { class: `ir-pill band-${band(perf)}` }, verdict[0]), h("p", {}, verdict[1]),
+        h("small", { class: "muted" }, previous ? delta(report.performance, previous.performance) : "First completed attempt for this role"))),
+    h("div", { class: "ir-hero-side" },
+      sideScore("Job readiness", "readiness", "Interview performance plus how well your profile covers the role", previous?.readiness),
+      sideScore("Hiring competitiveness", "competitiveness", "Simulated: demonstrated role skills plus profile coverage", previous?.competitiveness)));
+  const chip = (x) => h("li", { class: `ir-chip band-${band(x.interview_score)}` },
+    h("b", {}, x.name || x.skill), h("span", { class: "num" }, x.interview_score == null ? "Not assessed" : pct(x.interview_score)));
+  const glance = h("div", { class: "ir-glance" },
+    h("section", { class: "ir-card" }, h("h3", {}, icon("check"), "What went well"),
+      report.strengths?.length ? h("ul", { class: "ir-chips" }, report.strengths.map(chip))
+        : h("p", { class: "muted" }, "No standout strengths recorded this time.")),
+    h("section", { class: "ir-card" }, h("h3", {}, icon("target"), "Focus next"),
+      report.gaps?.length ? h("ul", { class: "ir-chips" }, report.gaps.slice(0, 4).map(chip))
+        : h("p", { class: "muted" }, "No skill gaps identified.")));
+  const levelDots = (have, need) => h("span", { class: "ir-levels", title: `Profile ${have}/5 · role needs ${need}/5`, role: "img", "aria-label": `Profile ${have} of 5, role needs ${need} of 5` },
+    [1, 2, 3, 4, 5].map((i) => h("i", { class: `${i <= have ? "have" : ""}${i === need ? " need" : ""}` })));
+  const sortedComps = [...competencies].sort((a, b) => (b.interview_score ?? -1) - (a.interview_score ?? -1));
+  const compChart = h("section", { class: "ir-card" }, h("h3", {}, icon("grid"), "Skills shown in your answers"),
+    sortedComps.length ? h("ul", { class: "ir-rows" }, sortedComps.map((c) => h("li", {},
+      h("span", { class: "ir-row-name" }, c.name),
+      h("div", { class: `ir-bar band-${band(c.interview_score)}` }, h("i", { style: { width: c.interview_score == null ? "0" : pct(c.interview_score) } })),
+      h("span", { class: "num ir-row-val" }, c.interview_score == null ? "—" : pct(c.interview_score)),
+      levelDots(c.profile_level, c.required_level))))
+      : h("p", { class: "muted" }, "No competency data was available for this report."),
+    h("p", { class: "fine" }, "Dots show your profile level out of 5; the ringed dot is the level the role needs. A dash means the skill was not asked about."));
+  const rubricChart = h("section", { class: "ir-card" }, h("h3", {}, icon("review"), "How your answers scored"),
+    h("ul", { class: "ir-rows ir-rows-rubric" }, Object.entries(report.dimensions || {}).map(([key, item]) => h("li", { title: item.reason || "" },
+      h("span", { class: "ir-row-name" }, LABELS[key] || key, h("small", { class: "muted" }, ` · ${item.weight}%`)),
+      h("div", { class: `ir-bar band-${band(item.score)}` }, h("i", { style: { width: item.score == null ? "0" : pct(item.score) } })),
+      h("span", { class: "num ir-row-val" }, item.score == null ? "—" : pct(item.score))))),
+    h("p", { class: "fine" }, `Each criterion is weighted by the % after its name. Evidence covered ${pct(report.evidence_coverage)} of the rubric.`));
   const resultsRoute = assessmentSource === "questionnaire" ? "#/quiz" : "#/resume";
   const nextSteps = h("section", { class: "interview-card interview-next-steps" },
     h("h2", {}, "Ready to Improve Your Skills?"),
@@ -905,24 +947,22 @@ async function renderReport(main, report, callbacks = {}) {
     h("div", { class: "interview-heading" }, h("div", {}, h("p", { class: "eyebrow" }, "YOUR PRACTICE REPORT"),
       h("h1", { class: "page-title" }, `${report.role_title} interview assessment`),
       h("p", { class: "lede" }, `Completed ${fmtTime(report.completed_utc)} · ${report.difficulty} difficulty`))),
-    h("div", { class: "interview-score-grid" },
-      scoreCard("Interview Performance", "performance", `Weighted rubric score. Evidence covered ${pct(report.evidence_coverage)} of rubric weight.`),
-      scoreCard("Job Readiness", "readiness", `65% interview performance + 35% profile-to-role skill coverage (${pct(report.profile_coverage)}).`),
-      scoreCard("Hiring Competitiveness Index", "competitiveness", `Simulated alignment: 70% demonstrated role competency (${pct(report.demonstrated_fit)}) + 30% profile coverage (${pct(report.profile_coverage)}).`)),
-    h("p", { class: "interview-disclaimer" }, report.disclaimer || "Simulated coaching assessment, not a verified probability of receiving a job offer. Actual outcomes depend on employer requirements, other applicants, experience, interviewers, and market conditions."),
-    reportDisclosure("competencies", "Performance by Competency", "See how well your interview answers demonstrated the skills required for this role.",
-      h("div", {}, competencyContent,
-        h("p", { class: "fine" }, "Role skill levels are AiversePulse estimates derived from an O*NET-trained model; they are not ESCO ratings."))),
-    reportDisclosure("strengths", "Strengths & Areas for Improvement", "Discover what you did well and which skills need more practice.", strengthsAndGaps),
-    reportDisclosure("answers", "Interview Answer Review", "Review your answers, AI feedback, and suggestions for stronger responses.",
-      h("div", { class: "interview-report-scroll interview-question-scroll" }, questionFeedback)),
-    reportDisclosure("recommendations", "Recommended Improvements", "Explore the skills and actions that can help you prepare for this role.",
-      h("div", { class: "interview-recommendation-content" }, recommendations, planPanel)),
-    reportDisclosure("rubric", "Scoring Rubric", "See the weighted assessment criteria and the evidence behind each score.", dimensions),
-    reportDisclosure("comparison", "Previous Interview Performance", "Compare this attempt with your earlier completed interview for the same role.", compare),
-    reportDisclosure("sources", "Question Sources & Method", "Review the role source and score interpretation notes.",
+    hero, glance,
+    h("div", { class: "ir-charts" }, compChart, rubricChart),
+    reportDisclosure("answers", "Answer-by-answer review", `${report.question_feedback?.length || 0} answers with AI feedback and stronger example answers.`,
+      h("div", { class: "interview-report-scroll interview-question-scroll" }, questionFeedback), "ask"),
+    reportDisclosure("recommendations", "How to improve", `${report.recommendations?.length || 0} practice actions and learning links.`,
+      h("div", { class: "interview-recommendation-content" }, recommendations, planPanel), "target"),
+    reportDisclosure("competencies", "Competency evidence", "The quotes from your answers behind each skill score.",
+      h("div", {}, competencyContent, strengthsAndGaps,
+        h("p", { class: "fine" }, "Role skill levels are AiversePulse estimates derived from an O*NET-trained model; they are not ESCO ratings.")), "grid"),
+    reportDisclosure("rubric", "Rubric details", "Why each criterion scored the way it did.", dimensions, "review"),
+    reportDisclosure("comparison", "Previous attempts", previous ? "Compare with your last attempt for this role." : "Your first completed attempt for this role.", compare, "history"),
+    reportDisclosure("sources", "Sources & method", "Where the questions came from and how scores are calculated.",
       h("div", {}, sources,
-        h("p", { class: "fine" }, "Unassessed competencies are excluded from demonstrated-skill averages. Hiring Competitiveness Index is simulated and is not a verified probability of an offer."))),
+        h("p", { class: "fine" }, `Interview performance is the weighted rubric score. Job readiness = 65% interview performance + 35% profile coverage (${pct(report.profile_coverage)}). Hiring competitiveness = 70% demonstrated role competency (${pct(report.demonstrated_fit)}) + 30% profile coverage.`),
+        h("p", { class: "fine" }, "Unassessed competencies are excluded from demonstrated-skill averages. Hiring Competitiveness Index is simulated and is not a verified probability of an offer.")), "sources"),
+    h("p", { class: "interview-disclaimer" }, report.disclaimer || "Simulated coaching assessment, not a verified probability of receiving a job offer. Actual outcomes depend on employer requirements, other applicants, experience, interviewers, and market conditions."),
     nextSteps,
     h("div", { class: "interview-report-actions" },
       h("a", { class: "btn primary", href: "#/quiz" }, "Retake Quick Match"),

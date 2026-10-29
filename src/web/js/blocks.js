@@ -164,21 +164,9 @@ export function issuesBlock(issues) {
 function planActivitySteps(activity) {
   if (activity.steps?.length) return activity.steps;
   const skill = activity.skill_id || "this skill";
-  if (activity.day_range === "61-90") return [
-    `Weeks 9-10: Build a portfolio piece that demonstrates ${skill}, with a short write-up and relevant files or screenshots.`,
-    "Week 11: Ask your manager or a peer to review the work and give specific feedback.",
-    "Week 12: Apply the feedback and write down how you will keep using this skill after the 90 days.",
-  ];
-  if (activity.day_range === "31-60") return [
-    `Week 5: Choose a practical task where you can use ${skill} and agree on it with your manager.`,
-    `Weeks 6-7: Complete the task and note the results, challenges, and what you would improve.`,
-    "Week 8: Share the result with a colleague and ask for one concrete suggestion.",
-  ];
-  return [
-    `Weeks 1-2: Study a guide or tutorial for ${skill} and note three ideas you can use at work.`,
-    `Weeks 3-4: Complete practice exercises and apply ${skill} to one small, suitable work task.`,
-    "End of month: Review what you learned with your manager and agree on a practical next step.",
-  ];
+  if (activity.day_range === "61-90") return [`Weeks 9-10: Write up your best ${skill} work as a portfolio piece.`, "Weeks 11-12: Get it reviewed; act on the feedback."];
+  if (activity.day_range === "31-60") return [`Week 5: Pick one real task that uses ${skill}.`, "Weeks 6-8: Do it and get one piece of feedback."];
+  return [`Weeks 1-2: Study a short guide or tutorial on ${skill}.`, "Weeks 3-4: Try it on one small work task."];
 }
 
 function planActivityOutcome(activity) {
@@ -189,9 +177,50 @@ function planActivityOutcome(activity) {
   return `A completed set of practice exercises and an explanation of the basics of ${skill}.`;
 }
 
+const DAY_MS = 864e5;
+
+/** Open the section subpage holding an activity card and scroll to the card. */
+function jumpTo(k) {
+  const el = document.querySelector(`.plan-block .act[data-key="${CSS.escape(k)}"]`);
+  if (!el) return;
+  el.closest(".plan-block").openPane(el.closest("[data-pane]").dataset.pane);
+  setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+}
+const PHASE_WEEK = { "1-30": 1, "31-60": 5, "61-90": 9 };
+
+/** Week-by-week agenda of a plan: what to do each week, dated from startDate, with this week highlighted. */
+function planCalendar(acts, startDate, done, key) {
+  const start = new Date(startDate || Date.now()); start.setHours(0, 0, 0, 0);
+  const weeks = Array.from({ length: 13 }, () => []);
+  for (const a of acts) for (const step of planActivitySteps(a)) {
+    const m = step.match(/^\s*weeks?\s+(\d+)(?:\s*[-–]\s*(\d+))?\s*:\s*/i);
+    const end = /^\s*end of month/i.test(step);
+    const from = m ? +m[1] : end ? PHASE_WEEK[a.day_range] + 3 : PHASE_WEEK[a.day_range] || 1;
+    const to = m && m[2] ? +m[2] : from;
+    const text = m ? step.slice(m[0].length) : step.replace(/^\s*end of month\s*:\s*/i, "");
+    for (let w = Math.max(1, from); w <= Math.min(13, to); w++) weeks[w - 1].push({ a, text });
+  }
+  const now = Math.floor((Date.now() - start) / DAY_MS / 7);  // 0-based index of this week
+  const fmt = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const jump = (a) => jumpTo(key(a));
+  const week = (items, i) => {
+    const from = new Date(+start + i * 7 * DAY_MS), to = new Date(+from + 6 * DAY_MS);
+    return h("li", { class: `cal-week${i === now ? " is-now" : ""}${i < now ? " is-past" : ""}`, "aria-current": i === now ? "date" : null },
+      h("div", { class: "cal-head" }, h("b", {}, `Week ${i + 1}`), h("span", {}, i === now ? "This week" : `${fmt(from)} – ${fmt(to)}`)),
+      items.length ? h("ul", {}, items.map(({ a, text }) => h("li", { class: done.has(key(a)) ? "is-done" : null },
+        h("button", { type: "button", class: "cal-item", title: text, onclick: () => jump(a) }, h("span", { class: "cal-skill" }, a.skill_id), h("span", {}, text)))))
+        : h("p", { class: "cal-free" }, i === 12 ? "Wrap-up week" : "Catch-up week"));
+  };
+  // one row per 30 days, the same split as the phases below: weeks 1-4, 5-8, 9-13
+  return h("div", { class: "plan-cal", "aria-label": "Week-by-week calendar" }, [[0, 4, "Days 1-30 · Foundation"], [4, 8, "Days 31-60 · Practice"], [8, 13, "Days 61-90 · Portfolio"]]
+    .map(([a, b, label]) => h("section", { class: "cal-block" }, h("h5", {}, label),
+      h("ol", { class: "cal-grid" }, weeks.slice(a, b).map((items, j) => week(items, a + j))))));
+}
+
 /** Editable 30/60/90 plan with approval. Talks to /api/plans/:id. Calls onChange(status) after saves. */
 export function planBlock({ planId, planReference, plan, version, status, weeklyHours, onChange, approverLabel = "I have reviewed this plan and approve it", title = "Your 90-day plan",
-  progress = [], evidence = null, readOnly = false }) {
+  progress = [], evidence = null, readOnly = false, startDate = null, sectionHref = null }) {
+  // sectionHref(p | null) -> URL of a section subpage; when given, opening a section goes through the router (so Back works)
   // readOnly: HR looking at a plan an employee made for themself: no hours, ticks, saving or approval
   // progress: activities ticked off as done ("<days>:<skill>", saved on the server); evidence: id -> {title, url} for course links
   const done = new Set(progress);
@@ -203,6 +232,15 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
   const tagEl = h("span", { class: `tag ${status}` }, status);
   const verEl = h("span", { class: "num muted" }, `v${version}`);
   const phaseNames = ["Foundation", "Practical application", "Portfolio & review"];
+  const tracks = {}, counts = {}, panes = {};
+  let blockEl;
+  function openPane(p, fromRoute = false) {  // swap the journey overview for one section's subpage (null = back to the overview)
+    if (sectionHref && !fromRoute) { location.hash = sectionHref(p); return; }
+    if (p && !PHASES.includes(p)) p = null;
+    blockEl.toggleAttribute("data-view", !!p);
+    PHASES.forEach((x) => { panes[x].hidden = x !== p; });
+    blockEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   const phases = PHASES.map((p, phaseIndex) => {
     const mine = acts.filter((a) => a.day_range === p);
     const used = mine.reduce((s, a) => s + a.estimated_hours, 0);
@@ -244,25 +282,69 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
         reveal(h("i"), GROW, { duration: 700 })));
     const activityList = mine.length ? h("div", { class: "phase-activities" }, activityCards)
       : h("p", { class: "note" }, "No activities in this phase.");
-    const phaseSummary = h("summary", { class: "phase-toggle" },
-      h("div", { class: "phase-intro" }, heading, h("p", { class: "phase-summary" }, summary)),
-      icon("chevron"));
-    const content = h("div", { class: "phase-content" }, budget, activityList);
+    tracks[p] = h("ol", { class: "phase-track", "aria-label": `Days ${p} activities` });
+    counts[p] = h("span", { class: "phase-count" });
+    // overview row: heading, count and step track; the activity cards live on the section's own subpage
+    panes[p] = h("section", { class: "phase phase-detail", "data-pane": p, hidden: true, "aria-label": `Days ${p} details` },
+      h("div", { class: "phase-nav" },
+        h("button", { class: "btn ghost sm phase-back", type: "button", onclick: () => openPane(null) }, icon("back"), "Back to journey"),
+        h("div", { class: "phase-tabs-nav", role: "group", "aria-label": "Switch section" }, PHASES.map((x, i) =>
+          h("button", { class: `btn sm${x === p ? " primary" : ""}`, type: "button", "aria-current": x === p ? "page" : null, onclick: () => openPane(x) },
+            `${i + 1} · Days ${x}`)))),
+      h("div", { class: "phase-intro" }, heading.cloneNode(true), h("p", { class: "phase-summary" }, summary)),
+      h("div", { class: "phase-content" }, budget, activityList));
     return h("div", { class: "phase-row", "data-phase": p },
       h("span", { class: "phase-step", "aria-hidden": "true" }, phaseIndex + 1),
-      h("details", { class: "phase", open: phaseIndex === 0 ? true : null }, phaseSummary, content));
+      h("div", { class: "phase" }, h("div", { class: "phase-toggle" },
+        h("div", { class: "phase-intro" }, heading, h("p", { class: "phase-summary" }, summary, " ", counts[p]), tracks[p]),
+        h("button", { class: "btn sm phase-open", type: "button", onclick: () => openPane(p) }, "View details", icon("chevron")))));
   });
-  const progressEl = h("div", { class: "plan-progress" });
+  const progressEl = h("div", { class: "plan-progress plan-stats" });
+  const asideEl = h("aside", { class: "plan-aside", "aria-label": "What's next" });
+  const calEl = h("details", { class: "plan-cal-wrap", open: true }, h("summary", {}, icon("grid"), "Calendar: what to do each week"));
+  const startMs = Date.parse(startDate || "") || Date.now();
   function drawProgress() {
-    const total = acts.length, n = acts.filter((a) => done.has(key(a))).length;
+    calEl.replaceChildren(calEl.firstChild, planCalendar(acts, startDate, done, key));
+    const total = acts.length, n = acts.filter((a) => done.has(key(a))).length, pct = total ? Math.round((100 * n) / total) : 0;
     const hrs = (xs) => Math.round(xs.reduce((s, a) => s + a.estimated_hours, 0) * 10) / 10;
-    const ms = PHASES.map((p, i) => { const xs = acts.filter((a) => a.day_range === p); return [p, ["Foundation", "Practice", "Portfolio"][i], xs.length && xs.every((a) => done.has(key(a)))]; });
+    const inPhase = (p) => acts.filter((a) => a.day_range === p);
+    const reached = PHASES.filter((p) => inPhase(p).length && inPhase(p).every((a) => done.has(key(a))));
+    const daysLeft = Math.max(0, 90 - Math.floor((Date.now() - startMs) / DAY_MS));
+    const next = acts.find((a) => !done.has(key(a)));
     progressEl.replaceChildren(
-      h("div", { class: "pp-head" }, h("b", {}, `${n} of ${total} activities done`), h("span", { class: "muted" }, `${hrs(acts.filter((a) => done.has(key(a))))} of ${hrs(acts)} hours`)),
-      h("div", { class: "pp-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(total), "aria-valuenow": String(n), "aria-label": "Plan progress" },
-        h("i", { style: { width: `${total ? (100 * n) / total : 0}%` } })),
-      h("ol", { class: "milestones", "aria-label": "Milestones" }, ms.map(([p, name, ok]) =>
-        h("li", { class: ok ? "ok" : null }, icon(ok ? "check" : "target"), h("span", {}, `Day ${p.split("-")[1]}: ${name}`), ok ? h("span", { class: "sr-only" }, " reached") : null))));
+      h("div", { class: "ps-main" },
+        h("div", { class: "ps-ring", style: { "--pct": pct }, role: "img", "aria-label": `${pct}% done` }, h("b", {}, `${pct}%`)),
+        h("div", { class: "ps-text" }, h("b", {}, "Overall progress"), h("span", { class: "muted" }, `${n} of ${total} activities done · ${hrs(acts.filter((a) => done.has(key(a))))} of ${hrs(acts)} h`),
+          h("div", { class: "pp-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(total), "aria-valuenow": String(n), "aria-label": "Plan progress" },
+            h("i", { style: { width: `${pct}%` } })))),
+      h("div", { class: "ps-stat" }, h("span", { class: "ps-icon" }, icon("target")), h("div", {}, h("b", {}, `${reached.length} of 3`), h("span", { class: "muted" }, "Milestones reached"))),
+      h("div", { class: "ps-stat" }, h("span", { class: "ps-icon" }, icon("grid")), h("div", {}, h("b", {}, String(daysLeft)), h("span", { class: "muted" }, "Days remaining"))));
+    PHASES.forEach((p) => {
+      const xs = inPhase(p);
+      counts[p].replaceChildren(icon(xs.length && xs.every((a) => done.has(key(a))) ? "check" : "target"), `${xs.filter((a) => done.has(key(a))).length} of ${xs.length} done`);
+      tracks[p].replaceChildren(...xs.map((a) => {
+        const st = done.has(key(a)) ? "done" : a === next ? "now" : "todo";
+        return h("li", { class: `pt-${st}` }, h("button", { type: "button", "aria-current": st === "now" ? "step" : null,
+          onclick: (e) => { e.preventDefault(); e.stopPropagation(); jumpTo(key(a)); } },
+          h("span", { class: "pt-dot" }, st === "done" ? icon("check") : null),
+          h("span", { class: "pt-label" }, a.skill_id), h("span", { class: "pt-tag" }, `${a.estimated_hours} h`)));
+      }));
+    });
+    const nextPhase = PHASES.find((p) => !reached.includes(p) && inPhase(p).length);
+    asideEl.replaceChildren(
+      next ? h("section", { class: "aside-card" },
+        h("div", { class: "aside-head" }, h("h4", {}, "Your next activity"), h("span", { class: "pt-tag" }, `Days ${next.day_range}`)),
+        h("b", { class: "aside-skill" }, next.skill_id),
+        h("p", {}, next.activity),
+        h("p", { class: "muted aside-step" }, planActivitySteps(next)[0]),
+        h("div", { class: "aside-meta" }, h("span", {}, icon("clock"), `${next.estimated_hours} h`)),
+        h("button", { class: "btn primary", type: "button", onclick: () => jumpTo(key(next)) }, "Continue learning"))
+        : h("section", { class: "aside-card" }, h("h4", {}, "All activities done"), h("p", {}, "You've finished every activity in this plan.")),
+      nextPhase ? h("section", { class: "aside-card" },
+        h("p", { class: "eyebrow" }, "Upcoming milestone"),
+        h("h4", {}, `Day ${nextPhase.split("-")[1]}: ${phaseNames[PHASES.indexOf(nextPhase)]}`),
+        h("ul", { class: "aside-list" }, inPhase(nextPhase).map((a) => h("li", { class: done.has(key(a)) ? "is-done" : null },
+          icon(done.has(key(a)) ? "check" : "target"), a.skill_id)))) : null);
   }
   async function mark(a, value, box) {
     value ? done.add(key(a)) : done.delete(key(a));
@@ -310,14 +392,17 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
       approveBtn.disabled = false;
     }
   }
-  return reveal(h("section", { class: "block plan-block", "aria-label": "30, 60, 90 day plan" },
+  blockEl = h("section", { class: "block plan-block", "aria-label": "30, 60, 90 day plan" },
     h("h3", {}, title),
     planId ? h("p", { class: "muted mono" }, `Plan ID: ${planReference || planId}`) : null,
     progressEl,
     plan.deferred_skills?.length ? h("details", { class: "note deferred" },
       h("summary", {}, `${plan.deferred_skills.length} more skills don't fit in ${weeklyHours ? weeklyHours + " h/week" : "the weekly hours"}; the plan covers the highest-priority gaps first.`),
       h("p", {}, plan.deferred_skills.join(", "))) : null,
-    sdgGuide, planEl, errBox, readOnly ? null : bar), RISE, { duration: 420 });
+    h("div", { class: "plan-layout" }, h("div", { class: "plan-main" }, h("div", { class: "plan-overview" }, planEl, calEl, sdgGuide), PHASES.map((p) => panes[p])), asideEl),
+    errBox, readOnly ? null : bar);
+  blockEl.openPane = openPane;
+  return reveal(blockEl, RISE, { duration: 420 });
 }
 
 export function historyBlock(hist) {
