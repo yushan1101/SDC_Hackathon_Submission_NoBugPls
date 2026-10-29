@@ -28,7 +28,7 @@ from pathlib import Path
 
 import httpx
 import pandas as pd
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request as HttpRequest, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Path as PathParam, Query, Request as HttpRequest, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -40,6 +40,7 @@ from agents import ops
 from agents.pathway import HOURS_PER_LEVEL
 from agents.sdg import goal_meta, role_sdgs
 from agents import catalog, criteria, llm, matcher, quiz, resume
+from agents import tools as agent_tools
 from agents.knowledge import learning_resources, occupation, resolve_occupation, role_requirements, search_occupations
 from config.settings import get_settings
 from core import graph, screening
@@ -3055,9 +3056,14 @@ def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_us
     talk = "\n".join(f"{'Person' if m.role == 'user' else 'You'}: {m.content}" for m in body.messages[-24:])
     with DB_LOCK, db:
         remembered = memory.for_prompt(db, user["username"])
-    text, usage = llm.generate(f"{remembered}<CONTEXT>\n{json.dumps(context, ensure_ascii=False)[:24000]}\n</CONTEXT>\n"
-                               f"<CONVERSATION>\n{talk}\n</CONVERSATION>\nReply to the person's last message.",
-                               f"{catalog.system_prompt(agent)} {memory.PROMPT}", max_tokens=900, agent=agent["task"])
+    used = []  # the tools the agent called, shown under the reply
+    text, usage = llm.generate_with_tools(
+        f"{remembered}<CONTEXT>\n{json.dumps(context, ensure_ascii=False)[:24000]}\n</CONTEXT>\n"
+        f"<CONVERSATION>\n{talk}\n</CONVERSATION>\nReply to the person's last message.",
+        f"{catalog.system_prompt(agent)} Facts returned by your tools count as context too. "
+        f"{agent_tools.PROMPT.format(today=today)} {memory.PROMPT}",
+        agent_tools.TOOLS, max_tokens=1200, agent=agent["task"],
+        on_tool=lambda name, args: used.append({"tool": name, "query": str(args.get("query") or args.get("url") or args.get("role_id") or "")[:120]}))
     if usage:
         _record_usage(user["username"], f"agent:{agent_id}", usage)
     if not text:
@@ -3067,7 +3073,7 @@ def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_us
         with DB_LOCK, db:
             memory.apply(db, user["username"], agent["id"], learned, forget)
             no_wait(db)
-    return {"reply": text.strip()[:6000], "remembered": learned, "model": (usage or {}).get("model"), "agent": {"id": agent["id"], "name": agent["name"]}}
+    return {"reply": text.strip()[:6000], "remembered": learned, "tools": used[:8], "model": (usage or {}).get("model"), "agent": {"id": agent["id"], "name": agent["name"]}}
 
 
 # --- what the agent remembers about the signed-in person (theirs only) --------------------------------------
@@ -3089,6 +3095,54 @@ def memory_forget(fact_id: int, user: dict = Depends(current_user)):
 def memory_clear(user: dict = Depends(current_user)):
     with DB_LOCK, db:
         return {"removed": memory.clear(db, user["username"])}
+
+
+# --- chat history: the person's own conversations, kept on the server --------------------------------------
+CHAT_ID = r"^[A-Za-z0-9-]{8,40}$"
+
+
+class SavedMsg(BaseModel):
+    model_config = {"extra": "allow"}  # the agent label, proposal, link and remembered facts drawn with a reply
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(max_length=8000)
+
+
+class ChatSaveIn(BaseModel):
+    messages: list[SavedMsg] = Field(max_length=80)
+
+
+@app.get("/api/chats")
+def chats_list(user: dict = Depends(current_user)):
+    with DB_LOCK:
+        return {"chats": memory.chats(db, user["username"])}
+
+
+@app.get("/api/chats/{chat_id}")
+def chats_get(chat_id: str = PathParam(pattern=CHAT_ID), user: dict = Depends(current_user)):
+    with DB_LOCK:
+        c = memory.chat(db, user["username"], chat_id)
+    if not c:
+        raise HTTPException(404, "No such chat.")
+    return c
+
+
+@app.put("/api/chats/{chat_id}")
+def chats_save(body: ChatSaveIn, chat_id: str = PathParam(pattern=CHAT_ID), user: dict = Depends(current_user)):
+    msgs = [m.model_dump() for m in body.messages]
+    if len(json.dumps(msgs)) > 400_000:
+        raise HTTPException(413, "This chat is too long to save. Start a new chat.")
+    with DB_LOCK, db:
+        if not memory.save_chat(db, user["username"], chat_id, msgs):
+            raise HTTPException(404, "No such chat.")
+    return {"ok": True}
+
+
+@app.delete("/api/chats/{chat_id}")
+def chats_delete(chat_id: str = PathParam(pattern=CHAT_ID), user: dict = Depends(current_user)):
+    with DB_LOCK, db:
+        if not memory.delete_chat(db, user["username"], chat_id):
+            raise HTTPException(404, "No such chat.")
+    return {"ok": True}
 
 
 # --- public application link (no account; consent required) --------------------------------------------------

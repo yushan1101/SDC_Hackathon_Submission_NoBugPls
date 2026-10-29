@@ -204,3 +204,44 @@ def test_agent_memory_is_per_account_and_carries_across_chats(env, monkeypatch):
     login(c, "stud1")
     assert c.delete(f"/api/memory/{facts[0]['id']}", headers=H).status_code == 200
     assert c.get("/api/memory").json()["facts"] == []
+
+
+def test_chat_history_is_per_account_on_the_server(env):
+    api, c = env
+    login(c, "school1")
+    msgs = [{"role": "user", "content": "Admin-only planning question"}, {"role": "assistant", "content": "Answer", "agent": {"id": "team", "name": "Team"}}]
+    assert c.put("/api/chats/chat-hr-0001", json={"messages": msgs}, headers=H).status_code == 200
+    got = c.get("/api/chats/chat-hr-0001").json()
+    assert got["title"] == "Admin-only planning question" and got["messages"][1]["agent"]["id"] == "team"
+    login(c, "stud1")  # the next person in the same browser sees none of it, and cannot overwrite it
+    assert c.get("/api/chats").json()["chats"] == []
+    assert c.get("/api/chats/chat-hr-0001").status_code == 404
+    assert c.put("/api/chats/chat-hr-0001", json={"messages": msgs}, headers=H).status_code == 404
+    assert c.delete("/api/chats/chat-hr-0001", headers=H).status_code == 404
+    login(c, "school1")
+    assert [x["id"] for x in c.get("/api/chats").json()["chats"]] == ["chat-hr-0001"]
+    assert c.delete("/api/chats/chat-hr-0001", headers=H).status_code == 200
+
+
+def test_agent_calls_tools_before_answering(env, monkeypatch):
+    from agents import llm
+    import httpx
+    monkeypatch.setattr(llm, "model_for", lambda agent, org=True: "openai:test-model")
+    monkeypatch.setattr(llm, "api_base", lambda url: "http://gateway.test/v1")
+    replies = iter([
+        {"choices": [{"message": {"content": None, "tool_calls": [{"id": "c1", "type": "function",
+                                                                   "function": {"name": "lookup", "arguments": '{"query": "nurse pay"}'}}]}}], "usage": {}},
+        {"choices": [{"message": {"content": "Nurses earn more this year [source](https://x.test)."}}], "usage": {}}])
+    sent = []
+
+    def post(url, json, **kw):
+        sent.append(json)
+        return httpx.Response(200, json=next(replies), request=httpx.Request("POST", url))
+    monkeypatch.setattr(httpx, "post", post)
+    monkeypatch.setattr(llm.get_settings() if hasattr(llm, "get_settings") else __import__("config.settings", fromlist=["x"]).get_settings(),
+                        "llm_api_key", __import__("pydantic").SecretStr("k"), raising=False)
+    calls = []
+    text, _ = llm.generate_with_tools("q", "sys", {"lookup": ("d", {"type": "object", "properties": {}}, lambda query: {"pay": "up 4%"})},
+                                      on_tool=lambda n, a: calls.append((n, a)))
+    assert text.startswith("Nurses earn more") and calls == [("lookup", {"query": "nurse pay"})]
+    assert sent[1]["messages"][-1] == {"role": "tool", "tool_call_id": "c1", "content": '{"pay": "up 4%"}'}

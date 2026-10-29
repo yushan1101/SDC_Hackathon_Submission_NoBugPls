@@ -59,7 +59,7 @@ def delete_account(con, username: str) -> dict:
                             ("email_otp", "username", "reset:" + username), ("email_otp", "username", "invite:" + username),
                             ("signup_waits", "username", username), ("signup_waits", "username", "reset:" + username),
                             ("briefing_log", "username", username), ("agent_log", "username", username),
-                            ("agent_memory", "username", username)):
+                            ("agent_memory", "username", username), ("agent_chats", "username", username)):
             if t in have:
                 con.execute(f"DELETE FROM {t} WHERE {col}=?", (val,))
         # records kept for accounting, security and cost: no longer linked to the person

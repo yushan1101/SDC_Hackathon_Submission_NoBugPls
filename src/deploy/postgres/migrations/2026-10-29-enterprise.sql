@@ -19,3 +19,7 @@ CREATE TABLE IF NOT EXISTS member_models(username TEXT, task TEXT, spec TEXT, se
 CREATE TABLE IF NOT EXISTS agent_memory(id BIGSERIAL PRIMARY KEY, username TEXT NOT NULL, fact TEXT NOT NULL, agent TEXT,
   created_utc TEXT, used_utc TEXT);
 CREATE INDEX IF NOT EXISTS agent_memory_user ON agent_memory(username);
+
+-- each person's agent conversations (chat history), kept per account
+CREATE TABLE IF NOT EXISTS agent_chats(id TEXT PRIMARY KEY, username TEXT NOT NULL, title TEXT, messages TEXT, updated_utc TEXT);
+CREATE INDEX IF NOT EXISTS agent_chats_user ON agent_chats(username, updated_utc);

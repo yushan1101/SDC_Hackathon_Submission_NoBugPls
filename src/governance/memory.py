@@ -3,6 +3,7 @@
 The agent writes them itself: its reply may end with `REMEMBER: <fact>` / `FORGET: <id>` lines, which are stripped
 before the person sees the reply. Each account only ever sees and feeds its own facts; the person can list, delete or
 clear them in Settings."""
+import json
 import re
 from datetime import datetime, timezone
 
@@ -12,7 +13,10 @@ PER_REPLY = 3     # new facts one reply may add
 
 DDL = """CREATE TABLE IF NOT EXISTS agent_memory(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL,
          fact TEXT NOT NULL, agent TEXT, created_utc TEXT, used_utc TEXT);
-         CREATE INDEX IF NOT EXISTS agent_memory_user ON agent_memory(username);"""
+         CREATE INDEX IF NOT EXISTS agent_memory_user ON agent_memory(username);
+         CREATE TABLE IF NOT EXISTS agent_chats(id TEXT PRIMARY KEY, username TEXT NOT NULL, title TEXT, messages TEXT,
+         updated_utc TEXT);
+         CREATE INDEX IF NOT EXISTS agent_chats_user ON agent_chats(username, updated_utc);"""
 
 PROMPT = ("You have a long-term memory of this person across all their chats: <MEMORY> lists what you learned before, "
           "each fact with its id. Use it actively: connect what they say now to their goals, background, constraints, "
@@ -87,6 +91,40 @@ def clear(con, username: str) -> int:
     return con.execute("DELETE FROM agent_memory WHERE username=?", (username,)).rowcount
 
 
+# ---- chat history: each account's conversations, kept on the server (never in the browser, never shared)
+MAX_CHATS = 100  # ponytail: oldest drop off; paginate the list if people need more
+
+
+def chats(con, username: str) -> list[dict]:
+    rows = con.execute("SELECT id, title, updated_utc FROM agent_chats WHERE username=? ORDER BY updated_utc DESC LIMIT ?",
+                       (username, MAX_CHATS)).fetchall()
+    return [{"id": i, "title": t, "updated": u} for i, t, u in rows]
+
+
+def chat(con, username: str, chat_id: str) -> dict | None:
+    row = con.execute("SELECT title, messages FROM agent_chats WHERE id=? AND username=?", (chat_id, username)).fetchone()
+    return {"id": chat_id, "title": row[0], "messages": json.loads(row[1] or "[]")} if row else None
+
+
+def save_chat(con, username: str, chat_id: str, messages: list[dict]) -> bool:
+    """Upsert one of the person's chats; False if that id belongs to someone else."""
+    owner = con.execute("SELECT username FROM agent_chats WHERE id=?", (chat_id,)).fetchone()
+    if owner and owner[0] != username:
+        return False
+    first = next((m["content"] for m in messages if m.get("role") == "user"), "New chat")
+    title = " ".join(str(first).split())[:70]
+    con.execute("INSERT INTO agent_chats(id, username, title, messages, updated_utc) VALUES(?,?,?,?,?) ON CONFLICT(id) "
+                "DO UPDATE SET title=excluded.title, messages=excluded.messages, updated_utc=excluded.updated_utc",
+                (chat_id, username, title, json.dumps(messages, ensure_ascii=False), _now()))
+    con.execute("DELETE FROM agent_chats WHERE username=? AND id NOT IN (SELECT id FROM agent_chats WHERE username=? "
+                "ORDER BY updated_utc DESC LIMIT ?)", (username, username, MAX_CHATS))
+    return True
+
+
+def delete_chat(con, username: str, chat_id: str) -> bool:
+    return con.execute("DELETE FROM agent_chats WHERE id=? AND username=?", (chat_id, username)).rowcount > 0
+
+
 if __name__ == "__main__":  # self-check: python -m governance.memory
     import sqlite3
     con = sqlite3.connect(":memory:")
@@ -99,4 +137,6 @@ if __name__ == "__main__":  # self-check: python -m governance.memory
     fid = recall(con, "a")[0]["id"]
     apply(con, "a", "coach", ["Prefers short evening lessons"], [fid])
     assert [f["fact"] for f in recall(con, "a")] == ["Prefers short evening lessons"]
+    assert save_chat(con, "a", "c1", [{"role": "user", "content": "Plan my  week"}]) and not save_chat(con, "b", "c1", [])
+    assert chats(con, "a")[0]["title"] == "Plan my week" and chat(con, "b", "c1") is None and chats(con, "b") == []
     print("ok")

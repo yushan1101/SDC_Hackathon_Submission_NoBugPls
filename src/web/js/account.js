@@ -264,15 +264,21 @@ export async function pricingView(main, { me }) {
   const { plans, enabled, publishable_key: pk } = await api("/api/billing/plans");
   const mine = me?.effective_plan;
   const hr = me?.role === "hr_advisor";
-  const shown = plans.filter((p) => (me ? (hr ? p.for === "hr" || p.id === "free" : p.for === "individual") : true));
+  // HR accounts are on the organisation plan already; what they buy is the monthly enterprise subscription
+  const sub = hr ? (await api("/api/billing/subscription").catch(() => null))?.subscription : null;
+  const subLive = sub && ["active", "trialing"].includes(sub.status);
+  const shown = plans.filter((p) => (me ? (hr ? p.for === "hr" : p.for === "individual") : true));
   const action = (p) => {
     if (!me) return h("a", { class: "btn primary", href: p.id === "free" ? "#/register" : "#/signin/pricing" }, p.id === "free" ? "Create a free account" : "Sign in to upgrade");
+    if (hr && p.monthly) return subLive ? h("span", { class: "tag approved" }, sub.cancel_at_period_end ? "Subscribed · ends soon" : "Subscribed")
+      : h("button", { class: "btn primary", type: "button", disabled: enabled ? null : true, onclick: () => checkout(p, me) },
+        enabled ? `Subscribe for ${money(p.price_cents, p.currency)} / month` : "Payments are not set up yet");
     if (mine === p.id || (mine === "org")) return h("span", { class: "tag approved" }, mine === "org" ? "Included with your organisation" : "Your plan");
     if (p.id === "free") return null;
     return h("button", { class: "btn primary", type: "button", disabled: enabled ? null : true, onclick: () => checkout(p, me) },
       enabled ? `Upgrade for ${money(p.price_cents, p.currency)}` : "Unavailable");
   };
-  main.replaceChildren(
+  const page = [
     h("h1", { class: "page-title" }, "Plans"),
     h("p", { class: "lede" }, "Start free. Pro lasts 30 days and doesn't renew on its own; Enterprise is a monthly subscription that renews until you stop it."),
     enabled ? null : h("div", { class: "banner" }, icon("info"), "Upgrades are temporarily unavailable."),
@@ -281,7 +287,8 @@ export async function pricingView(main, { me }) {
       h("p", { class: "plan-price" }, p.price_cents ? [h("b", {}, money(p.price_cents, p.currency)), h("span", {}, p.monthly ? " / month, renews automatically" : ` / ${p.days} days`)] : h("b", {}, "Free")),
       h("ul", {}, p.features.map((f) => h("li", {}, icon("check"), f))),
       action(p)))),
-    pk?.startsWith("pk_test_") ? h("p", { class: "muted plan-fine" }, "Test mode: use Stripe's test card 4242 4242 4242 4242, any future date and any CVC.") : null);
+    pk?.startsWith("pk_test_") ? h("p", { class: "muted plan-fine" }, "Test mode: use Stripe's test card 4242 4242 4242 4242, any future date and any CVC.") : null].filter(Boolean);
+  main.replaceChildren(...(hr ? [h("div", { class: "view" }, ...page)] : page));
 }
 
 async function checkout(plan, me) {
@@ -311,7 +318,14 @@ async function checkout(plan, me) {
       confirmParams: { return_url: `${location.origin}${location.pathname}#/account` } });
     if (error) { err.textContent = error.message; pay.disabled = false; return; }
     try {
-      const r = await api("/api/billing/confirm", { method: "POST", body: { intent_id: paymentIntent?.id || intent.intent_id } });
+      const r = await api("/api/billing/confirm", { method: "POST", body: intent.subscription_id
+        ? { subscription_id: intent.subscription_id } : { intent_id: paymentIntent?.id || intent.intent_id } });
+      if (intent.subscription_id) {  // the enterprise's monthly subscription
+        if (!["active", "trialing"].includes(r.status)) { err.textContent = "The payment didn't go through. You weren't subscribed."; pay.disabled = false; return; }
+        dlg.close(); toast("Your enterprise subscription is active. It renews monthly until you stop it.");
+        location.hash = "#/account/billing";
+        return;
+      }
       if (!r.activated) { err.textContent = "The payment didn't go through. You weren't charged for the plan."; pay.disabled = false; return; }
       dlg.close(); toast(`You're on ${plan.name} until ${new Date(r.me.plan_until).toLocaleDateString()}`);
       location.hash = "#/account";
