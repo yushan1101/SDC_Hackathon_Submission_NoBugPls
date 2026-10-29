@@ -64,7 +64,7 @@ def test_plan_activities_are_personal_and_detailed():
     gaps = [Gap(skill_id="python", current_level=0, required_level=2, gap=2, rationale_source_ids=["s:1"])]
     p = pathway.build(gaps, 4, "data analyst", "assistive", None, [Skill(name="excel", level=4), Skill(name="python", level=0)])
     first = p.activities[0]
-    assert "excel skills" in first.activity and "starting from the basics" in first.activity and "data analyst" in first.activity
-    assert first.activity.startswith('Get started with "python"')
-    assert len(first.steps) == 3 and first.steps[0].startswith("Weeks 1-2") and first.outcome
+    assert "excel" in first.activity and "from scratch" in first.activity and "data analyst" in first.steps[1]
+    assert first.activity.startswith('Learn "python"') and len(first.activity.split()) <= 20
+    assert len(first.steps) == 2 and first.steps[0].startswith("Weeks 1-2") and first.outcome
     assert {a.day_range for a in p.activities} == {"1-30", "31-60"}
