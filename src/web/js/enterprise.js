@@ -197,7 +197,7 @@ function route() {
   const [page = "overview", id, ...extra] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
   if (page === "plans") { location.replace(`#/review${id ? `/${id}` : ""}`); return; }  // the plans register is part of the review page now
   const pages = new Set(["overview", "run", "review", "openings", "signals", "heatmap", "plugins", "people", "models", "agents", "account", "pricing", "privacy", "terms"]);
-  if (!pages.has(page) || extra.length || (id && !["review", "openings", "plugins", "agents"].includes(page))) {
+  if (!pages.has(page) || extra.length || (id && !["review", "openings", "plugins", "agents", "people"].includes(page))) {
     location.replace("#/overview");
     return;
   }
@@ -222,7 +222,7 @@ function route() {
   if (page !== "review" || !main.querySelector(".review")) main.scrollTop = 0;
   const views = { run: runView, review: () => reviewView(main, id),
     openings: () => (id ? openingDetail(main, id, S.status) : openingsView(main, S.status)), signals: () => signalsView(main, S.status), heatmap: () => heatmapView(main),
-    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)),
+    plugins: () => pluginsView(main, S.status, id), people: () => peopleView(main, S.status, id ? decodeURIComponent(id) : null), models: () => modelsView(main, S.status), agents: () => (id ? location.replace("#/agents") : agentView(main)),
     account: () => accountView(main, { refreshMe: async () => { S.me = await api("/api/me"); return S.me; }, hrLayout: true }),
     pricing: () => pricingView(main, { me: S.me }),
     terms: () => termsView(main, { hrLayout: true }), privacy: () => privacyView(main, { hrLayout: true }) };

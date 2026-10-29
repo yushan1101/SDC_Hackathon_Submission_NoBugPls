@@ -383,3 +383,31 @@ html[data-product="hr"] .member-models select { min-width: 150px; max-width: 220
 html[data-product="hr"] :is(.view, .panel, .overview, .ent-drawer .pad) > * { min-width: 0; }
 html[data-product="hr"] .table-wrap { max-width: 100%; overflow-x: auto; }
 html[data-product="hr"] :is(pre, .md) { max-width: 100%; overflow-x: auto; }
+
+/* people: a compact list; each person's details on their own subpage that slides in, and slides back to the list */
+html[data-product="hr"] .people-table .person-row { cursor: pointer; }
+html[data-product="hr"] .people-table .person-row:hover td { background: oklch(0.985 0.008 263); }
+html[data-product="hr"] .people-table .person-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+html[data-product="hr"] .row-go { width: 32px; color: var(--ink-2); }
+html[data-product="hr"] .row-go svg { width: 16px; height: 16px; rotate: -90deg; }
+html[data-product="hr"] .person-back { justify-self: start; display: inline-flex; align-items: center; gap: 6px; margin-bottom: -6px; }
+html[data-product="hr"] .person-back svg { width: 16px; height: 16px; }
+html[data-product="hr"] .person-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; }
+html[data-product="hr"] .person-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 0; font-size: 14px; }
+html[data-product="hr"] .person-facts dt { color: var(--ink-2); }
+html[data-product="hr"] .person-facts dd { margin: 0; overflow-wrap: anywhere; }
+html[data-product="hr"] .person-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+html[data-product="hr"] .person-models { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 12px; }
+html[data-product="hr"] .person-models .field { display: grid; gap: 6px; }
+html[data-product="hr"] .person-models .field > span { display: grid; font-size: 14px; font-weight: 600; }
+html[data-product="hr"] .person-models .field small { font-weight: 400; font-size: 12px; }
+html[data-product="hr"] .person-models select { max-width: none; }
+@media (max-width: 760px) { html[data-product="hr"] .person-grid { grid-template-columns: 1fr; } }
+@keyframes people-in-right { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes people-in-left { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+html[data-product="hr"] .view.slide-forward { animation: people-in-right 340ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+html[data-product="hr"] .view.slide-back { animation: people-in-left 340ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@media (prefers-reduced-motion: reduce) { html[data-product="hr"] .view.slide-forward, html[data-product="hr"] .view.slide-back { animation: none; } }
+html[data-product="hr"] .people-table td { white-space: nowrap; }
+html[data-product="hr"] .people-table td:first-child { white-space: normal; }
+html[data-product="hr"] .person-sub { font-size: 13px; overflow-wrap: anywhere; }
