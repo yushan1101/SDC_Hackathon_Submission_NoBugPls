@@ -28,7 +28,7 @@ const S = {
 const saveProfile = () => store.set("ap.profile.v2", S.profile);
 
 // ---------------------------------------------------------------- boot
-const PUBLIC_PAGES = new Set(["", "start", "today", "signin", "sdgs", "register", "pricing", "verify", "forgot", "reset", "invite", "terms", "privacy"]);  // everything else needs an account
+const PUBLIC_PAGES = new Set(["", "start", "today", "signin", "sdgs", "register", "pricing", "verify", "forgot", "reset", "invite", "email", "terms", "privacy"]);  // everything else needs an account
 
 async function boot() {
   try {
@@ -173,13 +173,13 @@ function route() {
   disposeAgentSwitch();
   const hash = location.hash || "#/start";
   const [requested = "start", id, ...rest] = hash.startsWith("#/") ? hash.slice(2).split("/") : [];
-  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "agents", "register", "pricing", "account", "verify", "forgot", "reset", "invite", "terms", "privacy"]);
+  const allowed = new Set(["start", "today", "signin", "quiz", "resume", "build", "report", "plans", "sdgs", "interview", "agents", "register", "pricing", "account", "verify", "forgot", "reset", "invite", "email", "terms", "privacy"]);
   const planSection = requested === "plans" && rest.length === 1 && ["1-30", "31-60", "61-90"].includes(rest[0]);
   const interviewStart = requested === "interview" && id === "start" && rest.length === 1 && /^[A-Za-z0-9_-]+$/.test(rest[0]);
   // Unknown routes and malformed nested routes return home instead of showing the wrong page.
-  const verifyLink = ["verify", "reset", "invite"].includes(requested) && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
-  if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart && !verifyLink && !planSection) || (["verify", "reset", "invite"].includes(requested) && !verifyLink) ||
-      (id && !["signin", "plans", "report", "interview", "agents", "verify", "reset", "invite"].includes(requested)) || (requested === "agents" && id && !/^[a-z-]{2,20}$/.test(id))) {
+  const verifyLink = ["verify", "reset", "invite", "email"].includes(requested) && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
+  if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart && !verifyLink && !planSection) || (["verify", "reset", "invite", "email"].includes(requested) && !verifyLink) ||
+      (id && !["signin", "plans", "report", "interview", "agents", "verify", "reset", "invite", "email"].includes(requested)) || (requested === "agents" && id && !/^[a-z-]{2,20}$/.test(id))) {
     location.replace("#/start");
     return;
   }
@@ -193,6 +193,14 @@ function route() {
       S.me = await api("/api/me"); S.meta = await api("/api/meta");
       history.replaceState(null, "", "#/start"); shell(); toast("Email verified. Welcome!"); route();
     } });
+    return;
+  }
+  if (page === "email") {  // the link sent to a new email address: switch the account to it
+    app.replaceChildren(h("main", { class: "pub-main" }, h("p", { class: "muted" }, "Confirming your new email…")));
+    api("/api/profile/email/verify", { method: "POST", body: { username: id, token: rest[0] } })
+      .then((r) => { toast(`Your email is now ${r.email}`); location.replace(S.me ? "#/account" : "#/signin"); })
+      .catch((e) => app.replaceChildren(h("main", { class: "pub-main" }, h("div", { class: "issue error", role: "alert" }, e.message),
+        h("a", { class: "btn", href: S.me ? "#/account" : "#/signin" }, S.me ? "Back to your account" : "Sign in"))));
     return;
   }
   if (page === "forgot") { if (S.me) { location.replace("#/account"); return; } forgotView(app); return; }

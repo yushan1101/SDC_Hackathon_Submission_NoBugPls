@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     price_pro_cents: int = Field(1900, gt=0)         # RM 19.00 for 30 days
     price_team_cents: int = Field(9900, gt=0)        # RM 99.00 for 30 days
     plan_days: int = Field(30, gt=0)
+    # Cloudflare R2 (S3 API) for profile photos: the fixit bucket, under its own folder
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: SecretStr | None = None
+    r2_bucket: str = "fixit"
+    r2_prefix: str = "aiversepulse/avatars/"
     free_monthly_briefings: int = Field(3, ge=0)     # new briefings per calendar month on the free plan
     # --- email one-time codes at sign-up; empty host = no email (the code is written to the server log instead) ---
     smtp_host: str = ""

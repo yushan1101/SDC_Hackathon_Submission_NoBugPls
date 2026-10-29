@@ -33,7 +33,10 @@ CREATE TABLE IF NOT EXISTS auth_events(id INTEGER PRIMARY KEY, username TEXT, ev
 # added after the first release: (column, definition); existing rows become organisation accounts, active
 COLUMNS = [("email", "TEXT"), ("status", "TEXT DEFAULT 'active'"), ("plan", "TEXT DEFAULT 'org'"),
            ("plan_until", "TEXT"), ("trusted", "INTEGER DEFAULT 0"), ("account_type", "TEXT DEFAULT 'org'"),
-           ("terms_version", "TEXT"), ("terms_accepted_utc", "TEXT"), ("invited_by", "TEXT")]
+           ("terms_version", "TEXT"), ("terms_accepted_utc", "TEXT"), ("invited_by", "TEXT"),
+           # full profile, and (for an HR advisor) the enterprise itself: company or school
+           ("phone", "TEXT"), ("title", "TEXT"), ("department", "TEXT"), ("avatar_key", "TEXT"), ("email_pending", "TEXT"),
+           ("org_name", "TEXT"), ("org_kind", "TEXT")]
 TERMS_VERSION = "2026-10-22"  # bump when the Terms of Use or Privacy Policy change
 STATUSES = {"active", "pending_email", "pending_approval", "invited", "disabled"}
 EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$", re.I)
@@ -223,7 +226,8 @@ def effective_plan(plan: str | None, plan_until: str | None) -> str:
 
 
 KEYS = ["username", "role", "employee_id", "display_name", "email", "status", "plan", "plan_until", "trusted",
-        "account_type", "created_utc", "terms_version", "terms_accepted_utc", "invited_by"]
+        "account_type", "created_utc", "terms_version", "terms_accepted_utc", "invited_by",
+        "phone", "title", "department", "avatar_key", "email_pending", "org_name", "org_kind"]
 
 
 def account(con, username: str) -> dict | None:
