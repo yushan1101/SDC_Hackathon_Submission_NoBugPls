@@ -256,3 +256,15 @@ html[data-product="hr"] table tbody tr:hover td { background: oklch(0.985 0.008 
 html[data-product="hr"] .wf-cell.wf-unknown { background: oklch(1 0 0); box-shadow: none; }
 html[data-product="hr"] .wf-foot { border-top: 0; }
 html[data-product="hr"] .wf-skill-name, html[data-product="hr"] .wf-skill-head { background: var(--card-fill); }
+
+/* sidebar icons: two-tone. The tint shape (.d) is faint at rest, deepens on hover, and on the current page the
+   icon turns owl blue with its shape filled in; the label stays ink so the row reads first, the icon second. */
+html[data-product="hr"] .rail svg { width: 18px; height: 18px; stroke-width: 1.6; color: oklch(0.5 0.03 262); transition: color 160ms ease; }
+html[data-product="hr"] .rail svg .d { fill: currentColor; stroke: none; opacity: 0.1; transition: opacity 160ms ease; }
+html[data-product="hr"] :is(.rail a, .rail .rail-group-btn):hover svg { color: var(--ink); }
+html[data-product="hr"] :is(.rail a, .rail .rail-group-btn):hover svg .d { opacity: 0.16; }
+html[data-product="hr"] .rail a[aria-current="page"] svg, html[data-product="hr"] .rail .rail-group.has-current > .rail-group-btn svg:first-child { color: var(--accent); }
+html[data-product="hr"] .rail a[aria-current="page"] svg .d, html[data-product="hr"] .rail .rail-group.has-current > .rail-group-btn svg:first-child .d { opacity: 0.22; }
+html[data-product="hr"] .rail a[aria-current="page"] { color: var(--ink); font-weight: 600; }
+html[data-product="hr"] .rail .rail-group-btn > svg:last-child { width: 14px; height: 14px; color: oklch(0.6 0.02 262); }
+@media (prefers-reduced-motion: reduce) { html[data-product="hr"] .rail svg, html[data-product="hr"] .rail svg .d { transition: none; } }
