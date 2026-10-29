@@ -1419,6 +1419,8 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
                     ran = set(upd["run"])
                     yield sse({"t": "plan", **upd, "label": f"Changed: {', '.join(upd['changed'])} · running " +
                                ", ".join(AGENT_NAME[n] for n in upd["run"])})
+                elif kind == "custom":
+                    yield sse(upd)  # plan_start / plan_token / plan_activity: the plan as the AI writes it
                 elif kind == "reused":
                     yield sse({"t": "agent", "node": node, "reused": True, "label": f"{AGENT_NAME.get(node, node)}: reused, unaffected by this change",
                                "ms": round(1000 * (time.perf_counter() - t0))})

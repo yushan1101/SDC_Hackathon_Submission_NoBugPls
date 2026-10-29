@@ -778,7 +778,7 @@ async function runTurn(params) {
   const st = new StreamText(prose, highlight);
   const ctrl = new AbortController();
   setBusy(ctrl);
-  let steps = 0, reused = 0, t0 = performance.now(), planId = null, meta = null, insights = null;
+  let steps = 0, reused = 0, t0 = performance.now(), planId = null, meta = null, insights = null, live = null;
   const mood = (state, text) => { owl.set(state); S.status.set(state, text || say.textContent); if (text) { say.textContent = text; S.assistant.setStatus(text); } };
   try {
     await stream("/api/analyze", {
@@ -799,7 +799,10 @@ async function runTurn(params) {
         running.remove(); trace.querySelector(".spinner")?.remove();
         sumText.textContent = `Done in ${(ev.usage.ms / 1000).toFixed(1)} s · ${steps} steps${reused ? `, ${reused} reused` : ""}`;
         setTimeout(() => { trace.open = false; }, 700);
-      } else if (ev.t === "text") st.push(ev.delta);
+      } else if (ev.t === "plan_start") { live = planLive(ev.slots); body.append(live.el); }
+      else if (ev.t === "plan_token") live?.token(ev.delta);
+      else if (ev.t === "plan_activity") live?.confirm(ev.slot, ev.activity, ev.ai);
+      else if (ev.t === "text") st.push(ev.delta);
       else if (ev.t === "section") {
         const d = ev.data;
         if (ev.kind === "gaps" || ev.kind === "outlook") S.ctx[ev.kind] = d;
@@ -807,6 +810,7 @@ async function runTurn(params) {
           : ev.kind === "outlook" ? outlookBlock(d) : ev.kind === "signals" ? signalsBlock(d) : ev.kind === "sdgs" ? sdgBlock(d)
           : ev.kind === "issues" ? issuesBlock(d.filter((i) => i.severity === "error"))
           : ev.kind === "plan" ? planHolder(planId, d, p.weekly_learning_hours, meta?.status || "draft", [], meta?.plan_reference) : null;
+        if (ev.kind === "plan" && live) { live.el.replaceWith(el); live = null; return; }  // the written plan becomes the full plan
         if (el && ["outlook", "signals", "sdgs"].includes(ev.kind)) {  // three small insight cards share one row
           insights ??= body.appendChild(h("div", { class: "insights" }));
           insights.append(el);
@@ -829,6 +833,60 @@ async function runTurn(params) {
   } finally {
     if (S.busy === ctrl) { drawSuggestions(); setBusy(null); }
   }
+}
+
+/** The plan as the AI writes it, like a chat reply: one card per slot (its days, skill and hours known up front),
+ *  filled in live from the model's text, then marked once the server has checked it (AI-written, or the standard
+ *  step when the AI's version didn't pass). Replaced by the full plan when the run finishes. */
+function planLive(slots) {
+  const PHASE = { "1-30": "Days 1–30 · Foundation", "31-60": "Days 31–60 · Practice", "61-90": "Days 61–90 · Portfolio" };
+  let raw = "";
+  const cards = slots.map((sl) => {
+    const title = h("p", { class: "pl-activity" }, h("span", { class: "pl-caret", "aria-hidden": "true" }));
+    const list = h("ul", { class: "pl-steps" }), outcome = h("p", { class: "pl-outcome" });
+    const badge = h("span", { class: "pl-badge" }, "Waiting");
+    const el = h("li", { class: "pl-card is-waiting" },
+      h("div", { class: "pl-head" }, h("b", {}, sl.skill), h("span", { class: "muted" }, `${PHASE[sl.days] || `Days ${sl.days}`} · ${sl.hours} h`), badge),
+      title, list, outcome);
+    return { el, title, list, outcome, badge };
+  });
+  const status = h("span", {}, "Writing your plan…");
+  const el = h("section", { class: "plan-live", "aria-live": "polite", "aria-busy": "true" },
+    h("header", { class: "pl-top" }, h("span", { class: "spinner", "aria-hidden": "true" }), status),
+    h("ol", { class: "pl-cards" }, cards.map((c) => c.el)));
+  const fill = (c, block, typing) => {
+    const line = (re) => (block.match(re)?.[1] || "").trim();
+    c.title.replaceChildren(line(/^Activity:\s*(.*)$/im) || "", typing ? h("span", { class: "pl-caret", "aria-hidden": "true" }) : "");
+    c.list.replaceChildren(...[...block.matchAll(/^\s*[-*•]\s+(.*)$/gm)].slice(0, 5).map((m) => h("li", {}, m[1])));
+    c.outcome.textContent = line(/^Outcome:\s*(.*)$/im);
+  };
+  return {
+    el,
+    token(delta) {
+      raw += delta;
+      const heads = [...raw.matchAll(/^#{2,4}\s*(?:slot\s*)?(\d+)\b.*$/gim)];
+      heads.forEach((m, k) => {
+        const c = cards[Number(m[1]) - 1];
+        if (!c || c.el.classList.contains("is-done")) return;
+        const typing = k === heads.length - 1;
+        c.el.classList.remove("is-waiting"); c.el.classList.toggle("is-writing", typing);
+        if (typing) { c.badge.textContent = "Writing"; status.textContent = `Writing ${c.el.querySelector("b").textContent}…`; }
+        fill(c, raw.slice(m.index + m[0].length, heads[k + 1]?.index ?? raw.length), typing);
+      });
+    },
+    confirm(slot, a, ai) {
+      const c = cards[slot];
+      if (!c) return;
+      c.el.classList.remove("is-waiting", "is-writing"); c.el.classList.add("is-done", ai ? "is-ai" : "is-std");
+      c.badge.replaceChildren(icon(ai ? "spark" : "check"), ai ? "Written for you" : "Standard step");
+      c.title.textContent = a.activity;
+      c.list.replaceChildren(...(a.steps || []).map((x) => h("li", {}, x)));
+      c.outcome.textContent = a.outcome ? `Result: ${a.outcome}` : "";
+      const left = cards.filter((x) => !x.el.classList.contains("is-done")).length;
+      status.textContent = left ? `Writing your plan… ${cards.length - left} of ${cards.length} done` : "Plan written · checking and saving";
+      if (!left) el.querySelector(".spinner")?.remove();
+    },
+  };
 }
 
 function planHolder(planId, plan, hours, status, progress = [], planReference) {

@@ -151,6 +151,55 @@ def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None 
         return None, record("llm", 1000 * (time.perf_counter() - t), name, error=type(e).__name__)
 
 
+def generate_stream(prompt: str, system: str, max_tokens: int = 400, agent: str = "router"):
+    """Like generate(), but yields the answer as it is written: {"delta": text} pieces, then one {"usage": ...}.
+    An OpenAI-compatible model streams token by token; any other provider (or a failed stream before any text)
+    falls back to generate() and yields its whole answer as one piece."""
+    import json as _json
+    import httpx
+    from config.settings import get_settings
+    from core.usage import record
+    s = get_settings()
+    spec = model_for(agent)
+    if not spec or not spec.startswith("openai:"):
+        text, usage = generate(prompt, system, max_tokens=max_tokens, agent=agent)
+        if text:
+            yield {"delta": text}
+        yield {"usage": usage}
+        return
+    name = spec.split(":", 1)[1]
+    body = {"model": name, "temperature": 0.4, "max_tokens": max_tokens, "stream": True, "stream_options": {"include_usage": True},
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
+    t, tin, tout, sent = time.perf_counter(), 0, 0, False
+    try:
+        with httpx.stream("POST", api_base(s.llm_base_url) + "/chat/completions", json=body, timeout=max(s.llm_timeout_s, 90),
+                          headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"}) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                chunk = _json.loads(data)
+                u = chunk.get("usage") or {}
+                tin, tout = u.get("prompt_tokens", tin), u.get("completion_tokens", tout)
+                for c in chunk.get("choices") or []:
+                    piece = (c.get("delta") or {}).get("content")
+                    if piece:
+                        sent = True
+                        yield {"delta": piece}
+    except Exception as e:
+        log.warning("LLM stream failed (%s): %s", name, type(e).__name__)
+        if not sent:  # nothing shown yet: one ordinary call instead
+            text, usage = generate(prompt, system, max_tokens=max_tokens, agent=agent)
+            if text:
+                yield {"delta": text}
+            yield {"usage": usage}
+            return
+    yield {"usage": record("llm", 1000 * (time.perf_counter() - t), name, tin, tout, measured=True)}
+
+
 def generate_with_tools(prompt: str, system: str, tools: dict, max_tokens: int = 900, agent: str = "router",
                         rounds: int = 4, on_tool=None):
     """Like generate(), but an OpenAI-compatible model may first call tools: {name: (description, json schema, fn)}.

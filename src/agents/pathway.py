@@ -97,7 +97,23 @@ SYSTEM = ("You are an expert learning designer writing one person's 90-day reski
           "inside the slot's weeks, at most 20 words each; an outcome they can show (at most 15 words). Name only the "
           "sources given (a source titled 'ESCO: ...' is a skill guide, not a course); never invent courses, links, "
           "certificates or prices. Plain English addressed to 'you'. No salary, hiring or firing advice. "
-          'Reply as JSON: {"activities": [{"activity": str, "steps": [str], "outcome": str}]}, one per slot, same order.')
+          "Write it as plain text, one block per slot in order, exactly like this and nothing else:\n"
+          "### 1\nActivity: <one line>\n- Week 1: <step>\n- Weeks 2-3: <step>\nOutcome: <one line>\n\n### 2\n...")
+BLOCK = re.compile(r"^#{2,4}\s*(?:slot\s*)?(\d+)\b[^\n]*$", re.M | re.I)
+
+
+def parse_block(text: str) -> dict:
+    """One '### n' block of the writer's plain text -> {activity, steps, outcome} (missing parts empty)."""
+    out = {"activity": "", "steps": [], "outcome": ""}
+    for line in text.splitlines():
+        line = line.strip()
+        if line.lower().startswith("activity:"):
+            out["activity"] = " ".join(line[9:].split())[:240]
+        elif line.lower().startswith("outcome:"):
+            out["outcome"] = " ".join(line[8:].split())[:180]
+        elif line.startswith(("- ", "* ", "• ")) and len(out["steps"]) < 5:
+            out["steps"].append(" ".join(line[2:].split())[:200])
+    return out
 
 
 def _weeks_ok(steps: list[str], phase: str) -> bool:
@@ -109,10 +125,13 @@ def _weeks_ok(steps: list[str], phase: str) -> bool:
     return True
 
 
-def personalise(p: Pathway, role: str, skills, gaps, goal: str = "", learning: dict | None = None) -> tuple[Pathway, dict | None]:
+def personalise(p: Pathway, role: str, skills, gaps, goal: str = "", learning: dict | None = None,
+                emit=None) -> tuple[Pathway, dict | None]:
     """The AI writes every activity itself from the plan's facts (skill, levels, hours, phase, real sources); the
     template text is never shown to it. Each written activity is checked (steps dated inside its phase, 2-5 of them);
-    one that fails keeps its template text, and a disabled or failed model keeps the whole template."""
+    one that fails keeps its template text, and a disabled or failed model keeps the whole template.
+    emit(event): the writing as it happens, for the page: plan_start (the slots), plan_token (raw text as the model
+    writes it), plan_activity (each block once checked, with whether the AI's version was kept)."""
     if not p.activities:
         return p, None
     by_skill = {g.skill_id: g for g in gaps or []}
@@ -125,19 +144,38 @@ def personalise(p: Pathway, role: str, skills, gaps, goal: str = "", learning: d
                       "sources": [e.title for e in (learning or {}).get(a.skill_id, [])[:2]]})
     data = {"role": role, "their_goal": goal[:500] or None, "strengths": _strengths(skills, gaps),
             "current_levels": {s.name: s.level for s in skills or []}, "slots": slots}
-    text, usage = llm.generate(f"<DATA>\n{json.dumps(data)}\n</DATA>", SYSTEM, max_tokens=4000, json=True, agent="coach")
-    try:
-        out = json.loads(text)["activities"]
-        assert isinstance(out, list) and len(out) == len(p.activities)
-    except Exception:
-        return p, usage
-    acts = []
-    for a, o in zip(p.activities, out):
-        try:
-            steps = [" ".join(str(x).split())[:200] for x in o["steps"]][:5]
-            activity, outcome = " ".join(str(o["activity"]).split())[:240], " ".join(str(o["outcome"]).split())[:180]
-            ok = len(steps) >= 2 and activity and outcome and _weeks_ok(steps, a.day_range)
-        except (KeyError, TypeError):
-            ok = False
-        acts.append(a.model_copy(update={"activity": activity, "steps": steps, "outcome": outcome}) if ok else a)
+    if emit:
+        emit({"t": "plan_start", "slots": [{"days": a.day_range, "skill": a.skill_id, "hours": a.estimated_hours} for a in p.activities]})
+    acts, done, buf, usage = list(p.activities), set(), "", None
+
+    def settle(upto: int | None = None):
+        """Check every finished block (all of them at the end): the AI's version if it passes, else the template."""
+        heads = list(BLOCK.finditer(buf))
+        for k, m in enumerate(heads):
+            i = int(m.group(1)) - 1
+            finished = k + 1 < len(heads) or upto is None
+            if not finished or i in done or not 0 <= i < len(acts):
+                continue
+            done.add(i)
+            o = parse_block(buf[m.end():heads[k + 1].start() if k + 1 < len(heads) else len(buf)])
+            ok = 2 <= len(o["steps"]) and o["activity"] and o["outcome"] and _weeks_ok(o["steps"], acts[i].day_range)
+            if ok:
+                acts[i] = acts[i].model_copy(update=o)
+            if emit:
+                emit({"t": "plan_activity", "slot": i, "ai": bool(ok),
+                      "activity": acts[i].model_dump(include={"day_range", "skill_id", "estimated_hours", "activity", "steps", "outcome"})})
+
+    for piece in llm.generate_stream(f"<DATA>\n{json.dumps(data)}\n</DATA>", SYSTEM, max_tokens=4000, agent="coach"):
+        if "usage" in piece:
+            usage = piece["usage"]
+            continue
+        buf += piece["delta"]
+        if emit:
+            emit({"t": "plan_token", "delta": piece["delta"]})
+        settle(upto=len(buf))
+    settle()
+    if emit:
+        for i in set(range(len(acts))) - done:  # the writer stopped early: these keep the template
+            emit({"t": "plan_activity", "slot": i, "ai": False,
+                  "activity": acts[i].model_dump(include={"day_range", "skill_id", "estimated_hours", "activity", "steps", "outcome"})})
     return p.model_copy(update={"activities": acts}), usage

@@ -159,7 +159,12 @@ def n_pathway(s):
     learning = {k: knowledge.learning_resources(k, 1) for k in need}
     role = s.get("occupation", {}).get("title") or r.target_role
     p = pathway.build(s.get("skill_gaps", []), r.profile.weekly_learning_hours, role, r.scenario, learning, r.profile.skills)
-    p, usage = pathway.personalise(p, role, r.profile.skills, s.get("skill_gaps", []), r.query, learning)
+    try:  # inside a streamed run, the plan is shown to the person as the AI writes it
+        from langgraph.config import get_stream_writer
+        emit = get_stream_writer()
+    except Exception:
+        emit = None
+    p, usage = pathway.personalise(p, role, r.profile.skills, s.get("skill_gaps", []), r.query, learning, emit)
     return {"draft_pathway": p, "learning_evidence": [e for v in learning.values() for e in v], "_usage": [usage]}
 
 
@@ -254,7 +259,8 @@ def run_team(requests: list[Request], max_workers: int = 8) -> dict:
 
 
 def stream(request: Request, conversation: bool = False, question: str | None = None):
-    """Yield ("update", node, partial_state) as each agent finishes, then ("final", None, state).
+    """Yield ("update", node, partial_state) as each agent finishes, ("custom", None, event) for live output while one
+    works (the plan as it is written), then ("final", None, state).
     question: a follow-up asked in a conversation whose earlier run is gone (server restart): the full run
     rebuilds the briefing and the Coach answers the question instead of repeating the summary."""
     global _GRAPH
@@ -263,8 +269,10 @@ def stream(request: Request, conversation: bool = False, question: str | None = 
     start = {"request": request, "conversation": conversation}
     if question:
         start["followup"] = {"changed": ["question"], "question": question}
-    for mode, chunk in _GRAPH.stream(start, stream_mode=["updates", "values"]):
-        if mode == "updates":
+    for mode, chunk in _GRAPH.stream(start, stream_mode=["updates", "values", "custom"]):
+        if mode == "custom":  # an agent's live output (the plan being written)
+            yield "custom", None, chunk
+        elif mode == "updates":
             for node, update in chunk.items():
                 yield "update", node, update or {}
         else:

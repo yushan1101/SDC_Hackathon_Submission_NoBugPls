@@ -20,17 +20,31 @@ def test_ai_writes_the_plan_steps_itself_and_bad_weeks_fall_back(monkeypatch):
     p = pathway.build(gaps, 6, "Data analyst", "assistive", learning, [Skill(name="Excel", level=4)])
     seen = {}
 
-    def fake(prompt, system, **kw):
+    def fake_stream(prompt, system, **kw):  # the model writes plain-text blocks, a few characters at a time
         seen["prompt"] = prompt
         slots = _json.loads(prompt.split("<DATA>\n", 1)[1].rsplit("\n</DATA>", 1)[0])["slots"]
-        out = [{"activity": f"Rebuild your team's weekly Excel report in {s['skill']} with real sales data",
-                "steps": [f"Week {s['weeks'].split('-')[0]}: Pull last month's orders and sketch the report",
-                          f"Week {s['weeks'].split('-')[1]}: Ship it to your manager and compare the time it takes"],
-                "outcome": "A working report your manager uses"} for s in slots]
-        out[-1]["steps"] = ["Week 40: Out of range", "Week 41: Also out"]  # this one must keep its template text
-        return _json.dumps({"activities": out}), None
-    monkeypatch.setattr(llm, "generate", fake)
-    q, _ = pathway.personalise(p, "Data analyst", [Skill(name="Excel", level=4)], gaps, "Move into analytics", learning)
+        blocks = []
+        for n, s in enumerate(slots, 1):
+            lo, hi = s["weeks"].split("-")
+            if n == len(slots):
+                lo, hi = "40", "41"  # out of its phase: this one must keep its template text
+            blocks.append(f"### {n}\nActivity: Rebuild your team's weekly Excel report in {s['skill']} with real sales data\n"
+                          f"- Week {lo}: Pull last month's orders and sketch the report\n"
+                          f"- Week {hi}: Ship it to your manager and compare the time it takes\n"
+                          "Outcome: A working report your manager uses\n")
+        text = "\n".join(blocks)
+        for i in range(0, len(text), 7):
+            yield {"delta": text[i:i + 7]}
+        yield {"usage": None}
+    monkeypatch.setattr(llm, "generate_stream", fake_stream)
+    events = []
+    q, _ = pathway.personalise(p, "Data analyst", [Skill(name="Excel", level=4)], gaps, "Move into analytics", learning, events.append)
+    kinds = [e["t"] for e in events]
+    assert kinds[0] == "plan_start" and kinds.count("plan_token") > 10  # the page sees it being written
+    written = [e for e in events if e["t"] == "plan_activity"]
+    assert sorted(e["slot"] for e in written) == list(range(len(p.activities)))  # every slot is confirmed once
+    assert written[0]["slot"] == 0 and kinds.index("plan_activity") < len(kinds) - len(written)  # the first lands mid-stream
+    assert [e["ai"] for e in sorted(written, key=lambda e: e["slot"])][-1] is False and written[0]["ai"] is True
     assert "Read the ESCO skill guide" not in seen["prompt"] and "Weeks 1-2" not in seen["prompt"]  # no template to copy
     assert "SQL for Data Analysis" in seen["prompt"] and '"strengths": ["Excel"]' in seen["prompt"]
     assert q.activities[0].activity.startswith("Rebuild your team's weekly Excel report") and q.activities[0].steps[0].startswith("Week 1:")
