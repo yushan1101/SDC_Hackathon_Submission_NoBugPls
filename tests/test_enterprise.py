@@ -1,6 +1,7 @@
 """Enterprises (company or school), full profiles, the monthly enterprise subscription, and the admin's per-enterprise
 models and bills."""
 import os
+from datetime import datetime, timezone
 
 import pytest
 
@@ -83,7 +84,7 @@ def test_avatar_goes_to_r2_and_is_private(env, monkeypatch):
     assert c.post("/api/profile/avatar", files={"file": ("x.png", b"not an image", "image/png")}, headers=H).status_code == 422
     png = b"\x89PNG\r\n\x1a\n" + b"0" * 64
     prof = c.post("/api/profile/avatar", files={"file": ("me.png", png, "image/png")}, headers=H).json()
-    assert prof["avatar_url"] == "/api/avatar/stud1" and len(store) == 1 and next(iter(store)).startswith("aiversepulse/avatars/stud1-")
+    assert prof["avatar_url"].startswith("/api/avatar/stud1?v=") and len(store) == 1 and next(iter(store)).startswith("aiversepulse/avatars/stud1-")
     assert c.get("/api/avatar/stud1").content == png
     login(c, "school1")
     assert c.get("/api/avatar/stud1").status_code == 200  # same enterprise
@@ -112,7 +113,7 @@ def test_admin_sees_bills_and_sets_models_per_enterprise(env, monkeypatch):
     api, c = env
     with api.db:
         api.db.execute("INSERT INTO llm_usage(at_utc,username,feature,node,model,calls,input_tokens,output_tokens,est_usd) "
-                       "VALUES(datetime('now'),'stud1','coach','n','m',3,100,50,0.02)")
+                       "VALUES(?,'stud1','coach','n','m',3,100,50,0.02)", (datetime.now(timezone.utc).isoformat(),))  # SQLite and Postgres
         api.db.execute("INSERT INTO model_catalog(spec,label,created_utc) VALUES('openai:gpt-test','GPT test','now') ON CONFLICT DO NOTHING")
     login(c, "school1")
     assert c.get("/api/admin/enterprises").status_code == 403
@@ -126,3 +127,204 @@ def test_admin_sees_bills_and_sets_models_per_enterprise(env, monkeypatch):
     r = c.post("/api/admin/enterprises/school1/models", json={"task": "coach", "spec": "openai:gpt-test"}, headers=H)
     assert r.status_code == 200 and r.json()["models"] == {"coach": "openai:gpt-test"}
     assert c.post("/api/admin/enterprises/school1/models", json={"task": "coach", "spec": ""}, headers=H).json()["models"] == {}
+
+
+def test_stripe_webhook_needs_its_signature_not_the_csrf_header(env, monkeypatch):
+    """Stripe can't send X-AP: the webhook is exempt from the CSRF header and is checked by its signature instead."""
+    import hashlib, hmac, json, time
+    from pydantic import SecretStr
+    api, c = env
+    monkeypatch.setattr(api.cfg, "stripe_webhook_secret", SecretStr("whsec_test"))
+    body = json.dumps({"type": "ping.test", "data": {"object": {}}}).encode()
+    t = str(int(time.time()))
+    sig = hmac.new(b"whsec_test", f"{t}.".encode() + body, hashlib.sha256).hexdigest()
+    ok = c.post("/api/billing/webhook", content=body, headers={"stripe-signature": f"t={t},v1={sig}"})
+    assert ok.status_code == 200 and ok.json() == {"received": True}
+    assert c.post("/api/billing/webhook", content=body, headers={"stripe-signature": f"t={t},v1=deadbeef"}).status_code == 400
+    assert c.post("/api/profile", json={"phone": "123456"}).status_code == 403  # every other POST still needs X-AP
+
+
+def test_admin_lists_gateway_models_and_hr_assigns_one_per_person(env, monkeypatch):
+    api, c = env
+    monkeypatch.setattr(api.llm, "providers", lambda: {"openai": True, "gemini": False})
+    monkeypatch.setattr(api.llm, "gateway_models", lambda refresh=False: ["gpt-test", "grok-mini"])
+    monkeypatch.setattr(api.llm, "usable", lambda spec: True)
+    login(c, "boss")
+    g = c.get("/api/admin/models/gateway").json()
+    assert g["reachable"] and {m["id"]: m["in_catalog"] for m in g["models"]} == {"gpt-test": True, "grok-mini": False}
+    assert c.post("/api/admin/models", json={"spec": "openai:grok-mini", "label": "Grok mini"}, headers=H).status_code == 200
+    with api.db:
+        api.db.execute("INSERT INTO org_models(owner, task, spec) VALUES('school1','coach','openai:gpt-test') ON CONFLICT(owner, task) DO UPDATE SET spec=excluded.spec")
+
+    login(c, "school1")
+    d = c.get("/api/org/members/models").json()
+    assert d["label"] == "Students" and [m["username"] for m in d["members"]] == ["stud1"]
+    assert {o["spec"] for o in d["options"]} >= {"openai:gpt-test", "openai:grok-mini"}
+    assert c.post("/api/org/members/stud1/models", json={"task": "coach", "spec": "openai:not-in-catalog"}, headers=H).status_code == 422
+    assert c.post("/api/org/members/outsider/models", json={"task": "coach", "spec": "openai:grok-mini"}, headers=H).status_code == 404
+    assert c.post("/api/org/members/stud1/models", json={"task": "coach", "spec": "openai:grok-mini"}, headers=H).json()["models"] == {"coach": "openai:grok-mini"}
+
+    # the student's own model wins over the enterprise's; HR keeps the enterprise's
+    login(c, "stud1")
+    assert api._org_models(c.cookies.get(api.COOKIE))["coach"] == "openai:grok-mini"
+    login(c, "school1")
+    assert api._org_models(c.cookies.get(api.COOKIE))["coach"] == "openai:gpt-test"
+    assert c.post("/api/org/members/stud1/models", json={"task": "coach", "spec": ""}, headers=H).json()["models"] == {}
+
+
+def test_hr_usage_ring_counts_the_whole_enterprise_this_month(env, monkeypatch):
+    api, c = env
+    monkeypatch.setattr(api.cfg, "enterprise_ai_budget_usd", 0.10)
+    login(c, "school1")
+    u = c.get("/api/org/usage").json()
+    assert u["calls"] >= 3 and u["ai_usd"] >= 0.02 and 0 <= u["left_pct"] <= 80 and u["budget_usd"] == 0.10
+    assert u["subscription"]["status"] == "active" and u["resets_in_days"] >= 1
+    login(c, "stud1")
+    assert c.get("/api/org/usage").status_code == 403
+
+
+def test_agent_memory_is_per_account_and_carries_across_chats(env, monkeypatch):
+    api, c = env
+    seen = []
+
+    def fake(prompt, system, **kw):
+        seen.append(prompt)
+        return "Start with SQL basics.\nREMEMBER: Wants to become a data analyst by mid-2027\nREMEMBER: my password is hunter2", {"model": "t"}
+    monkeypatch.setattr(api.llm, "generate", fake)
+    login(c, "stud1")
+    c.delete("/api/memory", headers=H)
+    r = c.post("/api/agents/coach/chat", json={"messages": [{"role": "user", "content": "I want to be a data analyst by mid-2027"}]}, headers=H).json()
+    assert r["reply"] == "Start with SQL basics." and "REMEMBER" not in r["reply"]  # memory lines never reach the person
+    facts = c.get("/api/memory").json()["facts"]
+    assert [f["fact"] for f in facts] == ["Wants to become a data analyst by mid-2027"]  # the secret is not stored
+    c.post("/api/agents/coach/chat", json={"messages": [{"role": "user", "content": "What next?"}]}, headers=H)
+    assert "data analyst by mid-2027" in seen[-1]  # a new chat starts from what was learned
+    login(c, "school1")
+    assert c.get("/api/memory").json()["facts"] == []  # one account never sees another's memory
+    assert c.delete(f"/api/memory/{facts[0]['id']}", headers=H).status_code == 404
+    login(c, "stud1")
+    assert c.delete(f"/api/memory/{facts[0]['id']}", headers=H).status_code == 200
+    assert c.get("/api/memory").json()["facts"] == []
+
+
+def test_chat_history_is_per_account_on_the_server(env):
+    api, c = env
+    login(c, "school1")
+    msgs = [{"role": "user", "content": "Admin-only planning question"}, {"role": "assistant", "content": "Answer", "agent": {"id": "team", "name": "Team"}}]
+    assert c.put("/api/chats/chat-hr-0001", json={"messages": msgs}, headers=H).status_code == 200
+    got = c.get("/api/chats/chat-hr-0001").json()
+    assert got["title"] == "Admin-only planning question" and got["messages"][1]["agent"]["id"] == "team"
+    login(c, "stud1")  # the next person in the same browser sees none of it, and cannot overwrite it
+    assert c.get("/api/chats").json()["chats"] == []
+    assert c.get("/api/chats/chat-hr-0001").status_code == 404
+    assert c.put("/api/chats/chat-hr-0001", json={"messages": msgs}, headers=H).status_code == 404
+    assert c.delete("/api/chats/chat-hr-0001", headers=H).status_code == 404
+    login(c, "school1")
+    assert [x["id"] for x in c.get("/api/chats").json()["chats"]] == ["chat-hr-0001"]
+    assert c.delete("/api/chats/chat-hr-0001", headers=H).status_code == 200
+
+
+def test_agent_calls_tools_before_answering(env, monkeypatch):
+    from agents import llm
+    import httpx
+    monkeypatch.setattr(llm, "model_for", lambda agent, org=True: "openai:test-model")
+    monkeypatch.setattr(llm, "api_base", lambda url: "http://gateway.test/v1")
+    replies = iter([
+        {"choices": [{"message": {"content": None, "tool_calls": [{"id": "c1", "type": "function",
+                                                                   "function": {"name": "lookup", "arguments": '{"query": "nurse pay"}'}}]}}], "usage": {}},
+        {"choices": [{"message": {"content": "Nurses earn more this year [source](https://x.test)."}}], "usage": {}}])
+    sent = []
+
+    def post(url, json, **kw):
+        sent.append(json)
+        return httpx.Response(200, json=next(replies), request=httpx.Request("POST", url))
+    monkeypatch.setattr(httpx, "post", post)
+    monkeypatch.setattr(llm.get_settings() if hasattr(llm, "get_settings") else __import__("config.settings", fromlist=["x"]).get_settings(),
+                        "llm_api_key", __import__("pydantic").SecretStr("k"), raising=False)
+    calls = []
+    text, _ = llm.generate_with_tools("q", "sys", {"lookup": ("d", {"type": "object", "properties": {}}, lambda query: {"pay": "up 4%"})},
+                                      on_tool=lambda n, a: calls.append((n, a)))
+    assert text.startswith("Nurses earn more") and calls == [("lookup", {"query": "nurse pay"})]
+    assert sent[1]["messages"][-1] == {"role": "tool", "tool_call_id": "c1", "content": '{"pay": "up 4%"}'}
+
+
+def _png(w=4, h=4, rgb=b"\x30\x60\xc0"):
+    import struct, zlib
+    raw = b"".join(b"\x00" + rgb * w for _ in range(h))
+    chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+
+
+def test_avatar_end_to_end_over_signed_r2_requests(env, monkeypatch):
+    """Upload -> signed PUT to an R2 stand-in -> shown from /api/avatar; a new upload deletes the old file."""
+    import httpx
+    from pydantic import SecretStr
+    import r2_stub
+    api, c = env
+    srv = r2_stub.start()
+    for k, v in {"r2_endpoint": f"http://127.0.0.1:{srv.server_port}", "r2_account_id": "", "r2_access_key_id": r2_stub.ACCESS,
+                 "r2_secret_access_key": SecretStr(r2_stub.SECRET), "r2_bucket": "fixit", "r2_prefix": "aiversepulse/avatars/"}.items():
+        monkeypatch.setattr(api.cfg, k, v)
+    keys = lambda: httpx.get(f"http://127.0.0.1:{srv.server_port}/_keys").json()
+    try:
+        login(c, "stud1")
+        first, second = _png(rgb=b"\xff\x00\x00"), _png(rgb=b"\x00\xff\x00")
+        p1 = c.post("/api/profile/avatar", files={"file": ("a.png", first, "image/png")}, headers=H).json()
+        assert len(keys()) == 1 and keys()[0].startswith("/fixit/aiversepulse/avatars/stud1-")
+        assert c.get("/api/me").json()["avatar_url"] == p1["avatar_url"]  # what the sidebar shows
+        assert c.get(p1["avatar_url"]).content == first
+        old = keys()[0]
+        p2 = c.post("/api/profile/avatar", files={"file": ("b.png", second, "image/png")}, headers=H).json()
+        assert p2["avatar_url"] != p1["avatar_url"]  # a new address, so no browser shows the cached old photo
+        assert keys() != [old] and len(keys()) == 1  # the old photo was deleted from storage
+        assert c.get(p2["avatar_url"]).content == second
+        login(c, "school1")
+        assert c.get(p2["avatar_url"]).content == second  # their HR advisor sees it too
+        monkeypatch.setattr(api.cfg, "r2_secret_access_key", SecretStr("wrong"))  # a bad key is refused by storage, not stored
+        login(c, "stud1")
+        assert c.post("/api/profile/avatar", files={"file": ("c.png", first, "image/png")}, headers=H).status_code == 422
+        assert len(keys()) == 1
+    finally:
+        srv.shutdown()
+
+
+def test_pages_may_show_photos_loaded_as_blobs(env):
+    """Profile photos are fetched with the session and shown from blob: URLs; the CSP must allow that."""
+    api, c = env
+    csp = c.get("/enterprise.html").headers.get("content-security-policy", "")
+    img = next(p for p in csp.split(";") if p.strip().startswith("img-src"))
+    assert "blob:" in img.split()
+
+
+def test_each_user_sees_their_limits_and_the_token_cap_holds(env, monkeypatch):
+    api, c = env
+    login(c, "stud1")
+    u = c.get("/api/me/usage").json()
+    assert {"tokens_used", "tokens_limit", "left_pct", "messages_today", "messages_limit", "resets_in_days"} <= set(u)
+    monkeypatch.setattr(api.cfg, "monthly_tokens_org", max(1, u["tokens_used"]))  # already at this month's allowance
+    monkeypatch.setattr(api.cfg, "monthly_tokens_free", max(1, u["tokens_used"]))
+    with api.db:
+        api.db.execute("INSERT INTO llm_usage(at_utc,username,feature,node,model,calls,input_tokens,output_tokens,est_usd) "
+                       "VALUES(?,'stud1','agent','n','m',1,10,10,0)", (datetime.now(timezone.utc).isoformat(),))
+    r = c.post("/api/agents/coach/chat", json={"messages": [{"role": "user", "content": "hi"}]}, headers=H)
+    assert r.status_code in (402, 429) and "allowance" in r.json()["detail"]
+    assert c.get("/api/me/usage").json()["left_pct"] == 0
+
+
+def test_home_reminds_people_of_their_plan_and_next_step(env):
+    api, c = env
+    from governance import approval
+    acts = [{"day_range": "1-30", "skill_id": "sql", "activity": "Finish the SQL basics course", "estimated_hours": 6},
+            {"day_range": "31-60", "skill_id": "python", "activity": "Automate one report", "estimated_hours": 8}]
+    with api.DB_LOCK:
+        pid = approval.create(api.db, {"status": "draft", "target_role": "2511.1", "activities": acts}, "S-001", "hr")
+        api.db.commit()
+    login(c, "stud1")
+    r = c.get("/api/plans/reminder").json()["plan"]
+    assert r["plan_id"] == pid and r["day"] == 1 and r["pace"] == "not_started" and not r["time_up"]
+    assert r["next"]["activity"] == "Finish the SQL basics course" and r["total"] == 2
+    with api.db:
+        api.db.execute("UPDATE plans SET created_utc=? WHERE plan_id=?", ("2020-01-01T00:00:00+00:00", pid))
+    assert c.get("/api/plans/reminder").json()["plan"]["time_up"]
+    login(c, "boss")
+    assert c.get("/api/plans/reminder").json() == {"plan": None}

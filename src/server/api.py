@@ -28,7 +28,7 @@ from pathlib import Path
 
 import httpx
 import pandas as pd
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request as HttpRequest, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Path as PathParam, Query, Request as HttpRequest, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -40,6 +40,7 @@ from agents import ops
 from agents.pathway import HOURS_PER_LEVEL
 from agents.sdg import goal_meta, role_sdgs
 from agents import catalog, criteria, llm, matcher, quiz, resume
+from agents import tools as agent_tools
 from agents.knowledge import learning_resources, occupation, resolve_occupation, role_requirements, search_occupations
 from config.settings import get_settings
 from core import graph, screening
@@ -48,7 +49,7 @@ from core.team_import import parse_team
 from governance import workforce
 from governance.employee_ids import allocate_ids
 from core.usage import summarize
-from governance import accounts, approval, billing, challenge, deletion, demo_bootstrap, enterprise, otp, plugins, recruiting, reviews, risk
+from governance import accounts, approval, billing, challenge, deletion, demo_bootstrap, enterprise, memory, otp, plugins, recruiting, reviews, risk
 from mcp_server import signals
 from mcp_server.ingest import occupation_url
 from validation.document_guard import fingerprint, fraud_signals, risk as doc_risk
@@ -82,8 +83,11 @@ with DB_LOCK:
                             CREATE TABLE IF NOT EXISTS model_catalog(spec TEXT PRIMARY KEY, label TEXT, created_utc TEXT);
                             CREATE TABLE IF NOT EXISTS agent_log(username TEXT, agent TEXT, at_utc TEXT);
                             CREATE TABLE IF NOT EXISTS org_models(owner TEXT, task TEXT, spec TEXT, PRIMARY KEY(owner, task));
+                            CREATE TABLE IF NOT EXISTS member_models(username TEXT, task TEXT, spec TEXT, set_by TEXT,
+                            PRIMARY KEY(username, task));
                             CREATE TABLE IF NOT EXISTS plan_progress(plan_id TEXT, item TEXT, done_utc TEXT,
                             PRIMARY KEY(plan_id, item));""")  # activities ticked off as done ("<days>:<skill>")
+        memory.init(db)
     interview_store.init(db)
     # demo accounts made before they were linked: the demo employee belongs to the demo HR's organisation
     db.execute("UPDATE users SET invited_by='demo_hr' WHERE username='demo_employee' AND invited_by IS NULL "
@@ -145,9 +149,13 @@ app.add_middleware(SitesCORS, allow_origins=[], allow_credentials=True, allow_me
 
 
 # --- security -------------------------------------------------------------------------------------
+# Server-to-server callbacks that carry no cookies and prove themselves with a signature: Stripe can't add X-AP.
+CSRF_EXEMPT = {"/api/billing/webhook"}
+
+
 @app.middleware("http")
 async def headers(request: HttpRequest, call_next):
-    if request.method in ("POST", "PUT", "DELETE") and request.url.path.startswith("/api/"):
+    if request.method in ("POST", "PUT", "DELETE") and request.url.path.startswith("/api/")             and request.url.path not in CSRF_EXEMPT:
         if request.headers.get("x-ap") != "1":  # custom header => cross-site forms can't post (CSRF)
             return JSONResponse({"detail": "missing X-AP header"}, status_code=403)
         origin = (request.headers.get("origin") or "").rstrip("/")
@@ -159,7 +167,7 @@ async def headers(request: HttpRequest, call_next):
     resp = await call_next(request)
     resp.headers.update({
         "Content-Security-Policy": f"default-src 'self'; script-src 'self' '{_assets()[2]}' https://js.stripe.com; style-src 'self' 'unsafe-inline' "
-                                   "https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.stripe.com; "
+                                   "https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.stripe.com; "
                                    "frame-src https://js.stripe.com https://hooks.stripe.com; media-src 'self' blob:; "  # blob: the read-aloud voice
                                    f"connect-src 'self' https://api.stripe.com; frame-ancestors {cfg.frame_ancestors}; base-uri 'none'; form-action 'self'",
         "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin",
@@ -181,12 +189,18 @@ def _session_token(request: HttpRequest) -> str | None:
 
 
 def _org_models(token: str) -> dict:
-    """{task: model} chosen by the signed-in person's organisation (empty: the admin defaults)."""
+    """{task: model} for the signed-in person: their own model (set by their HR) over their enterprise's (set by the admin
+    or HR); empty = the admin defaults."""
     with DB_LOCK:
         row = db.execute("SELECT s.username, s.role, u.invited_by FROM sessions s LEFT JOIN users u ON u.username=s.username "
                          "WHERE s.token_hash=?", (_hash(token),)).fetchone()
-        owner = (row[0] if row[1] == "hr_advisor" else row[2]) if row else None
-        return dict(db.execute("SELECT task, spec FROM org_models WHERE owner=?", (owner,)).fetchall()) if owner else {}
+        if not row:
+            return {}
+        owner = row[0] if row[1] == "hr_advisor" else row[2]
+        chosen = dict(db.execute("SELECT task, spec FROM org_models WHERE owner=?", (owner,)).fetchall()) if owner else {}
+        if row[1] == "employee":
+            chosen |= dict(db.execute("SELECT task, spec FROM member_models WHERE username=?", (row[0],)).fetchall())
+        return chosen
 
 
 def _in_context(fn):
@@ -1275,6 +1289,8 @@ def interview_answer(interview_id: str, body: InterviewAnswer, user: dict = Depe
         result = interview_service.persist_answer(db, latest, current, answer_text, prepared)
     if (result.get("question") or {}).get("text"):
         _speech(result["question"]["text"])
+    if result.get("reply"):
+        _speech(result["reply"])
     if result["status"] == "completed":
         report = result["report"]
         for recommendation in report.get("recommendations", [])[:3]:
@@ -1474,6 +1490,30 @@ def plans(user: dict = Depends(current_user)):
     with DB_LOCK:
         rows = approval.list_plans(db, user)
         return [p | {"review": reviews.get(db, p["plan_id"])} for p in rows] if user["role"] == "hr_advisor" else rows
+
+
+@app.get("/api/plans/reminder")
+def plan_reminder(user: dict = Depends(current_user)):
+    """The home-page nudge: the person's newest plan, how far into its 90 days they are, the pace, and the next step
+    they haven't ticked (in the phase they should be on now). {"plan": null} when they have none."""
+    with DB_LOCK:
+        rows = [p for p in approval.list_plans(db, user) if p["status"] != "rejected"]
+        if not rows:
+            return {"plan": None}
+        p = max(rows, key=lambda r: r["created_utc"])
+        plan = (approval.latest(db, p["plan_id"]) or {}).get("plan") or {}
+        done_rows = db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (p["plan_id"],)).fetchall()
+    summary = _progress_summary(plan, done_rows, p["created_utc"])
+    done = {item for item, _ in done_rows}
+    acts = plan.get("activities", [])
+    phase_now = next((a.get("day_range") for a in acts if int(str(a.get("day_range", "1-30")).split("-")[-1]) >= summary["day"]), None)
+    todo = [a for a in acts if f"{a.get('day_range')}:{a.get('skill_id')}" not in done]
+    nxt = next((a for a in todo if a.get("day_range") == phase_now), todo[0] if todo else None)
+    elapsed_over = summary["day"] >= 90 and summary["pace"] != "done"
+    return {"plan": {"plan_id": p["plan_id"], "title": (occupation(p["target_role"]) or {}).get("title", p["target_role"]),
+                     "from_hr": p.get("audience") == "hr", **summary, "time_up": elapsed_over,
+                     "next": {"days": nxt.get("day_range"), "skill": nxt.get("skill_id"), "activity": nxt.get("activity"),
+                              "hours": nxt.get("estimated_hours")} if nxt else None}}
 
 
 @app.get("/api/reviews")
@@ -2696,6 +2736,69 @@ def admin_model_remove(spec: str, user: dict = Depends(need("admin"))):
     return {"ok": True}
 
 
+@app.get("/api/admin/models/gateway")
+def admin_gateway_models(refresh: bool = False, user: dict = Depends(need("admin"))):
+    """What the OpenAI-compatible gateway offers right now, marked when it is already in the catalog."""
+    if not llm.providers()["openai"]:
+        return {"configured": False, "models": []}
+    ids = llm.gateway_models(refresh)
+    with DB_LOCK:
+        have = {r[0] for r in db.execute("SELECT spec FROM model_catalog")}
+    return {"configured": True, "reachable": bool(ids), "models": [{"id": i, "spec": f"openai:{i}", "in_catalog": f"openai:{i}" in have} for i in ids]}
+
+
+# ---------------------------------------------------------------- HR: a model per employee or student
+def _assignable(spec: str) -> bool:
+    return bool(db.execute("SELECT 1 FROM model_catalog WHERE spec=?", (spec,)).fetchone()) and llm.usable(spec)
+
+
+@app.get("/api/org/usage")
+def org_usage(user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        return enterprise.usage(db, cfg, user["username"])
+
+
+@app.get("/api/org/members/models")
+def member_models_get(user: dict = Depends(need("hr_advisor"))):
+    with DB_LOCK:
+        members = db.execute("SELECT username, COALESCE(display_name, username) FROM users WHERE invited_by=? AND role='employee' "
+                             "ORDER BY 2", (user["username"],)).fetchall()
+        chosen: dict = {}
+        for u, task, spec in db.execute("SELECT m.username, m.task, m.spec FROM member_models m JOIN users u ON u.username=m.username "
+                                        "WHERE u.invited_by=?", (user["username"],)):
+            chosen.setdefault(u, {})[task] = spec
+        org = dict(db.execute("SELECT task, spec FROM org_models WHERE owner=?", (user["username"],)).fetchall())
+        cat = db.execute("SELECT spec, label FROM model_catalog ORDER BY label").fetchall()
+        label = enterprise.member_label(db, user["username"], plural=True)
+    return {"tasks": llm.TASKS, "label": label,
+            "enterprise": {t: org.get(t) or llm.model_for(t, org=False) or None for t in llm.TASKS},
+            "options": [{"spec": s, "label": lb} for s, lb in cat if llm.usable(s)],
+            "members": [{"username": u, "name": n, "models": chosen.get(u, {})} for u, n in members]}
+
+
+class MemberModelIn(BaseModel):
+    task: str = Field(max_length=40)
+    spec: str = Field(default="", max_length=90)  # "" = follow the enterprise
+
+
+@app.post("/api/org/members/{username}/models")
+def member_models_set(username: str, body: MemberModelIn, user: dict = Depends(need("hr_advisor"))):
+    if body.task not in llm.TASKS:
+        raise HTTPException(422, "unknown task")
+    with DB_LOCK:
+        if not db.execute("SELECT 1 FROM users WHERE username=? AND invited_by=? AND role='employee'", (username, user["username"])).fetchone():
+            raise HTTPException(404, "not one of your people")
+        if body.spec and not _assignable(body.spec):
+            raise HTTPException(422, "that model is not in the admin's catalog or has no key configured")
+        with db:
+            if body.spec:
+                db.execute("INSERT INTO member_models(username, task, spec, set_by) VALUES(?,?,?,?) ON CONFLICT(username, task) "
+                           "DO UPDATE SET spec=excluded.spec, set_by=excluded.set_by", (username, body.task, body.spec, user["username"]))
+            else:
+                db.execute("DELETE FROM member_models WHERE username=? AND task=?", (username, body.task))
+        return {"models": dict(db.execute("SELECT task, spec FROM member_models WHERE username=?", (username,)).fetchall())}
+
+
 @app.get("/api/org/models")
 def org_models_get(user: dict = Depends(need("hr_advisor"))):
     with DB_LOCK:
@@ -2712,14 +2815,8 @@ class OrgModelIn(BaseModel):
 
 @app.post("/api/org/models")
 def org_models_set(body: OrgModelIn, user: dict = Depends(need("hr_advisor"))):
-    with DB_LOCK, db:
-        if not body.spec:
-            db.execute("DELETE FROM org_models WHERE owner=? AND task=?", (user["username"], body.task))
-            return {"task": body.task, "spec": None}
-        if not db.execute("SELECT 1 FROM model_catalog WHERE spec=?", (body.spec,)).fetchone() or not llm.usable(body.spec):
-            raise HTTPException(422, "Pick a model from the list.")
-        db.execute("INSERT INTO org_models(owner, task, spec) VALUES(?,?,?) ON CONFLICT(owner, task) DO UPDATE SET spec=excluded.spec", (user["username"], body.task, body.spec))
-    return {"task": body.task, "spec": body.spec}
+    # the enterprise's model per task is the admin's choice (Admin > Enterprises); HR chooses per person instead
+    raise HTTPException(403, "Your administrator sets your organisation's models. Choose a model per person on their page.")
 
 
 # --- voice and plain-language features (paid plans) -------------------------------------------------------
@@ -2957,6 +3054,34 @@ def _agent_context(agent: dict, user: dict, profile: dict | None) -> dict:
     return {"target_job": str(p.get("target_title") or "")[:80] or None, "my_skills": skills, "my_plans": _my_plans(user)}
 
 
+def _token_limit(plan: str) -> int:
+    return {"free": cfg.monthly_tokens_free, "pro": cfg.monthly_tokens_pro}.get(plan, cfg.monthly_tokens_org)
+
+
+def _my_usage(user: dict) -> dict:
+    """The signed-in person's limits and what they have used: AI tokens this month, agent messages today, and (free
+    plan) new plans this month."""
+    plan = _plan(user)
+    now_ = datetime.now(timezone.utc)
+    month, today = now_.strftime("%Y-%m"), now_.date().isoformat()
+    with DB_LOCK:
+        tokens = db.execute("SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM llm_usage WHERE username=? AND substr(at_utc,1,7)=?",
+                            (user["username"], month)).fetchone()[0]
+        messages = db.execute("SELECT COUNT(*) FROM agent_log WHERE username=? AND substr(at_utc,1,10)=?", (user["username"], today)).fetchone()[0]
+        plans = db.execute("SELECT COUNT(*) FROM briefing_log WHERE username=? AND substr(at_utc,1,7)=?", (user["username"], month)).fetchone()[0]
+    limit = _token_limit(plan)
+    nxt = (now_.replace(day=1) + timedelta(days=32)).replace(day=1)
+    return {"plan": plan, "month": month, "tokens_used": int(tokens), "tokens_limit": limit,
+            "left_pct": max(0, round(100 * (1 - tokens / limit))) if limit else 0, "resets_in_days": max(1, (nxt - now_).days + 1),
+            "messages_today": messages, "messages_limit": AGENT_DAILY.get(plan, AGENT_DAILY_MAX),
+            "plans_this_month": plans, "plans_limit": cfg.free_monthly_briefings if plan == "free" else None}
+
+
+@app.get("/api/me/usage")
+def my_usage(user: dict = Depends(current_user)):
+    return _my_usage(user)
+
+
 @app.post("/api/agents/{agent_id}/chat")
 def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_user)):
     # "auto": the one agent people talk to; it hands each message to the right specialist
@@ -2966,6 +3091,11 @@ def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_us
         raise HTTPException(404, "No such agent for your account.")
     if body.messages[-1].role != "user":
         raise HTTPException(422, "The last message must be yours.")
+    mine = _my_usage(user)
+    if mine["tokens_used"] >= mine["tokens_limit"]:
+        raise HTTPException(402 if mine["plan"] == "free" else 429,
+                            f"You've used this month's AI allowance ({mine['tokens_limit']:,} tokens). It resets in {mine['resets_in_days']} days."
+                            + (" Pro has more. See plans to upgrade." if mine["plan"] == "free" else ""))
     limit = AGENT_DAILY.get(_plan(user), AGENT_DAILY_MAX)
     today = datetime.now(timezone.utc).date().isoformat()
     with DB_LOCK, db:
@@ -2982,14 +3112,96 @@ def agent_chat(agent_id: str, body: AgentChatIn, user: dict = Depends(current_us
             return {"reply": act["reply"], "model": None, "agent": {"id": "posts", "name": catalog.BY_ID["posts"]["name"]},
                     "proposal": act["proposal"], "link": act.get("link")}
     context = _agent_context(agent, user, body.profile)
-    talk = "\n".join(f"{'Person' if m.role == 'user' else 'You'}: {m.content}" for m in body.messages[-12:])
-    text, usage = llm.generate(f"<CONTEXT>\n{json.dumps(context, ensure_ascii=False)[:24000]}\n</CONTEXT>\n<CONVERSATION>\n{talk}\n</CONVERSATION>\n"
-                               "Reply to the person's last message.", catalog.system_prompt(agent), max_tokens=700, agent=agent["task"])
+    talk = "\n".join(f"{'Person' if m.role == 'user' else 'You'}: {m.content}" for m in body.messages[-24:])
+    with DB_LOCK, db:
+        remembered = memory.for_prompt(db, user["username"])
+    used = []  # the tools the agent called, shown under the reply
+    text, usage = llm.generate_with_tools(
+        f"{remembered}<CONTEXT>\n{json.dumps(context, ensure_ascii=False)[:24000]}\n</CONTEXT>\n"
+        f"<CONVERSATION>\n{talk}\n</CONVERSATION>\nReply to the person's last message.",
+        f"{catalog.system_prompt(agent)} Facts returned by your tools count as context too. "
+        f"{agent_tools.PROMPT.format(today=today)} {memory.PROMPT}",
+        agent_tools.TOOLS, max_tokens=1200, agent=agent["task"],
+        on_tool=lambda name, args: used.append({"tool": name, "query": str(args.get("query") or args.get("url") or args.get("role_id") or "")[:120]}))
     if usage:
         _record_usage(user["username"], f"agent:{agent_id}", usage)
     if not text:
         raise HTTPException(503, "The agent can't answer right now. Please try again in a moment.")
-    return {"reply": text.strip()[:6000], "model": (usage or {}).get("model"), "agent": {"id": agent["id"], "name": agent["name"]}}
+    text, learned, forget = memory.split(text)
+    if learned or forget:
+        with DB_LOCK, db:
+            memory.apply(db, user["username"], agent["id"], learned, forget)
+            no_wait(db)
+    return {"reply": text.strip()[:6000], "remembered": learned, "tools": used[:8], "model": (usage or {}).get("model"), "agent": {"id": agent["id"], "name": agent["name"]}}
+
+
+# --- what the agent remembers about the signed-in person (theirs only) --------------------------------------
+@app.get("/api/memory")
+def memory_list(user: dict = Depends(current_user)):
+    with DB_LOCK:
+        return {"facts": memory.recall(db, user["username"])}
+
+
+@app.delete("/api/memory/{fact_id}")
+def memory_forget(fact_id: int, user: dict = Depends(current_user)):
+    with DB_LOCK, db:
+        if not memory.forget_one(db, user["username"], fact_id):
+            raise HTTPException(404, "Not in your memory.")
+    return {"ok": True}
+
+
+@app.delete("/api/memory")
+def memory_clear(user: dict = Depends(current_user)):
+    with DB_LOCK, db:
+        return {"removed": memory.clear(db, user["username"])}
+
+
+# --- chat history: the person's own conversations, kept on the server --------------------------------------
+CHAT_ID = r"^[A-Za-z0-9-]{8,40}$"
+
+
+class SavedMsg(BaseModel):
+    model_config = {"extra": "allow"}  # the agent label, proposal, link and remembered facts drawn with a reply
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(max_length=8000)
+
+
+class ChatSaveIn(BaseModel):
+    messages: list[SavedMsg] = Field(max_length=80)
+
+
+@app.get("/api/chats")
+def chats_list(user: dict = Depends(current_user)):
+    with DB_LOCK:
+        return {"chats": memory.chats(db, user["username"])}
+
+
+@app.get("/api/chats/{chat_id}")
+def chats_get(chat_id: str = PathParam(pattern=CHAT_ID), user: dict = Depends(current_user)):
+    with DB_LOCK:
+        c = memory.chat(db, user["username"], chat_id)
+    if not c:
+        raise HTTPException(404, "No such chat.")
+    return c
+
+
+@app.put("/api/chats/{chat_id}")
+def chats_save(body: ChatSaveIn, chat_id: str = PathParam(pattern=CHAT_ID), user: dict = Depends(current_user)):
+    msgs = [m.model_dump() for m in body.messages]
+    if len(json.dumps(msgs)) > 400_000:
+        raise HTTPException(413, "This chat is too long to save. Start a new chat.")
+    with DB_LOCK, db:
+        if not memory.save_chat(db, user["username"], chat_id, msgs):
+            raise HTTPException(404, "No such chat.")
+    return {"ok": True}
+
+
+@app.delete("/api/chats/{chat_id}")
+def chats_delete(chat_id: str = PathParam(pattern=CHAT_ID), user: dict = Depends(current_user)):
+    with DB_LOCK, db:
+        if not memory.delete_chat(db, user["username"], chat_id):
+            raise HTTPException(404, "No such chat.")
+    return {"ok": True}
 
 
 # --- public application link (no account; consent required) --------------------------------------------------
