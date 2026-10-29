@@ -448,3 +448,54 @@ html[data-product="hr"] .review-entry > .queue-item { grid-column: 2; grid-row: 
 html[data-product="hr"] .review-entry > .review-menu { grid-column: 3; grid-row: 1; }
 html[data-product="hr"] .review-entry > .rv-check { align-self: center; }
 html[data-product="hr"] .rv-head { background: var(--card-fill); border-radius: 10px 10px 0 0; z-index: 2; }
+/* sidebar icons never shrink: when the rail is narrower than its labels (mid-collapse, in-between widths) the labels clip, not the icons */
+html[data-product="hr"] .rail :is(a, .rail-group-btn, .hr-account-btn, .admin-nav-link) > svg { flex: none; }
+html[data-product="hr"] .rail :is(a, .rail-group-btn, .hr-account-btn, .admin-nav-link) .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* account: photo (or initials) on the rail button; a dashboard-style menu */
+html[data-product="hr"] .u-avatar { display: grid; place-items: center; flex: none; overflow: hidden; border-radius: 50%; background: var(--card-fill-deep); color: var(--owl-ink); font: 600 11px var(--font-ui); }
+html[data-product="hr"] .u-avatar img { width: 100%; height: 100%; object-fit: cover; }
+html[data-product="hr"] .u-avatar.sm { width: 28px; height: 28px; }
+html[data-product="hr"] .u-avatar.lg { width: 44px; height: 44px; font-size: 15px; }
+html[data-product="hr"] .hr-account-btn { height: auto; min-height: 44px; padding: 6px 8px; gap: 10px; }
+html[data-product="hr"] .hr-account-btn .acct-lbl { display: grid; text-align: left; line-height: 1.25; }
+html[data-product="hr"] .hr-account-btn .acct-lbl b { font-size: 13.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+html[data-product="hr"] .hr-account-btn .acct-lbl small { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+html[data-product="hr"] .hr-shell.is-sidebar-collapsed .hr-account-btn .acct-lbl { display: none; }
+html[data-product="hr"] .hr-account-menu { width: 280px; padding: 8px; border: 0; border-radius: 14px; background: oklch(1 0 0);
+  box-shadow: 0 2px 6px oklch(0.25 0.04 262 / 0.08), 0 22px 48px -20px oklch(0.25 0.06 262 / 0.4); }
+html[data-product="hr"] .hr-account-who { display: flex; align-items: center; gap: 12px; padding: 10px 10px 12px; margin-bottom: 4px; border-radius: 10px; background: var(--card-fill); }
+html[data-product="hr"] .hr-account-who > div { display: grid; min-width: 0; line-height: 1.3; }
+html[data-product="hr"] .hr-account-who b { font-size: 14px; }
+html[data-product="hr"] .hr-account-who .muted { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-product="hr"] .acct-role { margin-top: 4px; justify-self: start; padding: 1px 8px; border-radius: 99px; background: oklch(1 0 0); color: var(--owl-ink); font-size: 11.5px; font-weight: 500; }
+html[data-product="hr"] .acct-group { display: grid; gap: 2px; }
+html[data-product="hr"] .hr-account-menu :is(a, button) { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: 500 13.5px var(--font-ui); text-align: left; text-decoration: none; cursor: pointer; }
+html[data-product="hr"] .hr-account-menu :is(a, button) > span { display: grid; line-height: 1.3; }
+html[data-product="hr"] .hr-account-menu small { font-size: 11.5px; font-weight: 400; color: var(--ink-2); }
+html[data-product="hr"] .hr-account-menu :is(a, button) svg { width: 17px; height: 17px; flex: none; color: var(--ink-2); }
+html[data-product="hr"] .hr-account-menu :is(a, button):hover { background: var(--card-fill); }
+html[data-product="hr"] .hr-account-menu :is(a, button):hover svg { color: var(--accent); }
+html[data-product="hr"] .acct-sep { height: 1px; margin: 6px 4px; background: oklch(0.94 0.012 263); }
+html[data-product="hr"] .hr-account-menu .acct-signout { color: var(--danger); }
+html[data-product="hr"] .hr-account-menu .acct-signout svg { color: var(--danger); }
+
+/* review page: a title like every other page, a white toolbar (search + filters), then the rows as soft blue cards */
+html[data-product="hr"] nav.queue { background: transparent; padding: 0; border-radius: 0; }
+html[data-product="hr"] .rv-head { position: static; background: transparent; padding: 0 2px 14px; gap: 12px; border-radius: 0; }
+html[data-product="hr"] .rv-head strong { font: 600 26px/1.15 var(--font-ui); letter-spacing: -0.025em; color: var(--ink); }
+html[data-product="hr"] .rv-head .rv-all input { width: 16px; height: 16px; accent-color: var(--accent); }
+html[data-product="hr"] .rv-tools { margin: 0; padding: 12px 12px 6px; border-radius: 12px 12px 0 0; background: oklch(1 0 0);
+  box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.05); }
+html[data-product="hr"] nav.queue .rv-tools input.rv-search { margin: 0; width: 100%; background: var(--card-fill); border: 0; min-height: 38px; font-size: 14px; }
+html[data-product="hr"] .rv-filters { margin: 0 0 12px; padding: 6px 12px 12px; border-radius: 0 0 12px 12px; background: oklch(1 0 0); }
+html[data-product="hr"] .rv-chip { background: var(--card-fill); }
+html[data-product="hr"] .rv-chip:hover { background: var(--card-fill-deep); }
+html[data-product="hr"] .rv-chip[aria-pressed="true"] { background: var(--accent); color: oklch(1 0 0); }
+html[data-product="hr"] .review-entry { margin-top: 6px; background: var(--card-fill); }
+html[data-product="hr"] .review-entry:hover { background: var(--card-fill-deep); }
+html[data-product="hr"] .review-entry:has(.queue-item[aria-current="true"]) { background: oklch(1 0 0); box-shadow: inset 0 0 0 1.5px var(--accent), 0 6px 18px -12px oklch(0.4 0.12 263 / 0.45); }
+html[data-product="hr"] .rv-avatar { background: oklch(1 0 0); }
+html[data-product="hr"] .rv-main .id, html[data-product="hr"] .rv-main .l2 { font-family: var(--font-ui); }
+html[data-product="hr"] .rv-progress { background-image: linear-gradient(oklch(1 0 0), oklch(1 0 0)); }
+html[data-product="hr"] .hr-shell:not(.is-sidebar-collapsed) .hr-rail .hr-account-btn .acct-lbl { display: grid; min-width: 0; }

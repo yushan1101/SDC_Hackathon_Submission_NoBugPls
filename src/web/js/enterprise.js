@@ -1,7 +1,7 @@
 // AiversePulse Enterprise (HR advisors): overview, upload + live team run, review queue, plans register.
 import "./motion.js";  // GSAP animations for whatever the app renders
 import { jobIcon } from "./jobicons.js";
-import { api, stream, h, $, icon, toast, fmtTime, ApiError, SCENARIO_HELP } from "./lib.js";
+import { api, apiBlobUrl, stream, h, $, icon, toast, fmtTime, ApiError, SCENARIO_HELP } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
 import { gapsBlock, comparisonBlock, outlookBlock, planBlock, historyBlock, sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { openingsView, openingDetail, signalsView } from "./recruit.js";
@@ -113,17 +113,29 @@ function shell() {
     sidebarToggle.setAttribute("aria-label", sidebarExpanded ? "Collapse sidebar" : "Expand sidebar");
     sidebarToggle.title = sidebarExpanded ? "Collapse sidebar" : "Expand sidebar";
   };
-  // The person's menu: a small window that pops up from their name at the foot of the rail.
-  const name = S.me.display_name || "Account";
+  // The person's menu, as on any dashboard: their photo and details on top, then settings, then sign out.
+  const name = S.me.display_name || S.me.username || "Account";
+  const ent = S.me.enterprise;
   const close = () => account.hidePopover?.();
+  const avatar = (cls) => {  // photo when they have one, initials until it loads (or if they don't)
+    const el = h("span", { class: `u-avatar ${cls}`, "aria-hidden": "true" }, name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase());
+    if (S.me.avatar_url) apiBlobUrl(S.me.avatar_url).then((u) => { if (u) el.replaceChildren(h("img", { src: u, alt: "" })); });
+    return el;
+  };
+  const item = (href, ic, label, hint) => h("a", { href, "data-route": href, onclick: close }, icon(ic), h("span", {}, label, hint ? h("small", {}, hint) : null));
   const account = h("div", { id: "hr-account", class: "hr-account-menu", popover: "auto", "aria-label": "Account" },
-    h("div", { class: "hr-account-who" }, h("span", { class: "rv-avatar", "aria-hidden": "true" }, name.slice(0, 2).toUpperCase()),
-      h("div", {}, h("b", {}, name), h("span", { class: "muted" }, "HR advisor"))),
-    h("a", { href: "#/models", "data-route": "#/models", onclick: close }, icon("model"), "AI models"),
-    h("a", { href: "#/account", "data-route": "#/account", onclick: close }, icon("user"), "Plan & billing"),
-    h("button", { type: "button", onclick: () => { close(); signOut(); } }, icon("out"), "Sign out"));
+    h("div", { class: "hr-account-who" }, avatar("lg"),
+      h("div", {}, h("b", {}, name), h("span", { class: "muted" }, S.me.email || S.me.username),
+        h("span", { class: "acct-role" }, ent && ent.name !== name ? `HR advisor · ${ent.name}` : "HR advisor"))),
+    h("div", { class: "acct-group" },
+      item("#/account", "user", "Profile & settings", "Photo, details, email"),
+      item("#/account", "nav-payments", "Plan & billing", "Enterprise subscription"),
+      item("#/models", "nav-models", "AI models", "What your organisation uses")),
+    h("div", { class: "acct-sep", role: "separator" }),
+    h("button", { type: "button", class: "acct-signout", onclick: () => { close(); signOut(); } }, icon("nav-signout"), h("span", {}, "Sign out")));
   const accountBtn = h("button", { type: "button", class: "rail-group-btn hr-account-btn", popovertarget: "hr-account", "aria-haspopup": "true", title: name },
-    icon("user"), h("span", { class: "lbl" }, name), h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
+    avatar("sm"), h("span", { class: "lbl acct-lbl" }, h("b", {}, name), h("small", {}, ent && ent.name !== name ? ent.name : "HR advisor")),
+    h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
   account.addEventListener("beforetoggle", (e) => {  // pop up above the button, or beside it when the rail is icon-only
     if (e.newState !== "open") return;
     const r = accountBtn.getBoundingClientRect(), side = shellEl.classList.contains("is-sidebar-collapsed");
