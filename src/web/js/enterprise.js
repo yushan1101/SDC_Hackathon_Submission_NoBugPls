@@ -309,7 +309,7 @@ function needsPanel() {
     h("div", { class: "pad" }, S.needs.length ? h("div", { class: "bars" }, S.needs.slice(0, 10).map((n) => h("div", { class: "bar-row" },
       h("span", {}, n.skill_id), h("div", { class: "track" }, h("div", { class: "fill", style: { transform: `scaleX(${n.employees_with_gap / max})` } })),
       h("span", { class: "num" }, n.employees_with_gap))))
-      : h("div", { class: "empty-state" }, h("span", { class: "stat-ic" }, icon("upload")), h("p", {}, "No team analysed yet. Select Analyse team to start."))));
+      : h("div", { class: "empty-state" }, h("span", { class: "stat-ic" }, icon("check")), h("p", {}, "No skill gaps identified in this run."))));
 }
 
 function rosterTable() {
@@ -430,7 +430,9 @@ function runView(main) {
     S.running = true; runBtn.disabled = true;
     presetBtn.disabled = true;
     S.rows = new Map(); S.needs = [];
-    const redraw = () => live.replaceChildren(needsPanel(), rosterTable() || h("p", { class: "muted" }, "Starting…"));
+    let prioritiesReady = false;
+    const redraw = () => live.replaceChildren(...(prioritiesReady ? [needsPanel()] : []),
+      rosterTable() || h("p", { class: "muted" }, "Starting…"));
     redraw();
     let raf = 0;
     const soon = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(redraw); };
@@ -442,10 +444,15 @@ function runView(main) {
         else if (ev.t === "tick") S.rows.get(ev.id)?.ticks.add(ev.node);
         else if (ev.t === "employee") Object.assign(S.rows.get(ev.id), ev, { status: ev.error ? "flagged" : ev.status, ticks: new Set(AGENTS) });
         else if (ev.t === "needs") S.needs = ev.data;
-        else if (ev.t === "done") toast(ev.flagged.length ? `${ev.flagged.length} drafts flagged for manual fixes` : "All drafts are ready for review");
+        else if (ev.t === "done") {
+          prioritiesReady = true;
+          toast(ev.flagged.length ? `${ev.flagged.length} drafts flagged for manual fixes` : "All drafts are ready for review");
+        }
         soon();
       });
       await refreshPlans();
+      cancelAnimationFrame(raf);
+      redraw();
       live.append(h("div", { class: "run-actions" }, h("a", { class: "btn primary", href: "#/review" }, "Open review queue"),
         h("a", { class: "btn", href: "#/heatmap" }, icon("nav-heatmap"), "See it on the heatmap")));
     } catch (e) {
