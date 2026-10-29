@@ -290,16 +290,16 @@ def test_plan_diagrams_follow_the_saved_plan_and_stay_private(client):
     body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}
     pid = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))[-1]["plan_id"]
     d = client.get(f"/api/plans/{pid}/diagrams").json()
-    assert [x["key"] for x in d["diagrams"]] == ["timeline", "branch", "deps", "gaps", "skillmap", "effort"]
+    assert [x["key"] for x in d["diagrams"]] == ["branch", "timeline", "deps", "gaps", "skillmap", "effort"]
     scheduled = {a["skill_id"] for a in client.get(f"/api/plans/{pid}").json()["plan"]["activities"]}
     assert {s["name"] for s in d["plan"]["skills"]} == scheduled
-    assert d["diagrams"][0]["code"].startswith("gantt") and d["plan"]["learner"]["hours_per_week"] == 6
+    assert d["diagrams"][1]["code"].startswith("gantt") and d["plan"]["learner"]["hours_per_week"] == 6
     assert any("could not be generated" in n for n in d["notes"])  # no LLM under test: drawn without prerequisites
     # generated from the plan, not stored: editing the plan (a new version) changes the diagrams
     acts = client.get(f"/api/plans/{pid}").json()["plan"]["activities"]
     assert client.post(f"/api/plans/{pid}/edit", json={"activities": acts[:-1]}, headers={"X-AP": "1"}).status_code == 200
     after = client.get(f"/api/plans/{pid}/diagrams").json()
-    tasks = lambda x: [l for l in x["diagrams"][0]["code"].splitlines() if l.startswith("    ") and "milestone" not in l]
+    tasks = lambda x: [l for l in next(g for g in x["diagrams"] if g["key"] == "timeline")["code"].splitlines() if l.startswith("    ") and "milestone" not in l]
     effort = lambda x: json.loads(next(g for g in x["diagrams"] if g["key"] == "effort")["code"])["data"]["datasets"][0]["data"]
     phase = ["1-30", "31-60", "61-90"].index(acts[-1]["day_range"])
     assert len(tasks(after)) == len(tasks(d)) - 1 and effort(after)[phase] < effort(d)[phase]

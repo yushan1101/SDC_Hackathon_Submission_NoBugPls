@@ -1,26 +1,3 @@
-## timeline
-
-gantt
-  title Data 'analyst' junior · 90-day roadmap
-  dateFormat YYYY-MM-DD
-  axisFormat %b %d
-  section Days 1-30 · Foundation
-    Skill 1 :p1_s1, 2026-01-05, 30d
-    Skill 2 :p1_s2, 2026-01-05, 30d
-    Clean a dataset - done :milestone, m1, 2026-02-03, 0d
-  section Days 31-60 · Practice
-    Skill 2 :p2_s2, 2026-02-04, 30d
-    Skill 3 :p2_s3, 2026-02-04, 30d
-    Dashboard v1 shipped :milestone, m2, 2026-03-05, 0d
-  section Days 61-90 · Portfolio
-    Skill 3 :p3_s3, 2026-03-06, 30d
-    Portfolio 1 :milestone, m3, 2026-04-04, 0d
-  click p1_s1 call showSkill("s1")
-  click p1_s2 call showSkill("s2")
-  click p2_s2 call showSkill("s2")
-  click p2_s3 call showSkill("s3")
-  click p3_s3 call showSkill("s3")
-
 ## branch
 
 flowchart LR
@@ -53,6 +30,29 @@ flowchart LR
   classDef phase fill:#e6edff,stroke:#2a5bd7,color:#13254f
   classDef goal fill:#f3f0ff,stroke:#7a5ccf,color:#2c1f57
   classDef later fill:#f1f2f5,stroke:#9aa1b2,color:#3b4252
+  click p1_s1 call showSkill("s1")
+  click p1_s2 call showSkill("s2")
+  click p2_s2 call showSkill("s2")
+  click p2_s3 call showSkill("s3")
+  click p3_s3 call showSkill("s3")
+
+## timeline
+
+gantt
+  title Data 'analyst' junior · 90-day roadmap
+  dateFormat YYYY-MM-DD
+  axisFormat %b %d
+  section Days 1-30 · Foundation
+    Skill 1 :p1_s1, 2026-01-05, 30d
+    Skill 2 :p1_s2, 2026-01-05, 30d
+    Clean a dataset - done :milestone, m1, 2026-02-03, 0d
+  section Days 31-60 · Practice
+    Skill 2 :p2_s2, 2026-02-04, 30d
+    Skill 3 :p2_s3, 2026-02-04, 30d
+    Dashboard v1 shipped :milestone, m2, 2026-03-05, 0d
+  section Days 61-90 · Portfolio
+    Skill 3 :p3_s3, 2026-03-06, 30d
+    Portfolio 1 :milestone, m3, 2026-04-04, 0d
   click p1_s1 call showSkill("s1")
   click p1_s2 call showSkill("s2")
   click p2_s2 call showSkill("s2")

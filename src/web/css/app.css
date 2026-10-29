@@ -3904,15 +3904,15 @@ pre { max-width: 100%; overflow-x: auto; }
 .pd-tabs { display: flex; flex-wrap: wrap; width: fit-content; max-width: 100%; }
 .pd-tabs button { flex: 0 0 auto; white-space: nowrap; }
 .pd-tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
-.pd-body { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; align-items: start; }
-@container (max-width: 760px) { .pd-body { grid-template-columns: 1fr; } }
+.pd-body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+@container (max-width: 820px) { .pd-body { grid-template-columns: 1fr; } }
 .pd-stage { min-width: 0; display: grid; gap: 8px; }
 .pd-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .pd-dl { display: flex; gap: 6px; }
 .pd-mm { overflow-x: auto; } .pd-mm svg { height: auto; }
 .pd-canvas { position: relative; height: 380px; }
-.pd-side { border: 1px solid var(--rule); border-radius: var(--radius); padding: 12px; display: grid; gap: 6px; font-size: 14px; }
-.pd-side h5 { margin: 0; font-size: 15px; } .pd-side p, .pd-side ul { margin: 0; }
-.pd-skills { list-style: none; padding: 0; display: grid; gap: 4px; } .pd-skills .btn { width: 100%; justify-content: flex-start; gap: 8px; }
+.pd-side { border: 1px solid var(--rule); border-radius: 16px; padding: 20px; display: grid; gap: 10px; font-size: 16px; line-height: 1.5; background: var(--surface); }
+.pd-side h5 { margin: 0; font-size: 20px; } .pd-side p, .pd-side ul { margin: 0; } .pd-side ul:not(.pd-skills) { padding-left: 20px; display: grid; gap: 6px; }
+.pd-skills { list-style: none; padding: 0; display: grid; gap: 8px; } .pd-skills .btn { width: 100%; min-height: 48px; justify-content: flex-start; gap: 10px; font-size: 16px; padding: 10px 14px; }
 .tag.pd-high { color: var(--danger); background: var(--danger-soft); } .tag.pd-medium { color: oklch(0.5 0.12 75); background: oklch(0.95 0.05 85); }
 .tag.pd-low { color: var(--ok); background: var(--ok-soft); }

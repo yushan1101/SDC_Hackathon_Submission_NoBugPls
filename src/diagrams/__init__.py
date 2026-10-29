@@ -361,7 +361,7 @@ def effort(plan: ReskillPlan) -> Diagram:
                    note=f"Over capacity: {', '.join(flagged)}." if flagged else "Every phase fits your weekly learning time.")
 
 
-ALL = {"timeline": timeline, "branch": branchmap, "deps": deps, "gaps": gaps, "skillmap": skillmap, "effort": effort}
+ALL = {"branch": branchmap, "timeline": timeline, "deps": deps, "gaps": gaps, "skillmap": skillmap, "effort": effort}
 
 
 def build(plan: ReskillPlan, which: list[str] | None = None) -> list[Diagram]:
