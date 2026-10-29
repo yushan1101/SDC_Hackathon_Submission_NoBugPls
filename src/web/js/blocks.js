@@ -594,9 +594,106 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
       h("summary", {}, `${plan.deferred_skills.length} more skills don't fit in ${weeklyHours ? weeklyHours + " h/week" : "the weekly hours"}; the plan covers the highest-priority gaps first.`),
       h("p", {}, plan.deferred_skills.join(", "))) : null,
     h("div", { class: "plan-layout" }, h("div", { class: "plan-main" }, h("div", { class: "plan-overview" }, planEl, calEl, sdgGuide), PHASES.map((p) => panes[p])), asideEl),
+    planId ? diagramsBlock(planId, version) : null,
     errBox, readOnly ? null : bar);
   blockEl.openPane = openPane;
   return reveal(blockEl, RISE, { duration: 420 });
+}
+
+// --- plan diagrams: built on the server from the latest plan version (src/diagrams), drawn here with the vendored
+// Mermaid and Chart.js, loaded only when the section scrolls into view
+const scripts = {};
+const loadScript = (name) => scripts[name] ||= new Promise((ok, fail) => document.head.append(
+  h("script", { src: new URL(`../vendor/${name}`, import.meta.url).href, onload: ok, onerror: () => { delete scripts[name]; fail(new Error(`Could not load ${name}`)); } })));
+let diagramSeq = 0;
+
+function diagramsBlock(planId, version) {
+  const tabs = h("div", { class: "seg pd-tabs", role: "tablist", "aria-label": "Plan diagrams" });
+  const stage = h("div", { class: "pd-stage" }, h("p", { class: "muted" }, "Drawing your plan diagrams…"));
+  const side = h("aside", { class: "pd-side", "aria-live": "polite" });
+  const notes = h("div");
+  const el = h("section", { class: "pd", "aria-label": "Plan diagrams" },
+    h("header", { class: "pd-head" }, h("h4", {}, "Plan diagrams"), h("p", { class: "muted" }, "Generated from this plan version; they change when the plan changes.")),
+    notes, tabs, h("div", { class: "pd-body" }, stage, side));
+  let started = false;
+  const start = () => { if (!started && el.isConnected) { started = true; seen.disconnect(); draw(); } };
+  const seen = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && start(), { rootMargin: "300px" });
+  seen.observe(el);
+  setTimeout(start, 2000);  // background tabs never report intersection
+
+  async function draw() {
+    let data;
+    try {
+      [data] = await Promise.all([api(`/api/plans/${planId}/diagrams?v=${version || ""}`), loadScript("mermaid.min.js"), loadScript("chart.umd.min.js")]);
+    } catch (e) { stage.replaceChildren(h("p", { class: "issue error" }, `Diagrams unavailable: ${e.message}`)); return; }
+    const { plan, diagrams } = data;
+    const byId = Object.fromEntries(plan.skills.map((s) => [s.id, s]));
+    notes.replaceChildren(...data.notes.map((n) => h("p", { class: "note" }, n)));
+    const showSkill = (id) => {
+      const s = byId[id]; if (!s) return;
+      const res = plan.resources.filter((r) => r.skill_id === id);
+      side.replaceChildren(h("h5", {}, s.name),
+        h("p", {}, h("span", { class: `tag pd-${s.priority}` }, `${s.priority} priority`), " ", h("span", { class: "muted" }, s.category)),
+        h("p", {}, `Level ${s.level_now} → ${s.level_target}`),
+        h("p", {}, h("b", {}, "Phase: "), plan.phases.filter((p) => p.skills.includes(id)).map((p) => p.name).join(", ") || "not scheduled"),
+        s.depends_on.length ? h("p", {}, h("b", {}, "Learn first: "), s.depends_on.map((d) => byId[d]?.name || d).join(", ")) : "",
+        h("b", {}, "Resources"),
+        res.length ? h("ul", {}, res.map((r) => h("li", {}, r.url ? h("a", { href: r.url, target: "_blank", rel: "noopener noreferrer" }, r.title) : r.title,
+          h("span", { class: "muted" }, ` · ${r.type}${r.est_hours ? ` · ${r.est_hours} h` : ""}`)))) : h("p", { class: "muted" }, "No resources listed."),
+        h("button", { class: "btn sm ghost", type: "button", onclick: skillList }, icon("back"), "All skills"));
+    };
+    const skillList = () => side.replaceChildren(h("h5", {}, "Skills"), h("p", { class: "muted" }, "Select a skill, or a skill in a diagram."),
+      h("ul", { class: "pd-skills" }, plan.skills.map((s) => h("li", {}, h("button", { type: "button", class: "btn sm", onclick: () => showSkill(s.id) },
+        h("span", { class: `tag pd-${s.priority}` }, s.priority[0].toUpperCase()), s.name)))));
+    skillList();
+    window.showSkill = showSkill;  // Mermaid "click ... call showSkill()" targets
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light";
+    mermaid.initialize({ startOnLoad: false, securityLevel: "loose", theme: dark ? "dark" : "default", htmlLabels: false, flowchart: { htmlLabels: false },
+      gantt: { fontSize: 14, sectionFontSize: 14, barHeight: 26, barGap: 6, leftPadding: 170, useWidth: 1000 } });
+    let chart = null;
+    const save = (href, name) => h("a", { href, download: name }).click();
+    async function open(d) {
+      tabs.querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.key === d.key)));
+      chart?.destroy(); chart = null;
+      const canvas = d.lang === "chartjs" ? h("canvas", { "aria-label": d.title }) : null;
+      const host = h("div", { class: "pd-mm" });
+      const svgBtn = h("button", { class: "btn sm", type: "button", hidden: d.lang !== "mermaid" || !d.code }, "SVG");
+      const pngBtn = h("button", { class: "btn sm", type: "button", hidden: !d.code }, "PNG");
+      stage.replaceChildren(h("div", { class: "pd-bar" }, h("b", {}, d.title), h("span", { class: "pd-dl" }, svgBtn, pngBtn)),
+        d.note ? h("p", { class: "note" }, d.note) : "", canvas ? h("div", { class: "pd-canvas" }, canvas) : host);
+      if (d.lang === "mermaid" && d.code) {
+        try {
+          const { svg, bindFunctions } = await mermaid.render(`pd-${planId}-${d.key}-${++diagramSeq}`, d.code);
+          host.innerHTML = svg; bindFunctions?.(host);
+        } catch (e) { host.replaceChildren(h("p", { class: "issue error" }, `This diagram could not be drawn: ${e.message || e}`)); }
+      } else if (canvas) {
+        const cfg = JSON.parse(d.code), css = (v) => getComputedStyle(el).getPropertyValue(v).trim() || undefined;
+        const accent = css("--accent") || "#2a5bd7", muted = css("--ink-2") || "#5a6378", danger = css("--danger") || "#c0392b";
+        cfg.data.datasets.forEach((s) => {
+          if (s.role === "now") Object.assign(s, { borderColor: muted, backgroundColor: "rgba(90,99,120,.25)" });
+          if (s.role === "target") Object.assign(s, { borderColor: accent, backgroundColor: "rgba(42,91,215,.25)" });
+          if (s.role === "planned") s.backgroundColor = cfg.data.over.map((o) => (o ? danger : accent));
+          if (s.role === "capacity") Object.assign(s, { borderColor: danger, borderDash: [6, 4], pointRadius: 0, backgroundColor: "transparent" });
+        });
+        cfg.options = { ...cfg.options, maintainAspectRatio: false, animation: { duration: 300 },
+          onClick: (_, els) => { const i = els[0]?.index; if (i != null && cfg.data.ids) showSkill(cfg.data.ids[i]); } };
+        chart = new Chart(canvas, cfg);
+      }
+      svgBtn.onclick = () => { const svg = host.querySelector("svg"); if (svg) save(URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" })), `${d.key}.svg`); };
+      pngBtn.onclick = () => {
+        if (chart) return save(chart.toBase64Image("image/png", 1), `${d.key}.png`);
+        const svg = host.querySelector("svg"); if (!svg) return;
+        const box = svg.getBoundingClientRect(), img = new Image(), clone = svg.cloneNode(true);
+        clone.setAttribute("width", box.width); clone.setAttribute("height", box.height);
+        img.onload = () => { const c = h("canvas", { width: box.width * 2, height: box.height * 2 }), g = c.getContext("2d");
+          g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height); save(c.toDataURL("image/png"), `${d.key}.png`); };
+        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(clone));
+      };
+    }
+    tabs.replaceChildren(...diagrams.map((d) => h("button", { type: "button", role: "tab", "data-key": d.key, onclick: () => open(d) }, d.title)));
+    open(diagrams[0]);
+  }
+  return el;
 }
 
 export function historyBlock(hist) {

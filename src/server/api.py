@@ -1693,6 +1693,35 @@ def plan(pid: str, user: dict = Depends(current_user)):
             "read_only": read_only, **review}
 
 
+DIAGRAMS: OrderedDict = OrderedDict()  # (plan_id, version) -> enriched ReskillPlan
+# ponytail: in-process cache, one enrichment call per plan version per worker; store it with the plan if workers multiply
+
+
+@app.get("/api/plans/{pid}/diagrams")
+def plan_diagrams(pid: str, user: dict = Depends(current_user)):
+    """The plan's diagrams (Mermaid / Chart.js code), built from its latest version; see src/diagrams."""
+    import diagrams
+    with DB_LOCK:
+        if not approval.can_view(db, pid, user):
+            raise HTTPException(404, "plan not found")
+        cur = approval.latest(db, pid)
+        saved = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
+        created = db.execute("SELECT created_utc FROM plans WHERE plan_id=?", (pid,)).fetchone()[0]
+    report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else {}
+    key, note = (pid, cur["version"]), ""
+    plan = DIAGRAMS.get(key)
+    if plan is None:
+        plan = diagrams.from_report(report, cur["plan"], datetime.fromisoformat(created).date())
+        plan, note = diagrams.enrich(plan)
+        if not note:  # failed enrichment is retried on the next view, not cached
+            DIAGRAMS[key] = plan
+            while len(DIAGRAMS) > 256:
+                DIAGRAMS.popitem(last=False)
+    return {"plan": plan.model_dump(mode="json"), "diagrams": [d.__dict__ for d in diagrams.build(plan)],
+            "notes": [n for n in (note, f"{len(plan.deferred)} more skill gaps are deferred until after these 90 days."
+                                  if plan.deferred else "") if n]}
+
+
 class ProgressIn(BaseModel):
     item: str = Field(min_length=3, max_length=200)  # "<day range>:<skill>"
     done: bool

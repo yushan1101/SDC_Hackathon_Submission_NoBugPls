@@ -348,10 +348,12 @@ Upload `dist-web/` to any static host (nginx, Cloudflare Pages, Netlify), then a
 **Admin → Frontend sites**. Sign-in works across domains (a Bearer token where browsers block third-party cookies),
 and email links and plugin sign-ins return to the site the person used.
 
-### Plan reports with diagrams
+### Plan diagrams
 
-Export a saved plan as a Markdown and/or a single-file HTML report with five diagrams built from the plan data
-(`src/diagrams/`, no LLM inside, so the same plan always gives the same diagrams):
+Every plan page (the report after a plan is written, **My plans**, and the HR views) shows five diagrams under the plan,
+generated from the plan's latest version by `GET /api/plans/<id>/diagrams` and drawn with the vendored Mermaid 11.4.1 and
+Chart.js 4.4.7 (`src/web/vendor`, loaded only when the section is reached). They change whenever the plan changes; nothing to run.
+The same diagrams can be exported as files (`src/diagrams/`, no LLM inside, so the same plan always gives the same diagrams):
 
 | Diagram | Built from | Markdown | HTML |
 |---|---|---|---|

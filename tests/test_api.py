@@ -285,6 +285,20 @@ def test_plan_progress_is_saved_and_private(client):
     assert client.post(f"/api/plans/{pid}/progress", json={"item": "1-30:x", "done": True}, headers={"X-AP": "1"}).status_code == 404
 
 
+def test_plan_diagrams_follow_the_saved_plan_and_stay_private(client):
+    login(client, "ana")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}
+    pid = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))[-1]["plan_id"]
+    d = client.get(f"/api/plans/{pid}/diagrams").json()
+    assert [x["key"] for x in d["diagrams"]] == ["timeline", "deps", "gaps", "skillmap", "effort"]
+    scheduled = {a["skill_id"] for a in client.get(f"/api/plans/{pid}").json()["plan"]["activities"]}
+    assert {s["name"] for s in d["plan"]["skills"]} == scheduled
+    assert d["diagrams"][0]["code"].startswith("gantt") and d["plan"]["learner"]["hours_per_week"] == 6
+    assert any("could not be generated" in n for n in d["notes"])  # no LLM under test: drawn without prerequisites
+    login(client, "hr1")
+    assert client.get(f"/api/plans/{pid}/diagrams").status_code == 404
+
+
 def test_learning_node_progress_summary_uses_nodes_and_phases(client):
     import server.api as api
     plan = {"activities": [], "learning_nodes": [{"id": f"week-{week:02d}", "week_number": week} for week in range(1, 14)]}
