@@ -222,3 +222,37 @@ html[data-product="hr"] .wf-foot { border-top: 1px solid var(--owl-line); }
 html[data-product="hr"] table :is(th, td) { padding: 12px 14px; }
 html[data-product="hr"] table td:first-child, html[data-product="hr"] table td:has(> .btn), html[data-product="hr"] table td .row-actions { white-space: nowrap; }
 html[data-product="hr"] table td ul { min-width: 240px; margin: 0; padding-left: 18px; }
+
+/* cards carry the colour, not an edge: a white page, cards filled with a soft owl blue, white controls and table rows
+   sitting inside them. No borders or shadows on cards. */
+html[data-product="hr"] {
+  --card-fill: oklch(0.972 0.014 263);
+  --card-fill-deep: oklch(0.945 0.024 263);
+}
+html[data-product="hr"] body, html[data-product="hr"] .rail { background: oklch(1 0 0); }
+html[data-product="hr"] :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .empty-state, .wf-filters) {
+  border: 0; box-shadow: none; background: var(--card-fill); }
+html[data-product="hr"] .panel > header { border-bottom: 0; padding-bottom: 6px; }
+html[data-product="hr"] .rail a[aria-current="page"] { background: var(--card-fill); box-shadow: none; }
+/* inside a card: white controls without outlines */
+html[data-product="hr"] :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more summary) { border-color: transparent; background-color: oklch(1 0 0); }
+html[data-product="hr"] :is(.input, select.input, textarea.input):hover { border-color: transparent; background-color: oklch(1 0 0); }
+html[data-product="hr"] :is(.input, select.input, textarea.input):focus { border-color: var(--accent); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost) { border-color: transparent; background: oklch(1 0 0); }
+html[data-product="hr"] .btn:not(.primary):not(.ghost):hover { border-color: transparent; background: var(--card-fill-deep); }
+html[data-product="hr"] :is(.own-plan-chip, .chip, .wf-suggestion, .ag-starter) { border-color: transparent; background: oklch(1 0 0); box-shadow: none; }
+html[data-product="hr"] .ag-starter { background: var(--card-fill); }
+html[data-product="hr"] .ag-composer { border-color: transparent; background: var(--card-fill); box-shadow: none; }
+html[data-product="hr"] :is(.seg, .wf-seg) { border: 0; background: var(--card-fill-deep); }
+html[data-product="hr"] :is(.seg, .wf-seg) button[aria-pressed="true"] { box-shadow: none; }
+/* tables: white rows inside the blue card, a deeper-blue header, no frame lines */
+html[data-product="hr"] :is(.table-wrap, .view > table, .panel > table) { border: 0; background: var(--card-fill); padding: 6px; }
+html[data-product="hr"] table thead th { background: var(--card-fill-deep); border-bottom: 0; }
+html[data-product="hr"] table thead th:first-child { border-radius: 8px 0 0 8px; }
+html[data-product="hr"] table thead th:last-child { border-radius: 0 8px 8px 0; }
+html[data-product="hr"] table tbody td { background: oklch(1 0 0); border-bottom: 2px solid var(--card-fill); }
+html[data-product="hr"] table tbody tr:hover td { background: oklch(0.985 0.008 263); }
+/* heatmap empty cells: white instead of an outlined box */
+html[data-product="hr"] .wf-cell.wf-unknown { background: oklch(1 0 0); box-shadow: none; }
+html[data-product="hr"] .wf-foot { border-top: 0; }
+html[data-product="hr"] .wf-skill-name, html[data-product="hr"] .wf-skill-head { background: var(--card-fill); }
