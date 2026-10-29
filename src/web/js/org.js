@@ -29,7 +29,9 @@ async function openOwnPlan(drawer, person, planId) {
 }
 
 export async function peopleView(main, status) {
-  const people = await api("/api/org/users");
+  const [people, me] = await Promise.all([api("/api/org/users"), api("/api/me")]);
+  // a school's members are students, a company's are employees (set on the account page)
+  const membersLabel = me.enterprise?.members_label || "Team members", orgName = me.enterprise?.name || "Your organisation";
   const err = h("p", { class: "error", role: "alert" });
   const email = h("input", { class: "input", type: "email", required: true, maxlength: 254, placeholder: "name@company.com", autocomplete: "off" });
   const name = h("input", { class: "input", maxlength: 60, placeholder: "Display name (optional)" });
@@ -54,10 +56,10 @@ export async function peopleView(main, status) {
         if (confirm(what)) act(() => api(`/api/org/users/${p.username}`, { method: "DELETE" }), p.status === "invited" ? "Invite withdrawn" : "Removed")();
       } }, p.status === "invited" ? "Withdraw" : "Remove"))));
   main.replaceChildren(h("div", { class: "view" },
-    h("div", { class: "view-head" }, h("h1", {}, "Team members"),
+    h("div", { class: "view-head" }, h("h1", {}, membersLabel),
       h("span", { class: "muted", style: { "font-size": "14px" } }, "People join by your email invite, not the sign-up page.")),
     h("div", { class: "overview" },
-      h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Your organisation"), h("span", { class: "muted num", style: { "font-size": "14px" } }, `${people.length}`)),
+      h("section", { class: "panel" }, h("header", {}, h("h2", {}, orgName), h("span", { class: "muted num", style: { "font-size": "14px" } }, `${people.length}`)),
         people.length ? h("div", { class: "table-wrap" }, h("table", { class: "data" },
           h("thead", {}, h("tr", {}, h("th", {}, "Person"), h("th", { class: "hide-sm" }, "Email"), h("th", {}, "Status"), h("th", { class: "hide-sm" }, "Added"), h("th", {}, ""))),
           h("tbody", {}, people.map(row))))

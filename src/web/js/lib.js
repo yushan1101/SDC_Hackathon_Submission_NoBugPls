@@ -54,6 +54,13 @@ export async function postForBlob(path, body, signal) {
   return res.blob();
 }
 
+/** A private image (e.g. a profile photo) as an object URL, fetched with the session like any API call. */
+export async function apiBlobUrl(path) {
+  const res = await fetch(apiUrl(path), { credentials: CREDS, headers: { "X-AP": "1", ...auth() } });
+  if (!res.ok) return null;
+  return URL.createObjectURL(await res.blob());
+}
+
 export async function upload(path, form, signal) {
   const res = await fetch(apiUrl(path), { method: "POST", body: form, signal, credentials: CREDS, headers: { "X-AP": "1", ...auth() } });
   const data = res.headers.get("content-type")?.includes("json") ? await res.json() : null;

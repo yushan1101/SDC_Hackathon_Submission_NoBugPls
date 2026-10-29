@@ -290,26 +290,40 @@ function heatmapView(main) {
   workforceView(workforce);
 }
 
+// Overview: only what needs attention. The key numbers on top, the review queue beside the three biggest skill gaps,
+// then the team. The full heatmap lives under AI trends > Skills gap heatmap.
 async function overview(main) {
   const version = S.routeVersion;
-  const workforce = h("div", { class: "workforce" });
-  const review = h("div");
+  const top = h("div"), body = h("div");
   main.replaceChildren(h("div", { class: "view" },
     h("div", { class: "view-head" }, h("h1", {}, "Overview"), h("a", { class: "btn primary sm", href: "#/run" }, icon("upload"), "Analyse team")),
-    workforce, review));
-  workforceView(workforce);
+    top, body));
+  const gaps = h("section", { class: "panel overview-gaps" },
+    h("header", {}, h("h2", {}, "Biggest skill gaps"), h("a", { class: "btn sm", href: "#/heatmap" }, "Open heatmap")),
+    h("div", { class: "pad" }, h("p", { class: "muted" }, "Loading…")));
+  api("/api/hr/workforce?scenario=assistive&category=all&department=&role=").then((d) => {
+    if (version !== S.routeVersion) return;
+    const list = (d.priorities || []).slice(0, 3);
+    gaps.lastElementChild.replaceChildren(list.length
+      ? h("ol", { class: "gap-top" }, list.map((c) => h("li", {},
+          h("span", { class: "gap-pct" }, `${c.gap_percent}%`),
+          h("span", { class: "gap-main" }, h("b", {}, c.skill), h("small", {}, `${c.group} · ${c.affected} of ${c.employees} below target`)))))
+      : h("p", { class: "muted" }, "No assessed gaps yet. Analyse your team to see them here."));
+  }).catch(() => { if (version === S.routeVersion) gaps.lastElementChild.replaceChildren(h("p", { class: "muted" }, "Skill gaps could not be loaded.")); });
   try { await refreshPlans(); } catch (e) {
-    if (version === S.routeVersion) review.replaceChildren(h("p", { class: "issue error", role: "alert" }, `Review queue could not be loaded. ${e.message}`));
+    if (version === S.routeVersion) body.replaceChildren(h("p", { class: "issue error", role: "alert" }, `Review queue could not be loaded. ${e.message}`), gaps);
     return;
   }
   if (version !== S.routeVersion) return;
-  review.replaceChildren(stats(), h("div", { class: "overview" },
+  top.replaceChildren(stats());
+  body.replaceChildren(...[h("div", { class: "overview overview-main" },
       h("section", { class: "panel" }, h("header", {}, h("h2", {}, "Needs your review")),
         h("div", { class: "pad review-list" }, latestPerEmployee(S.plans.filter((p) => p.audience === "hr" && !p.review?.archived && p.review?.review_status === "pending")).slice(0, 6).map((p) =>
           h("a", { href: `#/review/${p.plan_id}`, class: "review-row" },
             h("span", { class: "who" }, h("b", {}, p.subject_id), h("span", { class: "muted" }, `${p.target_role} · v${p.version} · ${fmtTime(p.created_utc)}`)), h("span", { class: `tag ${p.status}` }, p.status))),
-          S.plans.some((p) => p.audience === "hr" && p.status !== "approved") ? null : h("p", { class: "muted" }, "You're all caught up.")))),
-    rosterTable());
+          S.plans.some((p) => p.audience === "hr" && p.status !== "approved") ? null : h("p", { class: "muted" }, "You're all caught up."))),
+      gaps),
+    rosterTable()].filter(Boolean));  // no team table yet: nothing, not the text "null"
 }
 
 // ---------------------------------------------------------------- upload & run

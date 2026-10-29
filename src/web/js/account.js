@@ -1,6 +1,6 @@
 // Accounts and billing pages: sign-up (with the emailed code), plans, Stripe Elements checkout, and the account page
 // with payment history. Card details go from the browser straight to Stripe; the server only sees Stripe's ids.
-import { api, h, icon, toast, fmtTime } from "./lib.js";
+import { api, apiBlobUrl, h, icon, toast, fmtTime, upload } from "./lib.js";
 import { Owl } from "./owl.js";
 import { watchForm, pageSignals, deviceId } from "./risk.js";
 
@@ -274,11 +274,11 @@ export async function pricingView(main, { me }) {
   };
   main.replaceChildren(
     h("h1", { class: "page-title" }, "Plans"),
-    h("p", { class: "lede" }, "Start free. Paid plans last 30 days and don't renew on their own."),
+    h("p", { class: "lede" }, "Start free. Pro lasts 30 days and doesn't renew on its own; Enterprise is a monthly subscription that renews until you stop it."),
     enabled ? null : h("div", { class: "banner" }, icon("info"), "Upgrades are temporarily unavailable."),
     h("div", { class: "plan-grid" }, shown.map((p) => h("article", { class: `plan-card${p.id === "pro" ? " plan-featured" : ""}${mine === p.id ? " plan-current" : ""}` },
       h("h2", {}, p.name),
-      h("p", { class: "plan-price" }, p.price_cents ? [h("b", {}, money(p.price_cents, p.currency)), h("span", {}, ` / ${p.days} days`)] : h("b", {}, "Free")),
+      h("p", { class: "plan-price" }, p.price_cents ? [h("b", {}, money(p.price_cents, p.currency)), h("span", {}, p.monthly ? " / month, renews automatically" : ` / ${p.days} days`)] : h("b", {}, "Free")),
       h("ul", {}, p.features.map((f) => h("li", {}, icon("check"), f))),
       action(p)))),
     pk?.startsWith("pk_test_") ? h("p", { class: "muted plan-fine" }, "Test mode: use Stripe's test card 4242 4242 4242 4242, any future date and any CVC.") : null);
@@ -290,7 +290,7 @@ async function checkout(plan, me) {
   const host = h("div", { class: "pay-element" }, h("p", { class: "muted" }, "Loading the secure card form…"));
   const pay = h("button", { class: "btn primary", type: "submit", disabled: true }, `Pay ${money(plan.price_cents, plan.currency)}`);
   dlg.append(h("form", { onsubmit: (e) => { e.preventDefault(); submit(); } },
-    h("div", { class: "checkout-head" }, h("h2", {}, `${plan.name} · 30 days`), h("button", { class: "btn ghost sm", type: "button", onclick: () => dlg.close() }, "Cancel")),
+    h("div", { class: "checkout-head" }, h("h2", {}, plan.monthly ? `${plan.name} · monthly` : `${plan.name} · 30 days`), h("button", { class: "btn ghost sm", type: "button", onclick: () => dlg.close() }, "Cancel")),
     host, err, pay, h("p", { class: "muted checkout-fine" }, icon("check"), "Card details go straight to Stripe; AiversePulse never sees them.")));
   dlg.addEventListener("close", () => dlg.remove());
   document.body.append(dlg); dlg.showModal();
@@ -320,9 +320,95 @@ async function checkout(plan, me) {
 }
 
 // ---------------------------------------------------------------- account: plan and payment history
+// ---------------------------------------------------------------- profile: details, photo, email change
+const PROFILE_LABELS = { display_name: "Name", email: "Email", phone: "Phone", title: "Job title", department: "Department" };
+
+function profileSection(me, reload) {
+  const p = me.profile || {};
+  const ent = p.enterprise;
+  const school = ent?.kind === "school";
+  const field = (key, label, attrs = {}) => {
+    const input = h("input", { class: "input", name: key, value: p[key] || "", maxlength: attrs.maxlength || 80, ...attrs });
+    return [input, h("label", { class: "field" }, h("span", {}, label), input)];
+  };
+  const [name, nameF] = field("display_name", "Name", { required: true, autocomplete: "name" });
+  const [phone, phoneF] = field("phone", "Phone", { type: "tel", autocomplete: "tel", maxlength: 30, placeholder: "+60 12-345 6789" });
+  const [title, titleF] = field("title", school && me.role === "employee" ? "Programme / year" : "Job title");
+  const [dept, deptF] = field("department", school ? "Faculty" : "Department");
+  const isHr = me.role === "hr_advisor";
+  const orgName = isHr ? h("input", { class: "input", maxlength: 100, value: ent?.name && ent.name !== me.username ? ent.name : "" }) : null;
+  const orgKind = isHr ? h("select", { class: "input" }, [["company", "Company: members are employees"], ["school", "School: members are students"]]
+    .map(([v, t]) => h("option", { value: v, selected: ent?.kind === v ? true : null }, t))) : null;
+  const photo = h("div", { class: "avatar-lg", "aria-hidden": "true" }, (me.display_name || me.username || "?").slice(0, 1).toUpperCase());
+  if (p.avatar_url) apiBlobUrl(p.avatar_url).then((u) => { if (u) photo.replaceChildren(h("img", { src: u, alt: "" })); });
+  const file = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp", hidden: true, onchange: async () => {
+    if (!file.files[0]) return;
+    const form = new FormData(); form.append("file", file.files[0]);
+    try { await upload("/api/profile/avatar", form); toast("Photo updated"); reload(); }
+    catch (e) { toast(e.message, "err"); }
+  } });
+  const save = async (e) => {
+    e.preventDefault();
+    const body = { display_name: name.value, phone: phone.value, title: title.value, department: dept.value,
+      ...(isHr ? { org_name: orgName.value, org_kind: orgKind.value } : {}) };
+    try { await api("/api/profile", { method: "POST", body }); toast("Profile saved"); reload(); }
+    catch (ex) { toast(ex.message, "err"); }
+  };
+  const newEmail = h("input", { class: "input", type: "email", autocomplete: "email", maxlength: 254, placeholder: "new@company.com", required: true });
+  const emailForm = h("form", { class: "email-change", hidden: true, onsubmit: async (e) => {
+    e.preventDefault();
+    try { const r = await api("/api/profile/email", { method: "POST", body: { email: newEmail.value } });
+      toast(r.sent ? `We sent a link to ${r.pending}` : "Saved; the email could not be sent, try again later"); reload(); }
+    catch (ex) { toast(ex.message, "err"); }
+  } }, newEmail, h("button", { class: "btn primary sm", type: "submit" }, "Send confirmation link"));
+  const missing = (p.missing || []).filter((k) => k !== "email" || !me.email).map((k) => PROFILE_LABELS[k]);
+  return h("section", { class: "block profile-block" },
+    h("div", { class: "profile-head" }, h("h2", {}, "Profile"),
+      ent ? h("span", { class: "tag" }, isHr ? (school ? "School" : "Company") : `${ent.member_label} · ${ent.name}`) : null),
+    missing.length ? h("p", { class: "issue warning", role: "note" }, `Complete your profile: ${missing.join(", ")}.`) : null,
+    h("div", { class: "profile-grid" },
+      h("div", { class: "profile-photo" }, photo, file,
+        h("button", { class: "btn sm", type: "button", onclick: () => file.click() }, icon("upload"), p.avatar_url ? "Change photo" : "Add photo"),
+        h("small", { class: "muted" }, "PNG, JPEG or WebP, up to 2 MB")),
+      h("form", { class: "profile-form", onsubmit: save },
+        nameF,
+        h("div", { class: "field" }, h("span", {}, "Email"),
+          h("div", { class: "email-row" }, h("b", {}, me.email || "No email yet"),
+            h("button", { class: "btn ghost sm", type: "button", onclick: () => { emailForm.hidden = !emailForm.hidden; if (!emailForm.hidden) newEmail.focus(); } }, me.email ? "Change" : "Add")),
+          p.email_pending ? h("small", { class: "muted" }, `Waiting for you to open the link sent to ${p.email_pending}.`) : null,
+          emailForm),
+        phoneF, titleF, deptF,
+        isHr ? h("label", { class: "field" }, h("span", {}, "Organisation name"), orgName) : null,
+        isHr ? h("label", { class: "field" }, h("span", {}, "Organisation type"), orgKind) : null,
+        h("div", { class: "profile-actions" }, h("button", { class: "btn primary", type: "submit" }, "Save profile")))));
+}
+
+// ---------------------------------------------------------------- enterprise monthly subscription (HR)
+function subscriptionSection(reload) {
+  const box = h("section", { class: "block sub-block" }, h("h2", {}, "Enterprise subscription"), h("p", { class: "muted" }, "Loading…"));
+  api("/api/billing/subscription").then((d) => {
+    const s = d.subscription;
+    const live = s && ["active", "trialing"].includes(s.status);
+    const renews = s?.current_period_end ? new Date(s.current_period_end).toLocaleDateString() : null;
+    const toggle = async (renew) => {
+      try { await api("/api/billing/subscription/renewal", { method: "POST", body: { renew } }); toast(renew ? "Renewal turned back on" : "It will end at the close of this month"); reload(); }
+      catch (e) { toast(e.message, "err"); }
+    };
+    box.replaceChildren(h("h2", {}, "Enterprise subscription"),
+      h("p", {}, h("b", {}, `${money(d.price_cents, d.currency)} / month`), " · renews automatically until you stop it."),
+      live ? h("p", {}, h("span", { class: "tag approved" }, s.cancel_at_period_end ? "ends soon" : "active"), " ",
+        s.cancel_at_period_end ? `Access continues until ${renews}.` : `Next payment on ${renews}.`)
+        : h("p", { class: "muted" }, s ? `Status: ${s.status.replaceAll("_", " ")}.` : "Not subscribed yet."),
+      h("div", { class: "profile-actions" },
+        live ? h("button", { class: "btn", type: "button", onclick: () => toggle(!!s.cancel_at_period_end) }, s.cancel_at_period_end ? "Keep renewing" : "Stop renewing")
+          : h("a", { class: "btn primary", href: "#/pricing" }, d.enabled ? "Subscribe monthly" : "Payments are not set up yet")));
+  }).catch((e) => box.replaceChildren(h("h2", {}, "Enterprise subscription"), h("p", { class: "issue error" }, e.message)));
+  return box;
+}
+
 export async function accountView(main, { refreshMe, hrLayout = false }) {
-  const render = (...children) => main.replaceChildren(
-    ...(hrLayout ? [h("div", { class: "view hr-account-view" }, ...children)] : children));
+  const render = (...all) => { const children = all.filter(Boolean);  // optional sections pass null
+    main.replaceChildren(...(hrLayout ? [h("div", { class: "view hr-account-view" }, ...children)] : children)); };
   render(h("h1", { class: "page-title" }, "Your account"), h("p", { class: "muted" }, "Loading…"));
   // back from a 3-D Secure redirect: Stripe adds ?payment_intent=pi_... to the return URL
   const back = new URLSearchParams(location.search).get("payment_intent");
@@ -340,6 +426,8 @@ export async function accountView(main, { refreshMe, hrLayout = false }) {
       h("div", {}, h("p", { class: "muted" }, "Plan"), h("b", { class: "plan-badge" }, planName(me.effective_plan)),
         until ? h("p", { class: "muted" }, `Active until ${until}`) : null),
       me.effective_plan !== "org" ? h("a", { class: "btn primary", href: "#/pricing" }, me.effective_plan === "free" ? "Upgrade" : "Extend or change plan") : null),
+    profileSection(me, () => accountView(main, { refreshMe, hrLayout })),
+    me.role === "hr_advisor" ? subscriptionSection(() => accountView(main, { refreshMe, hrLayout })) : null,
     h("section", { class: "block" }, h("h2", {}, "Payment history"),
       pays.length ? h("table", { class: "data pay-table" },
         h("thead", {}, h("tr", {}, ["Date", "Plan", "Amount", "Status", "Receipt"].map((t) => h("th", {}, t)))),
