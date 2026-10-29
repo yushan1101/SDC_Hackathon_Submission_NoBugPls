@@ -5,6 +5,8 @@ from collections import Counter, defaultdict
 
 MIN_GROUP = 3
 MIN_COVERAGE = 0.6
+TOP_SKILLS = 12  # rows shown when no skill filter is set; a real report lists ~45 ESCO skills
+SOURCES = {"employee": "Employee self-analyses", "hr_upload": "HR uploads"}
 
 DEPARTMENTS = {
     "Customer Support": ["Support Specialist", "Support Team Lead"],
@@ -47,7 +49,10 @@ def sample_workforce_records(scenario="assistive"):
 
 
 def load_reports(con, owner: str, scenario: str, sample_preview: bool = False) -> list[dict]:
-    """Load the latest authorized stored report per employee. Sample previews use fictional memory-only data."""
+    """Latest stored report per person in this HR's organisation, from two sources:
+    the employee's own resume/quiz analysis (an active employee this HR invited) and HR's team uploads
+    (tagged with this HR as owner, or untagged older uploads, which the review queue already shows to HR).
+    Sample previews use fictional memory-only data."""
     if sample_preview:
         return sample_workforce_records(scenario)
     from governance.db import json_text
@@ -58,8 +63,8 @@ def load_reports(con, owner: str, scenario: str, sample_preview: bool = False) -
         LEFT JOIN plan_references ref ON ref.plan_id=p.plan_id
         WHERE v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)
         AND NOT EXISTS (SELECT 1 FROM hr_reviews h WHERE h.plan_id=p.plan_id AND (h.deleted_utc IS NOT NULL OR h.archived=1))
-        AND ((p.audience='hr' AND {owner_expr}=?) OR
-             (p.audience IN ('individual','hr') AND {owner_expr} IS NULL AND EXISTS (SELECT 1 FROM users u
+        AND ((p.audience='hr' AND ({owner_expr}=? OR {owner_expr} IS NULL)) OR
+             (p.audience='individual' AND EXISTS (SELECT 1 FROM users u
               WHERE u.employee_id=p.subject_id AND u.role='employee' AND u.status='active' AND u.invited_by=?)))
         ORDER BY p.created_utc DESC, ref.number DESC, p.plan_id DESC""", (owner, owner)).fetchall()
     latest = {}
@@ -71,13 +76,15 @@ def load_reports(con, owner: str, scenario: str, sample_preview: bool = False) -
         meta = report.get("workforce") or {}
         if meta.get("source") == "sample" or (report.get("request") or {}).get("scenario", plan.get("scenario")) != scenario:
             continue
-        if audience == "hr" and meta.get("owner") != owner and not (meta.get("owner") is None and subject in members):
+        if audience == "hr" and meta.get("owner") not in (owner, None):
             continue
-        key = subject if subject in members else meta.get("employee_key") if audience == "hr" else subject
+        # an upload's ids come from HR's file and can collide with account ids, so uploads key separately
+        key = subject if audience == "individual" else meta.get("employee_key") or f"upload:{subject}"
         if not key:
             continue
         latest.setdefault(key, {"key": key, "role": (report.get("occupation") or {}).get("title") or plan.get("target_role", "Assigned role"),
-                               "department": meta.get("department") or "Unassigned", "report": report, "plan": plan, "plan_id": pid})
+                               "department": meta.get("department") or "Unassigned", "report": report, "plan": plan, "plan_id": pid,
+                               "source": "employee" if audience == "individual" else "hr_upload"})
     return list(latest.values())
 
 
@@ -117,9 +124,12 @@ def _normalize(records):
     return normalized
 
 
-def aggregate(records, skills=(), category="all", sample_preview: bool = False, department="", role="") -> dict:
+def aggregate(records, skills=(), category="all", sample_preview: bool = False, department="", role="", source="") -> dict:
     skills = set(skills)
     records = _normalize(records)
+    counts = Counter(r.get("source", "hr_upload") for r in records)
+    if source:
+        records = [r for r in records if r.get("source", "hr_upload") == source]
     all_departments = sorted({r.get("department", "Unassigned") for r in records})
     if department:
         records = [r for r in records if r.get("department", "Unassigned") == department]
@@ -127,7 +137,9 @@ def aggregate(records, skills=(), category="all", sample_preview: bool = False, 
         records = [r for r in records if r.get("role") == role]
     departments = sorted({r.get("department", "Unassigned") for r in records})
     roles = sorted({r.get("role", "Assigned role") for r in records})
-    groups = ([{"key": r, "label": r, "kind": "role"} for r in roles] if department else
+    # no departments recorded (employee self-analyses, older uploads): compare roles instead of one "Unassigned" column
+    by_role = department or departments == ["Unassigned"]
+    groups = ([{"key": r, "label": r, "kind": "role"} for r in roles] if by_role else
               [{"key": d, "label": d, "kind": "department"} for d in departments])
     available = {}
     for record in records:
@@ -159,7 +171,11 @@ def aggregate(records, skills=(), category="all", sample_preview: bool = False, 
                 common[name] += affected
         rows.append({"skill": name, "category": available[name], "cells": cells,
                      "max_gap": max((c["gap_percent"] or 0 for c in cells), default=0)})
-    rows.sort(key=lambda item: (-item["max_gap"], item["skill"]))
+    # most-assessed skills first (real reports list different skills per role), then the biggest gap
+    rows.sort(key=lambda item: (-sum(c["employees"] for c in item["cells"]), -item["max_gap"], item["skill"]))
+    total_rows = len(rows)
+    if not skills:
+        rows = rows[:TOP_SKILLS]
     displayed = [c for row in rows for c in row["cells"]]
     assessed_skills = sum(any(c["employees"] for c in row["cells"]) for row in rows)
     visible_skills = set(shown)
@@ -173,6 +189,8 @@ def aggregate(records, skills=(), category="all", sample_preview: bool = False, 
                         "skills": [{"name": n, "category": kind} for n, kind in sorted(available.items())]},
             "groups": groups, "skills": [r["skill"] for r in rows], "rows": rows, "cells": displayed, "priorities": priorities,
             "cohort": {"employees": len(records), "department": department or "All departments", "role": role or "All roles"},
+            "sources": [{"key": k, "label": label, "employees": counts.get(k, 0)} for k, label in SOURCES.items()],
+            "total_skills": total_rows,
             "policy": {"min_group": MIN_GROUP, "min_coverage_percent": MIN_COVERAGE * 100, "scale": "0–5",
                        "source": "Latest authorized assessments; skill gaps count employees below their role-specific target.",
                        "sample_preview": sample_preview,
