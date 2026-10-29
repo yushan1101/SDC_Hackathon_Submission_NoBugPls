@@ -1,7 +1,7 @@
 // AiversePulse (public users): sign-in, plan builder, chat-style streaming report, plans.
 import "./motion.js";  // GSAP animations for whatever the app renders
 import { jobIcon } from "./jobicons.js";
-import { api, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP, SCENARIO_HELP } from "./lib.js";
+import { api, apiBlobUrl, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP, SCENARIO_HELP } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
 import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
@@ -121,6 +121,8 @@ function shell() {
   const nav = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), h("span", {}, label));
   const tab = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), label);
   const guest = !S.me;
+  if (!guest) { userShell(); return; }
+  delete document.documentElement.dataset.console;
   app.replaceChildren(...[
     h("button", { class: "sr-only skip-link", type: "button", onclick: () => $("#main")?.focus() }, "Skip to content"),
     h("header", { class: "pub-top" },
@@ -153,11 +155,92 @@ function shell() {
     S.sheet].filter(Boolean));  // replaceChildren would print a null as the text "null"
 }
 
+/** Signed in: the same console as HR and admin. A sidebar of pages, the person's photo and menu at its foot,
+ *  settings laid out as a section list ([data-console] turns on console.css). */
+function userShell() {
+  document.documentElement.dataset.console = "";
+  let expanded = true;
+  try { expanded = localStorage.getItem(HR_SIDEBAR_EXPANDED_KEY) !== "false"; } catch { /* expanded by default */ }
+  const link = (href, label, ic) => h("a", { href, "data-route": href, "aria-label": label, title: label }, icon(ic),
+    h("span", { class: "lbl" }, label), h("span", { class: "tip", "aria-hidden": "true" }, label));
+  const tab = (href, label, ic) => h("a", { href, "data-route": href }, icon(ic), label);
+  const name = S.me.display_name || S.me.username || "Account";
+  const avatar = () => {  // photo when they have one, initials until it loads
+    const el = h("span", { class: "u-avatar sm", "aria-hidden": "true" }, name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase());
+    if (S.me.avatar_url) apiBlobUrl(S.me.avatar_url).then((u) => { if (u) el.replaceChildren(h("img", { src: u, alt: "" })); });
+    return el;
+  };
+  const close = () => menu.hidePopover?.();
+  const item = (href, ic, label) => h("a", { href, "data-route": href, onclick: close }, icon(ic), h("span", {}, label));
+  const employee = S.me.role === "employee";
+  const menu = h("div", { id: "hr-account", class: "hr-account-menu", popover: "auto", "aria-label": "Account" },
+    h("div", { class: "hr-account-who" }, avatar(), h("b", {}, name)),
+    h("div", { class: "acct-sep", role: "separator" }),
+    item("#/account", "user", "Profile & settings"),
+    item("#/account/memory", "history", "Agent memory"),
+    item("#/account/billing", "nav-payments", "Plan & billing"),
+    employee ? null : h("a", { href: "enterprise.html" }, icon("back"), h("span", {}, "Back to console")),
+    h("div", { class: "acct-sep", role: "separator" }),
+    h("button", { type: "button", class: "acct-signout", onclick: () => { close(); signOut(); } }, icon("nav-signout"), h("span", {}, "Log out")));
+  const who = S.me.enterprise?.name && S.me.enterprise.name !== name ? S.me.enterprise.name : planName(S.me.effective_plan || "org");
+  const accountBtn = h("button", { type: "button", class: "rail-group-btn hr-account-btn", popovertarget: "hr-account", "aria-haspopup": "true", title: name },
+    avatar(), h("span", { class: "lbl acct-lbl" }, h("b", {}, name), h("small", { class: "plan-pill" }, who)),
+    h("span", { class: "rail-caret", "aria-hidden": "true" }, icon("chevron")));
+  let shellEl;
+  const toggle = h("button", { class: "hr-sidebar-toggle", type: "button", onclick: () => {
+    expanded = !expanded;
+    try { localStorage.setItem(HR_SIDEBAR_EXPANDED_KEY, String(expanded)); } catch { /* this page only */ }
+    update();
+  } }, icon("chevron"));
+  const update = () => {
+    shellEl.classList.toggle("is-sidebar-expanded", expanded);
+    shellEl.classList.toggle("is-sidebar-collapsed", !expanded);
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.title = toggle.ariaLabel = expanded ? "Collapse sidebar" : "Expand sidebar";
+  };
+  menu.addEventListener("beforetoggle", (e) => {  // above the button, or beside it when the rail is icon-only
+    if (e.newState !== "open") return;
+    const r = accountBtn.getBoundingClientRect();
+    Object.assign(menu.style, expanded ? { left: `${r.left}px`, bottom: `${innerHeight - r.top + 8}px` } : { left: `${r.right + 10}px`, bottom: `${innerHeight - r.bottom}px` });
+  });
+  const logo = h("span", { class: "logo-owl" });
+  shellEl = h("div", { class: "hr-shell user-shell" },
+    h("nav", { class: "rail hr-rail", "aria-label": "Primary" },
+      h("div", { class: "hr-rail-head" },
+        h("a", { class: "logo", href: "#/start", "aria-label": "AiversePulse home" }, logo, h("span", { class: "lbl wordmark" }, "AiversePulse")), toggle),
+      link("#/start", "Home", "nav-overview"), link("#/agents", "Agent", "nav-agent"), link("#/today", "AI trends", "nav-trends"),
+      link("#/report", "Career report", "nav-analyse"), link("#/plans", "My plans", "nav-review"),
+      employee ? null : link("enterprise.html", "Back to console", "back"),
+      h("div", { style: { flex: 1 } }),
+      h("div", { class: "rail-foot" }, accountBtn), menu),
+    h("main", { id: "main", class: "hr-main pub-main", tabindex: "-1" }),
+    h("nav", { class: "hr-tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/agents", "Agent", "nav-agent"),
+      tab("#/today", "Trends", "pulse"), tab("#/plans", "Plans", "plans"), tab("#/account", "Account", "user")));
+  app.replaceChildren(...[
+    h("button", { class: "sr-only skip-link", type: "button", onclick: () => $("#main")?.focus() }, "Skip to content"),
+    shellEl,
+    employee ? (S.capsule = employeeCapsule({
+      status: S.status,
+      getProfile: () => ({ target_title: S.profile.target_title, skills: S.profile.skills }),
+      pages: [
+        { label: "Home", href: "#/start", icon: "home", words: "dashboard career" },
+        { label: "Career assistant", href: "#/agents", icon: "ask", words: "chat coach" },
+        { label: "AI trends", href: "#/today", icon: "pulse", words: "skills market" },
+        { label: "Career report", href: "#/report", icon: "report", words: "plan analysis" },
+        { label: "My plans", href: "#/plans", icon: "plans", words: "learning pathway" },
+        { label: "Settings", href: "#/account", icon: "user", words: "profile settings account memory" },
+      ],
+    })) : null,
+    S.sheet].filter(Boolean));
+  logo.append(S.status.owl.el);
+  update();
+}
+
 /** Re-read the account (plan may have changed) and update the plan button in the top bar. */
 async function refreshMe() {
   S.me = { ...S.me, ...(await api("/api/me")) };
   const pill = document.querySelector(".plan-pill");
-  if (pill) pill.replaceChildren(icon("user"), planName(S.me.effective_plan || "org"));
+  if (pill && !pill.closest(".hr-account-btn")) pill.replaceChildren(icon("user"), planName(S.me.effective_plan || "org"));
   return S.me;
 }
 
@@ -179,7 +262,7 @@ function route() {
   // Unknown routes and malformed nested routes return home instead of showing the wrong page.
   const verifyLink = ["verify", "reset", "invite", "email"].includes(requested) && rest.length === 1 && /^[a-z0-9_.-]{3,40}$/.test(id || "") && /^[A-Za-z0-9_-]{20,80}$/.test(rest[0]);
   if (!allowed.has(requested) || (rest.length && requested !== "signin" && !interviewStart && !verifyLink && !planSection) || (["verify", "reset", "invite", "email"].includes(requested) && !verifyLink) ||
-      (id && !["signin", "plans", "report", "interview", "agents", "verify", "reset", "invite", "email"].includes(requested)) || (requested === "agents" && id && !/^[a-z-]{2,20}$/.test(id))) {
+      (id && !["signin", "plans", "report", "interview", "agents", "verify", "reset", "invite", "email", "account"].includes(requested)) || (requested === "agents" && id && !/^[a-z-]{2,20}$/.test(id))) {
     location.replace("#/start");
     return;
   }
@@ -254,7 +337,7 @@ function route() {
   else if (page === "terms") termsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "privacy") privacyView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "pricing") pricingView(main, { me: S.me }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
-  else if (page === "account") accountView(main, { refreshMe }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
+  else if (page === "account") accountView(main, { refreshMe, hrLayout: !!S.me, tab: id }).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "sdgs") sdgsView(main).catch((e) => main.append(h("div", { class: "issue error" }, e.message)));
   else if (page === "agents" && id) location.replace("#/agents");  // older links to one specialist: it's all one agent now
   else if (page === "agents") agentView(main, { getProfile: () => ({ target_title: S.profile.target_title, skills: S.profile.skills }) })

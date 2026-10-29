@@ -1,7 +1,7 @@
 /* HR and admin consoles, in the product-UI language of cluely.com: a pale field with flat white panels and fine
    1px lines, Geist only, tight medium-weight headings, 8–12px radii, compact 13–14px text. No icon tiles, glow,
    glass, gradients, serif or mascot chrome. Loaded last on enterprise.html and admin.html; same palette as the app. */
-html[data-product="hr"] {
+html:is([data-product="hr"], [data-console]) {
   --c-field: oklch(0.975 0.006 262);
   --c-line: oklch(0.915 0.008 258);
   --c-line-strong: oklch(0.86 0.01 258);
@@ -11,577 +11,592 @@ html[data-product="hr"] {
 }
 
 /* ground and type */
-html[data-product="hr"] body { background: var(--c-field); color: var(--ink); font-size: 14px; }
-html[data-product="hr"] :is(h1, h2, h3, h4, h5, .page-title, .wordmark) { font-family: var(--font-ui); }
-html[data-product="hr"] :is(.view-head h1, .page-title, .view > h1) { font: 600 26px/1.15 var(--font-ui); letter-spacing: -0.025em; }
-html[data-product="hr"] :is(.panel > header h2, .detail-head h2, .wf-heading h2, .wf-panel-header h2, .view h2) { font: 600 16px/1.3 var(--font-ui); letter-spacing: -0.01em; }
-html[data-product="hr"] :is(.view h3, .panel h3) { font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
-html[data-product="hr"] .muted { color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) body { background: var(--c-field); color: var(--ink); font-size: 14px; }
+html:is([data-product="hr"], [data-console]) :is(h1, h2, h3, h4, h5, .page-title, .wordmark) { font-family: var(--font-ui); }
+html:is([data-product="hr"], [data-console]) :is(.view-head h1, .page-title, .view > h1) { font: 600 26px/1.15 var(--font-ui); letter-spacing: -0.025em; }
+html:is([data-product="hr"], [data-console]) :is(.panel > header h2, .detail-head h2, .wf-heading h2, .wf-panel-header h2, .view h2) { font: 600 16px/1.3 var(--font-ui); letter-spacing: -0.01em; }
+html:is([data-product="hr"], [data-console]) :is(.view h3, .panel h3) { font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
+html:is([data-product="hr"], [data-console]) .muted { color: var(--ink-2); }
 
 /* sidebar: flush, full height, quiet; current page is a white row with a hairline */
-html[data-product="hr"] .rail { margin: 0; border-radius: 0; box-shadow: none; background: var(--c-field); border-right: 1px solid var(--c-line); padding: 14px 10px; gap: 2px; }
-html[data-product="hr"] .rail .logo-owl, html[data-product="hr"] .rail .logo .owl { display: none; }
-html[data-product="hr"] .rail .logo { height: 44px; margin-bottom: 10px; padding: 0 10px; }
-html[data-product="hr"] .rail .wordmark { font: 600 17px/1 var(--font-ui); letter-spacing: -0.02em; }
-html[data-product="hr"] :is(.rail a, .rail .rail-group-btn, .rail .hr-account-btn) { height: 34px; padding: 0 10px; gap: 10px; border-radius: 8px; font-size: 14px; font-weight: 500; }
-html[data-product="hr"] :is(.rail a, .rail .rail-group-btn, .rail .hr-account-btn) svg { width: 17px; height: 17px; }
-html[data-product="hr"] :is(.rail a, .rail .rail-group-btn):hover { background: oklch(1 0 0 / 0.7); color: var(--ink); }
-html[data-product="hr"] .rail a[aria-current="page"] { background: oklch(1 0 0); color: var(--ink); box-shadow: inset 0 0 0 1px var(--c-line); }
-html[data-product="hr"] .hr-top, html[data-product="hr"] .admin-top { margin: 0; border-radius: 0; box-shadow: none; background: oklch(1 0 0 / 0.9); border-bottom: 1px solid var(--c-line); }
+html:is([data-product="hr"], [data-console]) .rail { margin: 0; border-radius: 0; box-shadow: none; background: var(--c-field); border-right: 1px solid var(--c-line); padding: 14px 10px; gap: 2px; }
+html:is([data-product="hr"], [data-console]) .rail .logo-owl, html:is([data-product="hr"], [data-console]) .rail .logo .owl { display: none; }
+html:is([data-product="hr"], [data-console]) .rail .logo { height: 44px; margin-bottom: 10px; padding: 0 10px; }
+html:is([data-product="hr"], [data-console]) .rail .wordmark { font: 600 17px/1 var(--font-ui); letter-spacing: -0.02em; }
+html:is([data-product="hr"], [data-console]) :is(.rail a, .rail .rail-group-btn, .rail .hr-account-btn) { height: 34px; padding: 0 10px; gap: 10px; border-radius: 8px; font-size: 14px; font-weight: 500; }
+html:is([data-product="hr"], [data-console]) :is(.rail a, .rail .rail-group-btn, .rail .hr-account-btn) svg { width: 17px; height: 17px; }
+html:is([data-product="hr"], [data-console]) :is(.rail a, .rail .rail-group-btn):hover { background: oklch(1 0 0 / 0.7); color: var(--ink); }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] { background: oklch(1 0 0); color: var(--ink); box-shadow: inset 0 0 0 1px var(--c-line); }
+html:is([data-product="hr"], [data-console]) .hr-top, html:is([data-product="hr"], [data-console]) .admin-top { margin: 0; border-radius: 0; box-shadow: none; background: oklch(1 0 0 / 0.9); border-bottom: 1px solid var(--c-line); }
 
 /* panels and cards: flat white, one hairline, 12px */
-html[data-product="hr"] :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .wf-dialog, .empty-state) {
+html:is([data-product="hr"], [data-console]) :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .wf-dialog, .empty-state) {
   border: 1px solid var(--c-line); border-radius: var(--c-radius); box-shadow: none; background: oklch(1 0 0); }
-html[data-product="hr"] .panel > header { padding: 14px 18px; border-bottom: 1px solid var(--c-line); }
-html[data-product="hr"] .panel > .pad { padding: 18px; }
+html:is([data-product="hr"], [data-console]) .panel > header { padding: 14px 18px; border-bottom: 1px solid var(--c-line); }
+html:is([data-product="hr"], [data-console]) .panel > .pad { padding: 18px; }
 
 /* stats: label, number, note; no icon tile */
-html[data-product="hr"] .stat-ic { display: none; }
-html[data-product="hr"] .stats { gap: 12px; }
-html[data-product="hr"] .stat { gap: 4px; padding: 16px 18px; }
-html[data-product="hr"] .stat b { font: 600 28px/1.1 var(--font-ui); letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
-html[data-product="hr"] .stat span:last-child { font-size: 13px; }
-html[data-product="hr"] .wf-stat { gap: 6px; padding: 16px 18px; }
-html[data-product="hr"] .wf-stat strong { font-size: 28px; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
-html[data-product="hr"] .wf-stat > :last-child, html[data-product="hr"] .wf-stat > span:first-child { font-size: 13px; }
+html:is([data-product="hr"], [data-console]) .stat-ic { display: none; }
+html:is([data-product="hr"], [data-console]) .stats { gap: 12px; }
+html:is([data-product="hr"], [data-console]) .stat { gap: 4px; padding: 16px 18px; }
+html:is([data-product="hr"], [data-console]) .stat b { font: 600 28px/1.1 var(--font-ui); letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
+html:is([data-product="hr"], [data-console]) .stat span:last-child { font-size: 13px; }
+html:is([data-product="hr"], [data-console]) .wf-stat { gap: 6px; padding: 16px 18px; }
+html:is([data-product="hr"], [data-console]) .wf-stat strong { font-size: 28px; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
+html:is([data-product="hr"], [data-console]) .wf-stat > :last-child, html:is([data-product="hr"], [data-console]) .wf-stat > span:first-child { font-size: 13px; }
 
 /* controls: 8px corners, compact, no glow */
-html[data-product="hr"] .btn { min-height: 36px; padding: 0 14px; border-radius: 8px; font-size: 14px; font-weight: 500; box-shadow: none; }
-html[data-product="hr"] .btn.sm { min-height: 32px; padding: 0 12px; font-size: 13.5px; }
-html[data-product="hr"] .btn.primary { box-shadow: 0 1px 2px oklch(0.53 0.19 263 / 0.35), inset 0 1px 0 oklch(1 0 0 / 0.16); }
-html[data-product="hr"] .btn:not(.primary):not(.ghost) { border-color: var(--c-line-strong); background: oklch(1 0 0); }
-html[data-product="hr"] :is(.input, select.input, textarea.input) { min-height: 36px; border-radius: 8px; border-color: var(--c-line-strong); font-size: 14px; }
-html[data-product="hr"] .tag { border-radius: 6px; font-size: 12.5px; line-height: 22px; }
-html[data-product="hr"] :is(.seg, .seg button, .chip) { border-radius: 8px; }
-html[data-product="hr"] .wf-filter summary { padding: 8px 12px; border-radius: 8px; border-color: var(--c-line-strong); }
+html:is([data-product="hr"], [data-console]) .btn { min-height: 36px; padding: 0 14px; border-radius: 8px; font-size: 14px; font-weight: 500; box-shadow: none; }
+html:is([data-product="hr"], [data-console]) .btn.sm { min-height: 32px; padding: 0 12px; font-size: 13.5px; }
+html:is([data-product="hr"], [data-console]) .btn.primary { box-shadow: 0 1px 2px oklch(0.53 0.19 263 / 0.35), inset 0 1px 0 oklch(1 0 0 / 0.16); }
+html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost) { border-color: var(--c-line-strong); background: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.input) { min-height: 36px; border-radius: 8px; border-color: var(--c-line-strong); font-size: 14px; }
+html:is([data-product="hr"], [data-console]) .tag { border-radius: 6px; font-size: 12.5px; line-height: 22px; }
+html:is([data-product="hr"], [data-console]) :is(.seg, .seg button, .chip) { border-radius: 8px; }
+html:is([data-product="hr"], [data-console]) .wf-filter summary { padding: 8px 12px; border-radius: 8px; border-color: var(--c-line-strong); }
 
 /* tables: quiet header row, hairlines */
-html[data-product="hr"] table thead th { background: var(--c-field); color: var(--ink-2); font-size: 12.5px; font-weight: 500; }
-html[data-product="hr"] table :is(th, td) { border-color: var(--c-line); }
+html:is([data-product="hr"], [data-console]) table thead th { background: var(--c-field); color: var(--ink-2); font-size: 12.5px; font-weight: 500; }
+html:is([data-product="hr"], [data-console]) table :is(th, td) { border-color: var(--c-line); }
 
 /* floating agent: a plain round button and a solid bar; no mascot, no glass */
-html[data-product="hr"] .cap-bar { border-radius: 12px; border-color: var(--c-line-strong); background: oklch(1 0 0); -webkit-backdrop-filter: none; backdrop-filter: none;
+html:is([data-product="hr"], [data-console]) .cap-bar { border-radius: 12px; border-color: var(--c-line-strong); background: oklch(1 0 0); -webkit-backdrop-filter: none; backdrop-filter: none;
   box-shadow: 0 12px 32px -16px oklch(0.25 0.04 262 / 0.35); }
-html[data-product="hr"] .cap-panel { border-radius: 12px; }
+html:is([data-product="hr"], [data-console]) .cap-panel { border-radius: 12px; }
 /* folded: the owl in a white circle with a soft owl-blue lift (no glass) */
-html[data-product="hr"] .hr-capsule.folded .cap-bar { border-radius: 50%; background: oklch(1 0 0); border-color: transparent;
+html:is([data-product="hr"], [data-console]) .hr-capsule.folded .cap-bar { border-radius: 50%; background: oklch(1 0 0); border-color: transparent;
   box-shadow: 0 10px 26px -12px oklch(0.4 0.12 263 / 0.45); }
 
 /* heatmap and team-plan pieces inside the console */
-html[data-product="hr"] .wf-sample-banner { border-radius: 10px; }
-html[data-product="hr"] .wf-cell { border-radius: 8px; }
-html[data-product="hr"] .wf-suggestion { border-radius: 8px; }
-html[data-product="hr"] .wf-stats { align-items: start; }
-html[data-product="hr"] .wf-stat > :last-child { margin-top: 0; }
+html:is([data-product="hr"], [data-console]) .wf-sample-banner { border-radius: 10px; }
+html:is([data-product="hr"], [data-console]) .wf-cell { border-radius: 8px; }
+html:is([data-product="hr"], [data-console]) .wf-suggestion { border-radius: 8px; }
+html:is([data-product="hr"], [data-console]) .wf-stats { align-items: start; }
+html:is([data-product="hr"], [data-console]) .wf-stat > :last-child { margin-top: 0; }
 
 /* heatmap filters as one toolbar (Cluely-style): toggle, compact dropdowns, "More filters", Reset, refresh */
-html[data-product="hr"] .wf-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--c-line); border-radius: var(--c-radius); background: oklch(1 0 0); }
-html[data-product="hr"] .wf-select-sm { width: auto; min-width: 0; max-width: 220px; min-height: 32px; height: 32px; padding: 0 28px 0 10px; font-size: 13.5px; }
-html[data-product="hr"] .wf-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; background: var(--c-field); border: 1px solid var(--c-line); }
-html[data-product="hr"] .wf-seg button { min-height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); font: 500 13px var(--font-ui); cursor: pointer; }
-html[data-product="hr"] .wf-seg button[aria-pressed="true"] { background: oklch(1 0 0); color: var(--ink); box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.12), inset 0 0 0 1px var(--c-line); }
-html[data-product="hr"] .wf-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-html[data-product="hr"] .wf-more { min-width: 0; }
-html[data-product="hr"] .wf-more summary { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; font-size: 13.5px; font-weight: 500; list-style: none; background: oklch(1 0 0); }
-html[data-product="hr"] .wf-more summary::-webkit-details-marker { display: none; }
-html[data-product="hr"] .wf-more summary svg { width: 15px; height: 15px; color: var(--ink-2); }
-html[data-product="hr"] .wf-more[open] summary { border-color: var(--accent); }
-html[data-product="hr"] .wf-more .wf-filter-options { width: min(300px, 86vw); border-radius: 10px; border-color: var(--c-line-strong); box-shadow: 0 16px 36px -18px oklch(0.25 0.04 262 / 0.4); gap: 4px; }
-html[data-product="hr"] .wf-more .wf-filter-options label { padding: 6px 8px; border-radius: 6px; font-size: 13.5px; }
-html[data-product="hr"] .wf-more .wf-filter-options label:hover { background: var(--c-field); }
-html[data-product="hr"] .wf-more .wf-select { padding: 4px 8px 10px; border-bottom: 1px solid var(--c-line); font-size: 12.5px; color: var(--ink-2); }
-html[data-product="hr"] .wf-more .wf-select .input { width: 100%; max-width: none; }
-html[data-product="hr"] .wf-more-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px 2px; font-size: 12.5px; color: var(--ink-2); }
-html[data-product="hr"] .wf-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: oklch(1 0 0); font-size: 11.5px; font-weight: 600; }
-html[data-product="hr"] .wf-spacer { flex: 1; }
-html[data-product="hr"] .wf-icon-btn { width: 32px; padding: 0; justify-content: center; }
-html[data-product="hr"] .wf-icon-btn svg { width: 16px; height: 16px; }
+html:is([data-product="hr"], [data-console]) .wf-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--c-line); border-radius: var(--c-radius); background: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .wf-select-sm { width: auto; min-width: 0; max-width: 220px; min-height: 32px; height: 32px; padding: 0 28px 0 10px; font-size: 13.5px; }
+html:is([data-product="hr"], [data-console]) .wf-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; background: var(--c-field); border: 1px solid var(--c-line); }
+html:is([data-product="hr"], [data-console]) .wf-seg button { min-height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); font: 500 13px var(--font-ui); cursor: pointer; }
+html:is([data-product="hr"], [data-console]) .wf-seg button[aria-pressed="true"] { background: oklch(1 0 0); color: var(--ink); box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.12), inset 0 0 0 1px var(--c-line); }
+html:is([data-product="hr"], [data-console]) .wf-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+html:is([data-product="hr"], [data-console]) .wf-more { min-width: 0; }
+html:is([data-product="hr"], [data-console]) .wf-more summary { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; font-size: 13.5px; font-weight: 500; list-style: none; background: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .wf-more summary::-webkit-details-marker { display: none; }
+html:is([data-product="hr"], [data-console]) .wf-more summary svg { width: 15px; height: 15px; color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .wf-more[open] summary { border-color: var(--accent); }
+html:is([data-product="hr"], [data-console]) .wf-more .wf-filter-options { width: min(300px, 86vw); border-radius: 10px; border-color: var(--c-line-strong); box-shadow: 0 16px 36px -18px oklch(0.25 0.04 262 / 0.4); gap: 4px; }
+html:is([data-product="hr"], [data-console]) .wf-more .wf-filter-options label { padding: 6px 8px; border-radius: 6px; font-size: 13.5px; }
+html:is([data-product="hr"], [data-console]) .wf-more .wf-filter-options label:hover { background: var(--c-field); }
+html:is([data-product="hr"], [data-console]) .wf-more .wf-select { padding: 4px 8px 10px; border-bottom: 1px solid var(--c-line); font-size: 12.5px; color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .wf-more .wf-select .input { width: 100%; max-width: none; }
+html:is([data-product="hr"], [data-console]) .wf-more-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px 2px; font-size: 12.5px; color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .wf-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: oklch(1 0 0); font-size: 11.5px; font-weight: 600; }
+html:is([data-product="hr"], [data-console]) .wf-spacer { flex: 1; }
+html:is([data-product="hr"], [data-console]) .wf-icon-btn { width: 32px; padding: 0; justify-content: center; }
+html:is([data-product="hr"], [data-console]) .wf-icon-btn svg { width: 16px; height: 16px; }
 @media (max-width: 600px) {
-  html[data-product="hr"] .wf-filters > :is(.wf-select-sm, .wf-more) { flex: 1 1 140px; max-width: none; }
-  html[data-product="hr"] .wf-more summary { width: 100%; }
-  html[data-product="hr"] .wf-spacer { display: none; }
+  html:is([data-product="hr"], [data-console]) .wf-filters > :is(.wf-select-sm, .wf-more) { flex: 1 1 140px; max-width: none; }
+  html:is([data-product="hr"], [data-console]) .wf-more summary { width: 100%; }
+  html:is([data-product="hr"], [data-console]) .wf-spacer { display: none; }
 }
-html[data-product="hr"] .wf-seg button + button { border-left: 0; }
-html[data-product="hr"] .wf-filters .wf-select-sm { flex: 0 1 auto; width: auto; min-width: 0; max-width: 180px; }
-html[data-product="hr"] .wf-group-head { overflow-wrap: normal; word-break: normal; hyphens: auto; font-size: 12.5px; line-height: 1.3; }
-html[data-product="hr"] .wf-skill-search { min-height: 32px; margin: 2px 4px 6px; width: auto; font-size: 13.5px; }
-html[data-product="hr"] .wf-more .wf-filter-options label[hidden] { display: none; }
-html[data-product="hr"] .wf-more .wf-filter-options { right: 0; left: auto; }
-html[data-product="hr"] .wf-more .wf-filter-options label.wf-select { display: grid; gap: 6px; padding: 6px 8px 10px; border-radius: 0; }
-html[data-product="hr"] .wf-more .wf-filter-options label.wf-select:hover { background: none; }
-html[data-product="hr"] .wf-filters .wf-select-sm { flex: 1 1 110px; max-width: 170px; text-overflow: ellipsis; }
+html:is([data-product="hr"], [data-console]) .wf-seg button + button { border-left: 0; }
+html:is([data-product="hr"], [data-console]) .wf-filters .wf-select-sm { flex: 0 1 auto; width: auto; min-width: 0; max-width: 180px; }
+html:is([data-product="hr"], [data-console]) .wf-group-head { overflow-wrap: normal; word-break: normal; hyphens: auto; font-size: 12.5px; line-height: 1.3; }
+html:is([data-product="hr"], [data-console]) .wf-skill-search { min-height: 32px; margin: 2px 4px 6px; width: auto; font-size: 13.5px; }
+html:is([data-product="hr"], [data-console]) .wf-more .wf-filter-options label[hidden] { display: none; }
+html:is([data-product="hr"], [data-console]) .wf-more .wf-filter-options { right: 0; left: auto; }
+html:is([data-product="hr"], [data-console]) .wf-more .wf-filter-options label.wf-select { display: grid; gap: 6px; padding: 6px 8px 10px; border-radius: 0; }
+html:is([data-product="hr"], [data-console]) .wf-more .wf-filter-options label.wf-select:hover { background: none; }
+html:is([data-product="hr"], [data-console]) .wf-filters .wf-select-sm { flex: 1 1 110px; max-width: 170px; text-overflow: ellipsis; }
 /* one row when there is room; wraps instead of pushing the page wider */
-html[data-product="hr"] .wf-filters { flex-wrap: wrap; min-width: 0; }
-@media (min-width: 1240px) { html[data-product="hr"] .wf-filters { flex-wrap: nowrap; } }
-html[data-product="hr"] .wf-filters .wf-select-sm { flex-basis: 140px; padding-right: 24px; }
-html[data-product="hr"] .wf-filters > .wf-icon-btn { flex: 0 0 32px; width: 32px; }
-html[data-product="hr"] .wf-filters > .btn.ghost { flex: 0 0 auto; width: auto; }
+html:is([data-product="hr"], [data-console]) .wf-filters { flex-wrap: wrap; min-width: 0; }
+@media (min-width: 1240px) { html:is([data-product="hr"], [data-console]) .wf-filters { flex-wrap: nowrap; } }
+html:is([data-product="hr"], [data-console]) .wf-filters .wf-select-sm { flex-basis: 140px; padding-right: 24px; }
+html:is([data-product="hr"], [data-console]) .wf-filters > .wf-icon-btn { flex: 0 0 32px; width: 32px; }
+html:is([data-product="hr"], [data-console]) .wf-filters > .btn.ghost { flex: 0 0 auto; width: auto; }
 
 /* no grey outlines: surfaces separate by tone (white on the pale field, pale field inside white) and one soft,
    wide shadow, as on cluely.com. Lines stay only where they divide rows of data. */
-html[data-product="hr"] {
+html:is([data-product="hr"], [data-console]) {
   --c-lift: 0 1px 2px oklch(0.25 0.04 262 / 0.04), 0 10px 30px -18px oklch(0.25 0.06 262 / 0.18);
   --c-fill: oklch(0.965 0.008 262);
 }
-html[data-product="hr"] :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .empty-state, .wf-filters) { border: 0; box-shadow: var(--c-lift); }
-html[data-product="hr"] .panel > header { border-bottom: 0; padding-bottom: 4px; }
-html[data-product="hr"] .rail { border-right: 0; }
-html[data-product="hr"] .rail a[aria-current="page"] { box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.06); }
-html[data-product="hr"] :is(.hr-top, .admin-top) { border-bottom: 0; background: transparent; }
+html:is([data-product="hr"], [data-console]) :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .empty-state, .wf-filters) { border: 0; box-shadow: var(--c-lift); }
+html:is([data-product="hr"], [data-console]) .panel > header { border-bottom: 0; padding-bottom: 4px; }
+html:is([data-product="hr"], [data-console]) .rail { border-right: 0; }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] { box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.06); }
+html:is([data-product="hr"], [data-console]) :is(.hr-top, .admin-top) { border-bottom: 0; background: transparent; }
 /* controls: tinted fills instead of outlines; the primary keeps its blue */
-html[data-product="hr"] :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more summary) { border-color: transparent; background-color: var(--c-fill); }
-html[data-product="hr"] :is(.input, select.input, textarea.input):hover { background-color: oklch(0.95 0.01 262); }
-html[data-product="hr"] :is(.input, select.input, textarea.input):focus { border-color: var(--accent); background-color: oklch(1 0 0); }
-html[data-product="hr"] .btn:not(.primary):not(.ghost) { border-color: transparent; background: var(--c-fill); }
-html[data-product="hr"] .btn:not(.primary):not(.ghost):hover { background: oklch(0.945 0.012 262); }
-html[data-product="hr"] .wf-more[open] summary { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
-html[data-product="hr"] .wf-seg { border: 0; background: var(--c-fill); }
-html[data-product="hr"] .wf-seg button[aria-pressed="true"] { box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.12); }
-html[data-product="hr"] .wf-suggestion { border-color: transparent; background: var(--c-fill); }
-html[data-product="hr"] .wf-suggestion.is-selected { background: var(--accent-soft); box-shadow: none; }
-html[data-product="hr"] .wf-more .wf-filter-options { border: 0; box-shadow: 0 2px 6px oklch(0.25 0.04 262 / 0.06), 0 20px 44px -18px oklch(0.25 0.06 262 / 0.35); }
-html[data-product="hr"] .wf-more .wf-select { border-bottom: 0; }
+html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more summary) { border-color: transparent; background-color: var(--c-fill); }
+html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.input):hover { background-color: oklch(0.95 0.01 262); }
+html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.input):focus { border-color: var(--accent); background-color: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost) { border-color: transparent; background: var(--c-fill); }
+html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost):hover { background: oklch(0.945 0.012 262); }
+html:is([data-product="hr"], [data-console]) .wf-more[open] summary { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
+html:is([data-product="hr"], [data-console]) .wf-seg { border: 0; background: var(--c-fill); }
+html:is([data-product="hr"], [data-console]) .wf-seg button[aria-pressed="true"] { box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.12); }
+html:is([data-product="hr"], [data-console]) .wf-suggestion { border-color: transparent; background: var(--c-fill); }
+html:is([data-product="hr"], [data-console]) .wf-suggestion.is-selected { background: var(--accent-soft); box-shadow: none; }
+html:is([data-product="hr"], [data-console]) .wf-more .wf-filter-options { border: 0; box-shadow: 0 2px 6px oklch(0.25 0.04 262 / 0.06), 0 20px 44px -18px oklch(0.25 0.06 262 / 0.35); }
+html:is([data-product="hr"], [data-console]) .wf-more .wf-select { border-bottom: 0; }
 /* tables: no frame, header on the pale fill, faint row dividers only */
-html[data-product="hr"] table { border: 0; }
-html[data-product="hr"] table :is(th, td) { border-color: oklch(0.95 0.006 258); }
-html[data-product="hr"] .table-wrap { border: 0; }
+html:is([data-product="hr"], [data-console]) table { border: 0; }
+html:is([data-product="hr"], [data-console]) table :is(th, td) { border-color: oklch(0.95 0.006 258); }
+html:is([data-product="hr"], [data-console]) .table-wrap { border: 0; }
 /* heatmap: "no data" is a quiet fill, not a hatched grey box; averages lose their outline ring */
-html[data-product="hr"] .wf-cell.wf-unknown { background: var(--c-fill); color: var(--ink-2); }
-html[data-product="hr"] .wf-cell { border: 0; }
-html[data-product="hr"] .wf-avg, html[data-product="hr"] .wf-avg:hover { box-shadow: none; font-weight: 600; }
-html[data-product="hr"] .wf-skill-name, html[data-product="hr"] .wf-skill-head { box-shadow: none; }
-html[data-product="hr"] .wf-foot { border-top: 0; }
-html[data-product="hr"] .wf-legend i { border: 0; }
+html:is([data-product="hr"], [data-console]) .wf-cell.wf-unknown { background: var(--c-fill); color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .wf-cell { border: 0; }
+html:is([data-product="hr"], [data-console]) .wf-avg, html:is([data-product="hr"], [data-console]) .wf-avg:hover { box-shadow: none; font-weight: 600; }
+html:is([data-product="hr"], [data-console]) .wf-skill-name, html:is([data-product="hr"], [data-console]) .wf-skill-head { box-shadow: none; }
+html:is([data-product="hr"], [data-console]) .wf-foot { border-top: 0; }
+html:is([data-product="hr"], [data-console]) .wf-legend i { border: 0; }
 /* agent page in the console: fills and one soft lift instead of grey outlines; the owl stays above the question */
-html[data-product="hr"] .ag-starter { border-color: transparent; background: oklch(1 0 0); box-shadow: var(--c-lift); border-radius: 10px; }
-html[data-product="hr"] .ag-starter:hover { background: var(--accent-soft); }
-html[data-product="hr"] .ag-composer { border-color: transparent; border-radius: 14px; box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.05), 0 14px 36px -18px oklch(0.25 0.06 262 / 0.3); }
-html[data-product="hr"] .ag-composer:focus-within { box-shadow: 0 0 0 2px var(--accent-soft), 0 14px 36px -18px oklch(0.25 0.06 262 / 0.3); }
-html[data-product="hr"] :is(.own-plan-chip, .chip) { border-color: transparent; background: var(--c-fill); border-radius: 8px; }
-html[data-product="hr"] .own-plan-chip { text-align: left; }
-html[data-product="hr"] :is(.own-plan-chip, .chip):hover { background: var(--accent-soft); }
+html:is([data-product="hr"], [data-console]) .ag-starter { border-color: transparent; background: oklch(1 0 0); box-shadow: var(--c-lift); border-radius: 10px; }
+html:is([data-product="hr"], [data-console]) .ag-starter:hover { background: var(--accent-soft); }
+html:is([data-product="hr"], [data-console]) .ag-composer { border-color: transparent; border-radius: 14px; box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.05), 0 14px 36px -18px oklch(0.25 0.06 262 / 0.3); }
+html:is([data-product="hr"], [data-console]) .ag-composer:focus-within { box-shadow: 0 0 0 2px var(--accent-soft), 0 14px 36px -18px oklch(0.25 0.06 262 / 0.3); }
+html:is([data-product="hr"], [data-console]) :is(.own-plan-chip, .chip) { border-color: transparent; background: var(--c-fill); border-radius: 8px; }
+html:is([data-product="hr"], [data-console]) .own-plan-chip { text-align: left; }
+html:is([data-product="hr"], [data-console]) :is(.own-plan-chip, .chip):hover { background: var(--accent-soft); }
 /* SplitText: words stay together while their letters animate */
-html[data-product="hr"] .sw { display: inline-block; white-space: nowrap; }
-html[data-product="hr"] .sc { display: inline-block; will-change: transform, opacity; }
+html:is([data-product="hr"], [data-console]) .sw { display: inline-block; white-space: nowrap; }
+html:is([data-product="hr"], [data-console]) .sc { display: inline-block; will-change: transform, opacity; }
 
 /* the page title already names the page; the top bar keeps only the account */
-html[data-product="hr"] .admin-top .crumb { visibility: hidden; }
+html:is([data-product="hr"], [data-console]) .admin-top .crumb { visibility: hidden; }
 
 /* one owl colour for edges: the owl's blue (the app accent, hue 263) as pale lines and washes, so tables and
    controls read clearly without going back to grey */
-html[data-product="hr"] {
+html:is([data-product="hr"], [data-console]) {
   /* fixed values: mixing toward white in oklch drifts the hue toward pink */
   --owl-line: oklch(0.91 0.035 263);
   --owl-line-strong: oklch(0.84 0.06 263);
   --owl-wash: oklch(0.975 0.012 263);
   --owl-ink: oklch(0.4 0.12 263);
 }
-html[data-product="hr"] :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .empty-state, .wf-filters) {
+html:is([data-product="hr"], [data-console]) :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .empty-state, .wf-filters) {
   border: 1px solid var(--owl-line); box-shadow: 0 8px 24px -18px oklch(0.4 0.12 263 / 0.25); }
-html[data-product="hr"] .panel > header { border-bottom: 1px solid var(--owl-line); padding-bottom: 14px; }
-html[data-product="hr"] .rail a[aria-current="page"] { box-shadow: inset 0 0 0 1px var(--owl-line); color: var(--owl-ink); }
-html[data-product="hr"] .rail a[aria-current="page"] svg { color: var(--accent); }
+html:is([data-product="hr"], [data-console]) .panel > header { border-bottom: 1px solid var(--owl-line); padding-bottom: 14px; }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] { box-shadow: inset 0 0 0 1px var(--owl-line); color: var(--owl-ink); }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] svg { color: var(--accent); }
 
 /* tables: a framed card, a blue-washed header row, owl-blue row lines, a soft hover */
-html[data-product="hr"] :is(.table-wrap, .view > table, .panel > table) { border: 1px solid var(--owl-line); border-radius: var(--c-radius); background: oklch(1 0 0); overflow: auto; }
-html[data-product="hr"] .panel .table-wrap { border: 0; border-radius: 0; }
-html[data-product="hr"] table { border-collapse: collapse; width: 100%; }
-html[data-product="hr"] table thead th { background: var(--owl-wash); color: var(--owl-ink); font-weight: 600; border-bottom: 1px solid var(--owl-line-strong); }
-html[data-product="hr"] table :is(th, td) { border: 0; border-bottom: 1px solid var(--owl-line); vertical-align: middle; }
-html[data-product="hr"] table tbody tr:last-child td { border-bottom: 0; }
-html[data-product="hr"] table tbody tr:hover td { background: var(--owl-wash); }
-html[data-product="hr"] table td .row-actions, html[data-product="hr"] table td.row-actions { border: 0; }
+html:is([data-product="hr"], [data-console]) :is(.table-wrap, .view > table, .panel > table) { border: 1px solid var(--owl-line); border-radius: var(--c-radius); background: oklch(1 0 0); overflow: auto; }
+html:is([data-product="hr"], [data-console]) .panel .table-wrap { border: 0; border-radius: 0; }
+html:is([data-product="hr"], [data-console]) table { border-collapse: collapse; width: 100%; }
+html:is([data-product="hr"], [data-console]) table thead th { background: var(--owl-wash); color: var(--owl-ink); font-weight: 600; border-bottom: 1px solid var(--owl-line-strong); }
+html:is([data-product="hr"], [data-console]) table :is(th, td) { border: 0; border-bottom: 1px solid var(--owl-line); vertical-align: middle; }
+html:is([data-product="hr"], [data-console]) table tbody tr:last-child td { border-bottom: 0; }
+html:is([data-product="hr"], [data-console]) table tbody tr:hover td { background: var(--owl-wash); }
+html:is([data-product="hr"], [data-console]) table td .row-actions, html:is([data-product="hr"], [data-console]) table td.row-actions { border: 0; }
 
 /* controls: owl-blue edges on the pale fill */
-html[data-product="hr"] :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more summary) { border-color: var(--owl-line); background-color: oklch(1 0 0); }
-html[data-product="hr"] :is(.input, select.input, textarea.input):hover { border-color: var(--owl-line-strong); background-color: oklch(1 0 0); }
-html[data-product="hr"] .btn:not(.primary):not(.ghost) { border-color: var(--owl-line); background: oklch(1 0 0); color: var(--owl-ink); }
-html[data-product="hr"] .btn:not(.primary):not(.ghost):hover { border-color: var(--owl-line-strong); background: var(--owl-wash); }
-html[data-product="hr"] :is(.own-plan-chip, .chip, .wf-suggestion, .ag-starter) { border: 1px solid var(--owl-line); background: oklch(1 0 0); }
-html[data-product="hr"] .ag-composer { border: 1px solid var(--owl-line-strong); }
+html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more summary) { border-color: var(--owl-line); background-color: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.input):hover { border-color: var(--owl-line-strong); background-color: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost) { border-color: var(--owl-line); background: oklch(1 0 0); color: var(--owl-ink); }
+html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost):hover { border-color: var(--owl-line-strong); background: var(--owl-wash); }
+html:is([data-product="hr"], [data-console]) :is(.own-plan-chip, .chip, .wf-suggestion, .ag-starter) { border: 1px solid var(--owl-line); background: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .ag-composer { border: 1px solid var(--owl-line-strong); }
 
 /* segmented controls (All / Blocked / Flagged…): owl wash track, white selected segment */
-html[data-product="hr"] .seg { border: 1px solid var(--owl-line); background: var(--owl-wash); padding: 2px; gap: 2px; border-radius: 9px; }
-html[data-product="hr"] .seg button { min-height: 30px; border: 0; border-radius: 7px; color: var(--owl-ink); font-weight: 500; font-size: 13.5px; background: transparent; }
-html[data-product="hr"] .seg button + button { border-left: 0; }
-html[data-product="hr"] .seg button[aria-pressed="true"] { background: oklch(1 0 0); color: var(--accent); box-shadow: 0 1px 3px oklch(0.4 0.12 263 / 0.18), inset 0 0 0 1px var(--owl-line); }
-html[data-product="hr"] .wf-seg { border: 1px solid var(--owl-line); background: var(--owl-wash); }
-html[data-product="hr"] .wf-seg button { color: var(--owl-ink); }
-html[data-product="hr"] .wf-seg button[aria-pressed="true"] { color: var(--accent); box-shadow: 0 1px 3px oklch(0.4 0.12 263 / 0.18), inset 0 0 0 1px var(--owl-line); }
+html:is([data-product="hr"], [data-console]) .seg { border: 1px solid var(--owl-line); background: var(--owl-wash); padding: 2px; gap: 2px; border-radius: 9px; }
+html:is([data-product="hr"], [data-console]) .seg button { min-height: 30px; border: 0; border-radius: 7px; color: var(--owl-ink); font-weight: 500; font-size: 13.5px; background: transparent; }
+html:is([data-product="hr"], [data-console]) .seg button + button { border-left: 0; }
+html:is([data-product="hr"], [data-console]) .seg button[aria-pressed="true"] { background: oklch(1 0 0); color: var(--accent); box-shadow: 0 1px 3px oklch(0.4 0.12 263 / 0.18), inset 0 0 0 1px var(--owl-line); }
+html:is([data-product="hr"], [data-console]) .wf-seg { border: 1px solid var(--owl-line); background: var(--owl-wash); }
+html:is([data-product="hr"], [data-console]) .wf-seg button { color: var(--owl-ink); }
+html:is([data-product="hr"], [data-console]) .wf-seg button[aria-pressed="true"] { color: var(--accent); box-shadow: 0 1px 3px oklch(0.4 0.12 263 / 0.18), inset 0 0 0 1px var(--owl-line); }
 
 /* heatmap: owl-blue frame lines on the empty cells and the pinned column edge */
-html[data-product="hr"] .wf-cell.wf-unknown { background: var(--owl-wash); box-shadow: inset 0 0 0 1px var(--owl-line); }
-html[data-product="hr"] .wf-foot { border-top: 1px solid var(--owl-line); }
+html:is([data-product="hr"], [data-console]) .wf-cell.wf-unknown { background: var(--owl-wash); box-shadow: inset 0 0 0 1px var(--owl-line); }
+html:is([data-product="hr"], [data-console]) .wf-foot { border-top: 1px solid var(--owl-line); }
 
 /* tables breathe: dates stay on one line, long reasons get a readable width, actions never clip */
-html[data-product="hr"] table :is(th, td) { padding: 12px 14px; }
-html[data-product="hr"] table td:first-child, html[data-product="hr"] table td:has(> .btn), html[data-product="hr"] table td .row-actions { white-space: nowrap; }
-html[data-product="hr"] table td ul { min-width: 240px; margin: 0; padding-left: 18px; }
+html:is([data-product="hr"], [data-console]) table :is(th, td) { padding: 12px 14px; }
+html:is([data-product="hr"], [data-console]) table td:first-child, html:is([data-product="hr"], [data-console]) table td:has(> .btn), html:is([data-product="hr"], [data-console]) table td .row-actions { white-space: nowrap; }
+html:is([data-product="hr"], [data-console]) table td ul { min-width: 240px; margin: 0; padding-left: 18px; }
 
 /* cards carry the colour, not an edge: a white page, cards filled with a soft owl blue, white controls and table rows
    sitting inside them. No borders or shadows on cards. */
-html[data-product="hr"] {
+html:is([data-product="hr"], [data-console]) {
   --card-fill: oklch(0.972 0.014 263);
   --card-fill-deep: oklch(0.945 0.024 263);
 }
-html[data-product="hr"] body, html[data-product="hr"] .rail { background: oklch(1 0 0); }
-html[data-product="hr"] :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .empty-state, .wf-filters) {
+html:is([data-product="hr"], [data-console]) body, html:is([data-product="hr"], [data-console]) .rail { background: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) :is(.panel, .stat, .wf-stat, .block, .wf-priority, .card, .aside-card, .empty-state, .wf-filters) {
   border: 0; box-shadow: none; background: var(--card-fill); }
-html[data-product="hr"] .panel > header { border-bottom: 0; padding-bottom: 6px; }
-html[data-product="hr"] .rail a[aria-current="page"] { background: var(--card-fill); box-shadow: none; }
+html:is([data-product="hr"], [data-console]) .panel > header { border-bottom: 0; padding-bottom: 6px; }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] { background: var(--card-fill); box-shadow: none; }
 /* inside a card: white controls without outlines */
-html[data-product="hr"] :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more summary) { border-color: transparent; background-color: oklch(1 0 0); }
-html[data-product="hr"] :is(.input, select.input, textarea.input):hover { border-color: transparent; background-color: oklch(1 0 0); }
-html[data-product="hr"] :is(.input, select.input, textarea.input):focus { border-color: var(--accent); }
-html[data-product="hr"] .btn:not(.primary):not(.ghost) { border-color: transparent; background: oklch(1 0 0); }
-html[data-product="hr"] .btn:not(.primary):not(.ghost):hover { border-color: transparent; background: var(--card-fill-deep); }
-html[data-product="hr"] :is(.own-plan-chip, .chip, .wf-suggestion, .ag-starter) { border-color: transparent; background: oklch(1 0 0); box-shadow: none; }
-html[data-product="hr"] .ag-starter { background: var(--card-fill); }
-html[data-product="hr"] .ag-composer { border-color: transparent; background: var(--card-fill); box-shadow: none; }
-html[data-product="hr"] :is(.seg, .wf-seg) { border: 0; background: var(--card-fill-deep); }
-html[data-product="hr"] :is(.seg, .wf-seg) button[aria-pressed="true"] { box-shadow: none; }
+html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more summary) { border-color: transparent; background-color: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.input):hover { border-color: transparent; background-color: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.input):focus { border-color: var(--accent); }
+html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost) { border-color: transparent; background: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost):hover { border-color: transparent; background: var(--card-fill-deep); }
+html:is([data-product="hr"], [data-console]) :is(.own-plan-chip, .chip, .wf-suggestion, .ag-starter) { border-color: transparent; background: oklch(1 0 0); box-shadow: none; }
+html:is([data-product="hr"], [data-console]) .ag-starter { background: var(--card-fill); }
+html:is([data-product="hr"], [data-console]) .ag-composer { border-color: transparent; background: var(--card-fill); box-shadow: none; }
+html:is([data-product="hr"], [data-console]) :is(.seg, .wf-seg) { border: 0; background: var(--card-fill-deep); }
+html:is([data-product="hr"], [data-console]) :is(.seg, .wf-seg) button[aria-pressed="true"] { box-shadow: none; }
 /* tables: white rows inside the blue card, a deeper-blue header, no frame lines */
-html[data-product="hr"] :is(.table-wrap, .view > table, .panel > table) { border: 0; background: var(--card-fill); padding: 6px; }
-html[data-product="hr"] table thead th { background: var(--card-fill-deep); border-bottom: 0; }
-html[data-product="hr"] table thead th:first-child { border-radius: 8px 0 0 8px; }
-html[data-product="hr"] table thead th:last-child { border-radius: 0 8px 8px 0; }
-html[data-product="hr"] table tbody td { background: oklch(1 0 0); border-bottom: 2px solid var(--card-fill); }
-html[data-product="hr"] table tbody tr:hover td { background: oklch(0.985 0.008 263); }
+html:is([data-product="hr"], [data-console]) :is(.table-wrap, .view > table, .panel > table) { border: 0; background: var(--card-fill); padding: 6px; }
+html:is([data-product="hr"], [data-console]) table thead th { background: var(--card-fill-deep); border-bottom: 0; }
+html:is([data-product="hr"], [data-console]) table thead th:first-child { border-radius: 8px 0 0 8px; }
+html:is([data-product="hr"], [data-console]) table thead th:last-child { border-radius: 0 8px 8px 0; }
+html:is([data-product="hr"], [data-console]) table tbody td { background: oklch(1 0 0); border-bottom: 2px solid var(--card-fill); }
+html:is([data-product="hr"], [data-console]) table tbody tr:hover td { background: oklch(0.985 0.008 263); }
 /* heatmap empty cells: white instead of an outlined box */
-html[data-product="hr"] .wf-cell.wf-unknown { background: oklch(1 0 0); box-shadow: none; }
-html[data-product="hr"] .wf-foot { border-top: 0; }
-html[data-product="hr"] .wf-skill-name, html[data-product="hr"] .wf-skill-head { background: var(--card-fill); }
+html:is([data-product="hr"], [data-console]) .wf-cell.wf-unknown { background: oklch(1 0 0); box-shadow: none; }
+html:is([data-product="hr"], [data-console]) .wf-foot { border-top: 0; }
+html:is([data-product="hr"], [data-console]) .wf-skill-name, html:is([data-product="hr"], [data-console]) .wf-skill-head { background: var(--card-fill); }
 
 /* sidebar icons: two-tone. The tint shape (.d) is faint at rest, deepens on hover, and on the current page the
    icon turns owl blue with its shape filled in; the label stays ink so the row reads first, the icon second. */
-html[data-product="hr"] .rail svg { width: 18px; height: 18px; stroke-width: 1.6; color: oklch(0.5 0.03 262); transition: color 160ms ease; }
-html[data-product="hr"] .rail svg .d { fill: currentColor; stroke: none; opacity: 0.1; transition: opacity 160ms ease; }
-html[data-product="hr"] :is(.rail a, .rail .rail-group-btn):hover svg { color: var(--ink); }
-html[data-product="hr"] :is(.rail a, .rail .rail-group-btn):hover svg .d { opacity: 0.16; }
-html[data-product="hr"] .rail a[aria-current="page"] svg, html[data-product="hr"] .rail .rail-group.has-current > .rail-group-btn svg:first-child { color: var(--accent); }
-html[data-product="hr"] .rail a[aria-current="page"] svg .d, html[data-product="hr"] .rail .rail-group.has-current > .rail-group-btn svg:first-child .d { opacity: 0.22; }
-html[data-product="hr"] .rail a[aria-current="page"] { color: var(--ink); font-weight: 600; }
-html[data-product="hr"] .rail .rail-group-btn > svg:last-child { width: 14px; height: 14px; color: oklch(0.6 0.02 262); }
-@media (prefers-reduced-motion: reduce) { html[data-product="hr"] .rail svg, html[data-product="hr"] .rail svg .d { transition: none; } }
+html:is([data-product="hr"], [data-console]) .rail svg { width: 18px; height: 18px; stroke-width: 1.6; color: oklch(0.5 0.03 262); transition: color 160ms ease; }
+html:is([data-product="hr"], [data-console]) .rail svg .d { fill: currentColor; stroke: none; opacity: 0.1; transition: opacity 160ms ease; }
+html:is([data-product="hr"], [data-console]) :is(.rail a, .rail .rail-group-btn):hover svg { color: var(--ink); }
+html:is([data-product="hr"], [data-console]) :is(.rail a, .rail .rail-group-btn):hover svg .d { opacity: 0.16; }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] svg, html:is([data-product="hr"], [data-console]) .rail .rail-group.has-current > .rail-group-btn svg:first-child { color: var(--accent); }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] svg .d, html:is([data-product="hr"], [data-console]) .rail .rail-group.has-current > .rail-group-btn svg:first-child .d { opacity: 0.22; }
+html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] { color: var(--ink); font-weight: 600; }
+html:is([data-product="hr"], [data-console]) .rail .rail-group-btn > svg:last-child { width: 14px; height: 14px; color: oklch(0.6 0.02 262); }
+@media (prefers-reduced-motion: reduce) { html:is([data-product="hr"], [data-console]) .rail svg, html:is([data-product="hr"], [data-console]) .rail svg .d { transition: none; } }
 
 /* ---------- gap bloom: one-hue owl-blue ramp, light = smaller gap, deep = larger ---------- */
-html[data-product="hr"] {
+html:is([data-product="hr"], [data-console]) {
   --bl-1: oklch(0.88 0.05 263); --bl-2: oklch(0.78 0.09 263); --bl-3: oklch(0.67 0.14 263);
   --bl-4: oklch(0.56 0.18 263); --bl-5: oklch(0.42 0.16 265);
 }
-html[data-product="hr"] .wf-head-actions { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px 14px; }
-html[data-product="hr"] .wf-bloom-wrap { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: 28px; align-items: center; }
-html[data-product="hr"] .wf-bloom-fig { margin: 0; display: grid; gap: 10px; justify-items: center; }
-html[data-product="hr"] .wf-bloom { width: 100%; max-width: 380px; height: auto; overflow: visible; }
-html[data-product="hr"] .wf-bloom-ring { fill: none; stroke: oklch(0.9 0.03 263); stroke-width: 1; stroke-dasharray: 2 4; }
-html[data-product="hr"] .wf-bloom-core { fill: oklch(1 0 0); }
-html[data-product="hr"] .wf-bloom-num { text-anchor: middle; font: 600 22px var(--font-ui); letter-spacing: -0.02em; fill: var(--ink); }
-html[data-product="hr"] .wf-bloom-cap { text-anchor: middle; font: 500 11px var(--font-ui); fill: var(--ink-2); }
-html[data-product="hr"] .wf-petal { cursor: pointer; outline: none; animation: wf-bloom-grow 760ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: var(--d); }
-html[data-product="hr"] .wf-petal path { stroke: var(--card-fill, #fff); stroke-width: 2; stroke-linejoin: round; transition: filter 160ms ease, transform 160ms ease; }
-html[data-product="hr"] .wf-petal-n { text-anchor: middle; font: 600 11px var(--font-ui); fill: var(--ink-2); pointer-events: none; }
-html[data-product="hr"] :is(.wf-petal.s1 path, .wf-rank-n.s1, .wf-bloom-scale i.s1) { fill: var(--bl-1); background: var(--bl-1); }
-html[data-product="hr"] :is(.wf-petal.s2 path, .wf-rank-n.s2, .wf-bloom-scale i.s2) { fill: var(--bl-2); background: var(--bl-2); }
-html[data-product="hr"] :is(.wf-petal.s3 path, .wf-rank-n.s3, .wf-bloom-scale i.s3) { fill: var(--bl-3); background: var(--bl-3); }
-html[data-product="hr"] :is(.wf-petal.s4 path, .wf-rank-n.s4, .wf-bloom-scale i.s4) { fill: var(--bl-4); background: var(--bl-4); }
-html[data-product="hr"] :is(.wf-petal.s5 path, .wf-rank-n.s5, .wf-bloom-scale i.s5) { fill: var(--bl-5); background: var(--bl-5); }
-html[data-product="hr"] :is(.wf-petal:hover, .wf-petal:focus-visible, .wf-petal.is-hot) path { filter: brightness(1.08) saturate(1.15) drop-shadow(0 6px 10px oklch(0.4 0.15 263 / 0.35)); }
-html[data-product="hr"] :is(.wf-petal:hover, .wf-petal:focus-visible, .wf-petal.is-hot) .wf-petal-n { fill: var(--accent); }
-html[data-product="hr"] .wf-petal:focus-visible path { stroke: var(--accent); }
+html:is([data-product="hr"], [data-console]) .wf-head-actions { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px 14px; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-wrap { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: 28px; align-items: center; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-fig { margin: 0; display: grid; gap: 10px; justify-items: center; }
+html:is([data-product="hr"], [data-console]) .wf-bloom { width: 100%; max-width: 380px; height: auto; overflow: visible; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-ring { fill: none; stroke: oklch(0.9 0.03 263); stroke-width: 1; stroke-dasharray: 2 4; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-core { fill: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .wf-bloom-num { text-anchor: middle; font: 600 22px var(--font-ui); letter-spacing: -0.02em; fill: var(--ink); }
+html:is([data-product="hr"], [data-console]) .wf-bloom-cap { text-anchor: middle; font: 500 11px var(--font-ui); fill: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .wf-petal { cursor: pointer; outline: none; animation: wf-bloom-grow 760ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: var(--d); }
+html:is([data-product="hr"], [data-console]) .wf-petal path { stroke: var(--card-fill, #fff); stroke-width: 2; stroke-linejoin: round; transition: filter 160ms ease, transform 160ms ease; }
+html:is([data-product="hr"], [data-console]) .wf-petal-n { text-anchor: middle; font: 600 11px var(--font-ui); fill: var(--ink-2); pointer-events: none; }
+html:is([data-product="hr"], [data-console]) :is(.wf-petal.s1 path, .wf-rank-n.s1, .wf-bloom-scale i.s1) { fill: var(--bl-1); background: var(--bl-1); }
+html:is([data-product="hr"], [data-console]) :is(.wf-petal.s2 path, .wf-rank-n.s2, .wf-bloom-scale i.s2) { fill: var(--bl-2); background: var(--bl-2); }
+html:is([data-product="hr"], [data-console]) :is(.wf-petal.s3 path, .wf-rank-n.s3, .wf-bloom-scale i.s3) { fill: var(--bl-3); background: var(--bl-3); }
+html:is([data-product="hr"], [data-console]) :is(.wf-petal.s4 path, .wf-rank-n.s4, .wf-bloom-scale i.s4) { fill: var(--bl-4); background: var(--bl-4); }
+html:is([data-product="hr"], [data-console]) :is(.wf-petal.s5 path, .wf-rank-n.s5, .wf-bloom-scale i.s5) { fill: var(--bl-5); background: var(--bl-5); }
+html:is([data-product="hr"], [data-console]) :is(.wf-petal:hover, .wf-petal:focus-visible, .wf-petal.is-hot) path { filter: brightness(1.08) saturate(1.15) drop-shadow(0 6px 10px oklch(0.4 0.15 263 / 0.35)); }
+html:is([data-product="hr"], [data-console]) :is(.wf-petal:hover, .wf-petal:focus-visible, .wf-petal.is-hot) .wf-petal-n { fill: var(--accent); }
+html:is([data-product="hr"], [data-console]) .wf-petal:focus-visible path { stroke: var(--accent); }
 @keyframes wf-bloom-grow { from { transform: scale(0.35) rotate(-8deg); opacity: 0; } to { transform: none; opacity: 1; } }
-html[data-product="hr"] .wf-bloom-scale { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--ink-2); }
-html[data-product="hr"] .wf-bloom-scale i { width: 18px; height: 8px; border-radius: 4px; }
-html[data-product="hr"] .wf-bloom-scale span:first-child { margin-right: 4px; } html[data-product="hr"] .wf-bloom-scale span:last-child { margin-left: 4px; }
-html[data-product="hr"] .wf-bloom-fig figcaption { display: grid; gap: 4px; justify-items: center; font-size: 12px; }
-html[data-product="hr"] .wf-bloom-tip { position: fixed; z-index: 45; width: auto; max-width: 320px; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.45; white-space: pre-line; pointer-events: none; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-scale { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .wf-bloom-scale i { width: 18px; height: 8px; border-radius: 4px; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-scale span:first-child { margin-right: 4px; } html:is([data-product="hr"], [data-console]) .wf-bloom-scale span:last-child { margin-left: 4px; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-fig figcaption { display: grid; gap: 4px; justify-items: center; font-size: 12px; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-tip { position: fixed; z-index: 45; width: auto; max-width: 320px; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.45; white-space: pre-line; pointer-events: none; }
 
 /* ranked list: numbered to match the petals, one dot per assessed person (filled = below target) */
-html[data-product="hr"] .wf-rank { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-html[data-product="hr"] .wf-rank button { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto 64px; align-items: center; gap: 12px;
+html:is([data-product="hr"], [data-console]) .wf-rank { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+html:is([data-product="hr"], [data-console]) .wf-rank button { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto 64px; align-items: center; gap: 12px;
   padding: 9px 12px; border-radius: 10px; background: oklch(1 0 0); cursor: pointer; transition: background 140ms ease, transform 140ms ease; }
-html[data-product="hr"] .wf-rank li.is-hot button, html[data-product="hr"] .wf-rank button:hover { background: oklch(0.99 0.01 263); transform: translateX(2px); }
-html[data-product="hr"] .wf-rank button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-html[data-product="hr"] .wf-rank-n { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: oklch(1 0 0); font: 600 12px var(--font-ui); }
-html[data-product="hr"] .wf-rank-n.s1, html[data-product="hr"] .wf-rank-n.s2 { color: var(--owl-ink, var(--ink)); }
-html[data-product="hr"] .wf-rank-main { display: grid; gap: 1px; min-width: 0; }
-html[data-product="hr"] .wf-rank-main b { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-html[data-product="hr"] .wf-rank-main small { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-html[data-product="hr"] .wf-dots { display: flex; flex-wrap: wrap; gap: 3px; max-width: 96px; align-items: center; }
-html[data-product="hr"] .wf-dots i { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--bl-3); }
-html[data-product="hr"] .wf-dots i.on { background: var(--bl-4); box-shadow: none; }
-html[data-product="hr"] .wf-dots em { font-style: normal; font-size: 11px; color: var(--ink-2); }
-html[data-product="hr"] .wf-rank-pct { display: grid; justify-items: end; font: 600 16px var(--font-ui); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-html[data-product="hr"] .wf-rank-pct small { font: 500 11px var(--font-ui); color: var(--ink-2); letter-spacing: 0; }
-@media (max-width: 860px) { html[data-product="hr"] .wf-bloom-wrap { grid-template-columns: 1fr; } html[data-product="hr"] .wf-bloom { max-width: 320px; } }
-@media (max-width: 520px) { html[data-product="hr"] .wf-rank button { grid-template-columns: 24px minmax(0, 1fr) 56px; } html[data-product="hr"] .wf-dots { display: none; } }
-@media (prefers-reduced-motion: reduce) { html[data-product="hr"] .wf-petal { animation: none; } html[data-product="hr"] .wf-rank button { transition: none; } }
+html:is([data-product="hr"], [data-console]) .wf-rank li.is-hot button, html:is([data-product="hr"], [data-console]) .wf-rank button:hover { background: oklch(0.99 0.01 263); transform: translateX(2px); }
+html:is([data-product="hr"], [data-console]) .wf-rank button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+html:is([data-product="hr"], [data-console]) .wf-rank-n { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: oklch(1 0 0); font: 600 12px var(--font-ui); }
+html:is([data-product="hr"], [data-console]) .wf-rank-n.s1, html:is([data-product="hr"], [data-console]) .wf-rank-n.s2 { color: var(--owl-ink, var(--ink)); }
+html:is([data-product="hr"], [data-console]) .wf-rank-main { display: grid; gap: 1px; min-width: 0; }
+html:is([data-product="hr"], [data-console]) .wf-rank-main b { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:is([data-product="hr"], [data-console]) .wf-rank-main small { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:is([data-product="hr"], [data-console]) .wf-dots { display: flex; flex-wrap: wrap; gap: 3px; max-width: 96px; align-items: center; }
+html:is([data-product="hr"], [data-console]) .wf-dots i { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--bl-3); }
+html:is([data-product="hr"], [data-console]) .wf-dots i.on { background: var(--bl-4); box-shadow: none; }
+html:is([data-product="hr"], [data-console]) .wf-dots em { font-style: normal; font-size: 11px; color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .wf-rank-pct { display: grid; justify-items: end; font: 600 16px var(--font-ui); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+html:is([data-product="hr"], [data-console]) .wf-rank-pct small { font: 500 11px var(--font-ui); color: var(--ink-2); letter-spacing: 0; }
+@media (max-width: 860px) { html:is([data-product="hr"], [data-console]) .wf-bloom-wrap { grid-template-columns: 1fr; } html:is([data-product="hr"], [data-console]) .wf-bloom { max-width: 320px; } }
+@media (max-width: 520px) { html:is([data-product="hr"], [data-console]) .wf-rank button { grid-template-columns: 24px minmax(0, 1fr) 56px; } html:is([data-product="hr"], [data-console]) .wf-dots { display: none; } }
+@media (prefers-reduced-motion: reduce) { html:is([data-product="hr"], [data-console]) .wf-petal { animation: none; } html:is([data-product="hr"], [data-console]) .wf-rank button { transition: none; } }
 /* petal gradients: pale near the centre, the step colour at the tip; the CSS fill rules above stay as the fallback */
-html[data-product="hr"] .wf-petal path[fill] { fill-opacity: 1; }
-html[data-product="hr"] .wf-stop-a.s1 { stop-color: oklch(0.95 0.025 263); } html[data-product="hr"] .wf-stop-b.s1 { stop-color: var(--bl-1); }
-html[data-product="hr"] .wf-stop-a.s2 { stop-color: oklch(0.93 0.04 263); }  html[data-product="hr"] .wf-stop-b.s2 { stop-color: var(--bl-2); }
-html[data-product="hr"] .wf-stop-a.s3 { stop-color: oklch(0.88 0.06 263); }  html[data-product="hr"] .wf-stop-b.s3 { stop-color: var(--bl-3); }
-html[data-product="hr"] .wf-stop-a.s4 { stop-color: oklch(0.82 0.09 263); }  html[data-product="hr"] .wf-stop-b.s4 { stop-color: var(--bl-4); }
-html[data-product="hr"] .wf-stop-a.s5 { stop-color: oklch(0.72 0.12 263); }  html[data-product="hr"] .wf-stop-b.s5 { stop-color: var(--bl-5); }
-html[data-product="hr"] .wf-petal path { stroke: oklch(1 0 0); stroke-width: 2.5; }
-html[data-product="hr"] .wf-bloom-core { fill: oklch(1 0 0); filter: drop-shadow(0 4px 10px oklch(0.4 0.12 263 / 0.18)); }
-html[data-product="hr"] .wf-bloom-wrap + .wf-suggestions { margin-top: 18px; }
-html[data-product="hr"] .wf-petal.s1 path { fill: url(#wf-bl-1); }
-html[data-product="hr"] .wf-petal.s2 path { fill: url(#wf-bl-2); }
-html[data-product="hr"] .wf-petal.s3 path { fill: url(#wf-bl-3); }
-html[data-product="hr"] .wf-petal.s4 path { fill: url(#wf-bl-4); }
-html[data-product="hr"] .wf-petal.s5 path { fill: url(#wf-bl-5); }
-html[data-product="hr"] .wf-dots { flex-wrap: nowrap; max-width: none; }
+html:is([data-product="hr"], [data-console]) .wf-petal path[fill] { fill-opacity: 1; }
+html:is([data-product="hr"], [data-console]) .wf-stop-a.s1 { stop-color: oklch(0.95 0.025 263); } html:is([data-product="hr"], [data-console]) .wf-stop-b.s1 { stop-color: var(--bl-1); }
+html:is([data-product="hr"], [data-console]) .wf-stop-a.s2 { stop-color: oklch(0.93 0.04 263); }  html:is([data-product="hr"], [data-console]) .wf-stop-b.s2 { stop-color: var(--bl-2); }
+html:is([data-product="hr"], [data-console]) .wf-stop-a.s3 { stop-color: oklch(0.88 0.06 263); }  html:is([data-product="hr"], [data-console]) .wf-stop-b.s3 { stop-color: var(--bl-3); }
+html:is([data-product="hr"], [data-console]) .wf-stop-a.s4 { stop-color: oklch(0.82 0.09 263); }  html:is([data-product="hr"], [data-console]) .wf-stop-b.s4 { stop-color: var(--bl-4); }
+html:is([data-product="hr"], [data-console]) .wf-stop-a.s5 { stop-color: oklch(0.72 0.12 263); }  html:is([data-product="hr"], [data-console]) .wf-stop-b.s5 { stop-color: var(--bl-5); }
+html:is([data-product="hr"], [data-console]) .wf-petal path { stroke: oklch(1 0 0); stroke-width: 2.5; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-core { fill: oklch(1 0 0); filter: drop-shadow(0 4px 10px oklch(0.4 0.12 263 / 0.18)); }
+html:is([data-product="hr"], [data-console]) .wf-bloom-wrap + .wf-suggestions { margin-top: 18px; }
+html:is([data-product="hr"], [data-console]) .wf-petal.s1 path { fill: url(#wf-bl-1); }
+html:is([data-product="hr"], [data-console]) .wf-petal.s2 path { fill: url(#wf-bl-2); }
+html:is([data-product="hr"], [data-console]) .wf-petal.s3 path { fill: url(#wf-bl-3); }
+html:is([data-product="hr"], [data-console]) .wf-petal.s4 path { fill: url(#wf-bl-4); }
+html:is([data-product="hr"], [data-console]) .wf-petal.s5 path { fill: url(#wf-bl-5); }
+html:is([data-product="hr"], [data-console]) .wf-dots { flex-wrap: nowrap; max-width: none; }
 /* the owl in the centre of the bloom */
-html[data-product="hr"] .wf-bloom-stage { position: relative; width: 100%; max-width: 380px; }
-html[data-product="hr"] .wf-bloom-owl { position: absolute; left: 50%; top: 50%; width: 18%; aspect-ratio: 1; translate: -50% -52%; display: grid; place-items: center; pointer-events: none; }
-html[data-product="hr"] .wf-bloom-owl .owl { width: 100%; height: 100%; }
-html[data-product="hr"] .wf-bloom-core { filter: drop-shadow(0 6px 14px oklch(0.4 0.12 263 / 0.22)); }
-html[data-product="hr"] .wf-bloom-avg { margin: 0; font-size: 13px; color: var(--ink-2); }
-html[data-product="hr"] .wf-bloom-avg b { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); margin-right: 4px; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-stage { position: relative; width: 100%; max-width: 380px; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-owl { position: absolute; left: 50%; top: 50%; width: 18%; aspect-ratio: 1; translate: -50% -52%; display: grid; place-items: center; pointer-events: none; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-owl .owl { width: 100%; height: 100%; }
+html:is([data-product="hr"], [data-console]) .wf-bloom-core { filter: drop-shadow(0 6px 14px oklch(0.4 0.12 263 / 0.22)); }
+html:is([data-product="hr"], [data-console]) .wf-bloom-avg { margin: 0; font-size: 13px; color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .wf-bloom-avg b { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); margin-right: 4px; }
 /* the review stats row on Overview sits in a plain wrapper: give it the same breathing room as the rest of the page */
-html[data-product="hr"] .stats + .overview { margin-top: 20px; }
+html:is([data-product="hr"], [data-console]) .stats + .overview { margin-top: 20px; }
 
 /* Overview: key cards, then the review queue beside the three biggest skill gaps, then the team */
-html[data-product="hr"] .view > div:has(> .stats) + div { margin-top: 20px; }
-html[data-product="hr"] .overview-main { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 16px; align-items: start; margin-bottom: 20px; }
-@media (max-width: 960px) { html[data-product="hr"] .overview-main { grid-template-columns: 1fr; } }
-html[data-product="hr"] .overview-gaps > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-html[data-product="hr"] .gap-top { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-html[data-product="hr"] .gap-top li { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: oklch(1 0 0); }
-html[data-product="hr"] .gap-pct { display: grid; place-items: center; height: 30px; border-radius: 8px; background: var(--bl-4, var(--accent)); color: oklch(1 0 0); font: 600 13px var(--font-ui); font-variant-numeric: tabular-nums; }
-html[data-product="hr"] .gap-main { display: grid; gap: 2px; min-width: 0; }
-html[data-product="hr"] .gap-main b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-html[data-product="hr"] .gap-main small { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:is([data-product="hr"], [data-console]) .view > div:has(> .stats) + div { margin-top: 20px; }
+html:is([data-product="hr"], [data-console]) .overview-main { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 16px; align-items: start; margin-bottom: 20px; }
+@media (max-width: 960px) { html:is([data-product="hr"], [data-console]) .overview-main { grid-template-columns: 1fr; } }
+html:is([data-product="hr"], [data-console]) .overview-gaps > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+html:is([data-product="hr"], [data-console]) .gap-top { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+html:is([data-product="hr"], [data-console]) .gap-top li { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .gap-pct { display: grid; place-items: center; height: 30px; border-radius: 8px; background: var(--bl-4, var(--accent)); color: oklch(1 0 0); font: 600 13px var(--font-ui); font-variant-numeric: tabular-nums; }
+html:is([data-product="hr"], [data-console]) .gap-main { display: grid; gap: 2px; min-width: 0; }
+html:is([data-product="hr"], [data-console]) .gap-main b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:is([data-product="hr"], [data-console]) .gap-main small { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* admin: enterprises with their bill and AI models */
-html[data-product="hr"] .admin-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 20px; margin-bottom: 14px; }
-html[data-product="hr"] .admin-filters .field { display: grid; gap: 4px; font-size: 12.5px; color: var(--ink-2); }
-html[data-product="hr"] .admin-filters p { margin: 0 0 8px; }
-html[data-product="hr"] .admin-month { min-height: 34px; }
-html[data-product="hr"] .ent-plan { display: grid; gap: 3px; justify-items: start; }
-html[data-product="hr"] .ent-members { display: block; margin-top: 3px; }
-html[data-product="hr"] td.n small { display: block; font-size: 12px; }
-html[data-product="hr"] .ent-drawer { width: min(640px, calc(100vw - 24px)); }
-html[data-product="hr"] .ent-drawer > header { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 18px 20px; }
-html[data-product="hr"] .ent-drawer h3 { margin: 22px 0 8px; font-size: 15px; }
-html[data-product="hr"] .ent-models { display: grid; gap: 10px; }
-html[data-product="hr"] .ent-models .field { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
-html[data-product="hr"] .ent-bill { grid-template-columns: repeat(2, minmax(0, 1fr)); display: grid; }
-html[data-product="hr"] td .who { display: grid; gap: 2px; }
-html[data-product="hr"] .ent-drawer > .pad { padding: 0 20px 28px; }
+html:is([data-product="hr"], [data-console]) .admin-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 20px; margin-bottom: 14px; }
+html:is([data-product="hr"], [data-console]) .admin-filters .field { display: grid; gap: 4px; font-size: 12.5px; color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .admin-filters p { margin: 0 0 8px; }
+html:is([data-product="hr"], [data-console]) .admin-month { min-height: 34px; }
+html:is([data-product="hr"], [data-console]) .ent-plan { display: grid; gap: 3px; justify-items: start; }
+html:is([data-product="hr"], [data-console]) .ent-members { display: block; margin-top: 3px; }
+html:is([data-product="hr"], [data-console]) td.n small { display: block; font-size: 12px; }
+html:is([data-product="hr"], [data-console]) .ent-drawer { width: min(640px, calc(100vw - 24px)); }
+html:is([data-product="hr"], [data-console]) .ent-drawer > header { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 18px 20px; }
+html:is([data-product="hr"], [data-console]) .ent-drawer h3 { margin: 22px 0 8px; font-size: 15px; }
+html:is([data-product="hr"], [data-console]) .ent-models { display: grid; gap: 10px; }
+html:is([data-product="hr"], [data-console]) .ent-models .field { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .ent-bill { grid-template-columns: repeat(2, minmax(0, 1fr)); display: grid; }
+html:is([data-product="hr"], [data-console]) td .who { display: grid; gap: 2px; }
+html:is([data-product="hr"], [data-console]) .ent-drawer > .pad { padding: 0 20px 28px; }
 
 /* admin: the gateway's model list; HR: a model per person */
-html[data-product="hr"] .gateway-models { margin-top: 24px; }
-html[data-product="hr"] .gateway-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-html[data-product="hr"] .gateway-head h2 { margin: 0; }
-html[data-product="hr"] .gateway-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 8px; }
-html[data-product="hr"] .gateway-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 8px 10px 8px 12px; border-radius: 10px; background: var(--card-fill, #fff); }
-html[data-product="hr"] .gateway-list code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-html[data-product="hr"] .member-models { margin-top: 16px; }
-html[data-product="hr"] .member-models select { min-width: 150px; max-width: 220px; }
+html:is([data-product="hr"], [data-console]) .gateway-models { margin-top: 24px; }
+html:is([data-product="hr"], [data-console]) .gateway-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+html:is([data-product="hr"], [data-console]) .gateway-head h2 { margin: 0; }
+html:is([data-product="hr"], [data-console]) .gateway-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 8px; }
+html:is([data-product="hr"], [data-console]) .gateway-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 8px 10px 8px 12px; border-radius: 10px; background: var(--card-fill, #fff); }
+html:is([data-product="hr"], [data-console]) .gateway-list code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+html:is([data-product="hr"], [data-console]) .member-models { margin-top: 16px; }
+html:is([data-product="hr"], [data-console]) .member-models select { min-width: 150px; max-width: 220px; }
 /* wide tables scroll inside their own box: grid children default to min-width:auto, which let them push the page wider */
-html[data-product="hr"] :is(.view, .panel, .overview, .ent-drawer .pad) > * { min-width: 0; }
-html[data-product="hr"] .table-wrap { max-width: 100%; overflow-x: auto; }
-html[data-product="hr"] :is(pre, .md) { max-width: 100%; overflow-x: auto; }
+html:is([data-product="hr"], [data-console]) :is(.view, .panel, .overview, .ent-drawer .pad) > * { min-width: 0; }
+html:is([data-product="hr"], [data-console]) .table-wrap { max-width: 100%; overflow-x: auto; }
+html:is([data-product="hr"], [data-console]) :is(pre, .md) { max-width: 100%; overflow-x: auto; }
 
 /* people: a compact list; each person's details on their own subpage that slides in, and slides back to the list */
-html[data-product="hr"] .people-table .person-row { cursor: pointer; }
-html[data-product="hr"] .people-table .person-row:hover td { background: oklch(0.985 0.008 263); }
-html[data-product="hr"] .people-table .person-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-html[data-product="hr"] .row-go { width: 32px; color: var(--ink-2); }
-html[data-product="hr"] .row-go svg { width: 16px; height: 16px; rotate: -90deg; }
-html[data-product="hr"] .person-back { justify-self: start; display: inline-flex; align-items: center; gap: 6px; margin-bottom: -6px; }
-html[data-product="hr"] .person-back svg { width: 16px; height: 16px; }
-html[data-product="hr"] .person-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; }
-html[data-product="hr"] .person-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 0; font-size: 14px; }
-html[data-product="hr"] .person-facts dt { color: var(--ink-2); }
-html[data-product="hr"] .person-facts dd { margin: 0; overflow-wrap: anywhere; }
-html[data-product="hr"] .person-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-html[data-product="hr"] .person-models { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 12px; }
-html[data-product="hr"] .person-models .field { display: grid; gap: 6px; }
-html[data-product="hr"] .person-models .field > span { display: grid; font-size: 14px; font-weight: 600; }
-html[data-product="hr"] .person-models .field small { font-weight: 400; font-size: 12px; }
-html[data-product="hr"] .person-models select { max-width: none; }
-@media (max-width: 760px) { html[data-product="hr"] .person-grid { grid-template-columns: 1fr; } }
+html:is([data-product="hr"], [data-console]) .people-table .person-row { cursor: pointer; }
+html:is([data-product="hr"], [data-console]) .people-table .person-row:hover td { background: oklch(0.985 0.008 263); }
+html:is([data-product="hr"], [data-console]) .people-table .person-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+html:is([data-product="hr"], [data-console]) .row-go { width: 32px; color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .row-go svg { width: 16px; height: 16px; rotate: -90deg; }
+html:is([data-product="hr"], [data-console]) .person-back { justify-self: start; display: inline-flex; align-items: center; gap: 6px; margin-bottom: -6px; }
+html:is([data-product="hr"], [data-console]) .person-back svg { width: 16px; height: 16px; }
+html:is([data-product="hr"], [data-console]) .person-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; }
+html:is([data-product="hr"], [data-console]) .person-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 0; font-size: 14px; }
+html:is([data-product="hr"], [data-console]) .person-facts dt { color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .person-facts dd { margin: 0; overflow-wrap: anywhere; }
+html:is([data-product="hr"], [data-console]) .person-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+html:is([data-product="hr"], [data-console]) .person-models { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 12px; }
+html:is([data-product="hr"], [data-console]) .person-models .field { display: grid; gap: 6px; }
+html:is([data-product="hr"], [data-console]) .person-models .field > span { display: grid; font-size: 14px; font-weight: 600; }
+html:is([data-product="hr"], [data-console]) .person-models .field small { font-weight: 400; font-size: 12px; }
+html:is([data-product="hr"], [data-console]) .person-models select { max-width: none; }
+@media (max-width: 760px) { html:is([data-product="hr"], [data-console]) .person-grid { grid-template-columns: 1fr; } }
 @keyframes people-in-right { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
 @keyframes people-in-left { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
-html[data-product="hr"] .view.slide-forward { animation: people-in-right 340ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-html[data-product="hr"] .view.slide-back { animation: people-in-left 340ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-@media (prefers-reduced-motion: reduce) { html[data-product="hr"] .view.slide-forward, html[data-product="hr"] .view.slide-back { animation: none; } }
-html[data-product="hr"] .people-table td { white-space: nowrap; }
-html[data-product="hr"] .people-table td:first-child { white-space: normal; }
-html[data-product="hr"] .person-sub { font-size: 13px; overflow-wrap: anywhere; }
+html:is([data-product="hr"], [data-console]) .view.slide-forward { animation: people-in-right 340ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+html:is([data-product="hr"], [data-console]) .view.slide-back { animation: people-in-left 340ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@media (prefers-reduced-motion: reduce) { html:is([data-product="hr"], [data-console]) .view.slide-forward, html:is([data-product="hr"], [data-console]) .view.slide-back { animation: none; } }
+html:is([data-product="hr"], [data-console]) .people-table td { white-space: nowrap; }
+html:is([data-product="hr"], [data-console]) .people-table td:first-child { white-space: normal; }
+html:is([data-product="hr"], [data-console]) .person-sub { font-size: 13px; overflow-wrap: anywhere; }
 
 /* review queue: compact rows in a blue card, owl-blue filter chips, a quiet current row */
-html[data-product="hr"] nav.queue { background: var(--card-fill); border-radius: var(--c-radius); padding: 6px; }
-html[data-product="hr"] .rv-head { display: flex; align-items: center; gap: 10px; padding: 10px 10px 12px; border-bottom: 0; }
-html[data-product="hr"] .rv-head strong { font-size: 16px; }
-html[data-product="hr"] .rv-count { padding: 1px 8px; border-radius: 99px; background: var(--card-fill-deep); color: var(--owl-ink); font-size: 12px; font-weight: 600; }
-html[data-product="hr"] .rv-head kbd { margin-left: auto; border: 0; background: oklch(1 0 0); color: var(--ink-2); font-size: 11px; border-radius: 6px; padding: 2px 6px; }
-html[data-product="hr"] nav.queue input:not([type=checkbox]) { min-height: 36px; border-radius: 8px; border: 0; background: oklch(1 0 0); padding: 0 12px; margin: 0 4px; width: calc(100% - 8px); box-sizing: border-box; }
-html[data-product="hr"] .rv-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 4px; border-bottom: 0; }
-html[data-product="hr"] .rv-chip { min-height: 28px; padding: 0 12px; border-radius: 99px; border: 0; background: oklch(1 0 0); color: var(--owl-ink); font: 500 13px var(--font-ui); cursor: pointer; }
-html[data-product="hr"] .rv-chip:hover { background: var(--card-fill-deep); }
-html[data-product="hr"] .rv-chip[aria-pressed="true"], html[data-product="hr"] .rv-chip.is-active, html[data-product="hr"] .rv-chip[aria-current="true"] { background: var(--accent); color: oklch(1 0 0); }
-html[data-product="hr"] .review-entry { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0 4px; margin-top: 2px; border: 0; border-radius: 10px; background: oklch(1 0 0); padding: 0 6px 0 10px; }
-html[data-product="hr"] .review-entry:has(.queue-item[aria-current="true"]) { background: var(--accent-soft); }
-html[data-product="hr"] .queue-item { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 12px; padding: 10px 8px; border: 0; border-radius: 10px; background: transparent; text-align: left; min-height: 0; }
-html[data-product="hr"] .queue-item[aria-current="true"] { background: transparent; box-shadow: none; }
-html[data-product="hr"] .rv-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--card-fill-deep); color: var(--owl-ink); font: 600 12px var(--font-ui); }
-html[data-product="hr"] .queue-item[aria-current="true"] .rv-avatar { background: var(--accent); color: oklch(1 0 0); }
-html[data-product="hr"] .rv-main { display: grid; gap: 3px; min-width: 0; }
-html[data-product="hr"] .rv-main .l1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-html[data-product="hr"] .rv-main .id { font-size: 14px; font-weight: 600; color: var(--ink); }
-html[data-product="hr"] .queue-item[aria-current="true"] .id { color: var(--accent); }
-html[data-product="hr"] .rv-main .l2 { font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-html[data-product="hr"] .rv-main .tag { font-size: 11.5px; line-height: 20px; }
-html[data-product="hr"] .rv-progress { display: grid; grid-template-columns: minmax(0, 1fr) 34px; align-items: center; gap: 8px; margin-top: 2px; }
-html[data-product="hr"] .rv-progress::before { content: none; }
-html[data-product="hr"] .rv-progress i { display: block; height: 4px; border-radius: 99px; background: var(--accent); min-width: 0; }
-html[data-product="hr"] .rv-progress { background: linear-gradient(var(--card-fill-deep), var(--card-fill-deep)) left center / calc(100% - 42px) 4px no-repeat; }
-html[data-product="hr"] .rv-progress b { font-size: 11px; font-weight: 600; color: var(--ink-2); text-align: right; font-family: var(--font-ui); }
-html[data-product="hr"] .rv-check { margin: 0 2px; accent-color: var(--accent); }
-html[data-product="hr"] .review-entry > .queue-item { width: 100%; justify-self: stretch; box-sizing: border-box; }
-html[data-product="hr"] .rv-main { width: 100%; }
-html[data-product="hr"] .review-entry > .rv-check { grid-column: 1; grid-row: 1; position: static; }
-html[data-product="hr"] .review-entry > .queue-item { grid-column: 2; grid-row: 1; }
-html[data-product="hr"] .review-entry > .review-menu { grid-column: 3; grid-row: 1; }
-html[data-product="hr"] .review-entry > .rv-check { align-self: center; }
-html[data-product="hr"] .rv-head { background: var(--card-fill); border-radius: 10px 10px 0 0; z-index: 2; }
+html:is([data-product="hr"], [data-console]) nav.queue { background: var(--card-fill); border-radius: var(--c-radius); padding: 6px; }
+html:is([data-product="hr"], [data-console]) .rv-head { display: flex; align-items: center; gap: 10px; padding: 10px 10px 12px; border-bottom: 0; }
+html:is([data-product="hr"], [data-console]) .rv-head strong { font-size: 16px; }
+html:is([data-product="hr"], [data-console]) .rv-count { padding: 1px 8px; border-radius: 99px; background: var(--card-fill-deep); color: var(--owl-ink); font-size: 12px; font-weight: 600; }
+html:is([data-product="hr"], [data-console]) .rv-head kbd { margin-left: auto; border: 0; background: oklch(1 0 0); color: var(--ink-2); font-size: 11px; border-radius: 6px; padding: 2px 6px; }
+html:is([data-product="hr"], [data-console]) nav.queue input:not([type=checkbox]) { min-height: 36px; border-radius: 8px; border: 0; background: oklch(1 0 0); padding: 0 12px; margin: 0 4px; width: calc(100% - 8px); box-sizing: border-box; }
+html:is([data-product="hr"], [data-console]) .rv-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 4px; border-bottom: 0; }
+html:is([data-product="hr"], [data-console]) .rv-chip { min-height: 28px; padding: 0 12px; border-radius: 99px; border: 0; background: oklch(1 0 0); color: var(--owl-ink); font: 500 13px var(--font-ui); cursor: pointer; }
+html:is([data-product="hr"], [data-console]) .rv-chip:hover { background: var(--card-fill-deep); }
+html:is([data-product="hr"], [data-console]) .rv-chip[aria-pressed="true"], html:is([data-product="hr"], [data-console]) .rv-chip.is-active, html:is([data-product="hr"], [data-console]) .rv-chip[aria-current="true"] { background: var(--accent); color: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .review-entry { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0 4px; margin-top: 2px; border: 0; border-radius: 10px; background: oklch(1 0 0); padding: 0 6px 0 10px; }
+html:is([data-product="hr"], [data-console]) .review-entry:has(.queue-item[aria-current="true"]) { background: var(--accent-soft); }
+html:is([data-product="hr"], [data-console]) .queue-item { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 12px; padding: 10px 8px; border: 0; border-radius: 10px; background: transparent; text-align: left; min-height: 0; }
+html:is([data-product="hr"], [data-console]) .queue-item[aria-current="true"] { background: transparent; box-shadow: none; }
+html:is([data-product="hr"], [data-console]) .rv-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--card-fill-deep); color: var(--owl-ink); font: 600 12px var(--font-ui); }
+html:is([data-product="hr"], [data-console]) .queue-item[aria-current="true"] .rv-avatar { background: var(--accent); color: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .rv-main { display: grid; gap: 3px; min-width: 0; }
+html:is([data-product="hr"], [data-console]) .rv-main .l1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+html:is([data-product="hr"], [data-console]) .rv-main .id { font-size: 14px; font-weight: 600; color: var(--ink); }
+html:is([data-product="hr"], [data-console]) .queue-item[aria-current="true"] .id { color: var(--accent); }
+html:is([data-product="hr"], [data-console]) .rv-main .l2 { font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:is([data-product="hr"], [data-console]) .rv-main .tag { font-size: 11.5px; line-height: 20px; }
+html:is([data-product="hr"], [data-console]) .rv-progress { display: grid; grid-template-columns: minmax(0, 1fr) 34px; align-items: center; gap: 8px; margin-top: 2px; }
+html:is([data-product="hr"], [data-console]) .rv-progress::before { content: none; }
+html:is([data-product="hr"], [data-console]) .rv-progress i { display: block; height: 4px; border-radius: 99px; background: var(--accent); min-width: 0; }
+html:is([data-product="hr"], [data-console]) .rv-progress { background: linear-gradient(var(--card-fill-deep), var(--card-fill-deep)) left center / calc(100% - 42px) 4px no-repeat; }
+html:is([data-product="hr"], [data-console]) .rv-progress b { font-size: 11px; font-weight: 600; color: var(--ink-2); text-align: right; font-family: var(--font-ui); }
+html:is([data-product="hr"], [data-console]) .rv-check { margin: 0 2px; accent-color: var(--accent); }
+html:is([data-product="hr"], [data-console]) .review-entry > .queue-item { width: 100%; justify-self: stretch; box-sizing: border-box; }
+html:is([data-product="hr"], [data-console]) .rv-main { width: 100%; }
+html:is([data-product="hr"], [data-console]) .review-entry > .rv-check { grid-column: 1; grid-row: 1; position: static; }
+html:is([data-product="hr"], [data-console]) .review-entry > .queue-item { grid-column: 2; grid-row: 1; }
+html:is([data-product="hr"], [data-console]) .review-entry > .review-menu { grid-column: 3; grid-row: 1; }
+html:is([data-product="hr"], [data-console]) .review-entry > .rv-check { align-self: center; }
+html:is([data-product="hr"], [data-console]) .rv-head { background: var(--card-fill); border-radius: 10px 10px 0 0; z-index: 2; }
 /* sidebar icons never shrink: when the rail is narrower than its labels (mid-collapse, in-between widths) the labels clip, not the icons */
-html[data-product="hr"] .rail :is(a, .rail-group-btn, .hr-account-btn, .admin-nav-link) > svg { flex: none; }
-html[data-product="hr"] .rail :is(a, .rail-group-btn, .hr-account-btn, .admin-nav-link) .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:is([data-product="hr"], [data-console]) .rail :is(a, .rail-group-btn, .hr-account-btn, .admin-nav-link) > svg { flex: none; }
+html:is([data-product="hr"], [data-console]) .rail :is(a, .rail-group-btn, .hr-account-btn, .admin-nav-link) .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* account: photo (or initials) on the rail button; a dashboard-style menu */
-html[data-product="hr"] .u-avatar { display: grid; place-items: center; flex: none; overflow: hidden; border-radius: 50%; background: var(--card-fill-deep); color: var(--owl-ink); font: 600 11px var(--font-ui); }
-html[data-product="hr"] .u-avatar img { width: 100%; height: 100%; object-fit: cover; }
-html[data-product="hr"] .u-avatar.sm { width: 28px; height: 28px; }
-html[data-product="hr"] .u-avatar.lg { width: 44px; height: 44px; font-size: 15px; }
-html[data-product="hr"] .hr-account-btn { height: auto; min-height: 44px; padding: 6px 8px; gap: 10px; }
-html[data-product="hr"] .hr-account-btn .acct-lbl { display: grid; text-align: left; line-height: 1.25; }
-html[data-product="hr"] .hr-account-btn .acct-lbl b { font-size: 13.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
-html[data-product="hr"] .hr-account-btn .acct-lbl small { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
-html[data-product="hr"] .hr-shell.is-sidebar-collapsed .hr-account-btn .acct-lbl { display: none; }
-html[data-product="hr"] .hr-account-menu { width: 280px; padding: 8px; border: 0; border-radius: 14px; background: oklch(1 0 0);
+html:is([data-product="hr"], [data-console]) .u-avatar { display: grid; place-items: center; flex: none; overflow: hidden; border-radius: 50%; background: var(--card-fill-deep); color: var(--owl-ink); font: 600 11px var(--font-ui); }
+html:is([data-product="hr"], [data-console]) .u-avatar img { width: 100%; height: 100%; object-fit: cover; }
+html:is([data-product="hr"], [data-console]) .u-avatar.sm { width: 28px; height: 28px; }
+html:is([data-product="hr"], [data-console]) .u-avatar.lg { width: 44px; height: 44px; font-size: 15px; }
+html:is([data-product="hr"], [data-console]) .hr-account-btn { height: auto; min-height: 44px; padding: 6px 8px; gap: 10px; }
+html:is([data-product="hr"], [data-console]) .hr-account-btn .acct-lbl { display: grid; text-align: left; line-height: 1.25; }
+html:is([data-product="hr"], [data-console]) .hr-account-btn .acct-lbl b { font-size: 13.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+html:is([data-product="hr"], [data-console]) .hr-account-btn .acct-lbl small { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+html:is([data-product="hr"], [data-console]) .hr-shell.is-sidebar-collapsed .hr-account-btn .acct-lbl { display: none; }
+html:is([data-product="hr"], [data-console]) .hr-account-menu { width: 280px; padding: 8px; border: 0; border-radius: 14px; background: oklch(1 0 0);
   box-shadow: 0 2px 6px oklch(0.25 0.04 262 / 0.08), 0 22px 48px -20px oklch(0.25 0.06 262 / 0.4); }
-html[data-product="hr"] .hr-account-who { display: flex; align-items: center; gap: 12px; padding: 10px 10px 12px; margin-bottom: 4px; border-radius: 10px; background: var(--card-fill); }
-html[data-product="hr"] .hr-account-who > div { display: grid; min-width: 0; line-height: 1.3; }
-html[data-product="hr"] .hr-account-who b { font-size: 14px; }
-html[data-product="hr"] .hr-account-who .muted { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-html[data-product="hr"] .acct-role { margin-top: 4px; justify-self: start; padding: 1px 8px; border-radius: 99px; background: oklch(1 0 0); color: var(--owl-ink); font-size: 11.5px; font-weight: 500; }
-html[data-product="hr"] .acct-group { display: grid; gap: 2px; }
-html[data-product="hr"] .hr-account-menu :is(a, button) { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: 500 13.5px var(--font-ui); text-align: left; text-decoration: none; cursor: pointer; }
-html[data-product="hr"] .hr-account-menu :is(a, button) > span { display: grid; line-height: 1.3; }
-html[data-product="hr"] .hr-account-menu small { font-size: 11.5px; font-weight: 400; color: var(--ink-2); }
-html[data-product="hr"] .hr-account-menu :is(a, button) svg { width: 17px; height: 17px; flex: none; color: var(--ink-2); }
-html[data-product="hr"] .hr-account-menu :is(a, button):hover { background: var(--card-fill); }
-html[data-product="hr"] .hr-account-menu :is(a, button):hover svg { color: var(--accent); }
-html[data-product="hr"] .acct-sep { height: 1px; margin: 6px 4px; background: oklch(0.94 0.012 263); }
-html[data-product="hr"] .hr-account-menu .acct-signout { color: var(--danger); }
-html[data-product="hr"] .hr-account-menu .acct-signout svg { color: var(--danger); }
+html:is([data-product="hr"], [data-console]) .hr-account-who { display: flex; align-items: center; gap: 12px; padding: 10px 10px 12px; margin-bottom: 4px; border-radius: 10px; background: var(--card-fill); }
+html:is([data-product="hr"], [data-console]) .hr-account-who > div { display: grid; min-width: 0; line-height: 1.3; }
+html:is([data-product="hr"], [data-console]) .hr-account-who b { font-size: 14px; }
+html:is([data-product="hr"], [data-console]) .hr-account-who .muted { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:is([data-product="hr"], [data-console]) .acct-role { margin-top: 4px; justify-self: start; padding: 1px 8px; border-radius: 99px; background: oklch(1 0 0); color: var(--owl-ink); font-size: 11.5px; font-weight: 500; }
+html:is([data-product="hr"], [data-console]) .acct-group { display: grid; gap: 2px; }
+html:is([data-product="hr"], [data-console]) .hr-account-menu :is(a, button) { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: 500 13.5px var(--font-ui); text-align: left; text-decoration: none; cursor: pointer; }
+html:is([data-product="hr"], [data-console]) .hr-account-menu :is(a, button) > span { display: grid; line-height: 1.3; }
+html:is([data-product="hr"], [data-console]) .hr-account-menu small { font-size: 11.5px; font-weight: 400; color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .hr-account-menu :is(a, button) svg { width: 17px; height: 17px; flex: none; color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .hr-account-menu :is(a, button):hover { background: var(--card-fill); }
+html:is([data-product="hr"], [data-console]) .hr-account-menu :is(a, button):hover svg { color: var(--accent); }
+html:is([data-product="hr"], [data-console]) .acct-sep { height: 1px; margin: 6px 4px; background: oklch(0.94 0.012 263); }
+html:is([data-product="hr"], [data-console]) .hr-account-menu .acct-signout { color: var(--danger); }
+html:is([data-product="hr"], [data-console]) .hr-account-menu .acct-signout svg { color: var(--danger); }
 
 /* review page: a title like every other page, a white toolbar (search + filters), then the rows as soft blue cards */
-html[data-product="hr"] nav.queue { background: transparent; padding: 0; border-radius: 0; }
-html[data-product="hr"] .rv-head { position: static; background: transparent; padding: 0 2px 14px; gap: 12px; border-radius: 0; }
-html[data-product="hr"] .rv-head strong { font: 600 26px/1.15 var(--font-ui); letter-spacing: -0.025em; color: var(--ink); }
-html[data-product="hr"] .rv-head .rv-all input { width: 16px; height: 16px; accent-color: var(--accent); }
-html[data-product="hr"] .rv-tools { margin: 0; padding: 12px 12px 6px; border-radius: 12px 12px 0 0; background: oklch(1 0 0);
+html:is([data-product="hr"], [data-console]) nav.queue { background: transparent; padding: 0; border-radius: 0; }
+html:is([data-product="hr"], [data-console]) .rv-head { position: static; background: transparent; padding: 0 2px 14px; gap: 12px; border-radius: 0; }
+html:is([data-product="hr"], [data-console]) .rv-head strong { font: 600 26px/1.15 var(--font-ui); letter-spacing: -0.025em; color: var(--ink); }
+html:is([data-product="hr"], [data-console]) .rv-head .rv-all input { width: 16px; height: 16px; accent-color: var(--accent); }
+html:is([data-product="hr"], [data-console]) .rv-tools { margin: 0; padding: 12px 12px 6px; border-radius: 12px 12px 0 0; background: oklch(1 0 0);
   box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.05); }
-html[data-product="hr"] nav.queue .rv-tools input.rv-search { margin: 0; width: 100%; background: var(--card-fill); border: 0; min-height: 38px; font-size: 14px; }
-html[data-product="hr"] .rv-filters { margin: 0 0 12px; padding: 6px 12px 12px; border-radius: 0 0 12px 12px; background: oklch(1 0 0); }
-html[data-product="hr"] .rv-chip { background: var(--card-fill); }
-html[data-product="hr"] .rv-chip:hover { background: var(--card-fill-deep); }
-html[data-product="hr"] .rv-chip[aria-pressed="true"] { background: var(--accent); color: oklch(1 0 0); }
-html[data-product="hr"] .review-entry { margin-top: 6px; background: var(--card-fill); }
-html[data-product="hr"] .review-entry:hover { background: var(--card-fill-deep); }
-html[data-product="hr"] .review-entry:has(.queue-item[aria-current="true"]) { background: oklch(1 0 0); box-shadow: inset 0 0 0 1.5px var(--accent), 0 6px 18px -12px oklch(0.4 0.12 263 / 0.45); }
-html[data-product="hr"] .rv-avatar { background: oklch(1 0 0); }
-html[data-product="hr"] .rv-main .id, html[data-product="hr"] .rv-main .l2 { font-family: var(--font-ui); }
-html[data-product="hr"] .rv-progress { background-image: linear-gradient(oklch(1 0 0), oklch(1 0 0)); }
-html[data-product="hr"] .hr-shell:not(.is-sidebar-collapsed) .hr-rail .hr-account-btn .acct-lbl { display: grid; min-width: 0; }
+html:is([data-product="hr"], [data-console]) nav.queue .rv-tools input.rv-search { margin: 0; width: 100%; background: var(--card-fill); border: 0; min-height: 38px; font-size: 14px; }
+html:is([data-product="hr"], [data-console]) .rv-filters { margin: 0 0 12px; padding: 6px 12px 12px; border-radius: 0 0 12px 12px; background: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .rv-chip { background: var(--card-fill); }
+html:is([data-product="hr"], [data-console]) .rv-chip:hover { background: var(--card-fill-deep); }
+html:is([data-product="hr"], [data-console]) .rv-chip[aria-pressed="true"] { background: var(--accent); color: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .review-entry { margin-top: 6px; background: var(--card-fill); }
+html:is([data-product="hr"], [data-console]) .review-entry:hover { background: var(--card-fill-deep); }
+html:is([data-product="hr"], [data-console]) .review-entry:has(.queue-item[aria-current="true"]) { background: oklch(1 0 0); box-shadow: inset 0 0 0 1.5px var(--accent), 0 6px 18px -12px oklch(0.4 0.12 263 / 0.45); }
+html:is([data-product="hr"], [data-console]) .rv-avatar { background: oklch(1 0 0); }
+html:is([data-product="hr"], [data-console]) .rv-main .id, html:is([data-product="hr"], [data-console]) .rv-main .l2 { font-family: var(--font-ui); }
+html:is([data-product="hr"], [data-console]) .rv-progress { background-image: linear-gradient(oklch(1 0 0), oklch(1 0 0)); }
+html:is([data-product="hr"], [data-console]) .hr-shell:not(.is-sidebar-collapsed) .hr-rail .hr-account-btn .acct-lbl { display: grid; min-width: 0; }
 
 /* rail foot: account button + usage ring side by side (stacked when the rail is icon-only) */
-html[data-product="hr"] .rail-foot { display: flex; align-items: center; gap: 6px; width: 100%; }
-html[data-product="hr"] .rail-foot .hr-account-btn { flex: 1; min-width: 0; }
-html[data-product="hr"] .hr-shell.is-sidebar-collapsed .rail-foot { flex-direction: column-reverse; }
-html[data-product="hr"] .usage-btn { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border: 0; border-radius: 10px; background: transparent; cursor: pointer; }
-html[data-product="hr"] .usage-btn:hover, html[data-product="hr"] .usage-btn:focus-visible { background: var(--card-fill); }
-html[data-product="hr"] .usage-ring { width: 24px; height: 24px; }
-html[data-product="hr"] .usage-ring circle { fill: none; stroke-width: 3; }
-html[data-product="hr"] .usage-ring .track { stroke: var(--owl-line); }
-html[data-product="hr"] .usage-ring .used { stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray 600ms cubic-bezier(0.16, 1, 0.3, 1); }
-html[data-product="hr"] .usage-ring.low .used { stroke: var(--warn); }
+html:is([data-product="hr"], [data-console]) .rail-foot { display: flex; align-items: center; gap: 6px; width: 100%; }
+html:is([data-product="hr"], [data-console]) .rail-foot .hr-account-btn { flex: 1; min-width: 0; }
+html:is([data-product="hr"], [data-console]) .hr-shell.is-sidebar-collapsed .rail-foot { flex-direction: column-reverse; }
+html:is([data-product="hr"], [data-console]) .usage-btn { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border: 0; border-radius: 10px; background: transparent; cursor: pointer; }
+html:is([data-product="hr"], [data-console]) .usage-btn:hover, html:is([data-product="hr"], [data-console]) .usage-btn:focus-visible { background: var(--card-fill); }
+html:is([data-product="hr"], [data-console]) .usage-ring { width: 24px; height: 24px; }
+html:is([data-product="hr"], [data-console]) .usage-ring circle { fill: none; stroke-width: 3; }
+html:is([data-product="hr"], [data-console]) .usage-ring .track { stroke: var(--owl-line); }
+html:is([data-product="hr"], [data-console]) .usage-ring .used { stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray 600ms cubic-bezier(0.16, 1, 0.3, 1); }
+html:is([data-product="hr"], [data-console]) .usage-ring.low .used { stroke: var(--warn); }
 
 /* menus after the reference: a quiet header row, plain 15px items with icons, shortcuts on the right, thin dividers */
-html[data-product="hr"] .hr-account-menu { width: 300px; padding: 6px; border-radius: 16px; }
-html[data-product="hr"] .hr-account-menu .hr-account-who { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 0; background: none; }
-html[data-product="hr"] .hr-account-menu .hr-account-who b { font-size: 15px; font-weight: 600; }
-html[data-product="hr"] .hr-account-menu :is(a, button) { gap: 12px; padding: 10px 12px; font-size: 15px; font-weight: 500; border-radius: 10px; }
-html[data-product="hr"] .hr-account-menu :is(a, button) svg { width: 18px; height: 18px; color: var(--ink); }
-html[data-product="hr"] .hr-account-menu :is(a, button) > span { flex: 1; }
-html[data-product="hr"] .hr-account-menu kbd { font: 500 12.5px var(--font-ui); color: var(--ink-2); background: none; border: 0; }
-html[data-product="hr"] .hr-account-menu .acct-sep { margin: 4px 8px; background: oklch(0.93 0.01 263); }
-html[data-product="hr"] .hr-account-menu .acct-signout, html[data-product="hr"] .hr-account-menu .acct-signout svg { color: var(--ink); }
-html[data-product="hr"] .usage-menu { width: 320px; }
-html[data-product="hr"] .usage-src { margin: 0; padding: 10px 12px 8px; font-size: 14px; color: var(--ink-2); }
-html[data-product="hr"] .usage-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; font-size: 15px; }
-html[data-product="hr"] .usage-row b { font-weight: 500; font-variant-numeric: tabular-nums; }
-html[data-product="hr"] .usage-row b.warn { color: var(--warn); }
+html:is([data-product="hr"], [data-console]) .hr-account-menu { width: 300px; padding: 6px; border-radius: 16px; }
+html:is([data-product="hr"], [data-console]) .hr-account-menu .hr-account-who { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 0; background: none; }
+html:is([data-product="hr"], [data-console]) .hr-account-menu .hr-account-who b { font-size: 15px; font-weight: 600; }
+html:is([data-product="hr"], [data-console]) .hr-account-menu :is(a, button) { gap: 12px; padding: 10px 12px; font-size: 15px; font-weight: 500; border-radius: 10px; }
+html:is([data-product="hr"], [data-console]) .hr-account-menu :is(a, button) svg { width: 18px; height: 18px; color: var(--ink); }
+html:is([data-product="hr"], [data-console]) .hr-account-menu :is(a, button) > span { flex: 1; }
+html:is([data-product="hr"], [data-console]) .hr-account-menu kbd { font: 500 12.5px var(--font-ui); color: var(--ink-2); background: none; border: 0; }
+html:is([data-product="hr"], [data-console]) .hr-account-menu .acct-sep { margin: 4px 8px; background: oklch(0.93 0.01 263); }
+html:is([data-product="hr"], [data-console]) .hr-account-menu .acct-signout, html:is([data-product="hr"], [data-console]) .hr-account-menu .acct-signout svg { color: var(--ink); }
+html:is([data-product="hr"], [data-console]) .usage-menu { width: 320px; }
+html:is([data-product="hr"], [data-console]) .usage-src { margin: 0; padding: 10px 12px 8px; font-size: 14px; color: var(--ink-2); }
+html:is([data-product="hr"], [data-console]) .usage-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; font-size: 15px; }
+html:is([data-product="hr"], [data-console]) .usage-row b { font-weight: 500; font-variant-numeric: tabular-nums; }
+html:is([data-product="hr"], [data-console]) .usage-row b.warn { color: var(--warn); }
 
 /* review rows: all white like the first; the current one is marked only by its blue outline */
-html[data-product="hr"] .review-entry { background: oklch(1 0 0); box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.06), 0 0 0 1px oklch(0.94 0.012 263); }
-html[data-product="hr"] .review-entry:hover { background: oklch(1 0 0); box-shadow: 0 6px 16px -10px oklch(0.4 0.12 263 / 0.35), 0 0 0 1px oklch(0.9 0.03 263); }
-html[data-product="hr"] .review-entry:has(.queue-item[aria-current="true"]) { box-shadow: inset 0 0 0 1.5px var(--accent), 0 6px 18px -12px oklch(0.4 0.12 263 / 0.45); }
-html[data-product="hr"] .rv-avatar { background: var(--card-fill); }
-html[data-product="hr"] .rv-progress { background-image: linear-gradient(var(--card-fill-deep), var(--card-fill-deep)); }
+html:is([data-product="hr"], [data-console]) .review-entry { background: oklch(1 0 0); box-shadow: 0 1px 2px oklch(0.25 0.04 262 / 0.06), 0 0 0 1px oklch(0.94 0.012 263); }
+html:is([data-product="hr"], [data-console]) .review-entry:hover { background: oklch(1 0 0); box-shadow: 0 6px 16px -10px oklch(0.4 0.12 263 / 0.35), 0 0 0 1px oklch(0.9 0.03 263); }
+html:is([data-product="hr"], [data-console]) .review-entry:has(.queue-item[aria-current="true"]) { box-shadow: inset 0 0 0 1.5px var(--accent), 0 6px 18px -12px oklch(0.4 0.12 263 / 0.45); }
+html:is([data-product="hr"], [data-console]) .rv-avatar { background: var(--card-fill); }
+html:is([data-product="hr"], [data-console]) .rv-progress { background-image: linear-gradient(var(--card-fill-deep), var(--card-fill-deep)); }
 
 /* account cards: filled blocks need inner padding so text and inputs never meet the edge */
-html[data-product="hr"] main section.block { padding: 20px 24px; }
-html[data-product="hr"] main section.block > h2:first-child, html[data-product="hr"] .profile-head h2 { margin-top: 0; }
-html[data-product="hr"] .profile-block .issue { margin: 14px 0 0; }
-@media (max-width: 640px) { html[data-product="hr"] main section.block { padding: 16px; } }
-html[data-product="hr"] .profile-form select.input { text-overflow: ellipsis; padding-right: 32px; }
+html:is([data-product="hr"], [data-console]) main section.block { padding: 20px 24px; }
+html:is([data-product="hr"], [data-console]) main section.block > h2:first-child, html:is([data-product="hr"], [data-console]) .profile-head h2 { margin-top: 0; }
+html:is([data-product="hr"], [data-console]) .profile-block .issue { margin: 14px 0 0; }
+@media (max-width: 640px) { html:is([data-product="hr"], [data-console]) main section.block { padding: 16px; } }
+html:is([data-product="hr"], [data-console]) .profile-form select.input { text-overflow: ellipsis; padding-right: 32px; }
 
 /* settings (#/account/<tab>): section list on the left, plain label-left / control-right rows with hairlines, no filled cards */
-html[data-product="hr"] .settings-view { max-width: 1040px; }
-html[data-product="hr"] .settings-shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; align-items: start; margin-top: 20px; }
-html[data-product="hr"] .settings-nav { position: sticky; top: 16px; display: grid; gap: 2px; }
-html[data-product="hr"] .settings-nav a { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 10px; color: var(--ink); text-decoration: none; font-size: 15px; }
-html[data-product="hr"] .settings-nav a svg { width: 18px; height: 18px; flex: none; }
-html[data-product="hr"] .settings-nav a:hover { background: var(--card-fill); }
-html[data-product="hr"] .settings-nav a[aria-current="page"] { background: var(--card-fill-deep); font-weight: 600; }
-html[data-product="hr"] .settings-body { display: grid; gap: 36px; min-width: 0; }
-html[data-product="hr"] .settings-body section.block, html[data-product="hr"] .settings-body .set-group { padding: 0; background: none; box-shadow: none; border: 0; border-radius: 0; }
-html[data-product="hr"] .settings-body h2 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
-html[data-product="hr"] .set-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 16px 0; border-bottom: 1px solid oklch(0.93 0.01 263); }
-html[data-product="hr"] .set-row:last-child { border-bottom: 0; }
-html[data-product="hr"] .set-label { font-size: 15px; }
-html[data-product="hr"] .set-sub { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); max-width: 52ch; }
-html[data-product="hr"] .set-ctl { flex: none; max-width: 50%; text-align: right; }
-html[data-product="hr"] .set-pill { display: inline-block; padding: 3px 12px; border: 1px solid oklch(0.9 0.012 263); border-radius: 999px; font-size: 13.5px; }
+html:is([data-product="hr"], [data-console]) .settings-view { max-width: 1040px; }
+html:is([data-product="hr"], [data-console]) .settings-shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; align-items: start; margin-top: 20px; }
+html:is([data-product="hr"], [data-console]) .settings-nav { position: sticky; top: 16px; display: grid; gap: 2px; }
+html:is([data-product="hr"], [data-console]) .settings-nav a { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 10px; color: var(--ink); text-decoration: none; font-size: 15px; }
+html:is([data-product="hr"], [data-console]) .settings-nav a svg { width: 18px; height: 18px; flex: none; }
+html:is([data-product="hr"], [data-console]) .settings-nav a:hover { background: var(--card-fill); }
+html:is([data-product="hr"], [data-console]) .settings-nav a[aria-current="page"] { background: var(--card-fill-deep); font-weight: 600; }
+html:is([data-product="hr"], [data-console]) .settings-body { display: grid; gap: 36px; min-width: 0; }
+html:is([data-product="hr"], [data-console]) .settings-body section.block, html:is([data-product="hr"], [data-console]) .settings-body .set-group { padding: 0; background: none; box-shadow: none; border: 0; border-radius: 0; }
+html:is([data-product="hr"], [data-console]) .settings-body h2 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+html:is([data-product="hr"], [data-console]) .set-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 16px 0; border-bottom: 1px solid oklch(0.93 0.01 263); }
+html:is([data-product="hr"], [data-console]) .set-row:last-child { border-bottom: 0; }
+html:is([data-product="hr"], [data-console]) .set-label { font-size: 15px; }
+html:is([data-product="hr"], [data-console]) .set-sub { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); max-width: 52ch; }
+html:is([data-product="hr"], [data-console]) .set-ctl { flex: none; max-width: 50%; text-align: right; }
+html:is([data-product="hr"], [data-console]) .set-pill { display: inline-block; padding: 3px 12px; border: 1px solid oklch(0.9 0.012 263); border-radius: 999px; font-size: 13.5px; }
 /* profile form as rows too */
-html[data-product="hr"] .settings-body .profile-grid { grid-template-columns: 1fr; gap: 8px; }
-html[data-product="hr"] .settings-body .profile-photo { grid-template-columns: auto auto 1fr; justify-items: start; align-items: center; text-align: left; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid oklch(0.93 0.01 263); }
-html[data-product="hr"] .settings-body .profile-photo .avatar-lg { width: 64px; height: 64px; font-size: 26px; }
-html[data-product="hr"] .settings-body .profile-form { grid-template-columns: 1fr; gap: 0; }
-html[data-product="hr"] .settings-body .profile-form > .field { grid-template-columns: minmax(0, 1fr) minmax(0, 320px); align-items: center; gap: 6px 24px; padding: 14px 0; border-bottom: 1px solid oklch(0.93 0.01 263); }
-html[data-product="hr"] .settings-body .profile-form > .field > span { font-size: 15px; font-weight: 400; color: var(--ink); }
-html[data-product="hr"] .settings-body .profile-form > .field > :not(span:first-child) { grid-column: 2; }
-html[data-product="hr"] .settings-body .profile-form .input { background: oklch(1 0 0); border: 1px solid oklch(0.9 0.012 263); }
-html[data-product="hr"] .settings-body .profile-actions { justify-content: flex-end; padding-top: 16px; }
-html[data-product="hr"] .settings-body .profile-block .issue { margin: 10px 0 14px; }
-html[data-product="hr"] .settings-body .sub-block .profile-actions { justify-content: flex-start; }
+html:is([data-product="hr"], [data-console]) .settings-body .profile-grid { grid-template-columns: 1fr; gap: 8px; }
+html:is([data-product="hr"], [data-console]) .settings-body .profile-photo { grid-template-columns: auto auto 1fr; justify-items: start; align-items: center; text-align: left; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid oklch(0.93 0.01 263); }
+html:is([data-product="hr"], [data-console]) .settings-body .profile-photo .avatar-lg { width: 64px; height: 64px; font-size: 26px; }
+html:is([data-product="hr"], [data-console]) .settings-body .profile-form { grid-template-columns: 1fr; gap: 0; }
+html:is([data-product="hr"], [data-console]) .settings-body .profile-form > .field { grid-template-columns: minmax(0, 1fr) minmax(0, 320px); align-items: center; gap: 6px 24px; padding: 14px 0; border-bottom: 1px solid oklch(0.93 0.01 263); }
+html:is([data-product="hr"], [data-console]) .settings-body .profile-form > .field > span { font-size: 15px; font-weight: 400; color: var(--ink); }
+html:is([data-product="hr"], [data-console]) .settings-body .profile-form > .field > :not(span:first-child) { grid-column: 2; }
+html:is([data-product="hr"], [data-console]) .settings-body .profile-form .input { background: oklch(1 0 0); border: 1px solid oklch(0.9 0.012 263); }
+html:is([data-product="hr"], [data-console]) .settings-body .profile-actions { justify-content: flex-end; padding-top: 16px; }
+html:is([data-product="hr"], [data-console]) .settings-body .profile-block .issue { margin: 10px 0 14px; }
+html:is([data-product="hr"], [data-console]) .settings-body .sub-block .profile-actions { justify-content: flex-start; }
 @media (max-width: 760px) {
-  html[data-product="hr"] .settings-shell { grid-template-columns: 1fr; gap: 16px; }
-  html[data-product="hr"] .settings-nav { position: static; display: flex; overflow-x: auto; }
-  html[data-product="hr"] .settings-nav a { white-space: nowrap; }
-  html[data-product="hr"] .settings-body .profile-form > .field { grid-template-columns: 1fr; }
-  html[data-product="hr"] .settings-body .profile-form > .field > :not(span:first-child) { grid-column: 1; }
-  html[data-product="hr"] .set-row { flex-wrap: wrap; }
-  html[data-product="hr"] .set-ctl { max-width: 100%; }
+  html:is([data-product="hr"], [data-console]) .settings-shell { grid-template-columns: 1fr; gap: 16px; }
+  html:is([data-product="hr"], [data-console]) .settings-nav { position: static; display: flex; overflow-x: auto; }
+  html:is([data-product="hr"], [data-console]) .settings-nav a { white-space: nowrap; }
+  html:is([data-product="hr"], [data-console]) .settings-body .profile-form > .field { grid-template-columns: 1fr; }
+  html:is([data-product="hr"], [data-console]) .settings-body .profile-form > .field > :not(span:first-child) { grid-column: 1; }
+  html:is([data-product="hr"], [data-console]) .set-row { flex-wrap: wrap; }
+  html:is([data-product="hr"], [data-console]) .set-ctl { max-width: 100%; }
 }
-html[data-product="hr"] main .settings-body .set-ctl .btn { padding: 7px 14px; border-radius: 10px; background: var(--card-fill-deep); color: var(--ink); font-weight: 500; }
-html[data-product="hr"] main .settings-body .set-ctl .btn:hover { background: oklch(0.92 0.03 263); }
-html[data-product="hr"] main .settings-body .set-ctl .btn.danger { color: var(--danger, oklch(0.55 0.2 25)); }
+html:is([data-product="hr"], [data-console]) main .settings-body .set-ctl .btn { padding: 7px 14px; border-radius: 10px; background: var(--card-fill-deep); color: var(--ink); font-weight: 500; }
+html:is([data-product="hr"], [data-console]) main .settings-body .set-ctl .btn:hover { background: oklch(0.92 0.03 263); }
+html:is([data-product="hr"], [data-console]) main .settings-body .set-ctl .btn.danger { color: var(--danger, oklch(0.55 0.2 25)); }
 
-html[data-product="hr"] .settings-body .memory-block > p.muted { margin: 0 0 8px; font-size: 14px; }
+html:is([data-product="hr"], [data-console]) .settings-body .memory-block > p.muted { margin: 0 0 8px; font-size: 14px; }
+
+/* user side ([data-console] on the public app): the console's owl-blue fills instead of grey outlines */
+html[data-console] .entry-card { border-color: transparent; background: var(--card-fill); box-shadow: none; }
+html[data-console] .entry-card:hover { background: var(--card-fill-deep); }
+html[data-console] .entry-card.entry-featured { border-color: transparent; background: var(--card-fill-deep); box-shadow: inset 0 0 0 1.5px var(--accent); }
+html[data-console] .pub-main .input { background: var(--card-fill); border-color: transparent; }
+html[data-console] .pub-main .input:focus { background: oklch(1 0 0); border-color: var(--accent); }
+html[data-console] .hr-main.pub-main { width: auto; margin: 0; padding: 32px clamp(16px, 4vw, 48px) 120px; }
+/* settings rows keep a readable label column however narrow the page gets */
+:is(html[data-product="hr"], html[data-console]) .settings-body .profile-form > .field { grid-template-columns: minmax(130px, 1fr) minmax(0, 320px); }
+@media (max-width: 1100px) {
+  :is(html[data-product="hr"], html[data-console]) .settings-shell { grid-template-columns: 1fr; gap: 16px; }
+  :is(html[data-product="hr"], html[data-console]) .settings-nav { position: static; display: flex; overflow-x: auto; }
+  :is(html[data-product="hr"], html[data-console]) .settings-nav a { white-space: nowrap; }
+}
