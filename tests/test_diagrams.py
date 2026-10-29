@@ -38,15 +38,15 @@ def mermaid_ok(code: str) -> None:
     """Structural syntax check (mmdc is not a project dependency): known header, safe ids, balanced quoted labels,
     no raw specials inside labels, edges only between declared nodes."""
     lines = code.splitlines()
-    assert lines[0] in ("gantt", "flowchart LR", "mindmap"), lines[0]
+    assert lines[0] in ("gantt", "flowchart LR", "flowchart TD", "mindmap"), lines[0]
     for line in lines[1:]:
         assert "\t" not in line
         for text in re.findall(r'"([^"]*)"', line):
             assert not re.search(r'[\[\]{}()<>|;#`]', text), line
         assert line.count('"') % 2 == 0, line
-    if lines[0] == "flowchart LR":
-        nodes = set(re.findall(r"^\s+([a-z][a-z0-9_]*)\[", code, re.M))
-        for a, b in re.findall(r"^\s+([a-z0-9_]+) --> ([a-z0-9_]+)$", code, re.M):
+    if lines[0].startswith("flowchart"):
+        nodes = set(re.findall(r"^\s+([a-z][a-z0-9_]*)[\[(]", code, re.M))
+        for a, b in re.findall(r"^\s+([a-z0-9_]+) -\.?->? ?([a-z0-9_]+)$", code, re.M):
             assert a in nodes and b in nodes, (a, b)
     if lines[0] == "gantt":
         for line in lines:
@@ -91,6 +91,14 @@ def test_large_plans_stay_readable():
     assert "low-priority" in d.code
     mm = build(p, ["skillmap"])[0].code
     assert len(re.findall(r"^\s{6}", mm, re.M)) <= MAX_NODES + 3 and "more]" in mm
+
+
+def test_branch_map_branches_role_to_phases_to_skills():
+    code = build(SMALL(), ["branch"])[0].code
+    assert "root --> p1" in code and "p1 --> p1_s1" in code and "p2 --> p2_s3" in code and "p3 -.-> p3_goal" in code
+    assert 'click p1_s1 call showSkill("s1")' in code
+    big = build(LARGE(), ["branch"])[0].code
+    assert "more skills" in big  # p3 holds 38 skills: only 8 drawn
 
 
 def test_effort_flags_phases_over_capacity():

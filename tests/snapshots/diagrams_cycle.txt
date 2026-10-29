@@ -21,6 +21,44 @@ gantt
   click p2_s3 call showSkill("s3")
   click p3_s3 call showSkill("s3")
 
+## branch
+
+flowchart LR
+  root(("Data 'analyst' junior"))
+  p1["Days 1-30 · Foundation · 20 h"]:::phase
+  root --> p1
+  p1_s1["Skill 1"]:::high
+  p1 --> p1_s1
+  p1_s2["Skill 2"]:::high
+  p1 --> p1_s2
+  p1_goal(["Clean a dataset: done"]):::goal
+  p1 -.-> p1_goal
+  p2["Days 31-60 · Practice · 40 h"]:::phase
+  root --> p2
+  p2_s2["Skill 2"]:::high
+  p2 --> p2_s2
+  p2_s3["Skill 3"]:::high
+  p2 --> p2_s3
+  p2_goal(["Dashboard v1 shipped"]):::goal
+  p2 -.-> p2_goal
+  p3["Days 61-90 · Portfolio · 12 h"]:::phase
+  root --> p3
+  p3_s3["Skill 3"]:::high
+  p3 --> p3_s3
+  p3_goal(["Portfolio 1"]):::goal
+  p3 -.-> p3_goal
+  classDef high fill:#fde2e1,stroke:#c0392b,color:#5b1a12
+  classDef medium fill:#fff1d6,stroke:#c98a10,color:#5a3d00
+  classDef low fill:#e3f1e6,stroke:#3c8d52,color:#173d22
+  classDef phase fill:#e6edff,stroke:#2a5bd7,color:#13254f
+  classDef goal fill:#f3f0ff,stroke:#7a5ccf,color:#2c1f57
+  classDef later fill:#f1f2f5,stroke:#9aa1b2,color:#3b4252
+  click p1_s1 call showSkill("s1")
+  click p1_s2 call showSkill("s2")
+  click p2_s2 call showSkill("s2")
+  click p2_s3 call showSkill("s3")
+  click p3_s3 call showSkill("s3")
+
 ## deps
 Circular prerequisite: Skill 1 → Skill 3 → Skill 2 → Skill 1. Fix the plan's prerequisites to draw this graph.
 

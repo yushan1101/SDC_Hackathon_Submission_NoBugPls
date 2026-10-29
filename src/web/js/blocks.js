@@ -665,6 +665,8 @@ function diagramsBlock(planId, version) {
         try {
           const { svg, bindFunctions } = await mermaid.render(`pd-${planId}-${d.key}-${++diagramSeq}`, d.code);
           host.innerHTML = svg; bindFunctions?.(host);
+          const out = host.querySelector("svg"), vb = out?.viewBox.baseVal;  // fit to width, unless that would shrink it past readable: then scroll
+          if (vb?.width > host.clientWidth * 1.6) { out.setAttribute("width", vb.width); out.setAttribute("height", vb.height); out.style.maxWidth = "none"; }
         } catch (e) { host.replaceChildren(h("p", { class: "issue error" }, `This diagram could not be drawn: ${e.message || e}`)); }
       } else if (canvas) {
         const cfg = JSON.parse(d.code), css = (v) => getComputedStyle(el).getPropertyValue(v).trim() || undefined;

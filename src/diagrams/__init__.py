@@ -5,7 +5,8 @@ the same, syntactically valid diagrams.
     plan = enrich(plan)                       # optional: one LLM call for skill categories + prerequisites
     for d in build(plan): print(d.title, d.lang, d.code)
 
-Mermaid diagrams: timeline (gantt), deps (flowchart LR), skillmap (mindmap).
+Mermaid diagrams: timeline (gantt), branch (flowchart LR tree: role -> phases -> skills, milestones), deps (flowchart LR),
+skillmap (mindmap).
 Chart.js configs: gaps (current vs target), effort (hours per week by phase vs capacity).
 """
 import json
@@ -66,7 +67,7 @@ class ReskillPlan(BaseModel):
 
 @dataclass
 class Diagram:
-    key: str     # timeline | deps | gaps | skillmap | effort
+    key: str     # timeline | branch | deps | gaps | skillmap | effort
     title: str
     lang: str    # mermaid | chartjs
     code: str    # Mermaid source, or a Chart.js config as JSON
@@ -255,6 +256,31 @@ def timeline(plan: ReskillPlan) -> Diagram:
     return Diagram("timeline", "Roadmap timeline", "mermaid", "\n".join(lines))
 
 
+def branchmap(plan: ReskillPlan) -> Diagram:
+    """Tree of the plan: target role -> phases -> the skills in each phase -> the phase milestone."""
+    names = {s.id: s for s in plan.skills}
+    lines = ["flowchart LR", f'  root(("{label(plan.learner.target_role, 40)}"))']
+    for ph in plan.phases:
+        lines.append(f'  {ph.id}["{label(ph.name, 40)} · {ph.hours:g} h"]:::phase')
+        lines.append(f"  root --> {ph.id}")
+        shown = ph.skills[:8]
+        for sid in shown:
+            s = names.get(sid)
+            nid = f"{ph.id}_{sid}"
+            lines.append(f'  {nid}["{label(s.name if s else sid, 36)}"]:::{s.priority if s else "low"}')
+            lines.append(f"  {ph.id} --> {nid}")
+        if len(ph.skills) > len(shown):
+            lines += [f'  {ph.id}_more["+{len(ph.skills) - len(shown)} more skills"]:::low', f"  {ph.id} --> {ph.id}_more"]
+        lines += [f'  {ph.id}_goal(["{label(ph.milestone or "Milestone", 48)}"]):::goal', f"  {ph.id} -.-> {ph.id}_goal"]
+    if plan.deferred:
+        lines += [f'  later["Later: {len(plan.deferred)} deferred skill gaps"]:::later', "  root -.-> later"]
+    lines += CLASSDEF + ["  classDef phase fill:#e6edff,stroke:#2a5bd7,color:#13254f",
+                         "  classDef goal fill:#f3f0ff,stroke:#7a5ccf,color:#2c1f57",
+                         "  classDef later fill:#f1f2f5,stroke:#9aa1b2,color:#3b4252"]
+    lines += [f'  click {ph.id}_{sid} call showSkill("{sid}")' for ph in plan.phases for sid in ph.skills[:8]]
+    return Diagram("branch", "Plan branch map", "mermaid", "\n".join(lines))
+
+
 CLASSDEF = ["  classDef high fill:#fde2e1,stroke:#c0392b,color:#5b1a12",
             "  classDef medium fill:#fff1d6,stroke:#c98a10,color:#5a3d00",
             "  classDef low fill:#e3f1e6,stroke:#3c8d52,color:#173d22"]
@@ -335,7 +361,7 @@ def effort(plan: ReskillPlan) -> Diagram:
                    note=f"Over capacity: {', '.join(flagged)}." if flagged else "Every phase fits your weekly learning time.")
 
 
-ALL = {"timeline": timeline, "deps": deps, "gaps": gaps, "skillmap": skillmap, "effort": effort}
+ALL = {"timeline": timeline, "branch": branchmap, "deps": deps, "gaps": gaps, "skillmap": skillmap, "effort": effort}
 
 
 def build(plan: ReskillPlan, which: list[str] | None = None) -> list[Diagram]:

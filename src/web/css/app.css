@@ -3899,17 +3899,17 @@ pre { max-width: 100%; overflow-x: auto; }
 @media (prefers-reduced-motion: reduce) { .pl-caret { animation: none; } }
 
 /* plan diagrams (blocks.js diagramsBlock) */
-.pd { display: grid; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--rule); min-width: 0; }
+.pd { display: grid; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--rule); min-width: 0; container-type: inline-size; }
 .pd-head h4 { margin: 0; } .pd-head p { margin: 2px 0 0; }
-.pd-tabs { flex-wrap: wrap; width: fit-content; max-width: 100%; }
-.pd-tabs button { white-space: nowrap; }
+.pd-tabs { display: flex; flex-wrap: wrap; width: fit-content; max-width: 100%; }
+.pd-tabs button { flex: 0 0 auto; white-space: nowrap; }
 .pd-tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
 .pd-body { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; align-items: start; }
-@media (max-width: 860px) { .pd-body { grid-template-columns: 1fr; } }
+@container (max-width: 760px) { .pd-body { grid-template-columns: 1fr; } }
 .pd-stage { min-width: 0; display: grid; gap: 8px; }
 .pd-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .pd-dl { display: flex; gap: 6px; }
-.pd-mm { overflow-x: auto; } .pd-mm svg { max-width: none; height: auto; }
+.pd-mm { overflow-x: auto; } .pd-mm svg { height: auto; }
 .pd-canvas { position: relative; height: 380px; }
 .pd-side { border: 1px solid var(--rule); border-radius: var(--radius); padding: 12px; display: grid; gap: 6px; font-size: 14px; }
 .pd-side h5 { margin: 0; font-size: 15px; } .pd-side p, .pd-side ul { margin: 0; }
