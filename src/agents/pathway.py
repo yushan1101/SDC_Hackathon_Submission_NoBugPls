@@ -207,7 +207,8 @@ def backfill_learning_nodes(plan: dict) -> list[LearningNode]:
 
 
 def expand_learning_nodes(nodes: list[LearningNode], role: str | None = None) -> list[LearningNode]:
-    """Split weekly lessons into connected actions; existing IDs keep their meaning on saved plans."""
+    """Split weekly lessons into connected actions; existing IDs keep their meaning on saved plans. Every action keeps
+    the week's lesson, practice task and quiz, so each step on the roadmap can be learnt, practised and checked."""
     if any(node.id.endswith(("-practice", "-check")) for node in nodes):
         return nodes
     result = []
@@ -226,12 +227,12 @@ def expand_learning_nodes(nodes: list[LearningNode], role: str | None = None) ->
         check_minutes = max(5, round(minutes * 0.15)) if node.quiz else 0
         result.append(node.model_copy(update={
             "type": "learn", "title": node.title,
-            "estimated_minutes": learn_minutes, "quiz": None,
+            "estimated_minutes": learn_minutes,
             "completion_criteria": [f"Explain {topic} in your own words.", "Apply the explanation to one decision in the worked example."],
         }))
         result.append(node.model_copy(update={
             "id": f"{node.id}-practice", "type": "project" if node.week_number >= 9 else "practice",
-            "title": (f"Work Sample: {topic}" if node.week_number >= 9 else f"Practice: {topic}")[:120], "quiz": None,
+            "title": (f"Work Sample: {topic}" if node.week_number >= 9 else f"Practice: {topic}")[:120],
             "estimated_minutes": minutes - learn_minutes - check_minutes,
             "learning_objective": f"Create and review this work: {node.deliverable}"[:500],
         }))
@@ -243,6 +244,57 @@ def expand_learning_nodes(nodes: list[LearningNode], role: str | None = None) ->
                 "completion_criteria": ["Answer the knowledge check correctly.", f"Explain why the answer follows the rule for {topic}."],
             }))
     return result
+
+
+def distinct_steps(nodes: list[dict]) -> list[dict]:
+    """A week's three steps are split from one lesson. Give each its own part of it, so they run on from each other
+    instead of repeating: Understand = the explanation, explain it back, the lesson's concept quiz; Practice = the worked
+    example and how-to, the work sample, a quiz on what it produces; Check = what a good result looks like, review and
+    improve the work sample, a quiz on the week's goal. Quiz distractors come from other weeks of the same plan.
+    View-only (the saved plan keeps the lesson as written); works on new, old and backfilled plans alike."""
+    weeks: dict[str, list[dict]] = {}
+    for node in nodes:
+        weeks.setdefault(re.sub(r"-(?:practice|check)$", "", node["id"]), []).append(node)
+    lesson = {k: next((n for n in g if n["type"] == "learn"), g[0]) for k, g in weeks.items()}
+    work = {k: next((n for n in g if n["id"].endswith("-practice")), lesson[k]) for k, g in weeks.items()}
+    concept = {k: next((n["quiz"] for n in g if n.get("quiz")), None) for k, g in weeks.items()}
+
+    def quiz(k, right, pool, question, why):
+        others = [x for x in dict.fromkeys(pool[kk] for kk in pool if kk != k) if x and x != right][:2]
+        if len(others) < 2:
+            return concept[k]
+        at = int(k[-2:]) % 3  # the right answer moves between weeks, and stays put on reload
+        options = others[:at] + [right] + others[at:]
+        return {"question": question[:500], "options": [o[:240] for o in options], "answer_index": at, "explanation": why[:700]}
+
+    deliverables = {k: w["deliverable"] for k, w in work.items()}
+    goals = {k: n["learning_objective"] for k, n in lesson.items()}
+    out = []
+    for node in nodes:
+        k = re.sub(r"-(?:practice|check)$", "", node["id"])
+        base, w = lesson[k], work[k]
+        topic, made = base["topics"][0], w["deliverable"]
+        thing = re.sub(r"^(?:a|an|the|your)\s+", "", made.strip().rstrip("."), flags=re.I)  # "A summary." -> "summary", to use mid-sentence
+        if node["id"].endswith("-practice"):
+            node = {**node, "learn": (base["learn"][1:] or [f"This practice turns {topic} into a work sample: {made}. Plan it in the order below, then build it."])[:5],
+                    "instructions": w["instructions"], "exercise": w["exercise"], "deliverable": made,
+                    "quiz": quiz(k, made, deliverables, f"Which work sample does the {topic} practice produce?", f"This practice produces: {made}")}
+        elif node["id"].endswith("-check"):
+            node = {**node, "learn": [f"A good result for {topic} shows: {base['expected_outcome']}"[:1200],
+                                      *[f"Check: {c}"[:1200] for c in w["completion_criteria"]][:4]],
+                    "instructions": [f"Put your {thing} next to the checks in Learn."[:700], "Mark each check as met or not met, then fix the weakest part.",
+                                     "Write two sentences on what you changed and why."],
+                    "exercise": f"Review your {thing} against the checks, improve one weak point, and note what changed."[:1000],
+                    "deliverable": f"Your revised {thing}, with a short change note"[:500],
+                    "quiz": quiz(k, goals[k], goals, f"Which goal is this week's {topic} work for?", f"This week's goal: {goals[k]}")}
+        else:
+            node = {**node, "learn": base["learn"][:1],
+                    "instructions": [f"Read the explanation of {topic}."[:700], "Write down, in one sentence, the rule it is built on.",
+                                     "Name one task in your target job where that rule changes a decision."],
+                    "exercise": f"Explain {topic} in three to five sentences in your own words, and point to the rule the explanation is built on."[:1000],
+                    "deliverable": f"A short explanation of {topic} in your own words"[:500], "quiz": concept[k]}
+        out.append(node)
+    return out
 
 
 def _learning_nodes(p: Pathway, role: str, gaps, skills, learning):

@@ -3,13 +3,14 @@ import "./motion.js";  // GSAP animations for whatever the app renders
 import { jobIcon } from "./jobicons.js";
 import { api, apiBlobUrl, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP, SCENARIO_HELP } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
-import { changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
+import { SDG_COLORS, changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
   sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
 import { startView, quizView, resumeView, todayView, sdgsView } from "./explore.js";
 import { interviewView } from "./interview.js";
 import { registerView, pricingView, accountView, planName, verifyLinkView, forgotView, resetLinkView, emailCodeView, inviteView } from "./account.js";
 import { termsView, privacyView } from "./legal.js";
 import { watchForm } from "./risk.js";
+import { pdfDoc, rgb, saveFile } from "./pdf.js";
 import { micButton, readAloudButton, setVoice } from "./voice.js";
 import { agentView, agentSwitch, disposeAgentSwitch, employeeCapsule, setAskRoute } from "./agents.js";
 import { reportAssistant } from "./report-assistant.js";
@@ -231,10 +232,11 @@ function userShell() {
     toggle.setAttribute("aria-expanded", String(expanded));
     toggle.title = toggle.ariaLabel = expanded ? "Collapse sidebar" : "Expand sidebar";
   };
-  menu.addEventListener("beforetoggle", (e) => {  // above the button, or beside it when the rail is icon-only
+  menu.addEventListener("beforetoggle", (e) => {  // above the button, beside it when the rail is icon-only, above the tab bar on phones
     if (e.newState !== "open") return;
-    const r = accountBtn.getBoundingClientRect();
-    Object.assign(menu.style, expanded ? { left: `${r.left}px`, bottom: `${innerHeight - r.top + 8}px` } : { left: `${r.right + 10}px`, bottom: `${innerHeight - r.bottom}px` });
+    const r = accountBtn.getBoundingClientRect(), bar = shellEl.querySelector(".hr-tabbar").getBoundingClientRect();
+    Object.assign(menu.style, !r.width ? { left: "auto", right: "12px", bottom: `${innerHeight - bar.top + 8}px` }
+      : expanded ? { left: `${r.left}px`, right: "auto", bottom: `${innerHeight - r.top + 8}px` } : { left: `${r.right + 10}px`, right: "auto", bottom: `${innerHeight - r.bottom}px` });
   });
   const logo = h("span", { class: "logo-owl" });
   shellEl = h("div", { class: "hr-shell user-shell" },
@@ -245,10 +247,13 @@ function userShell() {
       link("#/report", "Career report", "nav-analyse"), link("#/plans", "My plans", "nav-review"),
       employee ? null : link("enterprise.html", "Back to console", "back"),
       h("div", { style: { flex: 1 } }),
-      h("div", { class: "rail-foot" }, accountBtn, usageBtn), menu, usagePop),
+      h("div", { class: "rail-foot" }, accountBtn, usageBtn), usagePop),
     h("main", { id: "main", class: "hr-main pub-main", tabindex: "-1" }),
+    // phones: the rail is hidden, so Account opens the same menu (profile, billing, log out) from the bottom bar
     h("nav", { class: "hr-tabbar", "aria-label": "Primary" }, tab("#/start", "Home", "home"), tab("#/agents", "Agent", "nav-agent"),
-      tab("#/today", "Trends", "pulse"), tab("#/plans", "Plans", "plans"), tab("#/account", "Account", "user")));
+      tab("#/today", "Trends", "pulse"), tab("#/plans", "Plans", "plans"),
+      h("button", { type: "button", class: "hr-more-button", popovertarget: "hr-account", "data-route": "#/account", "aria-haspopup": "true" }, icon("user"), "Account")),
+    menu);
   app.replaceChildren(...[
     h("button", { class: "sr-only skip-link", type: "button", onclick: () => $("#main")?.focus() }, "Skip to content"),
     shellEl,
@@ -1022,7 +1027,68 @@ async function plansView(main) {
   draw();
 }
 
-let lastChanges = null;  // {id, changes}: the summary of the latest hours change, shown above that plan's roadmap
+/** The plan report as a PDF file, built in the browser from the plan's data. Mostly diagrams: key figures, the three
+ *  phases, a week-by-week step grid, skill gap bars, trend and goal chips, and the plan's history as a timeline. */
+function planReportPdf(d) {
+  const r = d.report || {}, p = d.plan, role = r.occupation?.title || p.target_role;
+  const day = (s) => (s ? new Date(s).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "");
+  const plain = (s) => String(s || "").replace(/\s*\[[^\]]+\]/g, "").replace(/\s+([.,;:])/g, "$1");  // citations are links on screen, not in print
+  const sum = (list) => Math.round(list.reduce((n, a) => n + Number(a.estimated_hours || 0), 0) * 10) / 10;
+  const pr = d.progress_summary || { done: 0, total: 0, pct: 0 };
+  const done = new Set(d.progress || []);
+  const doc = pdfDoc(`${role} – ${d.plan_reference || d.plan_id}`)
+    .cover(`Become ${/^[aeiou]/i.test(role) ? "an" : "a"} ${role}`, `90-day learning plan · ${d.plan_reference || d.plan_id} · ${d.status}, version ${d.version} · downloaded ${day(new Date())}`)
+    .tiles([[r.request?.weekly_learning_hours ? `${r.request.weekly_learning_hours} h` : "–", "a week"], [`${sum(p.activities)} h`, "learning in total"],
+      [String(pr.total || (p.learning_nodes || []).length), "learning steps"],
+      [new Date(d.started_utc).toLocaleDateString(undefined, { day: "numeric", month: "short" }), "start date"]])
+    .meter("Progress", pr.total ? pr.done / pr.total : 0, `${pr.done} of ${pr.total} steps · ${pr.pct}%`);
+
+  const PHASES = [["1-30", "Days 1–30", "Foundation"], ["31-60", "Days 31–60", "Practice"], ["61-90", "Days 61–90", "Portfolio"]];
+  doc.h2("Your 90-day plan", true).lede("Three 30-day phases. The bar compares each phase's learning hours; the list shows the skills it covers.")
+    .phases(PHASES.map(([range, title, sub]) => {
+      const acts = p.activities.filter((a) => a.day_range === range);
+      return { title, sub, hours: sum(acts), items: [...new Set(acts.map((a) => a.skill_id))] };
+    }));
+
+  const nodes = p.learning_nodes || [];
+  if (nodes.length) {
+    const KIND = { learn: ["Understand", "#3b5bdb"], practice: ["Practice", "#e09f1f"], check: ["Knowledge check", "#7c5cf6"] };
+    const kindOf = (n) => (n.type === "learn" ? "learn" : n.type === "quiz" ? "check" : "practice");
+    doc.h2("Week by week").lede("Each row is a week; each square is one step. Every step has its own lesson, practice task and quiz in the app.")
+      .weekGrid([...new Set(nodes.map((n) => n.week_number))].map((week) => {
+        const steps = nodes.filter((n) => n.week_number === week);
+        return { label: `Week ${week}`, title: steps[0].topics?.[0] || steps[0].title, steps: steps.map((n) => ({ kind: kindOf(n), done: done.has(`node:${n.id}`) })) };
+      }), KIND);
+  }
+
+  if (r.gaps?.length) {
+    const open = r.gaps.filter((g) => g.required_level > g.current_level).sort((a, b) => b.required_level - b.current_level - (a.required_level - a.current_level));
+    doc.h2("Skill gaps").lede(`${open.length} skills to build for this job. The longest gaps are first; levels run from 0 to 5.`)
+      .gapBars(open.slice(0, 16).map((g) => ({ label: g.skill_id, now: g.current_level, need: g.required_level })));
+    const moved = (r.comparison || []).filter((c) => c.agentic_required != null && c.assistive_required !== c.agentic_required);
+    doc.h3("With agentic AI");
+    if (moved.length) doc.chips(moved.slice(0, 12).map((c) => ({ text: `${c.skill_id}: level ${c.assistive_required} to ${c.agentic_required}` })));
+    else doc.p("The same skill levels are needed with assistive and agentic AI.", true);
+  }
+
+  if (r.outlook || r.signals || r.sdgs?.length) {
+    doc.h2("Market outlook").lede("What is moving in the job market around this role.");
+    const rising = (r.outlook?.items || []).filter((x) => x.direction === "rising");
+    doc.h3("Rising skills");
+    if (rising.length) doc.chips(rising.map((x) => ({ text: x.skill_id, color: rgb("#e3f4ea"), ink: rgb("#1f7a45") })));
+    else doc.p("None flagged; this role's requirements look stable.", true);
+    if (r.signals?.topics?.length) doc.h3("Today's AI trends").chips(r.signals.topics.slice(0, 8).map((t) => ({ text: t.label })));
+    if (r.sdgs?.length) doc.h3("UN goals this career serves").chips(r.sdgs.map((g) => ({ text: `SDG ${g.goal} · target ${g.target}`, color: rgb(SDG_COLORS[g.goal] || "#888888"), ink: "1 1 1" })));
+  }
+
+  if (r.narrative) doc.h2("Briefing").p(plain(r.narrative));
+
+  if (d.history?.length) doc.h2("History").timeline(d.history.map((e) => ({ what: `Version ${e.version}: ${e.action}, now ${e.new_status}`, when: `${day(e.at_utc)} · ${e.actor}` })));
+  return doc.blob();
+}
+
+let lastChanges = null;
+let planSection = "plan";  // the plan page's open section, kept while the person moves between plans  // {id, changes}: the summary of the latest hours change, shown above that plan's roadmap
 
 /** Weekly learning time for a saved plan. "Update plan" sends it to the pathway agent, which rebuilds the plan from the
  *  saved analysis; the new version replaces the roadmap and a change summary sits above it. */
@@ -1057,19 +1123,10 @@ async function planDetail(main, id, focusPlan = false, section = null, selectedN
   const approved = d.status === "approved";
   const totalHours = d.plan.activities.reduce((sum, activity) => sum + Number(activity.estimated_hours || 0), 0);
   setSources(r?.evidence || []);
-  const reportContent = h("div", { class: "plan-report-content" },
-    !r ? h("p", { class: "note" }, "This plan was created before analyses were saved. Your 90-day plan is below. Build a new plan to see the full analysis.") : null,
-    r?.narrative ? staticText(r.narrative, highlight) : null,
-    r?.gaps?.length ? gapsBlock(r.gaps) : null,
-    r?.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null,
-    r?.outlook ? outlookBlock(r.outlook) : null,
-    r?.signals ? signalsBlock(r.signals) : null,
-    r?.sdgs?.length ? sdgBlock(r.sdgs) : null,
-    r?.issues?.length ? issuesBlock(r.issues) : null);
   const planFocus = h("section", { class: "plan-focus", tabindex: "-1", "aria-label": approved ? "Approved plan and implementation" : "Proposed plan" },
     h("div", { class: "plan-hero" },
       h("div", { class: "plan-hero-title" }, h("div", {},
-        h("h2", {}, "Become a ", h("span", { class: "plan-hero-role" }, r?.occupation?.title || d.plan.target_role))), h("span", { class: `tag ${d.status}` }, d.status)),
+        h("h2", {}, `Become ${/^[aeiou]/i.test(r?.occupation?.title || d.plan.target_role) ? "an" : "a"} `, h("span", { class: "plan-hero-role" }, r?.occupation?.title || d.plan.target_role))), h("span", { class: `tag ${d.status}` }, d.status)),
       h("p", { class: "plan-hero-copy" }, approved ? "Your personalised 90-day learning journey. Pick up where you left off on the right." : "Your personalised 90-day learning journey, in three 30-day sections."),
       h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days from ",
         d.read_only ? new Date(d.started_utc).toLocaleDateString() : h("input", { class: "input plan-start", type: "date", "aria-label": "Plan start date",
@@ -1081,35 +1138,47 @@ async function planDetail(main, id, focusPlan = false, section = null, selectedN
     planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence, startDate: d.started_utc,
       sectionHref: (p, nodeId) => `#/plans/${id}${p ? `/${p}${nodeId ? `/${nodeId}` : ""}` : ""}`, selectedNodeId, diagrams: false,
       title: null, onChange: () => planDetail(main, id, true) }));
-  let expanded = !approved;
-  const panel = h("div", { class: "plan-report-panel", id: "saved-plan-report", inert: approved ? true : null,
-    "aria-hidden": String(approved) }, reportContent);
-  const toggle = h("button", { class: "btn report-toggle", type: "button", "aria-controls": "saved-plan-report",
-    "aria-expanded": String(expanded), onclick: () => {
-      expanded = !expanded;
-      disclosure.dataset.expanded = String(expanded);
-      panel.inert = !expanded;
-      panel.setAttribute("aria-hidden", String(!expanded));
-      toggle.setAttribute("aria-expanded", String(expanded));
-      toggle.textContent = expanded ? "Hide report" : "View report";
-      if (!expanded) planFocus.focus({ preventScroll: true });
-    } }, expanded ? "Hide report" : "View report");
-  const disclosure = h("section", { class: "plan-report", "data-expanded": String(expanded), "aria-label": "Analysis report" },
-    h("div", { class: "plan-report-heading" }, h("h2", {}, "Analysis report"), toggle), panel);
-  const blocks = h("div", { class: "body plan-detail-body" },
-    ...(approved ? [planFocus, disclosure] : [disclosure, planFocus]),
-    d.audience === "hr" && d.status === "approved" ? h("div", { class: "approve-bar" }, h("span", {}, "Your HR advisor approved this plan."),
-      h("button", { class: "btn primary", onclick: async () => { await api(`/api/plans/${id}/acknowledge`, { method: "POST" }); toast("Acknowledged"); planDetail(main, id); } }, "Acknowledge")) : null,
-    h("section", { class: "block" }, h("h3", {}, "History"), historyBlock(d.history)));
-  const pdf = h("button", { class: "btn sm no-print", type: "button", onclick: () => {  // the browser's "Save as PDF", every section open
-    main.querySelectorAll("details").forEach((x) => { x.open = true; });
-    main.querySelectorAll(".phase-detail").forEach((x) => { x.hidden = false; });
-    main.querySelectorAll(".plan-report-panel").forEach((x) => { x.inert = false; x.removeAttribute("aria-hidden"); });
-    main.querySelector(".plan-report")?.setAttribute("data-expanded", "true");
-    print();
-  } }, icon("file"), "Download PDF");
+  // The plan page is one report split into sections; the bar shows one section at a time, and "Download report"
+  // prints them all, each starting on its own page. Sections without saved content are left out.
+  const gaps = [r?.gaps?.length ? gapsBlock(r.gaps) : null, r?.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null].filter(Boolean);
+  const market = [r?.outlook ? outlookBlock(r.outlook) : null, r?.signals ? signalsBlock(r.signals) : null, r?.sdgs?.length ? sdgBlock(r.sdgs) : null].filter(Boolean);
+  const briefing = [r?.narrative ? staticText(r.narrative, highlight) : null, r?.issues?.length ? issuesBlock(r.issues) : null].filter(Boolean);
+  const sections = [
+    ["plan", "Your plan", "plans", [planFocus,
+      !r ? h("p", { class: "note" }, "This plan was made before analyses were saved, so only the 90-day plan is shown. Build a new plan to see the full analysis.") : null,
+      d.audience === "hr" && d.status === "approved" ? h("div", { class: "approve-bar" }, h("span", {}, "Your HR advisor approved this plan."),
+        h("button", { class: "btn primary", onclick: async () => { await api(`/api/plans/${id}/acknowledge`, { method: "POST" }); toast("Acknowledged"); planDetail(main, id); } }, "Acknowledge")) : null]],
+    ["gaps", "Skill gaps", "target", gaps],
+    ["market", "Market outlook", "up", market, h("div", { class: "insights" }, market)],
+    ["briefing", "Briefing", "report", briefing],
+    ["history", "History", "history", [h("section", { class: "block" }, historyBlock(d.history))]],
+  ].filter(([, , , kids]) => kids.some(Boolean));
+  const panes = sections.map(([key, , , kids, wrap]) => h("section", { class: "pd-pane", id: `pd-${key}`, role: "tabpanel", "aria-labelledby": `pd-tab-${key}` },
+    wrap || kids));
+  const show = (key, focus = false) => {
+    planSection = key;
+    sections.forEach(([k], i) => {
+      const on = k === key;
+      panes[i].hidden = !on;
+      tabs[i].setAttribute("aria-selected", String(on));
+      tabs[i].tabIndex = on ? 0 : -1;
+      if (on) { tabs[i].scrollIntoView({ block: "nearest", inline: "nearest" }); if (focus) tabs[i].focus(); }
+    });
+  };
+  const tabs = sections.map(([key, label, ic]) => h("button", { class: "pd-tab", type: "button", role: "tab", id: `pd-tab-${key}`, "aria-controls": `pd-${key}`,
+    onclick: () => show(key) }, icon(ic), h("span", {}, label)));
+  const bar = h("div", { class: "pd-bar no-print", role: "tablist", "aria-label": "Report sections", onkeydown: (e) => {  // arrow keys move along the bar
+    const i = sections.findIndex(([k]) => k === planSection), step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (step) { e.preventDefault(); show(sections[(i + step + sections.length) % sections.length][0], true); }
+  } }, tabs);
+  const pdf = h("button", { class: "btn sm no-print", type: "button", onclick: () => {
+    try { saveFile(planReportPdf(d), `${(r?.occupation?.title || d.plan.target_role).replace(/[^\w-]+/g, "-")}-${d.plan_reference || id}.pdf`); toast("Report downloaded"); }
+    catch (e) { toast(`Could not build the report: ${e.message}`, "err"); }
+  } }, icon("file"), "Download report");
   main.replaceChildren(h("div", { class: "plan-top-actions no-print" }, h("a", { href: "#/plans", class: "btn ghost sm" }, icon("back"), "All plans"), pdf),
-    h("h1", { class: "page-title plan-detail-title", style: { "margin-top": "12px" } }, r?.occupation?.title || d.plan.target_role), blocks);
+    h("h1", { class: "page-title plan-detail-title" }, r?.occupation?.title || d.plan.target_role),
+    bar, h("div", { class: "body plan-detail-body" }, panes));
+  show(focusPlan || section || !sections.some(([k]) => k === planSection) ? "plan" : planSection);
   main.dataset.plan = id;
   if (section) main.querySelector(".plan-block")?.openPane(section, true);
   if (focusPlan) planFocus.focus({ preventScroll: true });

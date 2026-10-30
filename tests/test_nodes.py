@@ -71,7 +71,24 @@ def test_learning_nodes_have_role_and_gap_specific_fallback(monkeypatch):
     assert "SELECT" in node.learn[0] and "WHERE" in node.learn[1]
     assert [n.type for n in journey.learning_nodes[:3]] == ["learn", "practice", "quiz"]
     assert journey.learning_nodes[2].quiz.options == ["WHERE", "ORDER BY"]
+    assert all(n.quiz and n.exercise and n.learn for n in journey.learning_nodes[:3])  # each step: learn, practise, quiz
     assert node.content_source == "guided_fallback"
+
+
+def test_a_weeks_three_steps_each_get_their_own_task():
+    from agents import pathway
+    from core.state import Gap, LearningNode
+    gaps = [Gap(skill_id="SQL", current_level=1, required_level=4, gap=3), Gap(skill_id="Data storytelling", current_level=2, required_level=3, gap=1)]
+    p = pathway.build(gaps, 6, "Data analyst", "assistive")
+    seeds = pathway._node_seeds(p, gaps, "Data analyst", [], {})
+    nodes = pathway.expand_learning_nodes([LearningNode(**pathway._fallback_node(s, "Data analyst")) for s in seeds])
+    steps = pathway.distinct_steps([n.model_dump() for n in nodes])
+    week = steps[:3]
+    for field in ("learn", "instructions", "exercise", "deliverable"):
+        assert len({str(n[field]) for n in week}) == 3, field  # understand, practice and check never repeat each other
+    assert len({n["quiz"]["question"] for n in week}) == 3
+    assert all(n["quiz"]["options"][n["quiz"]["answer_index"]] for n in steps)
+    assert len([LearningNode(**n) for n in steps]) == len(nodes)  # still valid nodes, none lost
 
 
 def test_distinct_skill_lessons_and_saved_week_expansion(monkeypatch):

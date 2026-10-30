@@ -38,7 +38,7 @@ from pydantic import BaseModel, Field, ValidationError
 from agents.gap_analyst import SCENARIO_NOTES
 from agents.profiler import expand as expand_skill
 from agents import ops
-from agents.pathway import HOURS_PER_LEVEL, backfill_learning_nodes, expand_learning_nodes
+from agents.pathway import HOURS_PER_LEVEL, backfill_learning_nodes, distinct_steps, expand_learning_nodes
 from agents.sdg import goal_meta, role_sdgs
 from agents import catalog, criteria, llm, matcher, quiz, resume
 from agents import tools as agent_tools
@@ -1879,18 +1879,15 @@ def sdgs(request: HttpRequest):
 def _learning_plan_view(plan: dict) -> dict:
     """Show saved weekly lessons as separate actions without rewriting the approved plan."""
     nodes = plan.get("learning_nodes") or []
-    if not nodes and plan.get("activities"):  # saved before the roadmap existed
-        try:
-            return {**plan, "learning_nodes": [node.model_dump() for node in backfill_learning_nodes(plan)]}
-        except (ValidationError, KeyError, ValueError):
-            return plan
-    if not nodes or any(node.get("id", "").endswith(("-practice", "-check")) for node in nodes):
-        return plan
     try:
-        expanded = expand_learning_nodes([LearningNode(**node) for node in nodes], plan.get("target_role"))
-        return {**plan, "learning_nodes": [node.model_dump() for node in expanded]}
-    except ValidationError:
+        if not nodes and plan.get("activities"):  # saved before the roadmap existed
+            nodes = [node.model_dump() for node in backfill_learning_nodes(plan)]
+        elif nodes and not any(node.get("id", "").endswith(("-practice", "-check")) for node in nodes):
+            nodes = [node.model_dump() for node in expand_learning_nodes([LearningNode(**node) for node in nodes], plan.get("target_role"))]
+    except (ValidationError, KeyError, ValueError):
         return plan
+    # each week's understand, practice and check steps get their own part of the lesson (see pathway.distinct_steps)
+    return {**plan, "learning_nodes": distinct_steps(nodes)} if nodes else plan
 
 
 def _learning_progress_rows(plan: dict, rows) -> list:

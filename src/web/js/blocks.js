@@ -62,7 +62,7 @@ const card = (label, ic, title, { figure, unit, note, cls = "" } = {}, ...kids) 
   figure != null ? h("p", { class: "bc-figure" }, h("b", {}, figure), unit ? h("span", {}, unit) : null) : null, ...kids), RISE, { duration: 420 });
 
 // official UN SDG colours (sdgs.un.org brand guide), for number-only goal tiles
-const SDG_COLORS = { 1: "#E5243B", 2: "#DDA63A", 3: "#4C9F38", 4: "#C5192D", 5: "#FF3A21", 6: "#26BDE2", 7: "#FCC30B", 8: "#A21942", 9: "#FD6925",
+export const SDG_COLORS = { 1: "#E5243B", 2: "#DDA63A", 3: "#4C9F38", 4: "#C5192D", 5: "#FF3A21", 6: "#26BDE2", 7: "#FCC30B", 8: "#A21942", 9: "#FD6925",
   10: "#DD1367", 11: "#FD9D24", 12: "#BF8B2E", 13: "#3F7E44", 14: "#0A97D9", 15: "#56C02B", 16: "#00689D", 17: "#19486A" };
 const ARROW = { rising: ["up", "forecast rising"], falling: ["down", "forecast falling"] };
 
@@ -405,9 +405,9 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
           const complete = nodeDone(node), started = nodeStarted(node), active = node.id === selectedNodeByPhase[phase];
           return h("button", { type: "button", class: `road-node${complete ? " is-done" : ""}${started ? " is-started" : ""}${active ? " is-active" : ""}${week === selectedWeek ? " is-week-selected" : ""}`,
             "aria-pressed": String(active), "aria-label": `${node.title}, week ${week}, ${complete ? "completed" : started ? "in progress" : "not started"}`,
-            onclick: () => selectNode(node) },
+            onclick: () => { selectNode(node); requestAnimationFrame(() => blockEl?.querySelector(".phase-detail:not([hidden]) .learning-lesson")?.scrollIntoView({ behavior: "smooth", block: "nearest" })); } },
             h("span", { class: "road-node-icon", "aria-hidden": "true" }, icon(complete ? "check" : node.type === "learn" ? "sources" : node.type === "quiz" ? "target" : "edit")),
-            h("span", { class: "road-node-title" }, node.title), h("span", { class: "road-node-type" }, node.type === "quiz" ? "Quiz" : node.type[0].toUpperCase() + node.type.slice(1)),
+            h("span", { class: "road-node-title" }, node.title),
             h("span", { class: "sr-only" }, complete ? "Completed" : started ? "In progress" : "Not started"));
       });
       return h("div", { class: `road-week${week === selectedWeek ? " is-selected" : ""}${week === nowWeek ? " is-current" : ""}`,
@@ -422,57 +422,63 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     const road = h("div", { class: "learning-road-scroll", tabindex: "0", "aria-label": "Scrollable learning roadmap" },
       h("div", { class: "learning-road", style: { "--road-progress-number": String(nodes.length ? completedPrefix / nodes.length : 0) } }, ...roadWeeks));
     const controls = h("div", { class: "learning-road-controls" },
-      h("span", { class: "muted" }, "Scroll to explore all steps. Selecting a week highlights it; selecting a node opens its lesson."),
+      h("span", { class: "muted" }, "Select a step on the map; its lesson opens under the map."),
       h("button", { class: "btn sm", type: "button", onclick: () => { const current = Math.max(lo, Math.min(hi, nowWeek)); selectedWeekByPhase[phase] = current; renderAllJourneys();
         scrollRoadTo(phase, current); } }, "Scroll to current week"));
     const lesson = selectedNode && phaseForWeek(selectedNode.week_number) === phase ? renderLearningLesson(selectedNode) :
       h("section", { class: "learning-lesson learning-lesson-empty" }, h("p", {}, "Select a learning step to open its mini-lesson."));
     host.replaceChildren(h("div", { class: "learning-road-heading" }, h("h4", {}, "Connected Learning Roadmap"), h("span", { "aria-hidden": "true" }, "↔")),
-      h("p", { class: "muted learning-road-sub" }, `Scroll horizontally to explore your learning journey · ${weeks.length} weeks`), road, controls, lesson);
+      h("p", { class: "muted learning-road-sub" }, `Scroll horizontally to explore your learning journey · ${weeks.length} weeks`), controls, road, lesson);
   };
   const renderLearningLesson = (node) => {
     const week = node.week_number;
+    // Every step has its own Learn, Practice and Quiz tabs; the card opens on the tab that matches the step's type
+    const learnSrc = node, practiceSrc = node, quizSrc = node.quiz ? node : null;
     const state = quizState.get(node.id) || {};
     const criteria = criteriaState.get(node.id) || (nodeDone(node) ? node.completion_criteria.map(() => true) : node.completion_criteria.map(() => false));
     const quizOk = !node.quiz || state.correct === true || nodeDone(node);
     const criteriaOk = criteria.every(Boolean);
-    const activeTab = lessonTabs.get(node.id) || (node.type === "quiz" ? "quiz" : ["practice", "project"].includes(node.type) ? "practice" : "learn");
+    const kind = node.type === "quiz" ? "quiz" : node.type === "learn" ? "learn" : "practice";
+    const KIND = { learn: ["sources", "Learn"], practice: ["edit", node.type === "project" ? "Work sample" : node.type === "review" ? "Review" : "Practice"], quiz: ["target", "Quiz"] };
+    const tabNames = ["learn", "practice", ...(quizSrc ? ["quiz"] : [])];
+    const activeTab = tabNames.includes(lessonTabs.get(node.id)) ? lessonTabs.get(node.id) : kind;
     const tabs = h("nav", { class: "learning-lesson-tabs", "aria-label": "Lesson sections" },
-      ...["learn", "practice", ...(node.quiz ? ["quiz"] : [])].map((tab) => h("button", {
-        type: "button", class: activeTab === tab ? "is-active" : null, "aria-pressed": String(activeTab === tab),
-        onclick: () => { lessonTabs.set(node.id, tab); renderAllJourneys(); }
-      }, tab[0].toUpperCase() + tab.slice(1))));
-    const refs = (node.resource_ids || []).map((id) => ev.get(id)).filter((e) => e?.url);
+      ...tabNames.map((tab) => h("button", { type: "button", class: activeTab === tab ? "is-active" : null, "aria-pressed": String(activeTab === tab),
+        onclick: () => { lessonTabs.set(node.id, tab); renderAllJourneys(); } }, icon(KIND[tab][0]), tab === "practice" ? "Practice" : KIND[tab][1])));
+    const refs = ((activeTab === "learn" ? learnSrc : practiceSrc).resource_ids || []).map((id) => ev.get(id)).filter((e) => e?.url);
     const journeyIndex = learningNodes.findIndex((item) => item.id === node.id);
     const beforeNode = learningNodes[journeyIndex - 1], afterNode = learningNodes[journeyIndex + 1];
     const stepNav = h("nav", { class: "learning-step-nav", "aria-label": "Learning step navigation" },
       h("button", { class: "btn sm", type: "button", disabled: !beforeNode ? true : null, onclick: () => beforeNode && selectNode(beforeNode) }, "Previous step"),
       h("span", { class: "muted" }, `${journeyIndex + 1} of ${learningNodes.length}`),
       h("button", { class: "btn sm primary", type: "button", disabled: !afterNode ? true : null, onclick: () => afterNode && selectNode(afterNode) }, "Next step"));
-    const quiz = node.quiz ? h("section", { class: "learning-section learning-quiz" }, h("h5", {}, "Quiz · check your understanding"),
-      h("p", {}, node.quiz.question), h("div", { class: "learning-options", role: "group", "aria-label": node.quiz.question },
-        ...node.quiz.options.map((option, index) => h("button", { type: "button", class: `learning-option${state.answer === index ? state.correct ? " is-correct" : " is-wrong" : ""}`,
-          "aria-pressed": String(state.answer === index), onclick: () => { quizState.set(node.id, { answer: index, correct: index === node.quiz.answer_index }); renderAllJourneys(); } }, option))),
+    const q = quizSrc?.quiz;
+    const quiz = q ? h("section", { class: "learning-section learning-quiz" }, h("h5", {}, "Check your understanding"),
+      h("p", {}, q.question), h("div", { class: "learning-options", role: "group", "aria-label": q.question },
+        ...q.options.map((option, index) => h("button", { type: "button", class: `learning-option${state.answer === index ? state.correct ? " is-correct" : " is-wrong" : ""}`,
+          "aria-pressed": String(state.answer === index), onclick: () => { quizState.set(quizSrc.id, { answer: index, correct: index === q.answer_index }); renderAllJourneys(); } }, option))),
       state.answer != null ? h("p", { class: `learning-feedback${state.correct ? " is-correct" : " is-wrong"}`, role: "status" },
-        state.correct ? `Correct. ${node.quiz.explanation}` : `Not quite. ${node.quiz.explanation}`,
-        !state.correct ? h("button", { type: "button", class: "btn sm", onclick: () => { quizState.delete(node.id); renderAllJourneys(); } }, "Try again") : null) : null) : null;
+        state.correct ? `Correct. ${q.explanation}` : `Not quite. ${q.explanation}`,
+        !state.correct ? h("button", { type: "button", class: "btn sm", onclick: () => { quizState.delete(quizSrc.id); renderAllJourneys(); } }, "Try again") : null) : null) : null;
     return h("section", { class: "learning-lesson", "aria-labelledby": `lesson-${node.id}` },
-      h("header", { class: "learning-lesson-header" }, h("div", {}, h("p", { class: "eyebrow" }, `Week ${week} selected · ${learningNodes.filter((item) => item.week_number === week).length} learning steps`),
+      h("header", { class: "learning-lesson-header" }, h("div", {}, h("p", { class: `learning-kind is-${kind}` }, icon(KIND[kind][0]), `${KIND[kind][1]} · Week ${week}`),
         h("h4", { id: `lesson-${node.id}` }, node.title), h("div", { class: "learning-skill-tags" }, ...node.skills.map((skill) => h("span", { class: "tag" }, skill)),
           h("span", { class: "tag learning-source" }, node.content_source === "ai" ? "Personalized lesson" : "Guided lesson"))),
         h("span", { class: `learning-node-status${nodeDone(node) ? " is-done" : ""}` }, nodeDone(node) ? "✓ Completed" : `${node.estimated_minutes} min`)),
       stepNav, tabs,
       h("section", { class: "learning-section" }, h("h5", {}, "Learning objective"), h("p", {}, node.learning_objective)),
-      h("section", { class: "learning-section", hidden: activeTab !== "learn" }, h("h5", {}, "Learn"),
-        node.topics?.length ? h("ul", { class: "learning-topics" }, ...node.topics.map((topic) => h("li", {}, topic))) : null,
-        ...node.learn.map((part) => h("p", {}, part))),
-      h("section", { class: "learning-section", hidden: activeTab !== "learn" }, h("h5", {}, "How to learn"), h("ol", {}, ...node.instructions.map((step) => h("li", {}, step)))),
-      h("section", { class: "learning-section", hidden: activeTab !== "learn" }, h("h5", {}, "Resources"), refs.length ? h("ul", { class: "learning-resources" }, ...refs.map((resource) =>
+      activeTab === "learn" ? h("section", { class: "learning-section" }, h("h5", {}, "Learn"),
+        learnSrc.topics?.length ? h("ul", { class: "learning-topics" }, ...learnSrc.topics.map((topic) => h("li", {}, topic))) : null,
+        ...learnSrc.learn.map((part) => h("p", {}, part))) : null,
+      activeTab === "practice" ? h("section", { class: "learning-section learning-task" }, h("h5", {}, "Your task"), h("p", {}, practiceSrc.exercise),
+        h("p", { class: "learning-deliverable" }, h("b", {}, "Deliverable: "), practiceSrc.deliverable)) : null,
+      activeTab === "quiz" ? quiz : null,
+      activeTab !== "quiz" ? h("section", { class: "learning-section" }, h("h5", {}, activeTab === "learn" ? "How to learn" : "How to do it"),
+        h("ol", {}, ...(activeTab === "learn" ? learnSrc : practiceSrc).instructions.map((step) => h("li", {}, step)))) : null,
+      activeTab !== "quiz" ? h("section", { class: "learning-section" }, h("h5", {}, "Resources"), refs.length ? h("ul", { class: "learning-resources" }, ...refs.map((resource) =>
         h("li", {}, h("a", { href: currentSourceUrl(resource.url), target: "_blank", rel: "noopener noreferrer" }, resource.title),
           h("span", { class: "muted" }, ` · ${resource.publisher || "Verified source"} · ${resource.category || "Learning resource"}${resource.id.startsWith("learn:") ? " · Free" : ""}`)))) :
-        h("p", { class: "muted" }, "No verified resource link was retrieved for this step. Use the Learn and Practice instructions below.")),
-      h("section", { class: "learning-section", hidden: activeTab !== "practice" }, h("h5", {}, "Practice"), h("p", {}, node.exercise), h("p", {}, h("b", {}, "Deliverable: "), node.deliverable)),
-      node.quiz ? h("div", { hidden: activeTab !== "quiz" }, quiz) : null,
+        h("p", { class: "muted" }, "No verified resource link was found for this step; the steps above are enough to do it.")) : null,
       h("section", { class: "learning-section learning-completion" }, h("h5", {}, "Completion criteria"),
         h("p", { class: "muted" }, "Check each item after doing the work. Completion records this activity; it does not change your verified skill level."),
         ...node.completion_criteria.map((criterion, index) => h("label", { class: "learning-criterion" },
@@ -485,6 +491,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
   };
   function renderAllJourneys() { PHASES.forEach(renderJourney); }
   function selectNode(node) {
+    lessonTabs.clear();  // a step always opens on its own tab: Understand on Learn, Practice on Practice, Knowledge Check on Quiz
     const phase = phaseForWeek(node.week_number);
     selectedWeekByPhase[phase] = node.week_number;
     selectedNodeByPhase[phase] = node.id;
@@ -544,7 +551,6 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
             })))),
       h("div", { class: "ps-stat" }, h("span", { class: "ps-icon" }, icon("target")), h("div", {}, h("b", {}, `${reached.length} of 3`), h("span", { class: "muted" }, "Milestones reached"))),
       h("div", { class: "ps-stat" }, h("span", { class: "ps-icon" }, icon("grid")), h("div", {}, h("b", {}, String(daysLeft)), h("span", { class: "muted" }, "Days remaining"))));
-    const nextPhase = PHASES.find((p) => !reached.includes(p) && phaseTotal(p));
     asideEl.replaceChildren(
       next ? h("section", { class: "aside-card" },
         h("div", { class: "aside-head" }, h("h4", {}, learningNodes.length ? "Your next learning step" : "Your next activity"),
@@ -558,13 +564,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
           const phase = phaseForWeek(next.week_number); selectedWeekByPhase[phase] = next.week_number; selectedNodeByPhase[phase] = next.id;
           openPane(phase, false, next.id); renderAllJourneys(); scrollRoadTo(phase, next.week_number);
         } }, "Continue learning"))
-        : h("section", { class: "aside-card" }, h("h4", {}, "All activities done"), h("p", {}, "You've finished every activity in this plan.")),
-      nextPhase ? h("section", { class: "aside-card" },
-        h("h4", {}, `Next milestone · Day ${nextPhase.split("-")[1]}`),
-        h("p", { class: "muted" }, `Finish ${phaseNames[PHASES.indexOf(nextPhase)].toLowerCase()} activities:`),
-        h("ul", { class: "aside-list" }, learningNodes.length ? phaseNodes(nextPhase).map((node) => h("li", { class: nodeDone(node) ? "is-done" : null },
-          icon(nodeDone(node) ? "check" : "target"), node.title)) : inPhase(nextPhase).map((a) => h("li", { class: done.has(key(a)) ? "is-done" : null },
-          icon(done.has(key(a)) ? "check" : "target"), a.skill_id)))) : null);
+        : h("section", { class: "aside-card" }, h("h4", {}, "All activities done"), h("p", {}, "You've finished every activity in this plan.")));
   }
   async function mark(a, value, box) {
     value ? done.add(key(a)) : done.delete(key(a));

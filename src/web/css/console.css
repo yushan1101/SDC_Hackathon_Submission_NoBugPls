@@ -714,3 +714,20 @@ html:is([data-product="hr"], [data-console]) .rail :is([popover], .is-sidebar-co
 html:is([data-product="hr"], [data-console]) .rail :is([popover], .is-sidebar-collapsed .rail-sub) :is(a, button):hover svg { color: var(--accent); }
 @media (prefers-reduced-transparency: reduce) {
   html:is([data-product="hr"], [data-console]) .rail { background: oklch(0.42 0.16 263) !important; } }
+
+/* phones: the bottom bar is the sidebar's blue too, for employees and HR alike; the current page is a white pill */
+@media (max-width: 767px) {
+  html:is([data-product="hr"], [data-console]) .hr-tabbar {
+    gap: 4px; padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); border: 0;
+    background: linear-gradient(180deg, oklch(0.47 0.17 263), oklch(0.37 0.14 265));
+    -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 0 14px 30px -12px oklch(0.25 0.12 263 / 0.6); }
+  html:is([data-product="hr"], [data-console]) .hr-tabbar :is(a, button.hr-more-button) {
+    min-height: 56px; border-radius: 18px; color: oklch(1 0 0 / 0.88); font-weight: 600; }
+  html:is([data-product="hr"], [data-console]) .hr-tabbar :is(a, button) svg { color: oklch(1 0 0 / 0.8); }
+  html:is([data-product="hr"], [data-console]) .hr-tabbar :is(a, button.hr-more-button)[aria-current="page"] {
+    background: oklch(1 0 0); color: var(--owl-ink); box-shadow: 0 6px 16px -8px oklch(0.2 0.12 263 / 0.6); }
+  html:is([data-product="hr"], [data-console]) .hr-tabbar :is(a, button)[aria-current="page"] svg { color: var(--accent); }
+  html:is([data-product="hr"], [data-console]) .hr-tabbar :is(a, button):focus-visible { outline: 2px solid oklch(1 0 0); outline-offset: -2px; }
+}
+@media (max-width: 767px) and (prefers-reduced-transparency: reduce) {
+  html:is([data-product="hr"], [data-console]) .hr-tabbar { background: oklch(0.42 0.16 263) !important; } }

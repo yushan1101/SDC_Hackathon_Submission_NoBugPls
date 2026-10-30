@@ -724,16 +724,6 @@ table.data tbody tr.rec td:first-child b { color: var(--accent); }
 @media (max-width: 899px) { .apply-grid { grid-template-columns: 1fr; gap: 32px; } }
 .plan-focus { scroll-margin-top: 24px; }
 .plan-focus:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; }
-.plan-report { margin: 28px 0; border: 1px solid var(--rule); border-radius: 12px; }
-.plan-report-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; }
-.plan-report-heading h2 { margin: 0; font-size: 18px; }
-.report-toggle { flex-shrink: 0; }
-.plan-report-panel { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden;
-  transition: grid-template-rows 280ms ease, opacity 220ms ease, visibility 280ms; }
-.plan-report[data-expanded="true"] .plan-report-panel { grid-template-rows: 1fr; opacity: 1; visibility: visible; }
-.plan-report-content { min-height: 0; overflow: hidden; }
-.plan-report-content > * { margin-left: 16px; margin-right: 16px; }
-.plan-report-content > :last-child { margin-bottom: 20px; }
 
 /* ---------- reduced motion: keep state changes, drop travel ---------- */
 @media (prefers-reduced-motion: reduce) {
@@ -855,8 +845,6 @@ html { scroll-padding-top: 88px; }
 [data-product="public"] .cv-md pre { font-size: 14px; border-radius: 14px; }
 [data-product="public"] .cv-skills .cv-skill-evidence { font-size: 14px; }
 [data-product="public"] .cv-out > .block:first-child { border-radius: 18px; }
-[data-product="public"] .plan-report { border-radius: 20px; }
-[data-product="public"] .plan-report-heading h2 { font-size: 24px; }
 [data-product="public"] .path-t b { font-size: 26px; }
 
 /* enterprise: same palette and faces, one step larger than before, still dense */
@@ -2176,9 +2164,9 @@ body.interview-takeover-active #app > .pub-main {
 .sdg-library .sl-mine svg { width: 15px; height: 15px; }
 .plan-top-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
 @media print {
-  .pub-top, .tabbar, .no-print, .composer, .sources, .report-toggle, .act-done, .approve-bar, .skip-link, .toast { display: none !important; }
+  .pub-top, .tabbar, .hr-tabbar, .no-print, .composer, .sources, .act-done, .approve-bar, .skip-link, .toast { display: none !important; }
   body, .pub-main { background: #fff !important; padding: 0 !important; }
-  .phase-content, .plan-report-panel { display: block !important; }
+  .phase-content { display: block !important; }
   .act, .block, .brief-card, .phase { break-inside: avoid; box-shadow: none !important; }
   a { color: inherit; }
 }
@@ -2650,47 +2638,8 @@ body {
   margin: 0 auto;
 }
 
-/* Analysis report container */
-.plan-report {
-  overflow: hidden;
-  border: 1px solid var(--rule);
-  border-radius: 24px;
-  background: var(--sunken);
-}
-
-.plan-report-heading {
-  padding: 20px 24px;
-}
-
-.plan-report-heading h2 {
-  font-size: 24px;
-}
-
-/* Main written summary */
-.plan-report-content > .prose {
-  max-width: 76ch;
-  margin-top: 4px;
-  margin-bottom: 20px;
-  font-size: 17px;
-  line-height: 1.7;
-  padding-left: 18px;
-  padding-right: 18px;
-}
-
-/* Cards inside report */
-.plan-report-content > .brief-card {
-  margin-top: 18px;
-  margin-bottom: 18px;
-}
-
-/* Skill gap card slightly cleaner */
-.plan-report .brief-card {
-  border: 1px solid var(--rule);
-  box-shadow: 0 8px 28px rgba(22, 42, 75, 0.06);
-}
-
-/* Give skill names a little more room */
-.plan-report .gap-row {
+/* Skill names get a little more room on the plan page */
+.pd-pane .gap-row {
   grid-template-columns:
     minmax(240px, 1fr)
     minmax(140px, 220px)
@@ -2703,11 +2652,11 @@ body {
     width: 100%;
   }
 
-  .plan-report .gap-row {
+  .pd-pane .gap-row {
     grid-template-columns: minmax(0, 1fr) 56px;
   }
 
-  .plan-report .gr-bar {
+  .pd-pane .gr-bar {
     grid-column: 1 / -1;
     grid-row: 2;
   }
@@ -3475,12 +3424,22 @@ body {
 .road-node.is-active .road-node-icon { border-color: var(--road-accent); color: #fff; background: var(--road-accent); box-shadow: 0 0 0 4px color-mix(in oklab, var(--road-accent) 10%, transparent); }
 .road-node-title { max-width: 180px; text-align: center; font-size: 14px; line-height: 1.35; min-height: 3em; }
 .road-node.is-active .road-node-title { font-weight: 700; }
-.road-node-type { color: var(--ink-2); font-size: 14px; }
 .road-node:focus-visible { outline: 2px solid var(--road-accent); outline-offset: -2px; border-radius: 14px; }
 .phase-activity-budget > summary { cursor: pointer; margin: 14px 0; color: var(--ink-2); }
-.learning-lesson-tabs { display: flex; gap: 6px; padding: 5px; border-radius: 12px; background: var(--surface-2, #f3f4f8); }
-.learning-lesson-tabs button { flex: 1; padding: 10px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-2); cursor: pointer; font: inherit; }
-.learning-lesson-tabs button.is-active { background: var(--surface); color: var(--road-accent); box-shadow: 0 1px 5px #0001; font-weight: 650; }
+/* the lesson panel says what kind of step it is, in the roadmap node's own colour language */
+.learning-kind { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 6px; padding: 4px 10px 4px 8px; border-radius: 99px;
+  font-size: 13px; font-weight: 600; background: var(--accent-soft); color: var(--accent); }
+.learning-kind svg { width: 15px; height: 15px; }
+.learning-kind.is-practice { background: var(--warn-soft); color: var(--warn); }
+.learning-kind.is-quiz { background: color-mix(in oklch, var(--road-accent, var(--accent)) 14%, white); color: var(--road-accent, var(--accent)); }
+.learning-lesson-tabs { display: flex; gap: 6px; padding: 5px; border-radius: 14px; background: var(--accent-soft); }
+.learning-lesson-tabs button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 42px; padding: 0 10px;
+  border: 0; border-radius: 10px; background: transparent; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; }
+.learning-lesson-tabs button svg { width: 16px; height: 16px; }
+.learning-lesson-tabs button.is-active { background: var(--accent); color: var(--accent-ink); }
+.learning-lesson-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.learning-task { padding: 16px 18px; border-radius: 14px; background: var(--sunken); }
+.learning-deliverable { margin-top: 8px; }
 .learning-lesson { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; padding: clamp(14px, 2.5vw, 22px); border: 1px solid var(--rule); border-radius: 18px; background: var(--surface); }
 .learning-lesson-empty { min-height: 70px; place-items: center; color: var(--ink-2); }
 .learning-lesson-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
@@ -4107,3 +4066,25 @@ pre { max-width: 100%; overflow-x: auto; }
 }
 .plan-hero-metrics .plan-hours { width: 5.5em; padding: 2px 6px; min-height: 0; font: inherit; border-radius: 8px; }
 .plan-hours-field .btn[hidden] { display: none; }
+
+/* Plan page section bar (public.js planDetail): one report in sections, one shown at a time. Same family as the
+   change summary's Before/After switch: a pale blue track, the open section filled solid blue. Sticks under the
+   page top while the section scrolls; scrolls sideways on phones instead of wrapping. */
+.pd-bar { position: sticky; top: 0; z-index: 5; display: flex; gap: 4px; margin: 20px auto 24px; padding: 5px; width: min(100%, 1040px);
+  overflow-x: auto; scrollbar-width: none; border-radius: 18px; background: var(--accent-soft); box-shadow: 0 10px 24px -18px oklch(0.4 0.17 263 / 0.6); }
+.pd-bar::-webkit-scrollbar { display: none; }
+.pd-tab { flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 18px;
+  border: 0; border-radius: 13px; background: none; color: var(--accent); font: inherit; font-size: 15px; font-weight: 600; white-space: nowrap; cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast); }
+.pd-tab svg { width: 18px; height: 18px; flex: none; }
+.pd-tab:hover { background: oklch(1 0 0 / 0.7); }
+.pd-tab[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); box-shadow: 0 8px 18px -10px oklch(0.4 0.17 263 / 0.8); }
+.pd-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pd-pane { display: grid; gap: 24px; }
+.pd-pane :is(section, [tabindex]) { scroll-margin-top: 84px; }  /* jumps inside a section land below the sticky bar */
+.pd-pane[hidden] { display: none; }
+@media (max-width: 699px) {
+  .pd-bar { margin: 14px 0 18px; border-radius: 16px; }
+  .pd-tab { flex: 0 0 auto; min-height: 44px; padding: 0 14px; font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .pd-tab { transition: none; } }

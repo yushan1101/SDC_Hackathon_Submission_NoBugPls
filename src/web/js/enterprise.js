@@ -95,7 +95,7 @@ function shell() {
     h("a", { href: "#/signals", onclick: () => more.hidePopover?.() }, icon("pulse"), "AI trends"),
     h("a", { href: "#/heatmap", onclick: () => more.hidePopover?.() }, icon("grid"), "Skills gap heatmap"),
     h("a", { href: "#/account", "data-route": "#/account" }, icon("user"), "Plan & billing"),
-    h("button", { type: "button", onclick: signOut }, icon("out"), "Sign out"));
+    h("button", { type: "button", onclick: signOut }, icon("nav-signout"), "Log out"));
   sidebarToggle = h("button", { class: "hr-sidebar-toggle", type: "button", "aria-expanded": String(sidebarExpanded),
     "aria-label": sidebarExpanded ? "Collapse sidebar" : "Expand sidebar", title: sidebarExpanded ? "Collapse sidebar" : "Expand sidebar",
     onclick: () => {
