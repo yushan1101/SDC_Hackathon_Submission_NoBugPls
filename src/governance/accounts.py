@@ -17,6 +17,7 @@ import argparse
 import getpass
 import hashlib
 import hmac
+import logging
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -41,6 +42,31 @@ TERMS_VERSION = "2026-10-22"  # bump when the Terms of Use or Privacy Policy cha
 STATUSES = {"active", "pending_email", "pending_approval", "invited", "disabled"}
 EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$", re.I)
 USERNAME = re.compile(r"^[a-z0-9_.-]{3,40}$")
+INVALID_LOGIN = "invalid username or password"  # the one message for unknown user AND wrong password (no enumeration)
+LOCKED_LOGIN = "account temporarily locked; try again later"  # same answer for auto-lockout and admin lock
+# An administrator's lock is stored in the same column the sign-in check reads (users.locked_until), as a date that
+# never comes, so every node sees it on its next sign-in and no schema change is needed (Postgres included).
+ADMIN_LOCK_UNTIL = "9999-12-31T23:59:59+00:00"
+PENDING_SIGNUP_MINUTES = 30  # an unverified sign-up holds its username/email this long before someone else may take it
+log = logging.getLogger(__name__)
+
+# Listeners for new login keys (usernames, emails): the sign-in Bloom filter (governance/bloom.py) subscribes so it
+# never answers "no such account" for an account that was just created here. Keys are passed on, never logged.
+_LOGIN_KEY_LISTENERS: list = []
+
+
+def on_login_keys(fn) -> None:
+    if fn not in _LOGIN_KEY_LISTENERS:
+        _LOGIN_KEY_LISTENERS.append(fn)
+
+
+def note_login_keys(*keys) -> None:
+    """Call after any write that adds a username or email someone can sign in with."""
+    for fn in list(_LOGIN_KEY_LISTENERS):
+        try:
+            fn(*keys)
+        except Exception:  # a listener must never break account creation
+            log.exception("login key listener failed")
 
 
 class AuthError(ValueError):
@@ -68,8 +94,33 @@ def _check_password(password: str):
         raise AuthError("password: >=10 chars with an uppercase letter and a digit")
 
 
-def _hash(password: str, salt: bytes) -> bytes:
+# Password hashing. v2 = scrypt N=2^17, r=8, p=1 (OWASP minimum), tagged so old N=2^14 hashes keep working and are
+# upgraded on the next successful sign-in (see authenticate). Needs ~128 MiB per hash, hence maxmem.
+_V2 = b"s2$"
+
+
+def _legacy_hash(password: str, salt: bytes) -> bytes:
     return hashlib.scrypt(password.encode(), salt=salt, n=2 ** 14, r=8, p=1, dklen=32)
+
+
+def _hash(password: str, salt: bytes) -> bytes:
+    return _V2 + hashlib.scrypt(password.encode(), salt=salt, n=2 ** 17, r=8, p=1, maxmem=2 ** 28, dklen=32)
+
+
+def _verify(password: str, salt: bytes, stored: bytes) -> bool:
+    stored = bytes(stored)
+    calc = _hash(password or "", salt) if stored.startswith(_V2) else _legacy_hash(password or "", salt)
+    return hmac.compare_digest(calc, stored)
+
+
+_DUMMY_SALT = os.urandom(16)
+_DUMMY_HASH = _hash("dummy-password-never-valid", _DUMMY_SALT)  # same work for unknown users: no timing enumeration
+
+
+def burn_dummy(password: str) -> bool:
+    """The same scrypt work as checking a real (v2) password, for logins that cannot succeed. Always False."""
+    _verify(password or "", _DUMMY_SALT, _DUMMY_HASH)
+    return False
 
 
 def create_user(con, username: str, password: str, role: str, employee_id: str | None = None,
@@ -91,6 +142,7 @@ def create_user(con, username: str, password: str, role: str, employee_id: str |
     with con:
         con.execute("INSERT INTO users(username,pw_hash,salt,role,employee_id,display_name,created_utc) VALUES(?,?,?,?,?,?,?)",
                     (username, _hash(password, salt), salt, role, employee_id, display_name or username, now()))
+    note_login_keys(username)
 
 
 def register(con, username: str, email: str, password: str, account_type: str, display_name: str = "",
@@ -106,9 +158,13 @@ def register(con, username: str, email: str, password: str, account_type: str, d
     if not EMAIL.match(email):
         raise AuthError("enter a valid email address")
     _check_password(password)
-    # an unverified sign-up never became an account: starting again (same username or email) replaces it
-    stale = [r[0] for r in con.execute("SELECT username FROM users WHERE (username=? OR lower(email)=?) AND status='pending_email'",
-                                       (username, email))]
+    # An unverified sign-up never became an account: starting again with the same username AND email replaces it.
+    # Anyone else (another email for that username, or that email under another username) may only replace it once
+    # it has expired, so nobody can keep cancelling or squatting someone's sign-up while they verify their email.
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=PENDING_SIGNUP_MINUTES)).isoformat(timespec="seconds")
+    stale = [r[0] for r in con.execute(
+        "SELECT username FROM users WHERE status='pending_email' AND ((username=? AND lower(email)=?) "
+        "OR ((username=? OR lower(email)=?) AND created_utc<?))", (username, email, username, email, cutoff))]
     with con:
         for old in stale:
             con.execute("DELETE FROM users WHERE username=?", (old,))
@@ -127,6 +183,7 @@ def register(con, username: str, email: str, password: str, account_type: str, d
                     "account_type,terms_version,terms_accepted_utc) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (username, _hash(password, salt), salt, role, employee_id, (display_name or username).strip()[:60], now(),
                      email, status, "free", account_type, TERMS_VERSION, now()))
+    note_login_keys(username, email)
     _event(con, username, "registered")
     return {"username": username, "role": role, "status": status}
 
@@ -149,6 +206,7 @@ def invite(con, hr: str, email: str, display_name: str = "") -> dict:
         con.execute("INSERT INTO users(username,pw_hash,salt,role,employee_id,display_name,created_utc,email,status,plan,"
                     "account_type,invited_by) VALUES(?,NULL,NULL,'employee',?,?,?,?,'invited','org','org',?)",
                     (username, "U-" + os.urandom(4).hex(), (display_name or username).strip()[:60], now(), email, hr))
+    note_login_keys(username, email)
     _event(con, username, f"invited by {hr}")
     return account(con, username)
 
@@ -181,8 +239,10 @@ def set_password(con, username: str, password: str):
     _check_password(password)
     salt = os.urandom(16)
     with con:
-        n = con.execute("UPDATE users SET pw_hash=?, salt=?, failed=0, locked_until=NULL WHERE username=?",
-                        (_hash(password, salt), salt, username)).rowcount
+        # clears an automatic lockout, never an administrator's lock (a reset link must not undo it)
+        n = con.execute("UPDATE users SET pw_hash=?, salt=?, failed=0, "
+                        "locked_until=CASE WHEN locked_until=? THEN locked_until ELSE NULL END WHERE username=?",
+                        (_hash(password, salt), salt, ADMIN_LOCK_UNTIL, username)).rowcount
     if not n:
         raise AuthError("no such account")
     _event(con, username, "password_reset")
@@ -191,7 +251,10 @@ def set_password(con, username: str, password: str):
 def check_password(con, username: str, password: str) -> bool:
     """For sensitive actions by a signed-in user (e.g. deleting the account). No lockout side effects."""
     row = con.execute("SELECT pw_hash, salt FROM users WHERE username=?", (username,)).fetchone()
-    return bool(row and row[0]) and hmac.compare_digest(_hash(password or "", row[1]), row[0])
+    if not (row and row[0]):
+        _verify(password or "", _DUMMY_SALT, _DUMMY_HASH)
+        return False
+    return _verify(password or "", row[1], row[0])
 
 
 def find_login(con, login: str) -> dict | None:
@@ -240,29 +303,65 @@ def account(con, username: str) -> dict | None:
     return a
 
 
-def authenticate(con, username: str, password: str, max_failures: int = 5, lock_minutes: int = 5) -> dict:
+def load_for_login(con, login: str) -> tuple[str, tuple | None]:
+    """Step 1 of a sign-in (fast, under the caller's DB lock): the account row for a username or email, or None.
+    Raises AuthError if the account is locked."""
     init(con)
-    username = (username or "").strip().lower()
+    username = (login or "").strip().lower()
     if "@" in username:  # people sign in with their email too ("forgot password" accepts either)
         by_email = con.execute("SELECT username FROM users WHERE lower(email)=?", (username,)).fetchone()
         username = by_email[0] if by_email else username
     row = con.execute("SELECT pw_hash,salt,role,employee_id,display_name,failed,locked_until,status FROM users WHERE username=?",
                       (username,)).fetchone()
-    t = datetime.now(timezone.utc)
-    if row and row[6] and datetime.fromisoformat(row[6]) > t:
+    if row and lock_state(row[6])["locked"]:  # automatic lockout or an administrator's lock: same answer
         _event(con, username, "locked")
-        raise AuthError("account temporarily locked; try again later")
-    ok = bool(row and row[0]) and hmac.compare_digest(_hash(password or "", row[1]), row[0])  # invited: no password yet
+        raise AuthError(LOCKED_LOGIN)
+    return username, row
+
+
+def check_login(row, password: str) -> tuple[bool, tuple[bytes, bytes] | None]:
+    """Step 2 (slow: scrypt). Call it with NO lock held. Returns (password ok, (new hash, salt) to store or None).
+    Unknown and invited (no password yet) accounts burn the same work, so the time taken does not reveal them."""
+    if not (row and row[0]):
+        return burn_dummy(password), None
+    stored = bytes(row[0])
+    if stored.startswith(_V2):
+        return _verify(password or "", row[1], stored), None
+    # legacy N=2^14 hash: check it, and always do the v2 work too (as long as a v2 check, and it is the upgrade)
+    ok = hmac.compare_digest(_legacy_hash(password or "", row[1]), stored)
+    salt = os.urandom(16)
+    new = _hash(password or "", salt)
+    return ok, ((new, salt) if ok else None)
+
+
+def finish_login(con, username: str, row, ok: bool, upgrade=None, max_failures: int = 5, lock_minutes: int = 5) -> dict:
+    """Step 3 (fast, under the caller's DB lock): count a failure / lock, or check the status and sign in."""
     if not ok:
         if row:
-            failed = row[5] + 1
-            lock = (t + timedelta(minutes=lock_minutes)).isoformat() if failed >= max_failures else None
+            # Count in SQL (concurrent attempts may have counted meanwhile). Keep counting (do not reset to 0 on lock)
+            # and back off exponentially: 5, 10, 20 ... minutes, max 24 h. A successful sign-in clears the counter.
             with con:
-                con.execute("UPDATE users SET failed=?, locked_until=? WHERE username=?",
-                            (0 if lock else failed, lock, username))
+                con.execute("UPDATE users SET failed=COALESCE(failed,0)+1 WHERE username=?", (username,))
+            got = con.execute("SELECT failed FROM users WHERE username=?", (username,)).fetchone()
+            failed = (got[0] or 0) if got else 0
+            if failed >= max_failures and failed % max_failures == 0:
+                minutes = min(lock_minutes * 2 ** (failed // max_failures - 1), 24 * 60)
+                lock = (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat()
+                with con:  # never shorten or replace an administrator's lock
+                    con.execute("UPDATE users SET locked_until=? WHERE username=? AND (locked_until IS NULL OR locked_until<>?)",
+                                (lock, username, ADMIN_LOCK_UNTIL))
         _event(con, username, "login_failed")
-        raise AuthError("invalid username or password")  # same message: no user enumeration
-    status = row[7] or "active"
+        raise AuthError(INVALID_LOGIN)  # same message: no user enumeration
+    # Read the lock and status again: an admin may have locked (or disabled) the account while scrypt ran outside the
+    # lock, possibly on another node. The database is the only source of lock state; nothing is cached.
+    fresh = con.execute("SELECT locked_until, status FROM users WHERE username=?", (username,)).fetchone()
+    if not fresh:
+        _event(con, username, "login_failed")
+        raise AuthError(INVALID_LOGIN)
+    if lock_state(fresh[0])["locked"]:
+        _event(con, username, "locked")
+        raise AuthError(LOCKED_LOGIN)
+    status = fresh[1] or "active"
     if status == "pending_email":
         raise PendingEmail("verify your email first: we sent you a new code")
     if status != "active":  # the password was right, so saying why does not reveal whether the account exists
@@ -272,9 +371,92 @@ def authenticate(con, username: str, password: str, max_failures: int = 5, lock_
                          "pending_approval": "your HR account is waiting for an administrator to approve it",
                          "invited": "accept the invite in your email first"}[status])
     with con:
-        con.execute("UPDATE users SET failed=0, locked_until=NULL WHERE username=?", (username,))
+        con.execute("UPDATE users SET failed=0, locked_until=NULL WHERE username=? AND (locked_until IS NULL OR locked_until<>?)",
+                    (username, ADMIN_LOCK_UNTIL))
+        if upgrade:  # legacy hash -> v2, computed outside the lock; only if the password was not changed meanwhile
+            con.execute("UPDATE users SET pw_hash=?, salt=? WHERE username=? AND pw_hash=?",
+                        (upgrade[0], upgrade[1], username, bytes(row[0])))
     _event(con, username, "login")
     return {"username": username, "role": row[2], "employee_id": row[3], "display_name": row[4]}
+
+
+# --- lock state and administrator lock / unlock ------------------------------------------------------------
+class LockRefused(AuthError):
+    """An admin lock that is not allowed (yourself, or the last administrator who can still sign in)."""
+
+
+def lock_state(locked_until, failed=None) -> dict:
+    """What users.locked_until means, the one place it is decided (sign-in, sessions and the admin list use it):
+    {"locked": bool, "kind": "admin" | "auto" | None, "until": ISO time of an automatic lock or None, "failed": n}."""
+    out = {"locked": False, "kind": None, "until": None, "failed": int(failed or 0)}
+    if not locked_until:
+        return out
+    if locked_until == ADMIN_LOCK_UNTIL:
+        return out | {"locked": True, "kind": "admin"}
+    try:
+        until = datetime.fromisoformat(locked_until)
+    except ValueError:  # unreadable: treat as locked by an admin rather than as open
+        return out | {"locked": True, "kind": "admin"}
+    if until > datetime.now(timezone.utc):
+        return out | {"locked": True, "kind": "auto", "until": locked_until}
+    return out
+
+
+def lock_info(con, username: str) -> dict | None:
+    """Current lock state straight from the users table (+ who locked it and when, for an admin lock)."""
+    r = con.execute("SELECT locked_until, failed FROM users WHERE username=?", (username,)).fetchone()
+    if not r:
+        return None
+    st = lock_state(r[0], r[1])
+    if st["kind"] == "admin":
+        ev = con.execute("SELECT event, at_utc FROM auth_events WHERE username=? AND event LIKE 'admin_lock by %' "
+                         "ORDER BY id DESC LIMIT 1", (username,)).fetchone()
+        st |= {"by": ev[0][len("admin_lock by "):] if ev else None, "since": ev[1] if ev else None}
+    return st
+
+
+def admin_lock(con, username: str, by: str) -> dict:
+    """An administrator locks an account of any role. Sign-ins then answer exactly like an automatic lockout, until
+    an administrator unlocks it (a password reset does not). The caller ends the account's sessions.
+    Refuses to lock yourself, or the last active administrator who is not locked."""
+    username = (username or "").strip().lower()
+    if username == (by or "").strip().lower():
+        raise LockRefused("You can't lock your own account.")
+    r = con.execute("SELECT role FROM users WHERE username=?", (username,)).fetchone()
+    if not r:
+        raise AuthError("no such account")
+    with con:
+        # one statement, so the "another admin can still sign in" check and the lock happen together
+        n = con.execute(
+            "UPDATE users SET locked_until=? WHERE username=? AND (role<>'admin' OR (SELECT COUNT(*) FROM users o "
+            "WHERE o.role='admin' AND o.username<>? AND COALESCE(o.status,'active')='active' "
+            "AND (o.locked_until IS NULL OR o.locked_until<?)) > 0)",
+            (ADMIN_LOCK_UNTIL, username, username, datetime.now(timezone.utc).isoformat())).rowcount
+    if not n:
+        raise LockRefused("This is the last administrator who can sign in; it can't be locked.")
+    _event(con, username, f"admin_lock by {by}")  # audit: whom (username), who, when (at_utc), action
+    return lock_info(con, username)
+
+
+def admin_unlock(con, username: str, by: str) -> dict:
+    """An administrator unlocks an account of any role: lifts an admin lock or an automatic lockout and clears the
+    failure counter (which also resets the lockout back-off). Returns {"was": previous lock state, "now": ...}."""
+    username = (username or "").strip().lower()
+    before = lock_info(con, username)
+    if before is None:
+        raise AuthError("no such account")
+    with con:
+        con.execute("UPDATE users SET failed=0, locked_until=NULL WHERE username=?", (username,))
+    _event(con, username, f"admin_unlock by {by} (was {before['kind'] or 'not locked'})")
+    return {"was": before, "now": lock_info(con, username)}
+
+
+def authenticate(con, username: str, password: str, max_failures: int = 5, lock_minutes: int = 5) -> dict:
+    """All three steps in one call (CLI, tests, single-threaded callers). The API runs them separately so the slow
+    hash happens outside its DB lock (see server/api.py login)."""
+    username, row = load_for_login(con, username)
+    ok, upgrade = check_login(row, password)
+    return finish_login(con, username, row, ok, upgrade, max_failures, lock_minutes)
 
 
 def _event(con, username, event):
@@ -284,12 +466,16 @@ def _event(con, username, event):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["create", "set-password"])
+    ap.add_argument("action", choices=["create", "set-password", "unlock"])
     ap.add_argument("--username", required=True)
     ap.add_argument("--role", choices=sorted(ROLES))
     ap.add_argument("--employee-id")
     ap.add_argument("--display-name", default="")
     a = ap.parse_args()
+    if a.action == "unlock":  # break-glass, e.g. every administrator locked out: lifts any lock, clears failures
+        r = admin_unlock(init(connect()), a.username, "cli")
+        print(f"{a.username} unlocked (was {r['was']['kind'] or 'not locked'})")
+        return
     pw = os.environ.get("ACCOUNT_PASSWORD") or getpass.getpass("Password: ")
     con = init(connect())
     if a.action == "set-password":  # also unlocks; sessions end so the old password stops working everywhere

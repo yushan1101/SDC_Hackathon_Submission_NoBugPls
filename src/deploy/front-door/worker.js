@@ -13,6 +13,10 @@ please try again shortly.</p></main>`;
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.protocol === "http:") {  // never let a password travel over plain http
+      url.protocol = "https:";
+      return Response.redirect(url.toString(), 308);
+    }
     if (env.MAINTENANCE === "1") {
       const pass = env.BYPASS && `ap_bypass=${env.BYPASS}`;
       if (pass && url.searchParams.get("bypass") === env.BYPASS) {
@@ -29,9 +33,9 @@ export default {
       method: request.method, headers: request.headers, body: request.body, redirect: "manual",
     });
     const loc = res.headers.get("location");
-    if (!loc?.startsWith(origin)) return res; // streams (SSE) pass straight through
-    const out = new Response(res.body, res);
-    out.headers.set("location", url.origin + loc.slice(origin.length));
+    const out = new Response(res.body, res); // streams (SSE) still pass straight through
+    out.headers.set("strict-transport-security", "max-age=31536000; includeSubDomains");
+    if (loc?.startsWith(origin)) out.headers.set("location", url.origin + loc.slice(origin.length));
     return out;
   },
 };

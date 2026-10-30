@@ -14,9 +14,9 @@ services:
       OUTLOOK_HISTORY_PATH: /app/models/onet_history.csv
       # MCP_URL and NODE_TOKEN come from .env (worker nodes, e.g. MCP_URL=https://mcp.olgtx.com/mcp; empty = in-process)
       # public address sdc.olgtx.com (Cloudflare Worker, src/deploy/front-door) -> this server at aiversepulse.olgtx.com
-      CORS_ORIGINS: "https://sdc.olgtx.com,http://sdc.olgtx.com"
+      CORS_ORIGINS: "https://sdc.olgtx.com"   # https only: never trust a plain-http origin with credentials
     volumes:
       - ./state:/app/state                                  # accounts, plans, audit log, trend history, live passages
       - ./models/onet:/app/models/onet:ro                   # STF-KAN checkpoint + manifest (checksum-checked)
       - ./models/onet_history.csv:/app/models/onet_history.csv:ro
-    ports: ["8600:8600"]
+    ports: ["127.0.0.1:8600:8600"]   # only the local reverse proxy / tunnel reaches the app, not the internet

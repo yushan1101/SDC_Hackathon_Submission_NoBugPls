@@ -13,8 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.4"
-      - run: pip install -e "./src[ai]"
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.6"
+      - run: pip install -e "./src[ai,dev]"  # pytest lives in the dev extra
       # no Chroma index / checkpoint in CI: exercises the offline-snapshot and baseline fallbacks (T-05, T-13).
       # No background model load either: a thread still in native code at exit aborts the run (exit 134).
       - run: python -m pytest -q tests
@@ -39,8 +39,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.4"
-      - run: pip install -e "./src[ai]"
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.6"
+      - run: pip install -e "./src[ai,dev]"  # pytest lives in the dev extra
       - run: python -m pytest -q -rs tests
         env:
           TEST_DATABASE_URL: postgresql://postgres:test@localhost:5432/postgres
