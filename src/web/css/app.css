@@ -3291,7 +3291,7 @@ body {
 .hr-shell:not(.admin-shell) .drop:hover,
 .hr-shell:not(.admin-shell) .drop:focus-within { border-color: var(--accent); background: var(--accent-soft); }
 @media (max-width: 767px) {
-  .hr-shell:not(.admin-shell) { --hr-rail-width: 0px; grid-template-columns: 1fr; }
+  .hr-shell:not(.admin-shell), .hr-shell:not(.admin-shell).is-sidebar-collapsed { --hr-rail-width: 0px; grid-template-columns: 1fr; }  /* the folded-sidebar default must not keep its 84px column on phones */
   .hr-shell:not(.admin-shell) .hr-sidebar-toggle { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -3471,9 +3471,10 @@ body {
 .learning-lesson-tabs { display: flex; gap: 6px; padding: 5px; border-radius: 12px; background: var(--surface-2, #f3f4f8); }
 .learning-lesson-tabs button { flex: 1; padding: 10px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-2); cursor: pointer; font: inherit; }
 .learning-lesson-tabs button.is-active { background: var(--surface); color: var(--road-accent); box-shadow: 0 1px 5px #0001; font-weight: 650; }
-.learning-lesson { display: grid; gap: 14px; min-width: 0; padding: clamp(14px, 2.5vw, 22px); border: 1px solid var(--rule); border-radius: 18px; background: var(--surface); }
+.learning-lesson { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; padding: clamp(14px, 2.5vw, 22px); border: 1px solid var(--rule); border-radius: 18px; background: var(--surface); }
 .learning-lesson-empty { min-height: 70px; place-items: center; color: var(--ink-2); }
-.learning-lesson-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+.learning-lesson-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+.learning-lesson-header > div { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
 .learning-step-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .learning-step-nav .muted { font-size: 12px; }
 .learning-lesson-header h4 { margin: 4px 0 8px; font-size: clamp(18px, 2.5vw, 22px); }
@@ -3607,7 +3608,7 @@ body {
 .cal-free { margin: 0; font-size: 13px; color: var(--ink-3, var(--ink-2)); }
 
 /* plan dashboard: stats card, 30-day sections with a step track, next-activity side panel */
-.plan-block { container-type: inline-size; }
+.plan-block { container-type: inline-size; grid-template-columns: minmax(0, 1fr); }  /* never wider than the page on phones */
 .plan-hero-role { color: var(--accent); }
 .plan-stats { display: grid; grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); align-items: center; gap: 12px 20px; }
 .ps-main { display: flex; align-items: center; gap: 16px; min-width: 0; }
@@ -3639,9 +3640,15 @@ body {
   .plan-aside { position: sticky; top: 16px; }
 }
 @container (max-width: 640px) {
-  .plan-stats { grid-template-columns: 1fr 1fr; }
+  .plan-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ps-main { grid-column: 1 / -1; }
   .ps-stat { padding-left: 0; border-left: 0; }
+}
+@container (max-width: 420px) {  /* phones: ring, then text and phase bars full width, stats one per row */
+  .plan-stats { grid-template-columns: minmax(0, 1fr); }
+  .ps-main { flex-wrap: wrap; }
+  .ps-ring { width: 60px; height: 60px; }
+  .ps-text { flex: 1 1 100%; }
 }
 .aside-card { display: grid; gap: 8px; padding: 18px; border: 1px solid var(--rule); border-radius: 18px; background: var(--surface); box-shadow: var(--card-shadow); }
 .aside-card h4 { margin: 0; font-size: 17px; }
@@ -4009,3 +4016,13 @@ pre { max-width: 100%; overflow-x: auto; }
   .ranking-chevron { transition: none; }
 }
 
+
+/* phones: the plan's nested cards (phase, roadmap, lesson) each padded left too little room, so flatten them */
+@container (max-width: 420px) {
+  .plan-block .phase.phase-detail, [data-product] .plan-block .phase.phase-detail { padding: 12px; }
+  .plan-block .learning-journey { padding: 0; border: 0; background: transparent; }
+  .plan-block .learning-lesson { padding: 12px; }
+  .plan-block .learning-step-nav { flex-wrap: wrap; }
+  .plan-block .learning-step-nav .muted { order: -1; flex-basis: 100%; text-align: center; }
+  .plan-block .learning-step-nav .btn { flex: 1 1 0; justify-content: center; }
+}

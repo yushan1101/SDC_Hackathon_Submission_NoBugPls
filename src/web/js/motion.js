@@ -9,13 +9,15 @@ const done = new WeakSet();  // each element is animated once
 const once = (el) => (done.has(el) ? false : (done.add(el), true));
 const EASE = "power3.out";
 
+// signed-in pages scroll inside .hr-main, not the window; a trigger watching the window never fires there
+const scrollerOf = (el) => el.closest?.(".hr-main") || undefined;
 let triggersAdded = false;
 /** Animate when the element scrolls into view (at once if it already is). */
 const onView = (el, vars) => {
   triggersAdded = true;
   gsap.set(el, { transition: "none" });
   return gsap.from(el, { ...vars, clearProps: vars.clearProps ?? "transform,opacity,transition",
-    scrollTrigger: ST ? { trigger: el, start: "top 94%", once: true } : undefined });
+    scrollTrigger: ST ? { trigger: el, start: "top 94%", once: true, scroller: scrollerOf(el) } : undefined });
 };
 
 // cards and sections that the app does not animate itself (reveal() handles the rest)
@@ -37,7 +39,7 @@ function countUp(el) {
   if (!m) return;
   const [, sign, num, rest] = m, target = parseFloat(num.replace(/,/g, "")), dp = (num.split(".")[1] || "").length;
   const o = { v: 0 }, final = el.textContent;
-  gsap.to(o, { v: target, duration: 1, ease: "power2.out", scrollTrigger: ST ? { trigger: el, start: "top 96%", once: true } : undefined,
+  gsap.to(o, { v: target, duration: 1, ease: "power2.out", scrollTrigger: ST ? { trigger: el, start: "top 96%", once: true, scroller: scrollerOf(el) } : undefined,
     onUpdate: () => { el.textContent = sign + o.v.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp }) + rest; },
     onComplete: () => { el.textContent = final; } });
 }
