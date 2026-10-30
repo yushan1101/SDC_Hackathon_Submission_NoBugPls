@@ -2047,6 +2047,48 @@ def edit(pid: str, body: EditIn, user: dict = Depends(current_user)):
     return {"version": v, "status": "draft"}
 
 
+class HoursIn(BaseModel):
+    weekly_hours: float = Field(gt=0, le=80)
+
+
+@app.post("/api/plans/{pid}/hours")
+def plan_hours(pid: str, body: HoursIn, user: dict = Depends(current_user)):
+    """Change a saved plan's weekly learning time. The pathway agent rebuilds the plan from the saved analysis (same
+    gaps, role and skills) and writes its activities, exactly as a chat follow-up does; the result is validated and
+    saved as a new draft version of this plan, so ticked steps stay. Returns the before/after change summary."""
+    from types import SimpleNamespace
+    from agents import pathway
+    from core.state import Gap
+    _guard(pid, user)
+    with DB_LOCK:
+        cur = approval.latest(db, pid)["plan"]
+        saved = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
+    report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else {}
+    req = report.get("request")
+    if not req or not report.get("gaps"):
+        raise HTTPException(409, "This plan was made before analyses were saved. Build a new plan to change its weekly hours.")
+    gaps, skills = [Gap(**g) for g in report["gaps"]], [Skill(**x) for x in req["skills"]]
+    role = (report.get("occupation") or {}).get("title") or req["target_role"]
+    learning = {k: learning_resources(k, 1) for k in [g.skill_id for g in gaps if g.gap > 0][:8]}
+    new = pathway.build(gaps, body.weekly_hours, role, req["scenario"], learning, skills)
+    new, _ = pathway.personalise(new, role, skills, gaps, req.get("query") or "", learning)
+    evidence = {e["id"] for e in report.get("evidence", [])} | {e.id for v in learning.values() for e in v}
+    errs = [i.model_dump() for i in validate(new, gaps, evidence, body.weekly_hours) if i.severity == "error"]
+    if errs:
+        return JSONResponse({"detail": "validation failed", "issues": errs}, status_code=422)
+    state = lambda hours, plan: {"request": SimpleNamespace(profile=SimpleNamespace(weekly_learning_hours=hours)),
+                                 "draft_pathway": plan, "skill_gaps": gaps}
+    changes = graph.followup_diff(state(req["weekly_learning_hours"], Pathway(**cur)), state(body.weekly_hours, new), ["hours"], None)
+    report["request"]["weekly_learning_hours"] = body.weekly_hours
+    with DB_LOCK:
+        v = approval.edit(db, pid, new.model_dump(), user["username"], "hr_advisor" if user["role"] == "hr_advisor" else "employee")
+        if saved:
+            with db:
+                db.execute("UPDATE plan_reports SET report=? WHERE plan_id=?", (json.dumps(report), pid))
+    RESULTS.pop(pid, None)  # the in-memory run still has the old hours; follow-ups start from the saved plan
+    return {"version": v, "status": "draft", "changes": changes}
+
+
 class ApproveIn(BaseModel):
     version: int
     confirmed: bool

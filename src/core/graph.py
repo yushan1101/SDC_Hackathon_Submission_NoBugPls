@@ -320,6 +320,8 @@ def followup_diff(prev: State, cur: State, changed: list[str], query: str | None
         d["plan_hours"] = [hrs(pp), hrs(cp)]
         d["activities"] = [len(pp.activities), len(cp.activities)]
         d["deferred"] = [len(pp.deferred_skills), len(cp.deferred_skills)]
+        # before/after roadmap for the change summary: which skill sits in which 30-day phase
+        d["roadmap"] = [[{"days": a.day_range, "skill": a.skill_id, "hours": a.estimated_hours} for a in p.activities] for p in (pp, cp)]
     pg = {g.skill_id: g for g in prev.get("skill_gaps", [])}
     cg = cur.get("skill_gaps", [])
     if cg is not prev.get("skill_gaps"):

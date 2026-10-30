@@ -300,6 +300,31 @@ def test_plan_start_date_can_be_moved(client):
     assert client.post(f"/api/plans/{pid}/start", json={"start_date": ten_ago}, headers={"X-AP": "1"}).status_code == 404
 
 
+def test_plan_hours_rebuild_the_plan_with_the_agent(client, monkeypatch):
+    from agents import pathway
+    calls = []
+    real = pathway.personalise
+    monkeypatch.setattr(pathway, "personalise", lambda *a, **k: (calls.append(a[0]), real(*a, **k))[1])
+    login(client, "ana")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 8, "skills": [{"name": "communication", "level": 3}]}
+    pid = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))[-1]["plan_id"]
+    before = client.get(f"/api/plans/{pid}").json()
+    item = f"{before['plan']['activities'][0]['day_range']}:{before['plan']['activities'][0]['skill_id']}"
+    client.post(f"/api/plans/{pid}/progress", json={"item": item, "done": True}, headers={"X-AP": "1"})
+    calls.clear()
+    r = client.post(f"/api/plans/{pid}/hours", json={"weekly_hours": 4}, headers={"X-AP": "1"})
+    assert r.status_code == 200 and calls, r.text  # the pathway agent ran, not just the page
+    ch = r.json()["changes"]
+    assert ch["weekly_hours"] == [8, 4] and ch["plan_hours"][1] < ch["plan_hours"][0] and len(ch["roadmap"]) == 2
+    after = client.get(f"/api/plans/{pid}").json()
+    assert after["version"] == before["version"] + 1 and after["report"]["request"]["weekly_learning_hours"] == 4
+    assert sum(a["estimated_hours"] for a in after["plan"]["activities"]) < sum(a["estimated_hours"] for a in before["plan"]["activities"])
+    assert item in after["progress"] or not any(a["skill_id"] == item.split(":", 1)[1] for a in after["plan"]["activities"])
+    assert client.post(f"/api/plans/{pid}/hours", json={"weekly_hours": 0}, headers={"X-AP": "1"}).status_code == 422
+    login(client, "hr1")  # not their plan
+    assert client.post(f"/api/plans/{pid}/hours", json={"weekly_hours": 6}, headers={"X-AP": "1"}).status_code == 404
+
+
 def test_plan_list_carries_real_progress(client):
     login(client, "ana")
     body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}

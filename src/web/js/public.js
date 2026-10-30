@@ -780,7 +780,7 @@ async function runTurn(params) {
   const st = new StreamText(prose, highlight);
   const ctrl = new AbortController();
   setBusy(ctrl);
-  let steps = 0, reused = 0, t0 = performance.now(), planId = null, meta = null, insights = null, live = null;
+  let steps = 0, reused = 0, t0 = performance.now(), planId = null, meta = null, insights = null, live = null, changes = null;
   const mood = (state, text) => { owl.set(state); S.status.set(state, text || say.textContent); if (text) { say.textContent = text; S.assistant.setStatus(text); } };
   try {
     await stream("/api/analyze", {
@@ -812,7 +812,9 @@ async function runTurn(params) {
           : ev.kind === "outlook" ? outlookBlock(d) : ev.kind === "signals" ? signalsBlock(d) : ev.kind === "sdgs" ? sdgBlock(d)
           : ev.kind === "issues" ? issuesBlock(d.filter((i) => i.severity === "error"))
           : ev.kind === "plan" ? planHolder(planId, d, p.weekly_learning_hours, meta?.status || "draft", [], meta?.plan_reference) : null;
-        if (ev.kind === "plan" && live) { live.el.replaceWith(el); live = null; return; }  // the written plan becomes the full plan
+        if (ev.kind === "changes") { changes = el; (live ? live.el.before(el) : body.append(el)); return; }  // the summary sits above the roadmap
+        if (ev.kind === "plan" && live) { live.el.replaceWith(el); live = null; changes && el.before(changes); return; }  // the written plan becomes the full plan
+        if (ev.kind === "plan" && el && changes) { body.append(changes, el); return; }
         if (el && ["outlook", "signals", "sdgs"].includes(ev.kind)) {  // three small insight cards share one row
           insights ??= body.appendChild(h("div", { class: "insights" }));
           insights.append(el);
@@ -1010,6 +1012,32 @@ async function plansView(main) {
   draw();
 }
 
+let lastChanges = null;  // {id, changes}: the summary of the latest hours change, shown above that plan's roadmap
+
+/** Weekly learning time for a saved plan. "Update plan" sends it to the pathway agent, which rebuilds the plan from the
+ *  saved analysis; the new version replaces the roadmap and a change summary sits above it. */
+function hoursControl(main, id, d) {
+  const hours = d.report?.request?.weekly_learning_hours;
+  if (!hours) return null;
+  if (d.read_only) return h("span", {}, icon("clock"), `${hours} h/week`);
+  const input = h("input", { class: "input plan-hours", type: "number", min: "0.5", max: "80", step: "0.5", value: hours, "aria-label": "Weekly learning hours",
+    oninput: () => { btn.hidden = Number(input.value) === hours; } });
+  const btn = h("button", { class: "btn sm primary", type: "button", hidden: true, onclick: async () => {
+    const next = Number(input.value);
+    if (!(next > 0 && next <= 80)) { toast("Choose between 0.5 and 80 hours a week", "err"); return; }
+    btn.disabled = input.disabled = true; btn.textContent = "Rebuilding your plan…";
+    try {
+      const res = await api(`/api/plans/${id}/hours`, { method: "POST", body: { weekly_hours: next } });
+      lastChanges = { id, changes: res.changes };
+      toast("Plan rebuilt for your new weekly time");
+      planDetail(main, id, true);
+    } catch (err) {
+      toast(err.message, "err"); btn.disabled = input.disabled = false; btn.textContent = "Update plan";
+    }
+  } }, "Update plan");
+  return h("span", { class: "plan-hours-field" }, icon("clock"), input, " h/week", btn);
+}
+
 async function planDetail(main, id, focusPlan = false, section = null, selectedNodeId = null) {
   delete main.dataset.plan;
   main.replaceChildren(h("p", { class: "muted" }, "Loading…"));
@@ -1038,7 +1066,8 @@ async function planDetail(main, id, focusPlan = false, section = null, selectedN
           value: d.started_utc.slice(0, 10), onchange: async (e) => {
             try { await api(`/api/plans/${id}/start`, { method: "POST", body: { start_date: e.target.value } }); toast("Start date updated"); planDetail(main, id, true); }
             catch (err) { toast(err.message, "err"); }
-          } })), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`))),
+          } })), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`), hoursControl(main, id, d))),
+    lastChanges?.id === id ? changesBlock(lastChanges.changes) : null,
     planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence, startDate: d.started_utc,
       sectionHref: (p, nodeId) => `#/plans/${id}${p ? `/${p}${nodeId ? `/${nodeId}` : ""}` : ""}`, selectedNodeId, diagrams: false,
       title: null, onChange: () => planDetail(main, id, true) }));
