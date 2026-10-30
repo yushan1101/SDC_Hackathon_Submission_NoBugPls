@@ -1728,7 +1728,14 @@ def _guard(pid: str, user: dict):
 def plans(user: dict = Depends(current_user)):
     with DB_LOCK:
         rows = approval.list_plans(db, user)
-        return [p | {"review": reviews.get(db, p["plan_id"])} for p in rows] if user["role"] == "hr_advisor" else rows
+        if user["role"] == "hr_advisor":
+            return [p | {"review": reviews.get(db, p["plan_id"])} for p in rows]
+        # ponytail: one snapshot read per plan; fine for a person's handful of plans, batch it if lists grow to hundreds
+        for p in rows:
+            done_rows = db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (p["plan_id"],)).fetchall()
+            s = _progress_summary((approval.latest(db, p["plan_id"]) or {}).get("plan") or {}, done_rows, p["created_utc"])
+            p["progress"] = {k: s[k] for k in ("done", "total", "pct", "pace")}
+        return rows
 
 
 @app.get("/api/plans/reminder")

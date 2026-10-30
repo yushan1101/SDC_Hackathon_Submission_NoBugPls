@@ -3160,36 +3160,24 @@ body {
 .plans-sort-select { min-width: 220px; }
 .plans-tools + .plan-manage { margin-top: 8px; }
 .plan-search-empty { max-width: none; padding: 28px 0; }
-/* My plans: one panel of rows, built from the plan page's brief-card + gap-row and the home reminder's bar and pace pill. */
-.my-plans { margin-top: 12px; }
-.my-plans-count { margin-left: auto; font-size: 14px; }
-.my-plans-list { list-style: none; margin: 0; padding: 0; }
-.my-plan { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 8px; border-top: 1px solid var(--rule); }
-.my-plan:first-child { border-top: 0; }
-.my-plan .plan-select { justify-self: center; }
-.my-plan-link { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 200px) 150px 20px; align-items: center; gap: 20px;
-  padding: 14px 10px; margin: 2px 0; border-radius: 12px; color: inherit; text-decoration: none; transition: background var(--t-fast); }
-.my-plan-link:hover { background: var(--sunken); }
-.my-plan-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.my-plan-name { display: grid; gap: 2px; min-width: 0; }
-.my-plan-name b { font-weight: 500; font-size: 16px; overflow-wrap: anywhere; }
-.my-plan-name .muted { font-size: 13px; }
-.my-plan-day { display: grid; gap: 6px; font-size: 13px; }
-.my-plan-day .reminder-bar { max-width: none; }
-.my-plan .reminder-pace { justify-self: start; }
+/* My plans: one home-style entry card per plan (white, blue icon tile and link) with real step progress.
+   The checkbox sits over the card's top-right corner (inputs can't go inside a link). */
+.my-plans-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 16px; list-style: none; margin: 12px 0 0; padding: 0; }
+.my-plan { position: relative; display: grid; }
+.my-plan-card.entry-card { min-height: 0; align-items: stretch; }
+.my-plan-top { display: flex; align-items: center; gap: 10px; }
+.my-plan-top .reminder-pace { margin-left: auto; }
+.my-plan:has(.plan-select) .my-plan-top { padding-right: 34px; }
 .reminder-pace:not(.good):not(.warn) { background: var(--sunken); color: var(--ink-2); }
-.my-plan-go { display: grid; color: var(--ink-2); }
-.my-plan-go svg { width: 18px; height: 18px; transform: rotate(-90deg); }
-.my-plan-link:hover .my-plan-go { color: var(--accent); }
-@media (max-width: 699px) {
-  .my-plan-link { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; padding: 12px 6px; }
-  .my-plan-day { grid-column: 1 / -1; grid-row: 2; }
-  .my-plan .reminder-pace { grid-column: 2; grid-row: 1; align-self: start; }
-  .my-plan-go { display: none; }
-  .my-plan:has(.plan-select-spacer) { grid-template-columns: minmax(0, 1fr); }
-  .my-plan .plan-select-spacer { display: none; }
-  .my-plan .plan-select { align-self: start; margin-top: 14px; }
-}
+.my-plan-card .entry-copy strong { font-size: 18px; overflow-wrap: anywhere; }
+.my-plan-progress { display: grid; gap: 8px; }
+.my-plan-progress-text { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; color: var(--ink-2); }
+.my-plan-progress-text b { color: var(--ink); font-weight: 650; }
+.my-plan-progress .reminder-bar { max-width: none; }
+.my-plan-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; font-size: 13px; }
+.my-plan-foot .entry-action { margin-top: 0; }
+.my-plan .plan-select { position: absolute; top: 34px; right: 22px; }
+.my-plan:has(.plan-select:checked) .entry-card { border-color: var(--accent); }
 @media (max-width: 699px) {
   .plans-tools { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .plans-sort { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; min-width: 0; }

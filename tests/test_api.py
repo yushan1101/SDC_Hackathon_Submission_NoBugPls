@@ -285,6 +285,21 @@ def test_plan_progress_is_saved_and_private(client):
     assert client.post(f"/api/plans/{pid}/progress", json={"item": "1-30:x", "done": True}, headers={"X-AP": "1"}).status_code == 404
 
 
+def test_plan_list_carries_real_progress(client):
+    login(client, "ana")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}
+    pid = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))[-1]["plan_id"]
+    listed = lambda: next(p["progress"] for p in client.get("/api/plans").json() if p["plan_id"] == pid)
+    before = listed()
+    assert before["done"] == 0 and before["total"] > 0 and before["pct"] == 0
+    plan = client.get(f"/api/plans/{pid}").json()["plan"]
+    nodes = plan.get("learning_nodes") or []
+    item = f"node:{nodes[0]['id']}" if nodes else f"{plan['activities'][0]['day_range']}:{plan['activities'][0]['skill_id']}"
+    client.post(f"/api/plans/{pid}/progress", json={"item": item, "done": True}, headers={"X-AP": "1"})
+    after = listed()
+    assert after["done"] == 1 and after["pct"] == round(100 / after["total"])
+
+
 def test_plan_diagrams_follow_the_saved_plan_and_stay_private(client):
     login(client, "ana")
     body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}

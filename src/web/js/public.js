@@ -985,29 +985,28 @@ async function plansView(main) {
     selectAll.setAttribute("aria-label", query ? "Select all matching plans" : "Select all your plans");
     noResults.hidden = visiblePlans.length > 0;
     listEl.hidden = visiblePlans.length === 0;
-    total.textContent = query ? `${visiblePlans.length} of ${list.length}` : `${list.length} plan${list.length === 1 ? "" : "s"}`;
     listEl.replaceChildren(...visiblePlans.map((pl) => {
       const name = nameOf(pl);
-      const day = Math.min(90, Math.max(1, Math.floor((Date.now() - createdAt(pl)) / 864e5) + 1));  // calendar day of the 90, not ticked steps
+      const pr = pl.progress || { done: 0, total: 0, pct: 0 };
       const [label, tone] = PLAN_STATUS[pl.status] || [pl.status, ""];
       return h("li", { class: "my-plan" },
+        h("a", { class: "entry-card my-plan-card", href: `#/plans/${pl.plan_id}` },
+          h("span", { class: "my-plan-top" }, h("span", { class: "entry-icon" }, icon(pl.audience === "hr" ? "user" : "plans")),
+            h("span", { class: `reminder-pace ${tone}` }, label)),
+          h("span", { class: "entry-copy" }, h("strong", {}, name),
+            h("span", {}, `${pl.audience === "hr" ? "From your HR advisor" : "Your plan"}, made ${new Date(pl.created_utc).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`)),
+          h("span", { class: "my-plan-progress" },
+            h("span", { class: "my-plan-progress-text" }, h("span", {}, `${pr.done} of ${pr.total} steps`), h("b", {}, `${pr.pct}%`)),
+            h("span", { class: "reminder-bar", role: "progressbar", "aria-label": "Steps done", "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": pr.pct },
+              h("i", { style: { width: `${pr.pct}%` } }))),
+          h("span", { class: "my-plan-foot" }, h("span", { class: "muted" }, pl.plan_reference || pl.plan_id), h("span", { class: "entry-action" }, "Open plan", icon("send")))),
         pl.audience === "individual" ? h("input", { class: "plan-select", type: "checkbox", checked: selected.has(pl.plan_id),
           "aria-label": `Select ${name}, plan ID ${pl.plan_reference || pl.plan_id}`,
-          onchange: (e) => { if (e.target.checked) selected.add(pl.plan_id); else selected.delete(pl.plan_id); syncToolbar(); } })
-          : h("span", { class: "plan-select-spacer", "aria-hidden": "true" }),
-        h("a", { class: "my-plan-link", href: `#/plans/${pl.plan_id}` },
-          h("span", { class: "my-plan-name" }, h("b", {}, name),
-            h("span", { class: "muted" }, `${pl.audience === "hr" ? "From your HR advisor" : "Your plan"}, made ${new Date(pl.created_utc).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} · ${pl.plan_reference || pl.plan_id}`)),
-          h("span", { class: "my-plan-day" }, h("span", { class: "muted" }, `Day ${day} of 90`),
-            h("span", { class: "reminder-bar", role: "img", "aria-label": `Day ${day} of 90` }, h("i", { style: { width: `${(day / 90) * 100}%` } }))),
-          h("span", { class: `reminder-pace ${tone}` }, label),
-          h("span", { class: "my-plan-go", "aria-hidden": "true" }, icon("chevron"))));
+          onchange: (e) => { if (e.target.checked) selected.add(pl.plan_id); else selected.delete(pl.plan_id); syncToolbar(); } }) : null);
     }));
     syncToolbar();
   }
-  const total = h("span", { class: "muted my-plans-count" });
-  main.append(h("div", { class: "plans-tools" }, searchControl, sortControl), manage, noResults,
-    h("section", { class: "block brief-card my-plans" }, h("header", { class: "bc-head" }, h("span", { class: "bc-ic" }, icon("plans")), h("h3", {}, "Your plans"), total), listEl));
+  main.append(h("div", { class: "plans-tools" }, searchControl, sortControl), manage, noResults, listEl);
   draw();
 }
 
