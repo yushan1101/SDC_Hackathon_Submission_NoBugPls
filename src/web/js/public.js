@@ -894,7 +894,7 @@ function planLive(slots) {
 function planHolder(planId, plan, hours, status, progress = [], planReference) {
   const holder = h("div");
   const render = async (st, version) => {
-    holder.replaceChildren(planBlock({ planId, planReference, plan, version, status: st, weeklyHours: hours, progress, evidence: S.evidence, onChange: async (next) => {
+    holder.replaceChildren(planBlock({ planId, planReference, plan, version, status: st, weeklyHours: hours, progress, evidence: S.evidence, diagrams: false, onChange: async (next) => {
       const fresh = await api(`/api/plans/${planId}`);
       plan = fresh.plan; progress = fresh.progress || [];
       render(fresh.status, fresh.version);
@@ -1023,7 +1023,7 @@ async function planDetail(main, id, focusPlan = false, section = null, selectedN
       h("p", { class: "plan-hero-copy" }, approved ? "Your personalised 90-day learning journey. Pick up where you left off on the right." : "Your personalised 90-day learning journey, in three 30-day sections."),
       h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days"), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`))),
     planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence, startDate: d.created_utc,
-      sectionHref: (p, nodeId) => `#/plans/${id}${p ? `/${p}${nodeId ? `/${nodeId}` : ""}` : ""}`, selectedNodeId,
+      sectionHref: (p, nodeId) => `#/plans/${id}${p ? `/${p}${nodeId ? `/${nodeId}` : ""}` : ""}`, selectedNodeId, diagrams: false,
       title: null, onChange: () => planDetail(main, id, true) }));
   let expanded = !approved;
   const panel = h("div", { class: "plan-report-panel", id: "saved-plan-report", inert: approved ? true : null,
