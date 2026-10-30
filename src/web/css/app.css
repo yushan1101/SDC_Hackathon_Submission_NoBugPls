@@ -3619,7 +3619,10 @@ body {
 .ps-phase { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
 .pp-segs { display: flex; gap: 6px; margin-top: 2px; }
 .pp-seg { flex: 1; display: grid; gap: 4px; min-width: 0; }
-.pp-seg span { font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-seg span { display: flex; flex-wrap: wrap; column-gap: 6px; font-size: 12px; line-height: 1.35; color: var(--ink-2); overflow-wrap: anywhere; }
+.pp-seg small { font-size: inherit; font-weight: 400; color: var(--ink-2); }
+.pp-segs .pp-bar { height: 8px; }
+.pp-segs .pp-bar i { background: linear-gradient(90deg, var(--accent), oklch(.72 .13 255)); }
 .pp-seg.is-now span { color: var(--accent); font-weight: 600; }
 .pp-seg.is-now .pp-bar { box-shadow: 0 0 0 2px var(--accent-soft); }
 .pp-seg.is-done .pp-bar i { background: var(--ok); }

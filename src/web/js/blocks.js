@@ -482,7 +482,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
               const t = phaseTotal(p), d = phaseDone(p);
               return h("div", { class: `pp-seg${p === curPhase ? " is-now" : ""}${t && d === t ? " is-done" : ""}` },
                 h("div", { class: "pp-bar" }, h("i", { style: { width: `${t ? (100 * d) / t : 0}%` } })),
-                h("span", {}, `Days ${p} · ${d}/${t}`));
+                h("span", {}, `Days ${p}`, h("small", {}, `${d}/${t} done`)));
             })))),
       h("div", { class: "ps-stat" }, h("span", { class: "ps-icon" }, icon("target")), h("div", {}, h("b", {}, `${reached.length} of 3`), h("span", { class: "muted" }, "Milestones reached"))),
       h("div", { class: "ps-stat" }, h("span", { class: "ps-icon" }, icon("grid")), h("div", {}, h("b", {}, String(daysLeft)), h("span", { class: "muted" }, "Days remaining"))));
