@@ -199,7 +199,7 @@ async function accounts(main) {
         u.status !== "disabled" ? h("button", { class: "btn sm", onclick: () => setStatus(u.username, "disabled", draw) }, "Disable") : null,
         h("button", { class: "btn sm ghost", onclick: async () => {
           await api(`/api/admin/users/${encodeURIComponent(u.username)}/trust`, { method: "POST", body: { trusted: !u.trusted } });
-          toast(u.trusted ? "No longer trusted" : "Marked as trusted"); draw(); } }, u.trusted ? "Untrust" : "Trust")]))))));
+          toast(u.trusted ? "No longer trusted" : "Marked as trusted"); draw(); } }, u.trusted ? "Untrust" : "Trust")])))));
   };
   let t;
   q.addEventListener("input", () => { clearTimeout(t); t = setTimeout(draw, 250); });
