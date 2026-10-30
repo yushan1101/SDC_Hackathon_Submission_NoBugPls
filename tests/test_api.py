@@ -325,6 +325,36 @@ def test_plan_hours_rebuild_the_plan_with_the_agent(client, monkeypatch):
     assert client.post(f"/api/plans/{pid}/hours", json={"weekly_hours": 6}, headers={"X-AP": "1"}).status_code == 404
 
 
+def test_plan_edit_preview_does_not_save_until_applied(client):
+    login(client, "ana")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 8,
+            "skills": [{"name": "communication", "level": 3}]}
+    pid = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))[-1]["plan_id"]
+    before = client.get(f"/api/plans/{pid}").json()
+    completed_id = before["plan"]["learning_nodes"][0]["id"]
+    assert client.post(f"/api/plans/{pid}/progress", json={"item": f"step:{completed_id}", "done": True},
+                       headers={"X-AP": "1"}).status_code == 200
+    for item in (f"quiz:{completed_id}", f"criterion:{completed_id}:0"):
+        assert client.post(f"/api/plans/{pid}/progress", json={"item": item, "done": True}, headers={"X-AP": "1"}).status_code == 200
+    preview = client.post(f"/api/plans/{pid}/preview", json={"weekly_hours": 4}, headers={"X-AP": "1"})
+    assert preview.status_code == 200, preview.text
+    proposed = preview.json()
+    assert proposed["summary"]["hours_before"] == 8 and proposed["summary"]["hours_after"] == 4
+    assert proposed["plan"]["learning_nodes"] and len(proposed["token"]) == 32
+    assert any(item.startswith("quiz:") for item in proposed["progress"])
+    assert any(item.startswith("criterion:") for item in proposed["progress"])
+    unchanged = client.get(f"/api/plans/{pid}").json()
+    assert unchanged["version"] == before["version"] and unchanged["report"]["request"]["weekly_learning_hours"] == 8
+    applied = client.post(f"/api/plans/{pid}/apply-preview", json={"token": proposed["token"]}, headers={"X-AP": "1"})
+    assert applied.status_code == 200 and applied.json()["version"] == before["version"] + 1
+    after = client.get(f"/api/plans/{pid}").json()
+    assert after["report"]["request"]["weekly_learning_hours"] == 4 and after["status"] == "draft"
+    assert any(item.startswith("step:") for item in after["progress"])
+    assert any(item.startswith("quiz:") for item in after["progress"])
+    assert any(item.startswith("criterion:") for item in after["progress"])
+    assert client.post(f"/api/plans/{pid}/apply-preview", json={"token": proposed["token"]}, headers={"X-AP": "1"}).status_code == 404
+
+
 def test_past_report_followup_still_shows_what_changed(client):
     from server import api
     login(client, "ana")
@@ -346,7 +376,7 @@ def test_plan_list_carries_real_progress(client):
     assert before["done"] == 0 and before["total"] > 0 and before["pct"] == 0
     plan = client.get(f"/api/plans/{pid}").json()["plan"]
     nodes = plan.get("learning_nodes") or []
-    item = f"node:{nodes[0]['id']}" if nodes else f"{plan['activities'][0]['day_range']}:{plan['activities'][0]['skill_id']}"
+    item = f"step:{nodes[0]['id']}" if nodes else f"{plan['activities'][0]['day_range']}:{plan['activities'][0]['skill_id']}"
     client.post(f"/api/plans/{pid}/progress", json={"item": item, "done": True}, headers={"X-AP": "1"})
     after = listed()
     assert after["done"] == 1 and after["pct"] == round(100 / after["total"])
@@ -393,21 +423,23 @@ def test_saved_week_lessons_expand_and_keep_completion_without_changing_approval
     gaps = [Gap(skill_id="SQL", current_level=0, required_level=3, gap=3)]
     original = pathway.build(gaps, 4, "Data analyst", "assistive")
     seed = pathway._node_seeds(original, gaps, original.target_role, [], {})[0]
-    original.learning_nodes = [LearningNode(**pathway._fallback_node(seed, original.target_role))]
+    original.learning_nodes = pathway.expand_learning_nodes([LearningNode(**pathway._fallback_node(seed, original.target_role))])
     with api.DB_LOCK:
         pid = approval.create(api.db, original.model_dump(), "E-001", "individual")
         with api.db:
-            api.db.execute("INSERT INTO plan_progress VALUES(?,?,?)", (pid, "node:week-01", "2026-10-01T09:00:00Z"))
+            for node in original.learning_nodes:
+                api.db.execute("INSERT INTO plan_progress VALUES(?,?,?)", (pid, f"node:{node.id}", "2026-10-01T09:00:00Z"))
     login(client, "ana")
     detail = client.get(f"/api/plans/{pid}").json()
-    assert len(detail["plan"]["learning_nodes"]) == 3
-    assert detail["progress_summary"]["done"] == detail["progress_summary"]["total"] == 3
+    assert len(detail["plan"]["learning_nodes"]) == 1
+    assert detail["plan"]["learning_nodes"][0]["component_ids"] == ["week-01", "week-01-practice", "week-01-check"]
+    assert detail["progress_summary"]["done"] == detail["progress_summary"]["total"] == 1
     assert detail["version"] == 1 and len(detail["history"]) == 1
-    # Reopening a previously complete lesson preserves all steps. Undoing one stays undone on reload.
-    assert client.post(f"/api/plans/{pid}/progress", json={"item": "node:week-01-check", "done": False}, headers={"X-AP": "1"}).status_code == 200
+    # Reopening a previously complete lesson preserves the parent completion. Undoing it clears the old child ticks.
+    assert client.post(f"/api/plans/{pid}/progress", json={"item": "step:week-01", "done": False}, headers={"X-AP": "1"}).status_code == 200
     fresh = client.get(f"/api/plans/{pid}").json()
-    assert fresh["progress_summary"]["done"] == 2 and "node:week-01-check" not in fresh["progress"]
-    assert fresh["progress_summary"]["phases"] == [{"days": "1-30", "done": 2, "total": 3}]
+    assert fresh["progress_summary"]["done"] == 0 and "step:week-01" not in fresh["progress"]
+    assert fresh["progress_summary"]["phases"] == [{"days": "1-30", "done": 0, "total": 1}]
     assert fresh["version"] == 1 and len(fresh["history"]) == 1
     login(client, "hr1")
     assert client.post(f"/api/plans/{pid}/progress", json={"item": "node:week-01-practice", "done": True}, headers={"X-AP": "1"}).status_code == 404

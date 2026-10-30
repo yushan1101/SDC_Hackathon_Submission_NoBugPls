@@ -51,7 +51,7 @@ def test_ai_writes_the_plan_steps_itself_and_bad_weeks_fall_back(monkeypatch):
     assert q.activities[0].activity.startswith("Rebuild your team's weekly Excel report") and q.activities[0].steps[0].startswith("Week 1:")
     assert q.activities[-1].activity == p.activities[-1].activity  # bad weeks: the template stays
     assert [a.estimated_hours for a in q.activities] == [a.estimated_hours for a in p.activities]  # hours never change
-    assert len(q.learning_nodes) == 39 and {n.week_number for n in q.learning_nodes} == set(range(1, 14))
+    assert len(q.learning_nodes) == 26 and {n.week_number for n in q.learning_nodes} == set(range(1, 14))
     assert all(n.title and n.learning_objective and n.topics and n.instructions and n.exercise and n.completion_criteria for n in q.learning_nodes)
 
 
@@ -64,14 +64,13 @@ def test_learning_nodes_have_role_and_gap_specific_fallback(monkeypatch):
             Gap(skill_id="Data storytelling", current_level=2, required_level=3, gap=1)]
     plan = pathway.build(gaps, 6, "Data analyst", "assistive", skills=[Skill(name="Excel", level=4)])
     journey, _ = pathway.personalise(plan, "Data analyst", [Skill(name="Excel", level=4)], gaps)
-    assert len(journey.learning_nodes) == 39
+    assert len(journey.learning_nodes) == 26
     node = journey.learning_nodes[0]
     assert "Selecting and Filtering Rows" in node.title and "Data analyst" in node.learning_objective
     assert node.exercise and node.deliverable and node.completion_criteria
     assert "SELECT" in node.learn[0] and "WHERE" in node.learn[1]
-    assert [n.type for n in journey.learning_nodes[:3]] == ["learn", "practice", "quiz"]
-    assert journey.learning_nodes[2].quiz.options == ["WHERE", "ORDER BY"]
-    assert all(n.quiz and n.exercise and n.learn for n in journey.learning_nodes[:3])  # each step: learn, practise, quiz
+    assert journey.learning_nodes[0].quiz.options == ["WHERE", "ORDER BY"]
+    assert all(n.quiz and n.exercise and n.learn for n in journey.learning_nodes[:3])  # all three parts inside each step
     assert node.content_source == "guided_fallback"
 
 
@@ -119,10 +118,10 @@ def test_ai_lessons_expand_with_matching_quizzes_and_only_retrieved_resources(mo
     lessons[1]["quiz"]["answer_index"] = 99  # unusable quiz falls back with its matching lesson
     monkeypatch.setattr(llm, "generate", lambda *args, **kwargs: (json.dumps({"nodes": lessons}), None))
     nodes, _ = pathway._learning_nodes(plan, plan.target_role, gaps, [], {})
-    assert len(nodes) == 39 and nodes[0].content_source == "ai"
+    assert len(nodes) == 13 and nodes[0].content_source == "ai"
     assert all(not node.resource_ids for node in nodes)
-    assert nodes[3].content_source == "guided_fallback" and "Color and Contrast" in nodes[3].title
-    assert nodes[5].quiz.answer_index < len(nodes[5].quiz.options)
+    assert nodes[1].content_source == "guided_fallback" and "Color and Contrast" in nodes[1].title
+    assert nodes[2].quiz.answer_index < len(nodes[2].quiz.options)
 
 
 def test_fallback_lessons_for_an_uncatalogued_skill_differ_each_week():
@@ -130,6 +129,26 @@ def test_fallback_lessons_for_an_uncatalogued_skill_differ_each_week():
     topics = [lesson_for("Electronics principles", week, 0)[0] for week in range(1, 14)]
     assert len(set(topics)) == 13, topics
     assert topics[0] == "Core Ideas of Electronics principles" and "Applying" not in " ".join(topics)
+
+
+def test_available_hours_and_assessed_gaps_change_weekly_step_count():
+    from agents import pathway
+    from core.state import Gap, LearningNode
+    one = [Gap(skill_id="SQL", current_level=1, required_level=4, gap=3)]
+    two = one + [Gap(skill_id="Dashboard design", current_level=1, required_level=3, gap=2)]
+    compact_plan = pathway.build(one, 4, "Data analyst", "assistive")
+    varied_plan = pathway.build(two, 8, "Data analyst", "assistive")
+    compact = pathway._node_seeds(compact_plan, one, "Data analyst", [], {})
+    varied = pathway._node_seeds(varied_plan, two, "Data analyst", [], {})
+    assert len(compact) == 13 and len(varied) == 26
+    assert [seed["id"] for seed in varied[:2]] == ["week-01", "week-01-02"]
+    assert varied[0]["skills"] != varied[1]["skills"]
+    assert all(seed["estimated_minutes"] >= 10 for seed in varied)
+    assert sum(seed["estimated_minutes"] for seed in varied) == round(sum(a.estimated_hours for a in varied_plan.activities) * 60)
+    assert sum(s["estimated_minutes"] for s in varied if s["week_number"] == 13) < sum(s["estimated_minutes"] for s in varied if s["week_number"] == 9)
+    first = LearningNode(**pathway._fallback_node(varied[0], "Data analyst"))
+    assert first.learn_minutes + first.practice_minutes + first.quiz_minutes == first.estimated_minutes
+    assert first.quiz_minutes > 0
 
 
 def test_old_plans_without_learning_nodes_get_a_roadmap_and_keep_their_ticks():

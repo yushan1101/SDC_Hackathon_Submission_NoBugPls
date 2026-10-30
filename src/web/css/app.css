@@ -3603,11 +3603,33 @@ body {
 .ps-icon svg { width: 20px; height: 20px; }
 .plan-layout { display: grid; gap: 16px; align-items: start; }
 .plan-main { display: grid; gap: 14px; min-width: 0; }
-.plan-aside { display: grid; gap: 14px; }
-@container (min-width: 900px) {
-  .plan-layout { grid-template-columns: minmax(0, 1fr) 300px; }
-  .plan-aside { position: sticky; top: 16px; }
-}
+.plan-quick-actions { display: flex; justify-content: flex-end; margin: 10px 0 14px; }
+.plan-aside { position: fixed; inset: 0 0 0 auto; width: min(420px, 100vw); height: 100dvh; max-height: none; margin: 0; padding: 20px;
+  border: 1px solid var(--rule); background: var(--surface); color: var(--ink); box-shadow: -12px 0 35px oklch(.25 .04 262 / .16); overflow: auto; }
+.plan-aside:popover-open { display: grid; align-content: start; gap: 14px; }
+.plan-aside::backdrop { background: oklch(.15 .02 262 / .32); }
+.plan-next-close { justify-self: end; }
+.plan-phase-group { display: grid; gap: 12px; min-width: 0; }
+.plan-phase-card { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; width: 100%; padding: 18px 20px;
+  border: 1px solid var(--rule); border-radius: 18px; color: var(--ink); background: var(--surface); text-align: left; cursor: pointer; font: inherit; }
+.plan-phase-card:hover, .plan-phase-card[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.plan-phase-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.plan-phase-card-name { flex: 1 1 230px; font-size: 18px; font-weight: 700; }
+.road-node-time { color: var(--ink-2); font-size: 12px; }
+.road-change-badge { display: inline-flex; justify-self: center; padding: 2px 7px; border-radius: 99px; background: #fff0ca; color: #715000; font-size: 11px; font-weight: 700; }
+.plan-block[hidden], .plan-edit-panel[hidden], .plan-preview-result .plan-block[hidden] { display: none; }
+.plan-edit-control { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-width: 0; }
+.plan-edit-control > span { display: inline-flex; align-items: center; gap: 5px; }
+.plan-edit-control > span svg { width: 17px; height: 17px; }
+.plan-edit-panel { flex: 1 1 100%; display: grid; gap: 14px; padding: 18px; border: 1px solid var(--rule); border-radius: 18px; background: var(--surface); }
+.plan-edit-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.plan-edit-fields label { display: grid; gap: 5px; min-width: min(100%, 180px); font-size: 13px; font-weight: 600; }
+.plan-preview-result { display: grid; gap: 14px; }
+.plan-preview-summary { padding: 14px 16px; border-radius: 12px; background: var(--sunken); }
+.plan-preview-summary h4 { margin: 0 0 8px; }
+.plan-preview-summary p { margin: 5px 0; }
+.plan-preview-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.plan-preview-actions [aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 @container (max-width: 640px) {
   .plan-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ps-main { grid-column: 1 / -1; }
@@ -3654,7 +3676,7 @@ body {
 .phase-open { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .phase-open svg { width: 15px; height: 15px; transform: rotate(-90deg); }
 .plan-block .phase.phase-detail, [data-product] .plan-block .phase.phase-detail { display: grid; grid-column: auto; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 18px; border: 1px solid var(--rule); border-radius: 18px; background: oklch(.99 .006 262); }
-.phase-detail[hidden] { display: none; }
+.plan-block .phase-detail[hidden], [data-product] .plan-block .phase-detail[hidden] { display: none; }
 .phase-detail .phase-content { margin: 0; }
 .phase-back { justify-self: start; display: inline-flex; align-items: center; gap: 6px; }
 .phase-back svg { width: 15px; height: 15px; }
