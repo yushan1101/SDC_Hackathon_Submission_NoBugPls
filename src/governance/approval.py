@@ -164,7 +164,8 @@ def list_plans(con, user: dict) -> list[dict]:
         args = ("hr", user.get("username", ""))
     else:
         return []
-    rows = con.execute(f"""SELECT p.plan_id, p.subject_id, p.audience, p.created_utc, v.version, v.status,
+    rows = con.execute(f"""SELECT p.plan_id, p.subject_id, p.audience, p.created_utc,
+                               coalesce((SELECT s.start_utc FROM plan_starts s WHERE s.plan_id=p.plan_id), p.created_utc), v.version, v.status,
                                {json_text(con, 'v.snapshot', 'target_role')}, {json_text(con, 'v.snapshot', 'scenario')},
                                (SELECT coalesce(o.number, r.number) FROM plan_references r
                                 LEFT JOIN plan_reference_overrides o ON o.plan_id=r.plan_id WHERE r.plan_id=p.plan_id)
@@ -173,7 +174,7 @@ def list_plans(con, user: dict) -> list[dict]:
                                AND r.deleted_utc IS NOT NULL)
                            AND v.version=(SELECT max(version) FROM plan_versions WHERE plan_id=p.plan_id)
                            ORDER BY p.created_utc DESC""", args)
-    cols = ["plan_id", "subject_id", "audience", "created_utc", "version", "status", "target_role", "scenario", "plan_reference"]
+    cols = ["plan_id", "subject_id", "audience", "created_utc", "started_utc", "version", "status", "target_role", "scenario", "plan_reference"]
     return [dict(zip(cols, (*r[:-1], f"P{r[-1]:06d}" if r[-1] is not None else None))) for r in rows]
 
 
@@ -196,7 +197,7 @@ def delete_employee_plans(con, plan_ids: list[str], user: dict) -> list[str]:
     with con:
         # Preserve interview history while removing its optional link to a deleted plan.
         con.execute(f"UPDATE interview_sessions SET plan_id=NULL WHERE plan_id IN ({marks})", ids)
-        for table in ("plan_progress", "plan_reports", "plan_versions", "approval_events", "validation_events"):
+        for table in ("plan_progress", "plan_starts", "plan_reports", "plan_versions", "approval_events", "validation_events"):
             con.execute(f"DELETE FROM {table} WHERE plan_id IN ({marks})", ids)
         con.execute(f"DELETE FROM plans WHERE plan_id IN ({marks})", ids)
     return ids

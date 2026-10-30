@@ -22,7 +22,7 @@ import uuid
 from collections import OrderedDict
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from io import StringIO
 from pathlib import Path
 
@@ -1733,7 +1733,7 @@ def plans(user: dict = Depends(current_user)):
         # ponytail: one snapshot read per plan; fine for a person's handful of plans, batch it if lists grow to hundreds
         for p in rows:
             done_rows = db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (p["plan_id"],)).fetchall()
-            s = _progress_summary((approval.latest(db, p["plan_id"]) or {}).get("plan") or {}, done_rows, p["created_utc"])
+            s = _progress_summary((approval.latest(db, p["plan_id"]) or {}).get("plan") or {}, done_rows, p["started_utc"])
             p["progress"] = {k: s[k] for k in ("done", "total", "pct", "pace")}
         return rows
 
@@ -1749,7 +1749,7 @@ def plan_reminder(user: dict = Depends(current_user)):
         p = max(rows, key=lambda r: r["created_utc"])
         plan = (approval.latest(db, p["plan_id"]) or {}).get("plan") or {}
         done_rows = db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (p["plan_id"],)).fetchall()
-    summary = _progress_summary(plan, done_rows, p["created_utc"])
+    summary = _progress_summary(plan, done_rows, p["started_utc"])
     done = {item for item, _ in done_rows}
     acts = plan.get("activities", [])
     phase_now = next((a.get("day_range") for a in acts if int(str(a.get("day_range", "1-30")).split("-")[-1]) >= summary["day"]), None)
@@ -1771,7 +1771,7 @@ def review_list(q: str = "", status: str = "active", user: dict = Depends(need("
         rows = [p | {"review": reviews.get(db, p["plan_id"]), "progress": _progress_summary(
                     (approval.latest(db, p["plan_id"]) or {}).get("plan") or {},
                     db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (p["plan_id"],)).fetchall(),
-                    p["created_utc"])} for p in approval.list_plans(db, user)]
+                    p["started_utc"])} for p in approval.list_plans(db, user)]
     return [p for p in rows if (status == "all" or (p["review"]["archived"] if status == "archived" else
             not p["review"]["archived"] and (status == "active" or p["review"]["review_status"] == status)))
             and (not term or term in " ".join(str(x or "") for x in (
@@ -1923,6 +1923,29 @@ def _progress_summary(plan: dict, done_rows, created_utc: str) -> dict:
             "day": min(90, max(0, elapsed) + 1), "expected_pct": round(100 * expected), "pace": pace}
 
 
+def _started(pid: str, created: str) -> str:
+    """When the plan's 90 days start: the date the learner chose, else when it was made. Call under DB_LOCK."""
+    row = db.execute("SELECT start_utc FROM plan_starts WHERE plan_id=?", (pid,)).fetchone()
+    return row[0] if row else created
+
+
+class StartIn(BaseModel):
+    start_date: date
+
+
+@app.post("/api/plans/{pid}/start")
+def plan_start(pid: str, body: StartIn, user: dict = Depends(current_user)):
+    """Move the plan's start date (day 1 of its 90 days); within a year either side of today."""
+    _guard(pid, user)
+    if abs((body.start_date - date.today()).days) > 366:
+        raise HTTPException(422, "Pick a start date within a year of today")
+    start = datetime.combine(body.start_date, datetime.min.time(), timezone.utc).isoformat(timespec="seconds")
+    with DB_LOCK, db:
+        db.execute("INSERT INTO plan_starts(plan_id, start_utc) VALUES(?,?) ON CONFLICT(plan_id) DO UPDATE SET start_utc=excluded.start_utc",
+                   (pid, start))
+    return {"started_utc": start}
+
+
 @app.get("/api/plans/{pid}")
 def plan(pid: str, user: dict = Depends(current_user)):
     with DB_LOCK:
@@ -1936,6 +1959,7 @@ def plan(pid: str, user: dict = Depends(current_user)):
         done_rows = db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (pid,)).fetchall()
         done = [r[0] for r in done_rows]
         created = db.execute("SELECT created_utc FROM plans WHERE plan_id=?", (pid,)).fetchone()[0]
+        started = _started(pid, created)
         review = {"review": reviews.get(db, pid), "review_history": reviews.history(db, pid),
                   "original_employee_id": (db.execute("SELECT original_id FROM plan_original_ids WHERE plan_id=?", (pid,))
                                            .fetchone() or [None])[0]} if user["role"] == "hr_advisor" and not read_only else {}
@@ -1943,8 +1967,8 @@ def plan(pid: str, user: dict = Depends(current_user)):
     visible_rows = _learning_progress_rows(cur.get("plan") or {}, done_rows)
     done = [item for item, _ in visible_rows if not item.startswith(("expanded:", "backfilled:"))]
     cur = {**cur, "plan": _learning_plan_view(cur.get("plan") or {})}
-    return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], "created_utc": created, **cur, "history": hist, "report": report,
-            "progress": done, "progress_summary": _progress_summary(cur.get("plan") or {}, visible_rows, created),
+    return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], "created_utc": created, "started_utc": started, **cur, "history": hist, "report": report,
+            "progress": done, "progress_summary": _progress_summary(cur.get("plan") or {}, visible_rows, started),
             "read_only": read_only, **review}
 
 
@@ -1961,9 +1985,9 @@ def plan_diagrams(pid: str, user: dict = Depends(current_user)):
             raise HTTPException(404, "plan not found")
         cur = approval.latest(db, pid)
         saved = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
-        created = db.execute("SELECT created_utc FROM plans WHERE plan_id=?", (pid,)).fetchone()[0]
+        created = _started(pid, db.execute("SELECT created_utc FROM plans WHERE plan_id=?", (pid,)).fetchone()[0])
     report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else {}
-    key, note = (pid, cur["version"]), ""
+    key, note = (pid, cur["version"], created), ""
     plan = DIAGRAMS.get(key)
     if plan is None:
         plan = diagrams.from_report(report, cur["plan"], datetime.fromisoformat(created).date())
@@ -2847,7 +2871,7 @@ def org_users(user: dict = Depends(need("hr_advisor"))):
                                 "ORDER BY p.created_utc DESC LIMIT 10", (m["employee_id"],)).fetchall() if m["employee_id"] else []
             m["plans"] = [{"plan_id": pid, "created_utc": c, "target_role": (occupation(role) or {}).get("title", role),
                            "progress": _progress_summary(json.loads(snap or "{}"), db.execute(
-                               "SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (pid,)).fetchall(), c)}
+                               "SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (pid,)).fetchall(), _started(pid, c))}
                           for pid, c, role, snap in plans_]
     return [{k: v for k, v in m.items() if k in keep + ("plans",)} for m in out]
 

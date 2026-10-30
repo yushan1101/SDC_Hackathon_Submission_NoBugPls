@@ -1603,6 +1603,7 @@ details.more summary::-webkit-details-marker { display: none; }
 .plan-hero-metrics { display: flex; flex-wrap: wrap; gap: 10px; }
 .plan-hero-metrics > span { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 99px; background: var(--surface); font-size: 14px; }
 .plan-hero-metrics svg { width: 16px; height: 16px; color: var(--accent); }
+.plan-hero-metrics .plan-start { width: auto; padding: 2px 6px; min-height: 0; font: inherit; border-radius: 8px; }
 
 /* Roomy vertical roadmap phases. */
 .plan { grid-template-columns: minmax(0, 1fr); gap: 16px; border-top: 0; }
@@ -4044,3 +4045,10 @@ pre { max-width: 100%; overflow-x: auto; }
   .plan-block .learning-step-nav .muted { order: -1; flex-basis: 100%; text-align: center; }
   .plan-block .learning-step-nav .btn { flex: 1 1 0; justify-content: center; }
 }
+
+/* Password fields: a show/hide button inside the field (lib.js revealable). */
+.pw-field { position: relative; display: block; }
+.pw-field > input { width: 100%; padding-right: 44px; }
+.pw-toggle { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--ink-2); cursor: pointer; }
+.pw-toggle:hover { color: var(--ink); background: var(--sunken); }
+.pw-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

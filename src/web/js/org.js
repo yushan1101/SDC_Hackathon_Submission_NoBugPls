@@ -24,7 +24,7 @@ async function openOwnPlan(drawer, person, planId) {
         h("p", { class: "note" }, icon("user"), `${person} made this plan for themself. You can see it and their progress; only they can change it.`),
         h("p", {}, h("b", {}, `${s.done || 0} of ${s.total || 0} activities done`), ` · ${PACE[s.pace] || ""}${s.day ? ` · day ${s.day} of 90` : ""}`),
         planBlock({ planId, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null,
-          progress: d.progress, evidence: d.report?.evidence, title: "90-day plan", readOnly: true, startDate: d.created_utc }))));
+          progress: d.progress, evidence: d.report?.evidence, title: "90-day plan", readOnly: true, startDate: d.started_utc }))));
   } catch (e) { drawer.replaceChildren(h("p", { class: "pad error" }, e.message)); }
 }
 

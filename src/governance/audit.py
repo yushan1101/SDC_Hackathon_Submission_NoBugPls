@@ -13,6 +13,7 @@ INSERT INTO plan_references(plan_id)
     SELECT p.plan_id FROM plans p WHERE NOT EXISTS
         (SELECT 1 FROM plan_references r WHERE r.plan_id=p.plan_id)
     ORDER BY p.created_utc, p.plan_id;
+CREATE TABLE IF NOT EXISTS plan_starts(plan_id TEXT PRIMARY KEY, start_utc TEXT NOT NULL);  -- the learner's own start date (default: created_utc)
 CREATE TABLE IF NOT EXISTS plan_reports(plan_id TEXT PRIMARY KEY, report TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS hr_reviews(plan_id TEXT PRIMARY KEY, candidate_name TEXT NOT NULL DEFAULT '',
     candidate_email TEXT NOT NULL DEFAULT '', candidate_phone TEXT NOT NULL DEFAULT '',

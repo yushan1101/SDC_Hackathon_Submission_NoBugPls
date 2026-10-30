@@ -102,11 +102,11 @@ function board(b) {
         clearProps: "transform,transition" });
     });
   }
-  // the two role lists: rows slide in from their side
+  // the two role lists: rows slide in from their side. No scroll trigger: inside .hr-main it never fired and left
+  // every row at opacity 0 (same reason the topic cards above stay visible).
   $$(".role-list").filter(once).forEach((list, i) => {
     const rows = list.querySelectorAll(":scope > li");
-    if (rows.length) gsap.from(rows, { x: i % 2 ? 24 : -24, opacity: 0, duration: 0.5, stagger: 0.06, ease: EASE, clearProps: "transform,opacity",
-      scrollTrigger: ST ? { trigger: list, start: "top 88%", once: true } : undefined });
+    if (rows.length) gsap.from(rows, { x: i % 2 ? 24 : -24, opacity: 0, duration: 0.5, stagger: 0.06, delay: 0.2, ease: EASE, clearProps: "transform,opacity" });
   });
   triggersAdded = true;
 }

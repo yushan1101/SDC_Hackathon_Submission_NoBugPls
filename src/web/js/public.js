@@ -1033,8 +1033,13 @@ async function planDetail(main, id, focusPlan = false, section = null, selectedN
       h("div", { class: "plan-hero-title" }, h("div", {},
         h("h2", {}, "Become a ", h("span", { class: "plan-hero-role" }, r?.occupation?.title || d.plan.target_role))), h("span", { class: `tag ${d.status}` }, d.status)),
       h("p", { class: "plan-hero-copy" }, approved ? "Your personalised 90-day learning journey. Pick up where you left off on the right." : "Your personalised 90-day learning journey, in three 30-day sections."),
-      h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days"), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`))),
-    planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence, startDate: d.created_utc,
+      h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days from ",
+        d.read_only ? new Date(d.started_utc).toLocaleDateString() : h("input", { class: "input plan-start", type: "date", "aria-label": "Plan start date",
+          value: d.started_utc.slice(0, 10), onchange: async (e) => {
+            try { await api(`/api/plans/${id}/start`, { method: "POST", body: { start_date: e.target.value } }); toast("Start date updated"); planDetail(main, id, true); }
+            catch (err) { toast(err.message, "err"); }
+          } })), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`))),
+    planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence, startDate: d.started_utc,
       sectionHref: (p, nodeId) => `#/plans/${id}${p ? `/${p}${nodeId ? `/${nodeId}` : ""}` : ""}`, selectedNodeId, diagrams: false,
       title: null, onChange: () => planDetail(main, id, true) }));
   let expanded = !approved;

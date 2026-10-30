@@ -285,6 +285,21 @@ def test_plan_progress_is_saved_and_private(client):
     assert client.post(f"/api/plans/{pid}/progress", json={"item": "1-30:x", "done": True}, headers={"X-AP": "1"}).status_code == 404
 
 
+def test_plan_start_date_can_be_moved(client):
+    from datetime import datetime, timedelta, timezone
+    login(client, "ana")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}
+    pid = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))[-1]["plan_id"]
+    ten_ago = (datetime.now(timezone.utc).date() - timedelta(days=10)).isoformat()
+    assert client.post(f"/api/plans/{pid}/start", json={"start_date": ten_ago}, headers={"X-AP": "1"}).status_code == 200
+    d = client.get(f"/api/plans/{pid}").json()
+    assert d["started_utc"].startswith(ten_ago) and d["progress_summary"]["day"] == 11
+    too_far = (datetime.now(timezone.utc).date() + timedelta(days=400)).isoformat()
+    assert client.post(f"/api/plans/{pid}/start", json={"start_date": too_far}, headers={"X-AP": "1"}).status_code == 422
+    login(client, "hr1")  # not their plan
+    assert client.post(f"/api/plans/{pid}/start", json={"start_date": ten_ago}, headers={"X-AP": "1"}).status_code == 404
+
+
 def test_plan_list_carries_real_progress(client):
     login(client, "ana")
     body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}

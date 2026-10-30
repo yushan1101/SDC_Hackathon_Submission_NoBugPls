@@ -188,7 +188,29 @@ const ICONS = {
   sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',  // sliders-horizontal
   close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',  // x
   micOff: '<line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/>',  // mic-off
+  eye: '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',  // eye
+  eyeOff: '<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5a10.75 10.75 0 0 1 9.94 6.65 1 1 0 0 1 0 .7 10.8 10.8 0 0 1-1.44 2.49"/><path d="M14.08 14.16a3 3 0 0 1-4.24-4.24"/><path d="M17.48 17.5a10.75 10.75 0 0 1-15.42-5.15 1 1 0 0 1 0-.7 10.75 10.75 0 0 1 4.45-5.14"/><path d="m2 2 20 20"/>',  // eye-off
 };
+
+// Every password field gets a show/hide button, wherever a page builds one (one observer instead of a change per form).
+function revealable(input) {
+  if (input.dataset.reveal) return;
+  input.dataset.reveal = "1";
+  const btn = h("button", { class: "pw-toggle", type: "button", "aria-label": "Show password", "aria-pressed": "false" }, icon("eye"));
+  btn.addEventListener("click", () => {
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    btn.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    btn.setAttribute("aria-pressed", String(show));
+    btn.replaceChildren(icon(show ? "eyeOff" : "eye"));
+    input.focus();
+  });
+  const wrap = h("span", { class: "pw-field" });
+  input.replaceWith(wrap);
+  wrap.append(input, btn);
+}
+new MutationObserver(() => document.querySelectorAll('input[type="password"]:not([data-reveal])').forEach(revealable))
+  .observe(document.documentElement, { childList: true, subtree: true });
 export function icon(name) {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   s.setAttribute("viewBox", "0 0 24 24");
