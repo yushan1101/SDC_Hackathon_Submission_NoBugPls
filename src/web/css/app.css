@@ -4044,47 +4044,66 @@ pre { max-width: 100%; overflow-x: auto; }
 .pw-toggle:hover { color: var(--ink); background: var(--sunken); }
 .pw-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-/* Follow-up change summary (blocks.js changesBlock): sits directly above the revised roadmap. */
-.change-summary { display: grid; gap: 16px; padding: 24px; border-radius: 26px; background: oklch(1 0 0); box-shadow: var(--card-shadow); }
-.change-summary h4 { margin: 4px 0 0; font-size: 17px; font-weight: 600; }
-.cs-head { display: flex; gap: 12px; align-items: flex-start; }
-.cs-head > svg { flex: none; width: 22px; height: 22px; margin-top: 3px; color: var(--accent); }
-.cs-head h3 { margin: 0; font: 500 24px/1.2 var(--font-display); }
-.cs-head p { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); }
-.cs-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 10px; }
-.cs-stat { display: grid; justify-items: center; gap: 4px; padding: 16px 8px; border-radius: 16px; background: var(--sunken); text-align: center; }
-.cs-stat svg { width: 18px; height: 18px; color: var(--accent); }
-.cs-stat b { font-size: 24px; font-variant-numeric: tabular-nums; }
-.cs-stat span { font-size: 14px; color: var(--ink-2); }
-.cs-items { list-style: none; margin: 0; padding: 0; }
-.cs-item { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 12px 0; border-top: 1px solid var(--rule); }
-.cs-item:first-child { border-top: 0; padding-top: 0; }
-.cs-item-ic svg { width: 18px; height: 18px; margin-top: 2px; color: var(--warn); }
-.cs-item-t { display: grid; gap: 2px; min-width: 0; }
-.cs-item-t span { color: var(--ink-2); font-size: 15px; }
-.cs-pill { padding: 3px 10px; border-radius: 99px; font-size: 13px; font-weight: 600; white-space: nowrap; background: var(--warn-soft); color: var(--warn); }
+/* Follow-up change summary (blocks.js changesBlock): sits directly above the revised roadmap. Airy on purpose:
+   three sections with room between them, phase moves drawn as tracks instead of long day lists. */
+.change-summary { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; padding: 32px; border-radius: 28px; background: oklch(1 0 0); box-shadow: var(--card-shadow); }
+.cs-head { display: flex; gap: 16px; align-items: center; }
+.cs-badge { flex: none; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 16px; background: var(--accent-soft); color: var(--accent); }
+.cs-badge svg { width: 24px; height: 24px; }
+.cs-eyebrow { margin: 0 0 2px; font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); }
+.cs-head h3 { margin: 0; font: 500 26px/1.15 var(--font-display); }
+.cs-sub { margin: 6px 0 0; font-size: 15px; color: var(--ink-2); }
+.cs-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.cs-stat { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 18px; background: var(--sunken); }
+.cs-stat-ic { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: oklch(1 0 0); color: var(--accent); }
+.cs-stat-ic svg { width: 20px; height: 20px; }
+.cs-stat b { display: block; font-size: 24px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.cs-stat div span { font-size: 14px; color: var(--ink-2); }
+.cs-section { display: grid; gap: 14px; }
+.cs-section h4 { margin: 0; font-size: 17px; font-weight: 600; }
+.cs-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.cs-item { display: grid; gap: 10px; padding: 16px 18px; border: 1px solid var(--rule); border-radius: 18px; }
+.cs-item-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.cs-item-top b { font-weight: 600; line-height: 1.35; }
+.cs-move { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 15px; color: var(--ink-2); }
+.cs-move b { color: var(--ink); font-weight: 600; }
+.cs-track { display: inline-grid; grid-template-columns: repeat(3, 28px); gap: 4px; }
+.cs-track i { height: 8px; border-radius: 99px; background: var(--rule); }
+.cs-track i.was { background: color-mix(in oklch, var(--ink-2) 35%, transparent); }
+.cs-track i.on { background: var(--accent); }
+.cs-pill { flex: none; padding: 4px 12px; border-radius: 99px; font-size: 13px; font-weight: 600; white-space: nowrap; background: var(--warn-soft); color: var(--warn); }
 .cs-pill.added, .cs-pill.raised { background: var(--accent-soft); color: var(--accent); }
 .cs-pill.waiting { background: var(--sunken); color: var(--ink-2); }
-.cs-roadmap { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid var(--rule); }
-/* Before / After: a blue bar (the old white rounded switch is gone), the chosen side filled solid blue */
-.cs-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: var(--accent-soft); }
-.cs-tab { min-height: 44px; padding: 8px 10px; border: 0; border-radius: 9px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+/* Before / After: a blue bar (no white rounded switch), the chosen side filled solid blue */
+.cs-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 14px; background: var(--accent-soft); }
+.cs-tab { min-height: 44px; padding: 8px 10px; border: 0; border-radius: 11px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
 .cs-tab[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
 .cs-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.cs-phases { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.cs-phase { display: grid; gap: 8px; align-content: start; padding: 14px; border-radius: 16px; background: var(--sunken); }
-.cs-phase ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.cs-phase li { display: flex; justify-content: space-between; gap: 8px; font-size: 15px; }
-.cs-phase li.moved span:first-child { color: var(--accent); font-weight: 600; }
-.cs-phase p { margin: 0; font-size: 14px; }
+.cs-grid { display: grid; border: 1px solid var(--rule); border-radius: 18px; overflow: hidden; }
+.cs-grid-row { display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(64px, 1fr)); align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--rule); }
+.cs-grid-head { border-top: 0; background: var(--sunken); font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.cs-grid-head span:not(:first-child), .cs-cell { text-align: center; }
+.cs-grid-skill { font-size: 15px; line-height: 1.35; }
+.cs-grid-row.moved .cs-grid-skill { color: var(--accent); font-weight: 600; }
+.cs-cell em { display: inline-block; padding: 3px 10px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 600; font-style: normal; white-space: nowrap; }
+.cs-cell i { display: inline-block; width: 14px; height: 2px; border-radius: 2px; background: var(--rule); vertical-align: middle; }
 @media (max-width: 699px) {
-  .change-summary { padding: 18px; border-radius: 20px; }
-  .cs-stat b { font-size: 20px; }
-  .cs-stat span { font-size: 13px; }
-  .cs-item { grid-template-columns: 22px minmax(0, 1fr); }
-  .cs-pill { grid-column: 2; justify-self: start; }
-  .cs-phases { grid-template-columns: 1fr; }
-  .cs-tab { padding: 8px 6px; font-size: 14px; }
+  .change-summary { gap: 22px; padding: 20px; border-radius: 22px; }
+  .cs-head h3 { font-size: 22px; }
+  .cs-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .cs-stat { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; border-radius: 16px; }
+  .cs-stat-ic { width: 32px; height: 32px; border-radius: 10px; }
+  .cs-stat-ic svg { width: 17px; height: 17px; }
+  .cs-stat b { font-size: 19px; white-space: nowrap; }
+  .cs-stat div span { display: block; font-size: 13px; line-height: 1.3; }
+  .cs-item-top .cs-pill { align-self: flex-start; }
+  .cs-grid-head { font-size: 12px; white-space: nowrap; }
+  .cs-item { padding: 14px; }
+  .cs-item-top { flex-direction: column; gap: 8px; }
+  .cs-tab { padding: 8px 4px; font-size: 13px; white-space: nowrap; }
+  .cs-grid-row { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 12px; }
+  .cs-grid-skill { grid-column: 1 / -1; }
+  .cs-grid-head span:first-child { display: none; }
 }
 .plan-hero-metrics .plan-hours { width: 5.5em; padding: 2px 6px; min-height: 0; font: inherit; border-radius: 8px; }
 .plan-hours-field .btn[hidden] { display: none; }

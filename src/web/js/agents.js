@@ -79,6 +79,11 @@ function actionCard(m, save) {
 let pill = null;
 let disposeSwitch = null;
 /** Stop the one active switcher observer when its route is replaced. */
+// A page can take a message from the floating bar before the coach sees it (the report page sends plan changes,
+// like "I only have 3 hours a week", to its planning agents). Return true when the page handled it.
+let askRoute = null;
+export function setAskRoute(fn) { askRoute = fn; }
+
 export function disposeAgentSwitch() { disposeSwitch?.(); disposeSwitch = null; }
 /** One pill shared by the chat and the mock-interview pages, so its bubble slides between them. */
 export function agentSwitch(mode) {
@@ -317,6 +322,7 @@ function floatingCapsule({ pages = [], actions = [], plans = () => [], status, g
 
   async function ask(text) {
     if (busy) return;
+    if (askRoute?.(text)) { q.value = ""; fold(); return; }
     busy = true; q.value = ""; list.replaceChildren(); bird.set("thinking"); status?.set("thinking", "The agent is working");
     answer.hidden = false; el.classList.add("open");
     answer.replaceChildren(h("p", { class: "cap-q" }, text), h("div", { class: "cap-who" }, owl(null, 24, "thinking").el, "Writing…"));

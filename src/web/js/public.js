@@ -11,7 +11,7 @@ import { registerView, pricingView, accountView, planName, verifyLinkView, forgo
 import { termsView, privacyView } from "./legal.js";
 import { watchForm } from "./risk.js";
 import { micButton, readAloudButton, setVoice } from "./voice.js";
-import { agentView, agentSwitch, disposeAgentSwitch, employeeCapsule } from "./agents.js";
+import { agentView, agentSwitch, disposeAgentSwitch, employeeCapsule, setAskRoute } from "./agents.js";
 import { reportAssistant } from "./report-assistant.js";
 
 const app = $("#app");
@@ -550,6 +550,16 @@ function reportView(main, openId) {
         S.threadEl),
       S.sources, S.assistant.el);
   }
+  // On a report, a weekly-hours or AI-scenario change typed in the floating bar goes to the planning agents (the same
+  // path as this report's chat), so the plan is rebuilt and the change summary shown; anything else goes to the coach.
+  setAskRoute((text) => {
+    if (!/^#\/report(?:\/|$)/.test(location.hash) || !S.thread.length || S.busy) return false;
+    if (!/\d+(?:\.\d+)?\s*(?:h|hours?)\b|\b(?:agentic|assistive)\b/i.test(text)) return false;
+    S.input.value = text;
+    composerSend();
+    S.threadEl.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "start" });
+    return true;
+  });
   if (!S.reportEl.isConnected) S.assistant.hide(false);
   main.replaceChildren(S.reportEl);
   S.assistant.position();

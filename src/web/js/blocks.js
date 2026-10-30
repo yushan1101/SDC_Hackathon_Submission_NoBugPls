@@ -125,60 +125,80 @@ function forecastMode(f) {
     : `Served from the exported model output; live inference unavailable (${f.reason}). `;
 }
 
-/** Follow-up: a change summary above the revised roadmap: what the change did in numbers, which steps moved between
- *  the 30-day phases, and the roadmap before and after (all computed by the graph, not written by the LLM). */
+/** Follow-up: a change summary above the revised roadmap: what the change did in numbers, which skills moved between
+ *  the 30-day phases (drawn as small phase tracks), and the roadmap before and after (all computed by the graph,
+ *  not written by the LLM). */
 export function changesBlock(f) {
-  const PHASES = ["1-30", "31-60", "61-90"], days = (d) => `Days ${d.replace("-", "–")}`;
+  const PHASES = ["1-30", "31-60", "61-90"];
   const [before = [], after = []] = f.roadmap || [];
-  const where = (list) => list.reduce((m, a) => m.set(a.skill, [...(m.get(a.skill) || []), a.days]), new Map());
+  const where = (list) => list.reduce((m, a) => m.set(a.skill, new Set([...(m.get(a.skill) || []), a.days])), new Map());
   const wb = where(before), wa = where(after);
-  const moves = [...new Set([...wb.keys(), ...wa.keys()])].map((skill) => {
-    const span = (ds = []) => (ds.length === PHASES.length ? "All 90 days" : ds.map(days).join(", "));
-    const x = span(wb.get(skill)), y = span(wa.get(skill));
-    return x === y ? null : { skill, kind: !x ? "added" : !y ? "waiting" : "moved", text: !x ? `New · ${y}` : !y ? `${x} → after day 90` : `${x} → ${y}` };
-  }).filter(Boolean);
+  // "Days 1–60" for neighbouring phases, "All 90 days" for all three
+  const span = (ds = new Set()) => {
+    const idx = PHASES.map((p, i) => (ds.has(p) ? i : -1)).filter((i) => i >= 0);
+    if (!idx.length) return "Not planned";
+    if (idx.length === 3) return "All 90 days";
+    const start = PHASES[idx[0]].split("-")[0], end = PHASES[idx.at(-1)].split("-")[1];
+    return idx.at(-1) - idx[0] === idx.length - 1 ? `Days ${start}–${end}` : idx.map((i) => `Days ${PHASES[i].replace("-", "–")}`).join(", ");
+  };
+  const same = (x = new Set(), y = new Set()) => x.size === y.size && [...x].every((d) => y.has(d));
+  const moves = [...new Set([...wb.keys(), ...wa.keys()])].filter((k) => !same(wb.get(k), wa.get(k))).map((skill) => {
+    const x = wb.get(skill), y = wa.get(skill);
+    return { skill, x, y, kind: !x ? "added" : !y ? "waiting" : "moved" };
+  });
   const delta = ([a, b], unit = "") => { const d = Math.round((b - a) * 10) / 10; return `${d > 0 ? "+" : d < 0 ? "−" : ""}${Math.abs(d)}${unit}`; };
-  const hrs = (x) => `${x} h/week`;
-  const sub = [f.weekly_hours && `Weekly learning time ${hrs(f.weekly_hours[0])} → ${hrs(f.weekly_hours[1])}`,
-    f.scenario && `AI scenario ${f.scenario.map((x) => (x === "agentic" ? "agentic" : "assistive")).join(" → ")}`].filter(Boolean).join(" · ");
+  const sub = [f.weekly_hours && `${f.weekly_hours[0]} h → ${f.weekly_hours[1]} h a week`,
+    f.scenario && `${f.scenario.map((x) => (x === "agentic" ? "Agentic" : "Assistive")).join(" → ")} AI`].filter(Boolean).join(" · ");
   const stats = [
-    f.roadmap && ["history", moves.length, moves.length === 1 ? "Step changed" : "Steps changed"],
-    f.weekly_hours && ["clock", delta(f.weekly_hours, "h"), "Weekly hours"],
-    f.plan_hours && f.plan_hours[0] !== f.plan_hours[1] && ["plans", delta(f.plan_hours, "h"), "Hours in plan"],
-    f.deferred && f.deferred[0] !== f.deferred[1] && ["flag", f.deferred[1], "Skills waiting"],
-    f.open_gaps && f.open_gaps[0] !== f.open_gaps[1] && ["target", delta(f.open_gaps), "Open skill gaps"],
+    f.roadmap && ["history", moves.length, moves.length === 1 ? "skill moved" : "skills moved"],
+    f.weekly_hours && ["clock", delta(f.weekly_hours, " h"), "per week"],
+    f.plan_hours && f.plan_hours[0] !== f.plan_hours[1] && ["plans", delta(f.plan_hours, " h"), "in the plan"],
+    f.deferred && f.deferred[0] !== f.deferred[1] && ["flag", f.deferred[1], "skills waiting"],
+    f.open_gaps && f.open_gaps[0] !== f.open_gaps[1] && ["target", delta(f.open_gaps), "open skill gaps"],
   ].filter(Boolean).slice(0, 3);
   const PILL = { moved: "Rescheduled", added: "Added", waiting: "Waiting for time", raised: "Target raised", lowered: "Target lowered" };
-  const item = (ic, title, text, kind) => h("li", { class: `cs-item ${kind}` }, h("span", { class: "cs-item-ic" }, icon(ic)),
-    h("span", { class: "cs-item-t" }, h("b", {}, title), h("span", {}, text)), h("span", { class: `cs-pill ${kind}` }, PILL[kind]));
+  // three cells, one per 30-day phase: grey = before only, blue = after
+  const track = (x = new Set(), y = new Set()) => h("span", { class: "cs-track", "aria-hidden": "true" },
+    PHASES.map((p) => h("i", { class: y.has(p) ? "on" : x.has(p) ? "was" : null })));
+  const item = (title, kind, detail) => h("li", { class: "cs-item" },
+    h("div", { class: "cs-item-top" }, h("b", {}, title), h("span", { class: `cs-pill ${kind}` }, PILL[kind])), detail);
   const items = [
-    ...moves.map((m) => item(m.kind === "added" ? "up" : m.kind === "waiting" ? "flag" : "history", m.skill, m.text, m.kind)),
-    ...(f.required_changed || []).map(([skill, a, b]) => item(b > a ? "up" : "down", skill, `Required level ${a} → ${b}`, b > a ? "raised" : "lowered")),
+    ...moves.map((m) => item(m.skill, m.kind, h("div", { class: "cs-move" }, track(m.x, m.y),
+      h("span", {}, h("s", {}, span(m.x)), " → ", h("b", {}, m.kind === "waiting" ? "after day 90" : span(m.y)))))),
+    ...(f.required_changed || []).map(([skill, a, b]) => item(skill, b > a ? "raised" : "lowered",
+      h("div", { class: "cs-move" }, h("span", {}, "Required level ", h("s", {}, a), " → ", h("b", {}, b))))),
   ];
   let roadmap = null;
   if (f.roadmap) {
+    const skills = [...new Set([...after, ...before].map((a) => a.skill))];
     const moved = new Set(moves.map((m) => m.skill));
-    const panel = h("div", { class: "cs-phases" });
-    const draw = (list) => panel.replaceChildren(...PHASES.map((d) => {
-      const acts = list.filter((a) => a.days === d);
-      return h("div", { class: "cs-phase" }, h("b", {}, days(d)),
-        acts.length ? h("ul", {}, acts.map((a) => h("li", { class: moved.has(a.skill) ? "moved" : null }, h("span", {}, a.skill), h("span", { class: "muted" }, `${a.hours} h`))))
-          : h("p", { class: "muted" }, "Nothing planned"));
-    }));
+    const grid = h("div", { class: "cs-grid", role: "table", "aria-label": "Roadmap by phase" });
+    const draw = (list) => grid.replaceChildren(
+      h("div", { class: "cs-grid-row cs-grid-head", role: "row" }, h("span", { role: "columnheader" }, "Skill"),
+        PHASES.map((d) => h("span", { role: "columnheader" }, `Days ${d.replace("-", "–")}`))),
+      ...skills.map((skill) => h("div", { class: `cs-grid-row ${moved.has(skill) ? "moved" : ""}`, role: "row" },
+        h("span", { class: "cs-grid-skill", role: "rowheader" }, skill),
+        PHASES.map((d) => {
+          const a = list.find((x) => x.skill === skill && x.days === d);
+          return h("span", { class: "cs-cell", role: "cell", "aria-label": `Days ${d}: ${a ? `${a.hours} h` : "nothing"}` },
+            a ? h("em", {}, `${Math.round(a.hours * 10) / 10} h`) : h("i", { "aria-hidden": "true" }));
+        }))));
     const tab = (label, list, on) => h("button", { class: "cs-tab", type: "button", role: "tab", "aria-selected": String(on),
       onclick: (e) => { tabs.querySelectorAll(".cs-tab").forEach((t) => t.setAttribute("aria-selected", String(t === e.currentTarget))); draw(list); } }, label);
     const [hb, ha] = f.weekly_hours || [];
     const tabs = h("div", { class: "cs-tabs", role: "tablist", "aria-label": "Roadmap before and after" },
-      tab(hb ? `Before · ${hb}h/week` : "Before", before, false), tab(ha ? `After · ${ha}h/week` : "After", after, true));
+      tab(hb ? `Before · ${hb} h/week` : "Before", before, false), tab(ha ? `After · ${ha} h/week` : "After", after, true));
     draw(after);
-    roadmap = h("div", { class: "cs-roadmap" }, h("h4", {}, "Roadmap comparison"), tabs, panel);
+    roadmap = h("div", { class: "cs-section" }, h("h4", {}, "Roadmap comparison"), tabs, grid);
   }
   return reveal(h("section", { class: "block change-summary", "aria-label": "What changed in your plan" },
-    h("header", { class: "cs-head" }, icon("spark"), h("div", {}, h("h3", {}, "AI-adjusted learning plan"), sub ? h("p", {}, sub) : null)),
-    stats.length ? h("div", { class: "cs-stats" }, stats.map(([ic, v, label]) => h("div", { class: "cs-stat" }, icon(ic), h("b", {}, v), h("span", {}, label)))) : null,
-    h("h4", {}, "What exactly changed?"),
-    items.length ? h("ul", { class: "cs-items" }, items) : h("p", { class: "muted" }, "No steps moved; the roadmap stays as it was."),
-    f.gaps_narrowed?.length ? h("p", { class: "bc-line" }, `Gaps narrowed: ${f.gaps_narrowed.join(", ")}`) : null,
+    h("header", { class: "cs-head" }, h("span", { class: "cs-badge" }, icon("spark")),
+      h("div", {}, h("p", { class: "cs-eyebrow" }, "Plan updated"), h("h3", {}, "AI-adjusted learning plan"), sub ? h("p", { class: "cs-sub" }, sub) : null)),
+    stats.length ? h("div", { class: "cs-stats" }, stats.map(([ic, v, label]) =>
+      h("div", { class: "cs-stat" }, h("span", { class: "cs-stat-ic" }, icon(ic)), h("div", {}, h("b", {}, v), h("span", {}, label))))) : null,
+    h("div", { class: "cs-section" }, h("h4", {}, "What exactly changed?"),
+      items.length ? h("ul", { class: "cs-items" }, items) : h("p", { class: "muted" }, "No skills moved; the roadmap stays as it was."),
+      f.gaps_narrowed?.length ? h("p", { class: "bc-line" }, `Gaps narrowed: ${f.gaps_narrowed.join(", ")}`) : null),
     roadmap), RISE, { duration: 420 });
 }
 

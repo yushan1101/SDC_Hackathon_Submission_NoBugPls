@@ -325,6 +325,18 @@ def test_plan_hours_rebuild_the_plan_with_the_agent(client, monkeypatch):
     assert client.post(f"/api/plans/{pid}/hours", json={"weekly_hours": 6}, headers={"X-AP": "1"}).status_code == 404
 
 
+def test_past_report_followup_still_shows_what_changed(client):
+    from server import api
+    login(client, "ana")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 8, "skills": [{"name": "communication", "level": 3}]}
+    pid = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))[-1]["plan_id"]
+    api.RESULTS.clear()  # a restart or deploy: the run is gone, only the saved plan is left
+    evs = events(client.post("/api/analyze", json={**body, "weekly_learning_hours": 4, "query": "I only have 4 hours a week",
+                                                   "previous_plan_id": pid}, headers={"X-AP": "1"}))
+    ch = next(e["data"] for e in evs if e.get("t") == "section" and e.get("kind") == "changes")
+    assert ch["weekly_hours"] == [8, 4] and len(ch["roadmap"]) == 2 and ch["plan_hours"][1] < ch["plan_hours"][0]
+
+
 def test_plan_list_carries_real_progress(client):
     login(client, "ana")
     body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 6, "skills": [{"name": "communication", "level": 3}]}

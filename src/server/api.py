@@ -24,6 +24,7 @@ from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from io import StringIO
+from types import SimpleNamespace
 from pathlib import Path
 
 import httpx
@@ -44,7 +45,7 @@ from agents import tools as agent_tools
 from agents.knowledge import learning_resources, occupation, resolve_occupation, role_requirements, search_occupations
 from config.settings import get_settings
 from core import graph, screening
-from core.state import LearningNode, Pathway, Profile, Request, Skill
+from core.state import Gap, LearningNode, Pathway, Profile, Request, Skill
 from core.team_import import normalize_team, parse_team
 from governance import workforce
 from governance.employee_ids import allocate_ids
@@ -1302,6 +1303,19 @@ def _request_dump(r) -> dict | None:
             "weekly_learning_hours": r.profile.weekly_learning_hours, "skills": [x.model_dump() for x in r.profile.skills]}
 
 
+def _saved_prev(pid: str) -> dict | None:
+    """The saved plan and analysis shaped like a run's state, enough for graph.followup_diff (call under DB_LOCK).
+    None for plans saved before analyses were kept."""
+    row = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
+    r = json.loads(row[0]) if row else {}
+    q = r.get("request")
+    if not q or not r.get("gaps"):
+        return None
+    return {"request": SimpleNamespace(target_role=q["target_role"], scenario=q["scenario"],
+                                       profile=SimpleNamespace(weekly_learning_hours=q["weekly_learning_hours"])),
+            "draft_pathway": Pathway(**approval.latest(db, pid)["plan"]), "skill_gaps": [Gap(**g) for g in r["gaps"]]}
+
+
 def _saved_thread(pid: str) -> list:
     """The conversation saved with a plan's report (oldest turn first); [] if none."""
     with DB_LOCK:
@@ -1632,12 +1646,14 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
             db.execute("INSERT INTO briefing_log VALUES(?,?)", (user["username"], datetime.now(timezone.utc).isoformat()))
             no_wait(db)
 
-    prev, history = None, []
+    prev, history, saved_prev = None, [], None
     if body.previous_plan_id:  # only the caller's own run; if the server restarted, it falls back to a full run
         with DB_LOCK:
             mine = approval.can_act(db, body.previous_plan_id, user)
             if mine:
                 prev = RESULTS.get(body.previous_plan_id)
+                if prev is None:  # a past report (or a restart): the full run is compared with the saved plan instead
+                    saved_prev = _saved_prev(body.previous_plan_id)
         if mine:
             history = _saved_thread(body.previous_plan_id)
 
@@ -1702,6 +1718,12 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
                    "sdgs": "market_analyst", "plan": "pathway"}
         if ran is not None and out["followup"] and out["followup"]["changed"] != ["question"]:
             yield sse({"t": "section", "kind": "changes", "data": out["followup"]})
+        elif ran is None and saved_prev and saved_prev["request"].target_role == req.target_role:
+            pr = saved_prev["request"]
+            changed = [k for k, a, b in (("hours", pr.profile.weekly_learning_hours, req.profile.weekly_learning_hours),
+                                         ("scenario", pr.scenario, req.scenario)) if a != b]
+            if changed:
+                yield sse({"t": "section", "kind": "changes", "data": graph.followup_diff(saved_prev, final, changed, None)})
         for kind in ("gaps", "comparison", "outlook", "signals", "sdgs", "issues", "plan"):
             if ran is not None and kind in made_by and made_by[kind] not in ran:
                 continue
@@ -2056,9 +2078,7 @@ def plan_hours(pid: str, body: HoursIn, user: dict = Depends(current_user)):
     """Change a saved plan's weekly learning time. The pathway agent rebuilds the plan from the saved analysis (same
     gaps, role and skills) and writes its activities, exactly as a chat follow-up does; the result is validated and
     saved as a new draft version of this plan, so ticked steps stay. Returns the before/after change summary."""
-    from types import SimpleNamespace
     from agents import pathway
-    from core.state import Gap
     _guard(pid, user)
     with DB_LOCK:
         cur = approval.latest(db, pid)["plan"]
