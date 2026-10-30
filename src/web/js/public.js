@@ -909,6 +909,8 @@ function planHolder(planId, plan, hours, status, progress = [], planReference) {
 }
 
 // ---------------------------------------------------------------- plans
+const PLAN_STATUS = { draft: ["Draft", ""], approved: ["Approved", "good"], flagged: ["Flagged for review", "warn"] };
+
 async function plansView(main) {
   main.replaceChildren(h("h1", { class: "page-title" }, "My plans"), h("p", { class: "lede" }, "Your plans, including any your HR advisor prepared for you."),
     ...(S.me?.hr_can_view ? [h("p", { class: "note" }, icon("user"), "Your HR advisor can see the plans you make here and how far you've got. Only you can change them.")] : []));
@@ -953,7 +955,7 @@ async function plansView(main) {
       await plansView(main);
     } catch (e) { toast(e.message, "err"); remove.disabled = false; }
   } }, "Delete selected");
-  const listEl = h("div", { class: "plan-list" });
+  const listEl = h("ul", { class: "my-plans-list" });
   const noResults = h("div", { class: "empty plan-search-empty", hidden: true },
     h("p", {}, "No matching plans found. Try searching with a different job title."),
     h("button", { class: "btn sm", type: "button", onclick: () => { search.value = ""; query = ""; clear.hidden = true; draw(); search.focus(); } }, "Clear search"));
@@ -983,29 +985,29 @@ async function plansView(main) {
     selectAll.setAttribute("aria-label", query ? "Select all matching plans" : "Select all your plans");
     noResults.hidden = visiblePlans.length > 0;
     listEl.hidden = visiblePlans.length === 0;
+    total.textContent = query ? `${visiblePlans.length} of ${list.length}` : `${list.length} plan${list.length === 1 ? "" : "s"}`;
     listEl.replaceChildren(...visiblePlans.map((pl) => {
       const name = nameOf(pl);
       const day = Math.min(90, Math.max(1, Math.floor((Date.now() - createdAt(pl)) / 864e5) + 1));  // calendar day of the 90, not ticked steps
-      return h("div", { class: `my-plan${pl.audience === "hr" ? " is-hr" : ""}` },
-        h("a", { class: "plan-card-link", href: `#/plans/${pl.plan_id}` },
-          h("div", { class: "plan-card-head" },
-            h("span", { class: "plan-card-mark", "aria-hidden": "true" }, name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()),
-            h("div", { class: "plan-card-titles" }, h("div", { class: "t" }, name),
-              h("div", { class: "plan-card-by" }, pl.audience === "hr" ? "From your HR advisor" : "Your plan"))),
-          h("div", { class: "plan-card-chips" }, h("span", { class: `tag ${pl.status}` }, pl.status),
-            pl.scenario ? h("span", {}, pl.scenario[0].toUpperCase() + pl.scenario.slice(1)) : null,
-            h("span", { title: `Version ${pl.version}` }, `v${pl.version}`), h("span", {}, new Date(pl.created_utc).toLocaleDateString())),
-          h("div", { class: "plan-card-time" }, h("span", {}, h("b", {}, `Day ${day}`), " of 90"), h("span", {}, `${Math.round(day / 0.9)}%`),
-            h("div", { class: "plan-card-bar", role: "progressbar", "aria-label": "Days into the 90-day plan", "aria-valuemin": 1, "aria-valuemax": 90, "aria-valuenow": day },
-              h("i", { style: `width:${(day / 90) * 100}%` }))),
-          h("div", { class: "plan-card-foot" }, h("span", { class: "m" }, pl.plan_reference || pl.plan_id), h("span", { class: "plan-card-open" }, "Open plan", icon("chevron")))),
+      const [label, tone] = PLAN_STATUS[pl.status] || [pl.status, ""];
+      return h("li", { class: "my-plan" },
         pl.audience === "individual" ? h("input", { class: "plan-select", type: "checkbox", checked: selected.has(pl.plan_id),
           "aria-label": `Select ${name}, plan ID ${pl.plan_reference || pl.plan_id}`,
-          onchange: (e) => { if (e.target.checked) selected.add(pl.plan_id); else selected.delete(pl.plan_id); syncToolbar(); } }) : null);
+          onchange: (e) => { if (e.target.checked) selected.add(pl.plan_id); else selected.delete(pl.plan_id); syncToolbar(); } })
+          : h("span", { class: "plan-select-spacer", "aria-hidden": "true" }),
+        h("a", { class: "my-plan-link", href: `#/plans/${pl.plan_id}` },
+          h("span", { class: "my-plan-name" }, h("b", {}, name),
+            h("span", { class: "muted" }, `${pl.audience === "hr" ? "From your HR advisor" : "Your plan"}, made ${new Date(pl.created_utc).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} · ${pl.plan_reference || pl.plan_id}`)),
+          h("span", { class: "my-plan-day" }, h("span", { class: "muted" }, `Day ${day} of 90`),
+            h("span", { class: "reminder-bar", role: "img", "aria-label": `Day ${day} of 90` }, h("i", { style: { width: `${(day / 90) * 100}%` } }))),
+          h("span", { class: `reminder-pace ${tone}` }, label),
+          h("span", { class: "my-plan-go", "aria-hidden": "true" }, icon("chevron"))));
     }));
     syncToolbar();
   }
-  main.append(h("div", { class: "plans-tools" }, searchControl, sortControl), manage, noResults, listEl);
+  const total = h("span", { class: "muted my-plans-count" });
+  main.append(h("div", { class: "plans-tools" }, searchControl, sortControl), manage, noResults,
+    h("section", { class: "block brief-card my-plans" }, h("header", { class: "bc-head" }, h("span", { class: "bc-ic" }, icon("plans")), h("h3", {}, "Your plans"), total), listEl));
   draw();
 }
 

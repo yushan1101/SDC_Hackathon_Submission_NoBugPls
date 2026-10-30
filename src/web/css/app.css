@@ -3160,38 +3160,36 @@ body {
 .plans-sort-select { min-width: 220px; }
 .plans-tools + .plan-manage { margin-top: 8px; }
 .plan-search-empty { max-width: none; padding: 28px 0; }
-/* My plans: cards instead of a flat list. The checkbox sits on top of the card link (inputs can't go inside a link). */
-.plan-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 16px; border-top: 0; margin-top: 4px; }
-.my-plan { position: relative; border-radius: 20px; background: var(--glass-strong, var(--surface)); border: 1px solid var(--glass-edge, var(--rule));
-  box-shadow: var(--card-shadow); transition: transform 200ms var(--ease-out, ease), box-shadow 200ms var(--ease-out, ease), border-color var(--t-fast); }
-.my-plan::before { content: ""; position: absolute; inset: 0 0 auto; height: 4px; border-radius: 20px 20px 0 0; background: linear-gradient(90deg, var(--accent), oklch(0.7 0.15 230)); }
-.my-plan.is-hr::before { background: linear-gradient(90deg, oklch(0.55 0.2 295), oklch(0.7 0.15 330)); }
-.my-plan:hover { transform: translateY(-3px); border-color: color-mix(in oklch, var(--accent) 35%, var(--rule)); box-shadow: var(--card-shadow), 0 22px 44px -26px oklch(0.4 0.16 263 / 0.45); }
-.my-plan:has(.plan-select:checked) { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), var(--card-shadow); }
-.plan-card-link { display: grid; gap: 16px; height: 100%; padding: 22px 20px 18px; color: inherit; text-decoration: none; border-radius: inherit; }
-.plan-card-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.plan-card-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; }
-.my-plan:has(.plan-select) .plan-card-head { padding-right: 30px; }
-.plan-card-mark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; color: #fff; font: 700 15px/1 var(--font-sans, inherit); letter-spacing: .02em;
-  background: linear-gradient(135deg, var(--accent), oklch(0.66 0.15 235)); box-shadow: 0 8px 18px -8px oklch(0.45 0.18 263 / 0.6); }
-.is-hr .plan-card-mark { background: linear-gradient(135deg, oklch(0.52 0.2 295), oklch(0.66 0.17 330)); box-shadow: 0 8px 18px -8px oklch(0.45 0.18 300 / 0.6); }
-.plan-card-titles .t { font-weight: 650; font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
-.plan-card-by { margin-top: 2px; font-size: 13px; color: var(--ink-2); }
-.plan-card-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.plan-card-chips .tag { padding: 3px 10px; border-radius: 99px; }
-.plan-card-chips span:not(.tag) { padding: 3px 10px; border-radius: 99px; background: var(--sunken); color: var(--ink-2); font-size: 12.5px; font-weight: 500; }
-.plan-card-time { display: grid; grid-template-columns: 1fr auto; gap: 6px; font-size: 13px; color: var(--ink-2); }
-.plan-card-time b { color: var(--ink); font-weight: 650; }
-.plan-card-bar { grid-column: 1 / -1; height: 8px; border-radius: 99px; background: var(--sunken); overflow: hidden; }
-.plan-card-bar i { display: block; height: 100%; min-width: 8px; border-radius: inherit; background: linear-gradient(90deg, var(--accent), oklch(0.7 0.15 230)); }
-.is-hr .plan-card-bar i { background: linear-gradient(90deg, oklch(0.55 0.2 295), oklch(0.7 0.15 330)); }
-.plan-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 14px; border-top: 1px solid var(--rule); }
-.plan-card-foot .m { font: 12px var(--font-mono); color: var(--ink-2); }
-.plan-card-open { display: inline-flex; align-items: center; gap: 2px; font-size: 14px; font-weight: 600; color: var(--accent); }
-.plan-card-open svg { width: 16px; height: 16px; transform: rotate(-90deg); transition: transform var(--t-fast); }
-.my-plan:hover .plan-card-open svg { transform: rotate(-90deg) translateY(3px); }
-.my-plan .plan-select { position: absolute; top: 22px; right: 18px; }
-@media (prefers-reduced-motion: reduce) { .plan-card, .plan-card-open svg { transition: none; } .my-plan:hover { transform: none; } }
+/* My plans: one panel of rows, built from the plan page's brief-card + gap-row and the home reminder's bar and pace pill. */
+.my-plans { margin-top: 12px; }
+.my-plans-count { margin-left: auto; font-size: 14px; }
+.my-plans-list { list-style: none; margin: 0; padding: 0; }
+.my-plan { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 8px; border-top: 1px solid var(--rule); }
+.my-plan:first-child { border-top: 0; }
+.my-plan .plan-select { justify-self: center; }
+.my-plan-link { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 200px) 150px 20px; align-items: center; gap: 20px;
+  padding: 14px 10px; margin: 2px 0; border-radius: 12px; color: inherit; text-decoration: none; transition: background var(--t-fast); }
+.my-plan-link:hover { background: var(--sunken); }
+.my-plan-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.my-plan-name { display: grid; gap: 2px; min-width: 0; }
+.my-plan-name b { font-weight: 500; font-size: 16px; overflow-wrap: anywhere; }
+.my-plan-name .muted { font-size: 13px; }
+.my-plan-day { display: grid; gap: 6px; font-size: 13px; }
+.my-plan-day .reminder-bar { max-width: none; }
+.my-plan .reminder-pace { justify-self: start; }
+.reminder-pace:not(.good):not(.warn) { background: var(--sunken); color: var(--ink-2); }
+.my-plan-go { display: grid; color: var(--ink-2); }
+.my-plan-go svg { width: 18px; height: 18px; transform: rotate(-90deg); }
+.my-plan-link:hover .my-plan-go { color: var(--accent); }
+@media (max-width: 699px) {
+  .my-plan-link { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; padding: 12px 6px; }
+  .my-plan-day { grid-column: 1 / -1; grid-row: 2; }
+  .my-plan .reminder-pace { grid-column: 2; grid-row: 1; align-self: start; }
+  .my-plan-go { display: none; }
+  .my-plan:has(.plan-select-spacer) { grid-template-columns: minmax(0, 1fr); }
+  .my-plan .plan-select-spacer { display: none; }
+  .my-plan .plan-select { align-self: start; margin-top: 14px; }
+}
 @media (max-width: 699px) {
   .plans-tools { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .plans-sort { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; min-width: 0; }
