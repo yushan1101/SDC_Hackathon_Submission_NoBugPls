@@ -171,6 +171,7 @@ async def headers(request: HttpRequest, call_next):
                                    "frame-src https://js.stripe.com https://hooks.stripe.com; media-src 'self' blob:; "  # blob: the read-aloud voice
                                    f"connect-src 'self' https://api.stripe.com; frame-ancestors {cfg.frame_ancestors}; base-uri 'none'; form-action 'self'",
         "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",  # browsers ignore it over plain http
         "Permissions-Policy": "camera=(), microphone=(self), geolocation=()"})
     if not request.url.path.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-cache"  # revalidate (cheap 304 via ETag) so UI updates ship immediately
@@ -215,9 +216,11 @@ def current_user(request: HttpRequest) -> dict:
         raise HTTPException(401, "sign in required")
     now = datetime.now(timezone.utc)
     with DB_LOCK:
-        row = db.execute("SELECT username, role, employee_id, display_name, expires_utc FROM sessions WHERE token_hash=?",
+        # users.locked_until is read on every request (no cache): an administrator's lock ends sessions on all nodes
+        row = db.execute("SELECT s.username, s.role, s.employee_id, s.display_name, s.expires_utc, u.locked_until "
+                         "FROM sessions s LEFT JOIN users u ON u.username=s.username WHERE s.token_hash=?",
                          (_hash(token),)).fetchone()
-        if not row or datetime.fromisoformat(row[4]) < now:
+        if not row or datetime.fromisoformat(row[4]) < now or accounts.lock_state(row[5])["kind"] == "admin":
             db.execute("DELETE FROM sessions WHERE token_hash=?", (_hash(token),))
             db.commit()
             raise HTTPException(401, "session expired")
@@ -249,8 +252,167 @@ def paid_feature(role: str, plans: set, what: str):
     return dep
 
 
+# Only believe CF-Connecting-IP when the socket peer is really Cloudflare (or the front-door worker); otherwise anyone
+# hitting the origin directly can pick any IP and dodge per-IP limits and risk scoring.
+import ipaddress  # noqa: E402
+
+_CF_NETS = [ipaddress.ip_network(n) for n in os.environ.get("TRUSTED_PROXY_CIDRS", (
+    "173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,"
+    "188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,"
+    "131.0.72.0/22,2400:cb00::/32,2606:4700::/32,2803:f800::/32,2405:b500::/32,2405:8100::/32,2a06:98c0::/29,"
+    "2c0f:f248::/32")).split(",") if n.strip()]
+
+
+def _peer_trusted(host: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return any(addr in n for n in _CF_NETS)
+
+
 def _ip(request: HttpRequest) -> str:
-    return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "")
+    peer = request.client.host if request.client else ""
+    cf = request.headers.get("cf-connecting-ip")
+    return cf if cf and _peer_trusted(peer) else peer
+
+
+# Per-IP sign-in throttle (account lockout alone does not stop spraying one password across many accounts).
+# 20 attempts / 5 minutes / IP by default; per process, so use Redis/DB behind a balancer. Applies to every attempt,
+# including the ones the login Bloom filter rejects.
+LOGIN_LIMIT = int(os.environ.get("LOGIN_RATE_LIMIT", "20"))
+LOGIN_WINDOW = int(os.environ.get("LOGIN_RATE_WINDOW", "300"))
+LOGIN_HITS: dict[str, list[float]] = {}
+
+
+def _login_rate_limit(ip: str) -> None:
+    now_ = time.time()
+    hits = [t for t in LOGIN_HITS.get(ip or "?", []) if now_ - t < LOGIN_WINDOW]
+    if len(hits) >= LOGIN_LIMIT:
+        raise HTTPException(429, "Too many sign-in attempts. Please wait a few minutes.")
+    LOGIN_HITS[ip or "?"] = hits + [now_]
+    if len(LOGIN_HITS) > 50_000:  # bound memory
+        LOGIN_HITS.clear()
+
+
+# Which IPs recently failed to sign in as which login, so an admin unlock can also lift those IPs' throttle.
+LOGIN_FAIL_IPS: dict[str, set[str]] = {}
+
+
+def _note_login_failure(login: str, ip: str) -> None:
+    if len(LOGIN_FAIL_IPS) > 20_000:  # bound memory
+        LOGIN_FAIL_IPS.clear()
+    LOGIN_FAIL_IPS.setdefault((login or "").strip().lower(), set()).add(ip or "?")
+
+
+def _clear_login_throttle(*logins: str) -> int:
+    """Forget the per-IP sign-in attempts of the IPs that failed for these logins (this process only)."""
+    n = 0
+    for login in logins:
+        for ip in LOGIN_FAIL_IPS.pop((login or "").strip().lower(), set()):
+            n += LOGIN_HITS.pop(ip, None) is not None
+    return n
+
+
+# --- sign-in Bloom filter (governance/bloom.py) -------------------------------------------------------
+# Logins that certainly have no account are answered without DB_LOCK and without the real hash. It reads the users
+# table on its own connection (like _frontends), never through `db`, so it never waits for or blocks DB_LOCK.
+from governance import bloom  # noqa: E402
+
+_BLOOM_LOCK = threading.Lock()  # guards only the filter's private connection
+_bloom_con = None
+# both Postgres wrappers: governance/db.py (AIVERSEPULSE_DATABASE_URL) and governance/postgres.py (Replit)
+from governance.db import is_postgres as _is_pg  # noqa: E402
+_PG = _is_pg(db) or getattr(db, "backend", "sqlite") == "postgres"
+
+
+def _bloom_query(sql: str, args: tuple = ()) -> list:
+    global _bloom_con
+    from governance.db import connect as db_connect
+    with _BLOOM_LOCK:
+        for attempt in (1, 2):  # reconnect once if the private connection went away
+            try:
+                if _bloom_con is None:
+                    _bloom_con = db_connect(cfg.database_path)
+                rows = _bloom_con.execute(sql, args).fetchall()
+                if _PG:
+                    _bloom_con.commit()  # end the read transaction so the next query sees other nodes' writes
+                return rows
+            except Exception:
+                try:
+                    _bloom_con.close()
+                except Exception:
+                    pass
+                _bloom_con = None
+                if attempt == 2:
+                    raise
+
+
+def _bloom_keys():
+    for u, e, p in _bloom_query("SELECT username, email, email_pending FROM users"):
+        yield from (u, e, p)
+
+
+def _bloom_stamp():
+    # changes when any process inserts an account (rowid / created_utc move); in-process writes also add directly
+    if _PG:
+        return tuple(_bloom_query("SELECT COUNT(*), MAX(created_utc) FROM users")[0])
+    return tuple(_bloom_query("SELECT COUNT(*), MAX(rowid), MAX(created_utc) FROM users")[0])
+
+
+def _bloom_confirm(key: str) -> bool:
+    # several app nodes share Postgres: another node may have created the account or changed an email just now
+    return bool(_bloom_query("SELECT 1 FROM users WHERE username=? OR lower(email)=? LIMIT 1", (key, key)))
+
+
+def _env_on(name: str, default: str) -> bool:
+    return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+_confirm_mode = os.environ.get("LOGIN_BLOOM_CONFIRM", "auto").strip().lower()
+LOGIN_FILTER = bloom.LoginFilter(
+    _bloom_keys,
+    capacity=int(os.environ.get("LOGIN_BLOOM_CAPACITY", "10000")),
+    fp_rate=float(os.environ.get("LOGIN_BLOOM_FP_RATE", "0.001")),
+    rebuild_seconds=float(os.environ.get("LOGIN_BLOOM_REBUILD_SECONDS", "300")),
+    stamp=_bloom_stamp,
+    confirm=_bloom_confirm if (_confirm_mode in ("1", "true", "on") or (_confirm_mode == "auto" and _PG)) else None,
+    # an in-memory SQLite database cannot be opened a second time: no filter then
+    enabled=_env_on("LOGIN_BLOOM", "1") and (_PG or cfg.database_path != ":memory:"),
+)
+accounts.on_login_keys(LOGIN_FILTER.add)
+if LOGIN_FILTER.enabled:
+    LOGIN_FILTER.rebuild()  # built from the accounts store at startup (and again every LOGIN_BLOOM_REBUILD_SECONDS)
+
+# Failed sign-ins take at least this long, whichever path failed (filter reject, unknown user, wrong password), so
+# lock waits and DB time do not make "no such user" measurably faster. Default: a little over one scrypt hash.
+_t = time.monotonic()
+accounts.burn_dummy("calibration")
+LOGIN_FAIL_MIN_S = float(os.environ.get("LOGIN_FAIL_MIN_MS") or (1000 * (time.monotonic() - _t) * 1.25 + 25)) / 1000
+
+
+def _pad_failure(started: float) -> None:
+    left = LOGIN_FAIL_MIN_S - (time.monotonic() - started)
+    if left > 0:
+        time.sleep(left)
+
+
+# Risk scoring of filter-rejected attempts is recorded off the request path (it needs DB_LOCK), so a flood of
+# made-up names still raises the IP's risk without making each rejected request wait for the lock.
+_RISK_QUEUE: "queue.Queue[tuple]" = queue.Queue(maxsize=2000)
+
+
+def _risk_worker():
+    while True:
+        args = _RISK_QUEUE.get()
+        try:
+            with DB_LOCK:
+                risk.assess(db, *args)
+        except Exception:
+            log.exception("deferred login risk scoring failed")
+
+
+threading.Thread(target=_risk_worker, daemon=True, name="login-risk").start()
 
 
 def _record_usage(username: str, feature: str, records) -> None:
@@ -275,19 +437,38 @@ class Login(BaseModel):
 
 @app.post("/api/login")
 def login(body: Login, request: HttpRequest, response: Response):
+    started = time.monotonic()
     name = (body.username or "").strip().lower()
+    ip = _ip(request)
+    _login_rate_limit(ip)  # first, so it also counts the attempts the filter rejects
+    if not LOGIN_FILTER.might_exist(name):
+        # certainly no such account: no DB_LOCK, same scrypt work, same status and body as a wrong password
+        accounts.burn_dummy(body.password)
+        try:
+            _RISK_QUEUE.put_nowait(("login_failed", name, ip, body.risk))
+        except queue.Full:
+            pass
+        _note_login_failure(name, ip)
+        _pad_failure(started)
+        raise HTTPException(401, accounts.INVALID_LOGIN)
     try:
         with DB_LOCK:
-            user = accounts.authenticate(db, body.username, body.password, cfg.login_max_failures, cfg.login_lock_minutes)
+            uname, row = accounts.load_for_login(db, body.username)
+        ok, upgrade = accounts.check_login(row, body.password)  # the slow scrypt, outside the app-wide lock
+        with DB_LOCK:
+            user = accounts.finish_login(db, uname, row, ok, upgrade, cfg.login_max_failures, cfg.login_lock_minutes)
     except accounts.PendingEmail:  # right password, email never verified: a new code instead of a dead end
         with DB_LOCK:
-            a = accounts.account(db, name)
+            a = accounts.find_login(db, name) or accounts.account(db, name)  # signed in with the email: look it up
+            name = a["username"]
             otp.issue(db, cfg, name, a["email"], _base_url(request))
             wait = otp.new_wait(db, name)
         return {"status": "pending_email", "username": name, "email": a["email"], "wait_token": wait}
     except accounts.AuthError as e:
         with DB_LOCK:
-            risk.assess(db, "login_failed", name, _ip(request), body.risk)
+            risk.assess(db, "login_failed", name, ip, body.risk)
+        _note_login_failure(name, ip)
+        _pad_failure(started)
         raise HTTPException(401, str(e))
     with DB_LOCK:
         verdict = risk.assess(db, "login", user["username"], _ip(request), body.risk)
@@ -299,12 +480,16 @@ def login(body: Login, request: HttpRequest, response: Response):
 def _start_session(user: dict, request: HttpRequest, response: Response) -> dict:
     token = secrets.token_urlsafe(32)
     with DB_LOCK:
+        # every way in (password, email code or link, invite) ends here: no session for an administrator-locked account
+        if (accounts.lock_info(db, user["username"]) or {}).get("kind") == "admin":
+            raise HTTPException(401, accounts.LOCKED_LOGIN)
         db.execute("INSERT INTO sessions VALUES(?,?,?,?,?,?)", (_hash(token), user["username"], user["role"],
                    user["employee_id"], user["display_name"],
                    (datetime.now(timezone.utc) + SESSION_IDLE).isoformat()))
         db.commit()
     response.set_cookie(COOKIE, token, httponly=True, samesite=cfg.cookie_samesite,
-                        secure=request.url.scheme == "https" or cfg.cookie_samesite == "none",
+                        # always Secure; AP_INSECURE_COOKIES=1 only for local http dev/tests (SameSite=None needs Secure anyway)
+                        secure=os.environ.get("AP_INSECURE_COOKIES") != "1" or cfg.cookie_samesite == "none",
                         max_age=int(SESSION_IDLE.total_seconds()) * 16)
     if _foreign_origin(request):  # a frontend on another domain keeps the token itself (sent as a Bearer header)
         return user | {"session_token": token}
@@ -391,6 +576,7 @@ def bootstrap_demo_accounts(request: HttpRequest):
     with DB_LOCK:
         try:
             generated = demo_bootstrap.create_demo_accounts(db)
+            accounts.note_login_keys(*(a["username"] for a in generated))  # sign-in filter: new accounts exist now
         except accounts.AuthError as e:
             raise HTTPException(409, str(e))
         except sqlite3.IntegrityError:
@@ -791,6 +977,7 @@ def profile_email_verify(body: EmailVerifyIn):
             raise HTTPException(400, "This link has expired or was already used. Ask for a new one from your account page.")
         try:
             email = enterprise.finish_email_change(db, body.username)
+            accounts.note_login_keys(email)  # sign-in filter: the new address can be used to sign in at once
         except enterprise.EnterpriseError as e:
             raise HTTPException(400, str(e))
     return {"email": email}
@@ -905,7 +1092,9 @@ def admin_summary(user: dict = Depends(need("admin"))):
 
 @app.get("/api/admin/users")
 def admin_users(q: str = "", status: str = "", user: dict = Depends(need("admin"))):
-    sql = f"SELECT {','.join(accounts.KEYS)} FROM users WHERE role!='admin'"
+    """Every account, administrators included, each with its lock state read from users.locked_until: the same
+    column, same connection and same rule (accounts.lock_state) the sign-in check uses, so it is never stale."""
+    sql = f"SELECT {','.join(accounts.KEYS)}, locked_until, failed FROM users WHERE 1=1"
     args: list = []
     if q:
         sql += " AND (lower(username) LIKE ? OR lower(email) LIKE ? OR lower(display_name) LIKE ?)"  # case-insensitive on both databases
@@ -914,8 +1103,14 @@ def admin_users(q: str = "", status: str = "", user: dict = Depends(need("admin"
         sql += " AND status=?"
         args.append(status)
     with DB_LOCK:
-        rows = [dict(zip(accounts.KEYS, r)) for r in db.execute(sql + " ORDER BY created_utc DESC LIMIT 300", args)]
+        rows = []
+        for r in list(db.execute(sql + " ORDER BY created_utc DESC LIMIT 300", args)):
+            row = dict(zip(accounts.KEYS, r))
+            row["lock"] = accounts.lock_state(r[len(accounts.KEYS)], r[len(accounts.KEYS) + 1])
+            rows.append(row)
         for r in rows:
+            if r["lock"]["kind"] == "admin":
+                r["lock"] = accounts.lock_info(db, r["username"])  # + who locked it and when
             r["effective_plan"] = accounts.effective_plan(r["plan"], r["plan_until"])
             r["risk"] = risk.score_of(db, r["username"])
     return rows
@@ -938,6 +1133,48 @@ def admin_set_status(username: str, body: AdminStatusIn, user: dict = Depends(ne
     except accounts.AuthError as e:
         raise HTTPException(404, str(e))
     return {"ok": True}
+
+
+@app.get("/api/admin/users/{username}/lock")
+def admin_lock_state(username: str, user: dict = Depends(need("admin"))):
+    with DB_LOCK:
+        st = accounts.lock_info(db, username.strip().lower())
+    if st is None:
+        raise HTTPException(404, "no such account")
+    return st
+
+
+@app.post("/api/admin/users/{username}/lock")
+def admin_lock(username: str, user: dict = Depends(need("admin"))):
+    """Lock any account (every role, administrators too, but not yourself or the last administrator who can sign
+    in). Its sessions end now; sign-ins get the usual "temporarily locked" answer until an administrator unlocks it.
+    Admin-only (need("admin")), and CSRF-protected like every POST (X-AP header, see the middleware)."""
+    name = username.strip().lower()
+    try:
+        with DB_LOCK:
+            st = accounts.admin_lock(db, name, user["username"])
+            db.execute("DELETE FROM sessions WHERE username=?", (name,))
+            db.commit()
+    except accounts.LockRefused as e:
+        raise HTTPException(409, str(e))
+    except accounts.AuthError as e:
+        raise HTTPException(404, str(e))
+    return {"ok": True, "lock": st}
+
+
+@app.post("/api/admin/users/{username}/unlock")
+def admin_unlock(username: str, user: dict = Depends(need("admin"))):
+    """Unlock any account: an administrator's lock or an automatic lockout. Clears the failure counter and back-off,
+    and this process's per-IP sign-in throttle for the IPs that failed on it. Takes effect on the next sign-in."""
+    name = username.strip().lower()
+    try:
+        with DB_LOCK:
+            r = accounts.admin_unlock(db, name, user["username"])
+            email = (accounts.account(db, name) or {}).get("email") or ""
+    except accounts.AuthError as e:
+        raise HTTPException(404, str(e))
+    _clear_login_throttle(name, email)
+    return {"ok": True, "was": r["was"], "lock": r["now"]}
 
 
 class TrustIn(BaseModel):
@@ -3348,7 +3585,7 @@ async def apply_submit(token: str, request: HttpRequest, name: str = Form(..., m
                        website: str = Form(default="", max_length=200)):
     if website:  # honeypot field, invisible to people: bots fill it
         raise HTTPException(422, "Submission rejected.")
-    _rate_limit(request.client.host if request.client else "?")
+    _rate_limit(_ip(request) or "?")
     o = _open_by_token(token)
     if not consent:
         raise HTTPException(422, "Consent is required to process your resume.")

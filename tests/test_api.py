@@ -1644,3 +1644,209 @@ def test_node_config_needs_token(client, monkeypatch):
     r = client.get("/internal/node-config", headers={"Authorization": "Bearer s3cret"})
     assert r.status_code == 200 and set(r.json()) == {k.upper() for k in api.WORKER_KEYS}
     assert not any("KEY" in k or "SECRET" in k or "PATH" in k for k in r.json())
+
+
+# --- sign-in Bloom filter, per-IP limit and other login hardening ----------------------------------------------
+
+def test_login_filter_answers_unknown_names_exactly_like_wrong_passwords(client):
+    import server.api as api
+    H = {"X-AP": "1"}
+    client.cookies.clear()
+    assert not api.LOGIN_FILTER.might_exist("ghost-user-zz9") and api.LOGIN_FILTER.might_exist("ana")
+    wrong = client.post("/api/login", json={"username": "ana", "password": "Wrong-pass99"}, headers=H)
+    ghost = client.post("/api/login", json={"username": "ghost-user-zz9", "password": "Wrong-pass99"}, headers=H)
+    ghost_mail = client.post("/api/login", json={"username": "ghost-zz9@example.com", "password": "Wrong-pass99"}, headers=H)
+    assert wrong.status_code == ghost.status_code == ghost_mail.status_code == 401
+    assert wrong.content == ghost.content == ghost_mail.content  # byte-identical body
+    assert wrong.json()["detail"] == "invalid username or password"
+    assert set(wrong.headers) == set(ghost.headers)
+    with api.DB_LOCK:  # clear the failure so later tests start clean
+        api.db.execute("UPDATE users SET failed=0, locked_until=NULL WHERE username='ana'")
+        api.db.commit()
+
+
+def test_login_filter_rejects_without_the_db_lock_and_pads_timing(client):
+    import threading
+    import time
+    import server.api as api
+    out = {}
+    client.cookies.clear()  # no session: the middleware has nothing to look up
+
+    def attempt():
+        t = time.monotonic()
+        out["r"] = client.post("/api/login", json={"username": "ghost-user-lock1", "password": "x"}, headers={"X-AP": "1"})
+        out["t"] = time.monotonic() - t
+    with api.DB_LOCK:  # the whole app is "busy": a filter reject must not wait for it
+        th = threading.Thread(target=attempt)
+        th.start()
+        th.join(15)
+        finished = not th.is_alive()
+    th.join(15)
+    assert finished and out["r"].status_code == 401
+    assert out["t"] >= api.LOGIN_FAIL_MIN_S * 0.95  # as slow as a real failed sign-in
+
+
+def test_new_accounts_pass_the_filter_at_once(client):
+    import server.api as api
+    from governance import accounts
+    with api.DB_LOCK:
+        accounts.create_user(api.db, "fresh.bloom1", PW, "hr_advisor")
+    assert api.LOGIN_FILTER.might_exist("fresh.bloom1")
+    client.cookies.clear()
+    assert client.post("/api/login", json={"username": "fresh.bloom1", "password": PW}, headers={"X-AP": "1"}).status_code == 200
+    # written by "another process" (no hook): the stamp check still finds it before saying no
+    with api.DB_LOCK:
+        api.db.execute("INSERT INTO users(username,role,created_utc,status) VALUES('outofband1','employee','2999-01-01T00:00:00+00:00','active')")
+        api.db.commit()
+    assert api.LOGIN_FILTER.might_exist("outofband1")
+    client.cookies.clear()
+
+
+def test_per_ip_login_limit_also_counts_filter_rejects(client, monkeypatch):
+    import server.api as api
+    monkeypatch.setattr(api, "LOGIN_LIMIT", 3)
+    monkeypatch.setattr(api, "LOGIN_FAIL_MIN_S", 0)
+    api.LOGIN_HITS.clear()
+    H = {"X-AP": "1"}
+    codes = [client.post("/api/login", json={"username": f"ghost-rl-{i}", "password": "x"}, headers=H).status_code for i in range(4)]
+    assert codes == [401, 401, 401, 429]
+    assert client.post("/api/login", json={"username": "ana", "password": PW}, headers=H).status_code == 429  # same IP
+    api.LOGIN_HITS.clear()
+
+
+def test_forged_cf_connecting_ip_is_ignored_unless_from_cloudflare():
+    from starlette.requests import Request
+    import server.api as api
+
+    def req(peer):
+        return Request({"type": "http", "client": (peer, 1234), "headers": [(b"cf-connecting-ip", b"9.9.9.9")]})
+    assert api._ip(req("203.0.113.7")) == "203.0.113.7"  # direct to the origin: header ignored
+    assert api._ip(req("173.245.48.10")) == "9.9.9.9"  # via Cloudflare
+
+
+def test_session_cookie_is_secure_and_hsts_is_sent(client, monkeypatch):
+    monkeypatch.delenv("AP_INSECURE_COOKIES", raising=False)
+    cookie = login(client, "ana").headers["set-cookie"].lower()
+    assert "secure" in cookie
+    assert "max-age=31536000" in client.get("/api/legal").headers["strict-transport-security"]
+    client.cookies.clear()
+
+
+# --- administrator lock / unlock (any role) ----------------------------------------------------------------------
+
+def _row(c, name):
+    rows = [u for u in c.get(f"/api/admin/users?q={name}").json() if u["username"] == name]
+    assert len(rows) == 1
+    return rows[0]
+
+
+def _try(c, name, pw=PW):
+    c.cookies.clear()
+    return c.post("/api/login", json={"username": name, "password": pw, "risk": HUMAN}, headers={"X-AP": "1"})
+
+
+def test_admin_lock_then_unlock_any_role_and_the_list_follows(client):
+    from governance import accounts
+    import server.api as api
+    with api.DB_LOCK:
+        accounts.create_user(api.db, "lockemp1", PW, "employee", "E-LK1")
+        accounts.create_user(api.db, "lockhr1", PW, "hr_advisor")
+        accounts.create_user(api.db, "lockadm1", PW, "admin")
+    for name in ("lockemp1", "lockhr1", "lockadm1"):
+        login(client, name)
+        victim = client.cookies.get("ap_session")
+        _admin(client)
+        assert _row(client, name)["lock"]["locked"] is False
+        r = client.post(f"/api/admin/users/{name}/lock", headers={"X-AP": "1"})
+        assert r.status_code == 200 and r.json()["lock"]["kind"] == "admin"
+        row = _row(client, name)  # the list shows it at once, read from the column the sign-in check reads
+        assert row["lock"]["locked"] and row["lock"]["kind"] == "admin" and row["lock"]["by"] == "root1"
+        assert client.get(f"/api/admin/users/{name}/lock").json()["kind"] == "admin"
+        client.cookies.clear(); client.cookies.set("ap_session", victim)
+        assert client.get("/api/me").status_code == 401  # signed out everywhere
+        r = _try(client, name)  # right password, still locked: the existing "temporarily locked" answer
+        assert r.status_code == 401 and r.json()["detail"] == accounts.LOCKED_LOGIN
+        _admin(client)
+        r = client.post(f"/api/admin/users/{name}/unlock", headers={"X-AP": "1"})
+        assert r.status_code == 200 and r.json()["was"]["kind"] == "admin" and r.json()["lock"]["locked"] is False
+        assert _row(client, name)["lock"]["locked"] is False
+        assert _try(client, name).status_code == 200  # the very next sign-in works
+    client.cookies.clear()
+
+
+def test_admin_unlocks_an_auto_locked_account(client):
+    from governance import accounts
+    import server.api as api
+    with api.DB_LOCK:
+        accounts.create_user(api.db, "lockauto1", PW, "hr_advisor")
+    api.LOGIN_HITS.clear()
+    for _ in range(api.cfg.login_max_failures):
+        assert _try(client, "lockauto1", "Wrong-pass99").status_code == 401
+    r = _try(client, "lockauto1")
+    assert r.status_code == 401 and r.json()["detail"] == accounts.LOCKED_LOGIN
+    assert "testclient" in api.LOGIN_HITS
+    _admin(client)
+    row = _row(client, "lockauto1")
+    assert row["lock"]["kind"] == "auto" and row["lock"]["until"] and row["lock"]["failed"] == api.cfg.login_max_failures
+    r = client.post("/api/admin/users/lockauto1/unlock", headers={"X-AP": "1"})
+    assert r.status_code == 200 and r.json()["was"]["kind"] == "auto"
+    assert r.json()["lock"] == {"locked": False, "kind": None, "until": None, "failed": 0}
+    assert "testclient" not in api.LOGIN_HITS  # the per-IP throttle of the IPs that failed on it is reset too
+    assert _try(client, "lockauto1").status_code == 200
+    with api.DB_LOCK:
+        assert api.db.execute("SELECT failed, locked_until FROM users WHERE username='lockauto1'").fetchone() == (0, None)
+    client.cookies.clear()
+
+
+def test_only_admins_can_lock_or_unlock_and_only_with_the_csrf_header(client):
+    from governance import accounts
+    import server.api as api
+    with api.DB_LOCK:
+        accounts.create_user(api.db, "lockvic1", PW, "employee", "E-LK2")
+    client.cookies.clear()
+    assert client.post("/api/admin/users/lockvic1/lock", headers={"X-AP": "1"}).status_code == 401  # signed out
+    for name in ("ana", "hr1"):  # employee, HR advisor
+        login(client, name)
+        for path in ("lock", "unlock"):
+            assert client.post(f"/api/admin/users/lockvic1/{path}", headers={"X-AP": "1"}).status_code == 403
+        assert client.get("/api/admin/users/lockvic1/lock").status_code == 403
+    _admin(client)
+    assert client.post("/api/admin/users/lockvic1/lock").status_code == 403  # no X-AP: a cross-site form can't do it
+    with api.DB_LOCK:
+        assert not accounts.lock_info(api.db, "lockvic1")["locked"]
+    assert client.post("/api/admin/users/root1/lock", headers={"X-AP": "1"}).status_code == 409  # not yourself
+    assert client.post("/api/admin/users/nobody-zz/lock", headers={"X-AP": "1"}).status_code == 404
+    assert client.post("/api/admin/users/nobody-zz/unlock", headers={"X-AP": "1"}).status_code == 404
+    client.cookies.clear()
+
+
+def test_lock_and_unlock_are_audited(client):
+    from governance import accounts
+    import server.api as api
+    with api.DB_LOCK:
+        accounts.create_user(api.db, "lockaud1", PW, "employee", "E-LK3")
+    _admin(client)
+    client.post("/api/admin/users/lockaud1/lock", headers={"X-AP": "1"})
+    client.post("/api/admin/users/lockaud1/unlock", headers={"X-AP": "1"})
+    with api.DB_LOCK:
+        rows = api.db.execute("SELECT username, event, at_utc FROM auth_events WHERE username='lockaud1' "
+                              "AND event LIKE 'admin_%' ORDER BY id").fetchall()
+    assert [(r[0], r[1]) for r in rows] == [("lockaud1", "admin_lock by root1"), ("lockaud1", "admin_unlock by root1 (was admin)")]
+    assert all(r[2] for r in rows)
+    client.cookies.clear()
+
+
+def test_admin_lock_also_stops_email_code_sign_in_paths(client):
+    """Every way to get a session goes through _start_session, which re-reads the lock."""
+    import pytest
+    from fastapi import HTTPException
+    from starlette.responses import Response as R
+    from governance import accounts
+    import server.api as api
+    with api.DB_LOCK:
+        accounts.create_user(api.db, "lockpath1", PW, "employee", "E-LK4")
+        accounts.admin_lock(api.db, "lockpath1", "root1")
+        user = accounts.account(api.db, "lockpath1")
+    with pytest.raises(HTTPException) as e:
+        api._start_session(user, None, R())
+    assert e.value.status_code == 401 and e.value.detail == accounts.LOCKED_LOGIN

@@ -614,7 +614,7 @@ function diagramsBlock(planId, version) {
         h("p", {}, h("b", {}, "Phase: "), plan.phases.filter((p) => p.skills.includes(id)).map((p) => p.name).join(", ") || "not scheduled"),
         s.depends_on.length ? h("p", {}, h("b", {}, "Learn first: "), s.depends_on.map((d) => byId[d]?.name || d).join(", ")) : "",
         h("b", {}, "Resources"),
-        res.length ? h("ul", {}, res.map((r) => h("li", {}, r.url ? h("a", { href: r.url, target: "_blank", rel: "noopener noreferrer" }, r.title) : r.title,
+        res.length ? h("ul", {}, res.map((r) => h("li", {}, safeUrl(r.url) ? h("a", { href: safeUrl(r.url), target: "_blank", rel: "noopener noreferrer" }, r.title) : r.title,
           h("span", { class: "muted" }, ` · ${r.type}${r.est_hours ? ` · ${r.est_hours} h` : ""}`)))) : h("p", { class: "muted" }, "No resources listed."),
         h("button", { class: "btn sm ghost", type: "button", onclick: skillList }, icon("back"), "All skills"));
     };
@@ -624,7 +624,7 @@ function diagramsBlock(planId, version) {
     skillList();
     window.showSkill = showSkill;  // Mermaid "click ... call showSkill()" targets
     const dark = matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light";
-    mermaid.initialize({ startOnLoad: false, securityLevel: "loose", theme: dark ? "dark" : "default", htmlLabels: false, flowchart: { htmlLabels: false },
+    mermaid.initialize({ startOnLoad: false, securityLevel: "antiscript", theme: dark ? "dark" : "default", htmlLabels: false, flowchart: { htmlLabels: false },
       gantt: { fontSize: 14, sectionFontSize: 14, barHeight: 26, barGap: 6, leftPadding: 170, useWidth: 1000 } });
     let chart = null;
     const save = (href, name) => h("a", { href, download: name }).click();
@@ -688,9 +688,15 @@ export function sourceItem(e) {
     h("span", { class: "m" }, [e.publisher, e.publication_date && `published ${e.publication_date}`, e.access_date && `accessed ${e.access_date}`].filter(Boolean).join(" · ")));
 }
 
+function safeUrl(raw) {  // only http(s) links from plan/LLM data: no javascript:, data:, etc.
+  try { const u = new URL(raw, location.href); return u.protocol === "https:" || u.protocol === "http:" ? u.href : ""; }
+  catch { return ""; }
+}
+
 function currentSourceUrl(rawUrl) {
   try {
     const url = new URL(rawUrl);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return "#";
     if (url.hostname !== "esco.ec.europa.eu") return rawUrl;
     const conceptPages = new Set([
       "/en/classification/skill",
@@ -701,7 +707,7 @@ function currentSourceUrl(rawUrl) {
     if (uri) url.searchParams.set("uri", uri);
     return url.href;
   } catch {
-    return rawUrl;
+    return "#";
   }
 }
 

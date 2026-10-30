@@ -63,7 +63,8 @@ def main() -> None:
     # stateless: no MCP session pinned to this process, so a balancer can send each request to any worker
     app = RequireToken(mcp.http_app(path="/mcp", stateless_http=True), token)
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT") or s.mcp_port),
-                proxy_headers=True, forwarded_allow_ips="*")
+                # trust X-Forwarded-* only from the local/private proxy hop, never "*" (that lets any client pick its IP)
+                proxy_headers=True, forwarded_allow_ips=os.environ.get("FORWARDED_ALLOW_IPS", "127.0.0.1"))
 
 
 if __name__ == "__main__":

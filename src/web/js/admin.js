@@ -138,6 +138,21 @@ async function setStatus(username, status, after) {
   after();
 }
 
+// Lock / unlock any account (every role). The server decides who may (admins only, not yourself, not the last admin)
+// and the list is reloaded from the server afterwards, so it always shows the lock the sign-in check sees.
+async function setLock(u, lock, after) {
+  try {
+    const r = await api(`/api/admin/users/${encodeURIComponent(u.username)}/${lock ? "lock" : "unlock"}`, { method: "POST" });
+    toast(lock ? `${u.username} is locked and signed out` : r.was && r.was.locked ? `${u.username} is unlocked` : `${u.username} was not locked; failed sign-ins cleared`);
+  } catch (e) { toast(e.message, "err"); }
+  after();
+}
+
+const lockTag = (l) => !l || !l.locked ? null
+  : l.kind === "admin"
+    ? h("span", { class: "tag flagged", title: `Locked by ${l.by || "an administrator"}${l.since ? ` on ${fmtTime(l.since)}` : ""}. Stays locked until an administrator unlocks it.` }, "locked by admin")
+    : h("span", { class: "tag draft", title: `${l.failed} failed sign-ins. Unlocks by itself at ${fmtTime(l.until)}, or unlock it now.` }, `auto-locked until ${fmtTime(l.until)}`);
+
 // ---------------------------------------------------------------- overview: numbers + HR accounts to approve
 async function overview(main) {
   const [s, pending] = await Promise.all([api("/api/admin/summary"), api("/api/admin/users?status=pending_approval")]);
@@ -160,7 +175,7 @@ async function overview(main) {
 
 const riskTag = (score) => h("span", { class: `tag ${score >= 70 ? "flagged" : score >= 40 ? "draft" : "approved"}`, title: "Highest risk score in the last 30 days" }, String(score ?? 0));
 
-// ---------------------------------------------------------------- accounts: search, approve, enable/disable, trust
+// ---------------------------------------------------------------- accounts: search, approve, enable/disable, lock/unlock, trust
 async function accounts(main) {
   const q = h("input", { class: "input", type: "search", placeholder: "Search username, email or name", "aria-label": "Search accounts" });
   const st = h("select", { class: "input", "aria-label": "Status" },
@@ -168,19 +183,23 @@ async function accounts(main) {
   const host = h("div");
   const draw = async () => {
     const rows = await api(`/api/admin/users?q=${encodeURIComponent(q.value.trim())}&status=${st.value}`);
-    host.replaceChildren(table(["Account", "Role", "Plan", "Status", "Risk", "Signed up", ""], rows.map((u) => h("tr", {},
+    host.replaceChildren(table(["Account", "Role", "Plan", "Status", "Risk", "Signed up", ""], rows.map((u) => h("tr", { "data-locked": u.lock && u.lock.locked ? u.lock.kind : "" },
       h("td", {}, h("b", {}, u.display_name || u.username), h("div", { class: "muted" }, `${u.username}${u.email ? ` · ${u.email}` : ""}`)),
-      h("td", {}, u.role === "hr_advisor" ? "HR advisor" : "Individual"),
+      h("td", {}, u.role === "admin" ? "Administrator" : u.role === "hr_advisor" ? "HR advisor" : "Individual"),
       h("td", {}, PLAN[u.effective_plan] || u.effective_plan, u.plan_until && ["pro", "team"].includes(u.effective_plan) ? h("div", { class: "muted" }, `until ${new Date(u.plan_until).toLocaleDateString()}`) : null),
-      h("td", {}, h("span", { class: `tag ${u.status === "active" ? "approved" : u.status === "disabled" ? "flagged" : "draft"}` }, STATUS[u.status] || u.status)),
+      h("td", {}, h("span", { class: `tag ${u.status === "active" ? "approved" : u.status === "disabled" ? "flagged" : "draft"}` }, STATUS[u.status] || u.status), lockTag(u.lock)),
       h("td", {}, riskTag(u.risk), u.trusted ? h("span", { class: "tag approved", title: "Trusted: always allowed by the risk checks" }, "trusted") : null),
       h("td", {}, fmtTime(u.created_utc)),
       h("td", { class: "row-actions" },
+        u.lock && u.lock.locked
+          ? h("button", { class: "btn sm primary", onclick: () => setLock(u, false, draw) }, "Unlock")
+          : u.username !== S.me.username ? h("button", { class: "btn sm", onclick: () => setLock(u, true, draw) }, "Lock") : null,
+        u.role === "admin" ? null : [  // administrators' status and trust are managed from the command line
         u.status !== "active" ? h("button", { class: "btn sm primary", onclick: () => setStatus(u.username, "active", draw) }, u.status === "disabled" ? "Enable" : "Approve") : null,
         u.status !== "disabled" ? h("button", { class: "btn sm", onclick: () => setStatus(u.username, "disabled", draw) }, "Disable") : null,
         h("button", { class: "btn sm ghost", onclick: async () => {
           await api(`/api/admin/users/${encodeURIComponent(u.username)}/trust`, { method: "POST", body: { trusted: !u.trusted } });
-          toast(u.trusted ? "No longer trusted" : "Marked as trusted"); draw(); } }, u.trusted ? "Untrust" : "Trust"))))));
+          toast(u.trusted ? "No longer trusted" : "Marked as trusted"); draw(); } }, u.trusted ? "Untrust" : "Trust")]))))));
   };
   let t;
   q.addEventListener("input", () => { clearTimeout(t); t = setTimeout(draw, 250); });
