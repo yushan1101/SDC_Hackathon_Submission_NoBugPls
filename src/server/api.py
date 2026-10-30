@@ -37,7 +37,7 @@ from pydantic import BaseModel, Field, ValidationError
 from agents.gap_analyst import SCENARIO_NOTES
 from agents.profiler import expand as expand_skill
 from agents import ops
-from agents.pathway import HOURS_PER_LEVEL, expand_learning_nodes
+from agents.pathway import HOURS_PER_LEVEL, backfill_learning_nodes, expand_learning_nodes
 from agents.sdg import goal_meta, role_sdgs
 from agents import catalog, criteria, llm, matcher, quiz, resume
 from agents import tools as agent_tools
@@ -1613,6 +1613,11 @@ def sdgs(request: HttpRequest):
 def _learning_plan_view(plan: dict) -> dict:
     """Show saved weekly lessons as separate actions without rewriting the approved plan."""
     nodes = plan.get("learning_nodes") or []
+    if not nodes and plan.get("activities"):  # saved before the roadmap existed
+        try:
+            return {**plan, "learning_nodes": [node.model_dump() for node in backfill_learning_nodes(plan)]}
+        except (ValidationError, KeyError, ValueError):
+            return plan
     if not nodes or any(node.get("id", "").endswith(("-practice", "-check")) for node in nodes):
         return plan
     try:
@@ -1635,6 +1640,12 @@ def _learning_progress_rows(plan: dict, rows) -> list:
                     if child["id"].startswith(node["id"] + "-"):
                         done.setdefault(f"node:{child['id']}", done[key])
                 done[marker] = done[key]
+    if not original:  # backfilled steps: carry over the old per-activity ticks once (the marker lets the step be unticked later)
+        for node in expanded:
+            keys, marker = node.get("activity_keys") or [], f"backfilled:{node['id']}"
+            if keys and marker not in done and all(k in done for k in keys):
+                done.setdefault(f"node:{node['id']}", max(done[k] for k in keys))
+                done[marker] = done[f"node:{node['id']}"]
     return list(done.items())
 
 
@@ -1686,7 +1697,7 @@ def plan(pid: str, user: dict = Depends(current_user)):
                                            .fetchone() or [None])[0]} if user["role"] == "hr_advisor" and not read_only else {}
     report = json.loads(saved[0]) if saved else serialise(RESULTS[pid]) if pid in RESULTS else None
     visible_rows = _learning_progress_rows(cur.get("plan") or {}, done_rows)
-    done = [item for item, _ in visible_rows if not item.startswith("expanded:")]
+    done = [item for item, _ in visible_rows if not item.startswith(("expanded:", "backfilled:"))]
     cur = {**cur, "plan": _learning_plan_view(cur.get("plan") or {})}
     return {"plan_id": pid, "audience": audience[0], "subject_id": audience[1], "created_utc": created, **cur, "history": hist, "report": report,
             "progress": done, "progress_summary": _progress_summary(cur.get("plan") or {}, visible_rows, created),

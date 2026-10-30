@@ -113,3 +113,20 @@ def test_fallback_lessons_for_an_uncatalogued_skill_differ_each_week():
     topics = [lesson_for("Electronics principles", week, 0)[0] for week in range(1, 14)]
     assert len(set(topics)) == 13, topics
     assert topics[0] == "Core Ideas of Electronics principles" and "Applying" not in " ".join(topics)
+
+
+def test_old_plans_without_learning_nodes_get_a_roadmap_and_keep_their_ticks():
+    from server.api import _learning_plan_view, _learning_progress_rows
+    plan = {"target_role": "Database designer", "scenario": "assistive", "activities": [
+        {"day_range": d, "skill_id": s, "activity": f"Work on {s}", "estimated_hours": 8.0}
+        for d, s in [("1-30", "Information structure"), ("31-60", "Information structure"), ("61-90", "Systems theory")]]}
+    nodes = _learning_plan_view(plan)["learning_nodes"]
+    assert {n["week_number"] for n in nodes} == set(range(1, 14)) and "learning_nodes" not in plan  # shown, not saved
+    assert not any("level 0" in n["learning_objective"] for n in nodes)  # no invented levels
+    rows = dict(_learning_progress_rows(plan, [("1-30:Information structure", "2026-10-01T00:00:00Z")]))
+    week1 = [n["id"] for n in nodes if n["week_number"] <= 4]
+    assert all(rows.get(f"node:{i}") == "2026-10-01T00:00:00Z" for i in week1)
+    assert not any(k.startswith("node:") and "week-05" in k for k in rows)
+    # unticking a carried-over step sticks: the marker stops it being re-derived
+    rows.pop(f"node:{week1[0]}")
+    assert f"node:{week1[0]}" not in dict(_learning_progress_rows(plan, list(rows.items())))
