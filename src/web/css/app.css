@@ -3435,27 +3435,8 @@ body {
 /* Weekly learning calendar and continuous, selectable 90-day lesson roadmap. */
 .learning-journey { display: grid; gap: 14px; min-width: 0; }
 .learning-journey { --road-accent: #7764df; padding: clamp(12px, 2vw, 20px); border: 1px solid var(--rule); border-radius: 24px; background: var(--surface); }
-.learning-journey-heading h4 { margin: 0; font-size: 22px; font-weight: 650; }
-.learning-journey-heading p { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; }
 .learning-journey > h4, .learning-road-heading h4 { margin: 0; font-size: 16px; }
-.learning-weeks { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 8px; }
-.learning-week { display: grid; gap: 7px; min-width: 0; padding: 12px; text-align: left; color: var(--ink); border: 1px solid var(--rule); border-radius: 14px; background: var(--surface); cursor: pointer; transition: border-color .18s, box-shadow .18s, background .18s; }
-.learning-week:hover, .learning-week.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 15%, transparent); }
-.learning-week.is-current .learning-week-title { color: var(--accent); }
-.learning-week-title { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; }
 .learning-current { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
-.learning-week-date, .learning-week-meta { color: var(--ink-2); font-size: 12px; }
-.learning-week-focus { min-height: 2.8em; font-size: 13px; line-height: 1.4; }
-.learning-week-progress { display: block; height: 5px; overflow: hidden; border-radius: 99px; background: var(--rule); }
-.learning-week-progress i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .2s; }
-.learning-week { justify-items: center; text-align: center; border-radius: 16px; }
-.learning-week:hover, .learning-week.is-selected { border-color: var(--road-accent); box-shadow: inset 0 0 0 1px var(--road-accent); }
-.learning-week.is-selected { background: color-mix(in oklab, var(--road-accent) 10%, var(--surface)); }
-.learning-week-title { font-size: 18px; }
-.learning-week-focus { min-height: 0; }
-.learning-week-skills { color: var(--ink-2); font-size: 11px; }
-.learning-week-selected { padding: 2px 9px; border-radius: 99px; background: color-mix(in oklab, var(--road-accent) 12%, var(--surface)); font-size: 12px; font-weight: 650; }
-.learning-week-progress { width: 100%; }
 .learning-road-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 4px; }
 .learning-road-heading > span { color: var(--ink-2); font-size: 12px; }
 .learning-road-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -3465,8 +3446,11 @@ body {
 .learning-road::before, .learning-road::after { position: absolute; z-index: 0; top: 134px; left: 10px; right: 10px; height: 4px; content: ""; background: var(--rule); }
 .learning-road::after { right: auto; width: calc((100% - 20px) * var(--road-progress-number, 0)); max-width: calc(100% - 20px); background: #70cfa9; }
 .road-week { position: relative; z-index: 1; display: grid; align-content: start; gap: 20px; width: calc(var(--steps) * var(--node-width)); flex: 0 0 auto; transition: background .18s; }
-.road-week-heading { display: grid; place-content: center; gap: 4px; height: 64px; margin: 0 6px; border-radius: 12px; text-align: center; }
-.road-week-heading span { color: var(--ink-2); font-size: 12px; }
+.road-week-heading { display: grid; place-content: center; gap: 4px; height: 64px; margin: 0 6px; border: 0; border-radius: 12px; text-align: center; font: inherit; color: inherit; background: var(--surface); box-shadow: 0 1px 2px color-mix(in oklab, var(--ink) 8%, transparent); cursor: pointer; transition: background .18s; }
+.road-week-heading:hover { background: color-mix(in oklab, var(--road-accent) 8%, var(--surface)); }
+.road-week h5 .learning-current { margin-left: 6px; vertical-align: middle; }
+.learning-road-sub { margin: -8px 0 0; font-size: 14px; }
+.road-week-heading > span { color: var(--ink-2); font-size: 12px; }
 .road-week h5 { margin: 0; text-align: center; color: var(--ink); font-size: 18px; font-weight: 650; }
 .road-week.is-current h5 { color: var(--accent); }
 .road-week.is-selected .road-week-heading { background: color-mix(in oklab, var(--road-accent) 12%, var(--surface)); }
@@ -3631,7 +3615,17 @@ body {
   background: radial-gradient(closest-side, var(--surface) 76%, transparent 78%), conic-gradient(var(--accent) calc(var(--pct) * 1%), var(--sunken) 0); }
 .ps-ring b { font-size: 17px; }
 .ps-text { display: grid; gap: 6px; flex: 1; min-width: 0; font-size: 14px; }
-.ps-text > b { font-size: 16px; }
+.ps-text > b { font-size: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ps-phase { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.pp-segs { display: flex; gap: 6px; margin-top: 2px; }
+.pp-seg { flex: 1; display: grid; gap: 4px; min-width: 0; }
+.pp-seg span { display: flex; flex-wrap: wrap; column-gap: 6px; font-size: 12px; line-height: 1.35; color: var(--ink-2); overflow-wrap: anywhere; }
+.pp-seg small { font-size: inherit; font-weight: 400; color: var(--ink-2); }
+.pp-segs .pp-bar { height: 8px; }
+.pp-segs .pp-bar i { background: linear-gradient(90deg, var(--accent), oklch(.72 .13 255)); }
+.pp-seg.is-now span { color: var(--accent); font-weight: 600; }
+.pp-seg.is-now .pp-bar { box-shadow: 0 0 0 2px var(--accent-soft); }
+.pp-seg.is-done .pp-bar i { background: var(--ok); }
 .ps-stat { display: flex; align-items: center; gap: 12px; padding-left: 20px; border-left: 1px solid var(--rule); }
 .ps-stat div { display: grid; font-size: 14px; }
 .ps-stat b { font-size: 22px; line-height: 1.2; }
@@ -3688,12 +3682,12 @@ body {
 .phase-detail .phase-content { margin: 0; }
 .phase-back { justify-self: start; display: inline-flex; align-items: center; gap: 6px; }
 .phase-back svg { width: 15px; height: 15px; }
+.phase-nav { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
+.phase-tabs-nav { display: flex; flex-wrap: wrap; gap: 6px; }
 @container (max-width: 640px) {
   .phase-toggle { grid-template-columns: 1fr; gap: 10px; }
   .phase-open { justify-self: start; }
 }
-.phase-nav { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
-.phase-tabs-nav { display: flex; flex-wrap: wrap; gap: 6px; }
 .plan-block { scroll-margin-top: 90px; }
 
 /* interview report: summary hero, at-a-glance chips, bar charts. Bands: good >= 70, mid >= 50, low < 50, na = not assessed */
@@ -4014,3 +4008,4 @@ pre { max-width: 100%; overflow-x: auto; }
   .ranking-status.is-loading::before { animation: none; }
   .ranking-chevron { transition: none; }
 }
+
