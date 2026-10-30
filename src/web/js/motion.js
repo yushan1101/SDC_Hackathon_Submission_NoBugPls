@@ -23,7 +23,9 @@ const onView = (el, vars) => {
 // cards and sections that the app does not animate itself (reveal() handles the rest)
 // Score rows are inside a collapsed <details> when inserted. Animating them on
 // scroll can leave the explanation invisible after the disclosure opens.
-const CARDS = ".way, .entry-card, .role-card, .sdg-library > li, .plan-item, .home-today, .radar-row, .board-meta, .sdg-mine, .plan-progress, .compare-wrap";
+// The plan progress card contains the overall day count. Keep it visible even if
+// ScrollTrigger misses its dynamically inserted position in a nested scroller.
+const CARDS = ".way, .entry-card, .role-card, .sdg-library > li, .plan-item, .home-today, .radar-row, .board-meta, .sdg-mine, .compare-wrap";
 
 function hero(el) {
   const tl = gsap.timeline({ defaults: { ease: EASE } });
@@ -67,7 +69,7 @@ function enhance(root) {
   all(".radar .rd-prev, .radar .rd-label").forEach((p) => gsap.from(p, { opacity: 0, duration: 0.6, delay: 0.5 }));
   // Keep trend lines visible immediately. A deferred stroke-dash animation can
   // leave charts blank when ScrollTrigger misses a nested scrolling pane.
-  all(".pp-bar i, .sb-track i, .rl-bar i").forEach((i) => onView(i, { width: 0, duration: 0.9, ease: "power2.out", clearProps: "" }));
+  all(".sb-track i, .rl-bar i").forEach((i) => onView(i, { width: 0, duration: 0.9, ease: "power2.out", clearProps: "" }));
   all(".tc-figure b, .stat b, .fit .num, .bc-figure b").forEach(countUp);
   all(".btn, .chip").forEach((b) => {  // press feedback (scales in place, so it never moves from under the pointer)
     b.addEventListener("pointerdown", () => gsap.to(b, { scale: 0.96, duration: 0.12, overwrite: true }));
