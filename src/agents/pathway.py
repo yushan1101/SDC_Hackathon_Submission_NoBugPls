@@ -182,7 +182,8 @@ def _fallback_node(seed: dict, role: str) -> dict:
         "id", "week_number", "skills", "activity_keys", "estimated_minutes", "resource_ids"}} | {
         "title": f"Understand {topic}", "type": "learn", "skills": [skill],
         "activity_keys": [key for key in seed["activity_keys"] if key.endswith(":" + skill)],
-        "learning_objective": f"{topic}: apply it to {role} work, moving {skill} from assessed level {current} toward target {required}.",
+        "learning_objective": (f"{topic}: apply it to {role} work, moving {skill} from assessed level {current} toward target {required}."
+                               if levels else f"{topic}: apply it to {role} work and build your {skill} skills."),
         "topics": [topic],
         "learn": [explanation, f"Worked example: {example}", f"For your target role ({role}): {challenge}"],
         "instructions": [f"Read the explanation of {topic} and identify the rule used in the worked example.",
@@ -192,6 +193,17 @@ def _fallback_node(seed: dict, role: str) -> dict:
         "quiz": {"question": question, "options": options, "answer_index": 0, "explanation": explanation},
         "completion_criteria": [f"Save this deliverable: {deliverable}", f"Explain how your result uses {topic}."],
         "expected_outcome": f"A reviewed example of {topic} applied to {role} work. Completion records learning activity, not a new proficiency score."}
+
+
+def backfill_learning_nodes(plan: dict) -> list[LearningNode]:
+    """Weekly steps for a plan saved before learning nodes existed, built from its activities with the guided
+    fallback (no model call), so old plans open on the same roadmap as new ones. Shown only, never saved."""
+    p = Pathway.model_validate({**plan, "learning_nodes": []})
+    gaps = [Gap(skill_id=s, current_level=0, required_level=1, gap=1) for s in dict.fromkeys(a.skill_id for a in p.activities)]
+    seeds = _node_seeds(p, gaps, p.target_role, None, None)
+    for seed in seeds:
+        seed["levels"] = {}  # ponytail: old plans don't carry assessed levels, so the text doesn't claim any
+    return expand_learning_nodes([LearningNode(**_fallback_node(seed, p.target_role)) for seed in seeds], p.target_role)
 
 
 def expand_learning_nodes(nodes: list[LearningNode], role: str | None = None) -> list[LearningNode]:
