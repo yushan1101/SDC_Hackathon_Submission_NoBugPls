@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     tts_style: str = "a cute, bright, high-pitched anime girl voice, cheerful and friendly"  # empty: plain reading
     stt_model: str = "openai:mimo-v2.6-flash"  # an audio chat model on the gateway; whisper-style ids use /audio/transcriptions
     llm_resume: bool = False  # opt-in: send the REDACTED resume to the LLM to propose extra skills (quotes verified)
-    # when a text model fails (provider 503/429, timeout), the same request once more on this model (fast, JSON-capable)
-    llm_fallback_model: str = "openai:deepseek-v4.1-flash"
+    # backups when a text model fails or (for waits like the interview) is slow: all asked at once, first answer wins
+    llm_fallback_model: str = "openai:qwen3.8-flash,openai:grok-4.7-build-fast,openai:deepseek-v4.1-flash"
     # result cache (résumé analyses by file hash): redis://host:6379/0, shared by every app node; empty = this process only
     redis_url: str = ""
     llm_usd_per_1m_input: float = 0.0   # set from the provider's current price sheet; 0 = cost not estimated

@@ -172,31 +172,52 @@ def _budget_pool():
     global _pool
     if _pool is None:
         from concurrent.futures import ThreadPoolExecutor
-        _pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="llm-budget")
+        _pool = ThreadPoolExecutor(max_workers=32, thread_name_prefix="llm-budget")  # raced calls run a request inside another worker
     return _pool
 
 
 def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None = None, json: bool = False,
-             agent: str = "router", timeout: float | None = None, reasoning: bool | None = None):
+             agent: str = "router", timeout: float | None = None, reasoning: bool | None = None,
+             hedge_s: float | None = None):
     """-> (text | None, usage dict). None means disabled or failed; callers must fall back. timeout: a hard limit in
     seconds for a caller someone is waiting on (no retry); past it the call fails and the caller's fallback is used.
-    reasoning=False asks a thinking model to (mostly) skip its thinking; None leaves the model's default."""
+    reasoning=False asks a thinking model to (mostly) skip its thinking; None leaves the model's default.
+    If the model fails (or, with hedge_s, has not answered after that many seconds), the backups in
+    LLM_FALLBACK_MODEL get the same request all at once and the first usable answer wins, inside the time budget:
+    providers are often overloaded one at a time (Gemini 503s, a slow gateway model), rarely all together."""
+    from concurrent.futures import FIRST_COMPLETED, wait
     from config.settings import get_settings
-    from core.usage import record
     s = get_settings()
     spec = model or model_for(agent)
     if not spec:
         return None, None
     started = time.perf_counter()
-    text, usage = _generate_with(spec, prompt, system, max_tokens, json, timeout, reasoning)
-    # the provider is down or overloaded (e.g. Gemini 503): the same request once more on LLM_FALLBACK_MODEL,
-    # inside whatever is left of the caller's time budget
-    fallback = s.llm_fallback_model
-    left = None if timeout is None else timeout - (time.perf_counter() - started)
-    if text is None and fallback and fallback != spec and usable(fallback) and (left is None or left >= 3):
-        log.info("LLM fallback: %s -> %s", spec, fallback)
-        text, usage = _generate_with(fallback, prompt, system, max_tokens, json, left, False if reasoning is None else reasoning)
-    return text, usage
+    left = lambda: None if timeout is None else max(0.0, timeout - (time.perf_counter() - started))
+    backups = [x for x in dict.fromkeys(b.strip() for b in s.llm_fallback_model.split(",")) if x and x != spec and usable(x)]
+    run = lambda spec_, r: _budget_pool().submit(contextvars.copy_context().run, _generate_with, spec_, prompt, system, max_tokens,
+                                                  json, left(), r)
+    first = run(spec, reasoning)
+    done, _ = wait([first], timeout=hedge_s if hedge_s is not None else left())
+    if first in done:
+        text, usage = first.result()
+        if text is not None or not backups or (left() is not None and left() < 3):
+            return text, usage
+        racing = []
+    else:
+        racing = [first]  # still thinking: it keeps going and races the backups
+    log.info("LLM backups: %s -> %s", spec, ", ".join(backups))
+    racing += [run(b, False if reasoning is None else reasoning) for b in backups]
+    usage = None
+    while racing:
+        done, pending = wait(racing, timeout=left(), return_when=FIRST_COMPLETED)
+        if not done:  # out of time
+            return None, usage
+        for f in done:
+            text, usage = f.result()
+            if text is not None:
+                return text, usage
+        racing = list(pending)
+    return None, usage
 
 
 def _generate_with(spec, prompt, system, max_tokens, json, timeout, reasoning):

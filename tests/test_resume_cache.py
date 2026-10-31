@@ -128,3 +128,22 @@ def test_transcription_is_english_and_a_filler_only_result_counts_as_nothing(mon
     for heard, kept in [("嗯", ""), ("嗯。", ""), ("Um...", ""), ("Um, I led a team.", "Um, I led a team.")]:
         monkeypatch.setattr(llm, "_transcribe_with", lambda *a, heard=heard: (heard, {}))
         assert llm.transcribe(b"x", "audio/wav", "en-US")[0] == kept
+
+
+def test_a_slow_or_failing_model_is_raced_by_the_backups_and_the_first_answer_wins(monkeypatch):
+    import time
+    from agents import llm
+    from config.settings import get_settings
+    monkeypatch.setattr(get_settings(), "llm_fallback_model", "openai:qwen,openai:grok-fast", raising=False)
+    monkeypatch.setattr(llm, "usable", lambda spec: True)
+
+    def fake(spec, *a):
+        if spec == "gemini:flash-lite":
+            time.sleep(3); return "late", {"model": spec}  # overloaded: answers, but too slowly
+        if spec == "openai:qwen":
+            return None, {"error": "ReadTimeout"}  # a backup that fails does not stop the others
+        time.sleep(0.2); return "{}", {"model": spec}
+    monkeypatch.setattr(llm, "_generate_with", fake)
+    t = time.perf_counter()
+    text, usage = llm.generate("p", "s", model="gemini:flash-lite", timeout=10, hedge_s=0.5)
+    assert text == "{}" and usage["model"] == "openai:grok-fast" and time.perf_counter() - t < 2

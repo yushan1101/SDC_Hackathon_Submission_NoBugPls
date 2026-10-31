@@ -792,7 +792,14 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     // like a person across the desk: a short "mm-hm" the moment you finish, while her real reply is being written
     if (conversation && micGranted && !paused) speak(ACKS[Math.floor(Math.random() * ACKS.length)]);
     try {
-      const result = await api(`/api/interviews/${sessionId}/answer`, { method: "POST", body: { question_id: current.question_id, answer } });
+      const send = () => api(`/api/interviews/${sessionId}/answer`, { method: "POST", body: { question_id: current.question_id, answer } });
+      let result;
+      try { result = await send(); }
+      catch (err) {  // the AI was busy (503/502/504): one more go before asking you to do anything
+        if (!(err instanceof ApiError) || ![502, 503, 504].includes(err.status)) throw err;
+        setMicState("processing", "One moment…");
+        result = await send();
+      }
       transcript.value = "";
       recordedText = ""; resetDuration();
       if (result.reply) {
