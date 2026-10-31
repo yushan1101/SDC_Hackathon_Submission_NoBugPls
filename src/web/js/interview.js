@@ -558,7 +558,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     try {
       const selectedDevice = deviceSelect.value;
       // the microphone that listened while she spoke carries straight on (no restart, no lost first words)
-      const capture = takeMonitor() || navigator.mediaDevices.getUserMedia({ audio: micConstraints() });
+      const micRequest = takeMonitor() || navigator.mediaDevices.getUserMedia({ audio: micConstraints() });
       // Start STT synchronously from the user's click, before waiting for the
       // permission prompt. Some browsers drop user activation after an await.
       if (recognizer) {
@@ -570,7 +570,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
             : "The browser could not start speech recognition. Retry or type your answer.";
         }
       }
-      micStream = await capture;
+      micStream = await micRequest;
       const track = micStream.getAudioTracks().find((candidate) => candidate.readyState === "live");
       if (!track || !track.enabled) throw new Error("The selected microphone track is not active.");
       await refreshMicrophones(track.getSettings?.().deviceId || "");

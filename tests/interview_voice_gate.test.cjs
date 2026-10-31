@@ -40,3 +40,8 @@ test('a turn is sent as one 16 kHz mono 16-bit WAV, whatever rate the microphone
   assert.equal(wav.readUInt16LE(22), 1);  // mono
   assert.equal(wav.length, 44 + 16000 * 2);  // one second of 16-bit samples
 });
+
+test('the recorded turn has one variable: no local "capture" shadows it (that threw "Assignment to constant variable")', () => {
+  const declarations = source.match(/\b(?:const|let|var)\s+capture\b/g) || [];
+  assert.deepEqual(declarations, ['let capture']);
+});
