@@ -140,7 +140,7 @@ export function speak(text, { onStart } = {}) {
   current?.stop();
   let stopped = false, paused = false, source = null, analyser = null, samples = null, spectrum = null, utter = null, started = false;
   let resumeWait = null;
-  const begin = () => { if (!started) { started = true; onStart?.(); } };
+  const begin = () => { if (!started && !stopped && current === handle) { started = true; onStart?.(); } };
   const playBuffer = (buffer) => new Promise((resolve) => {
     const c = audioCtx();
     source = c.createBufferSource(); source.buffer = buffer;
@@ -152,11 +152,15 @@ export function speak(text, { onStart } = {}) {
   });
   const browserSay = (s) => new Promise((resolve) => {
     if (!("speechSynthesis" in window)) { resolve(); return; }
-    utter = new SpeechSynthesisUtterance(s); utter.lang = lang(); utter.voice = femaleVoice(); utter.pitch = 1.1;
-    utter.onstart = begin; utter.onend = utter.onerror = () => resolve();
-    speechSynthesis.speak(utter);
+    try {
+      utter = new SpeechSynthesisUtterance(s); utter.lang = lang(); utter.voice = femaleVoice(); utter.pitch = 1.1;
+      utter.onstart = begin; utter.onend = utter.onerror = () => resolve();
+      speechSynthesis.speak(utter);
+    } catch { resolve(); }  // no browser voice either: she stays silent, the interview carries on
   });
-  const done = (async () => {
+  let finish;  // stop() settles `done` at once: a cancelled clip or browser voice does not always report its end
+  const halted = new Promise((r) => { finish = r; });
+  const done = Promise.race([halted, (async () => {
     const parts = sentences(text);
     const jobs = serverVoice ? parts.map(fetchClip) : [];
     for (let i = 0; i < parts.length && !stopped; i++) {
@@ -174,19 +178,21 @@ export function speak(text, { onStart } = {}) {
       if (buffer) await playBuffer(buffer);
       else await browserSay(parts[i]);
     }
-  })().finally(() => { if (current === handle) current = null; });
+  })()]).finally(() => { if (current === handle) current = null; });
   const handle = {
     done,
     stop() {
+      if (stopped) return;
       stopped = true;
       try { source?.stop(); } catch { /* already ended */ }
-      if (utter) speechSynthesis.cancel();
+      if (utter) { utter.onstart = utter.onend = utter.onerror = null; if (current === handle) speechSynthesis.cancel(); }
       resumeWait?.();
+      finish();
     },
     pause() { paused = true; ctx?.suspend().catch(() => {}); if (utter) speechSynthesis.pause(); },
     resume() { paused = false; ctx?.resume().catch(() => {}); if (utter) speechSynthesis.resume(); resumeWait?.(); },
     level() {
-      if (stopped || paused) return 0;
+      if (stopped || paused || current !== handle) return 0;
       if (source && analyser) {
         analyser.getByteTimeDomainData(samples);
         let sum = 0; for (const s of samples) sum += ((s - 128) / 128) ** 2;

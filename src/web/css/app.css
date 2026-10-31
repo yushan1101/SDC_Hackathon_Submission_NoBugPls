@@ -2837,11 +2837,20 @@ body {
 /* the question is a caption: three lines, the rest on tap */
 .interview-takeover .interview-question { cursor: pointer; pointer-events: auto; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .interview-takeover .interview-question-overlay.is-open .interview-question { -webkit-line-clamp: unset; }
+.interview-takeover .interview-question-overlay.is-open .interview-question-copy { pointer-events: auto; }
 .interview-takeover .interview-question-label { margin-bottom: 6px; font-size: 11px; }
 .interview-takeover .interview-question-overlay .chips { display: none; }
 /* the answer area: no panel, just the status line, the live caption or the answer box, and the dock */
 .interview-takeover .interview-answer-form { display: grid; grid-template-columns: 1fr; justify-items: center; gap: 10px;
   width: min(640px, calc(100% - 24px)); padding: 0; border: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.interview-takeover .interview-speech-stop { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  justify-self: center; max-width: 100%; min-height: 42px; padding: 9px 16px; border: 1px solid #b8cdfd;
+  border-radius: 999px; color: #0b1322; background: #e8eefc; font: 700 13px/1.3 var(--font-ui);
+  text-align: center; cursor: pointer; box-shadow: 0 8px 24px -12px #000a; }
+.interview-takeover .interview-speech-stop:hover { background: #fff; }
+.interview-takeover .interview-speech-stop:focus-visible { outline: 2px solid #a9c3ff; outline-offset: 3px; }
+.interview-takeover .interview-speech-stop svg { width: 16px; height: 16px; flex: none; }
+.interview-takeover .interview-speech-stop[hidden] { display: none; }
 .interview-takeover .interview-answer-form[data-view="voice"] .interview-type-sheet { display: none; }
 .interview-takeover .interview-answer-form[data-view="voice"] .interview-type-sheet:has(.interview-answer:not(:placeholder-shown)),
 .interview-takeover .interview-answer-form[data-view="voice"] .interview-type-sheet:focus-within { display: grid; }

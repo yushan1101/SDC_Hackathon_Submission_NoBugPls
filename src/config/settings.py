@@ -29,7 +29,9 @@ class Settings(BaseSettings):
     # text-to-speech: empty keeps read-aloud and Mina on the browser's installed system voice
     # text-to-speech for read-aloud and Mina: Kyutai Pocket TTS in this process (CPU), or "gemini:<model>" / "openai:<model>"
     tts_model: str = "pocket:pocket-tts"
-    pocket_voice: str = "alba"  # Pocket TTS voice: alba (female, casual; default), fantine, eponine, azelma, cosette
+    # Pocket TTS voice for Mina. Measured pitch: female azelma 214 Hz (default), lola 218, jane 205, fantine 200, anna 198;
+    # alba (139 Hz), jean, george, michael... are male
+    pocket_voice: str = "azelma"
     tts_voice: str = "Leda"   # Gemini's youthful voice
     tts_style: str = "a cute, bright, high-pitched anime girl voice, cheerful and friendly"  # empty: plain reading
     stt_model: str = "openai:mimo-v2.6-flash"  # an audio chat model on the gateway; whisper-style ids use /audio/transcriptions

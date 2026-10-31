@@ -198,6 +198,8 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   const answerBtn = h("button", { class: "btn primary", type: "submit", "aria-label": "Confirm and send answer" }, "Send answer");
   const startBtn = h("button", { class: "btn primary", type: "button", "aria-label": "Start answer recording" }, "Start");
   const stopBtn = h("button", { class: "btn", type: "button", disabled: true, "aria-label": "Stop recording" }, "Stop");
+  const stopSpeechBtn = h("button", { class: "interview-speech-stop", type: "button", hidden: true,
+    onclick: () => stopInterviewerSpeech() }, icon("stop"), "Stop AI Voice & Start Answering");
   const retryBtn = h("button", { class: "btn sm", type: "button", disabled: true, "aria-label": "Retry recording" }, "Retry");
   const muteBtn = h("button", { class: "btn sm", type: "button", disabled: true, "aria-label": "Mute microphone" }, "Mute");
   const duration = h("span", { class: "interview-recording-time num", "aria-label": "Recording duration" }, "00:00");
@@ -306,6 +308,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   let elapsedMs = 0, timerStartedAt = null, durationTimer = null;
   let deviceEnumeration = 0;
   let interviewerSpeaking = false, currentUtterance = null, paused = false;
+  let speechGeneration = 0, speechFrame = 0;
   let microphoneLevel = 0, speechCue = null, speechLevel = 0, speechBands = null, lastAvatarSignalAt = 0;
   let officeDisposer = null;
   // The interviewer speaks (and the microphone opens) only once Mina is fully in the room, so there is no voice from an
@@ -333,6 +336,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     if (present) updateAvatarPresentation();
   };
   const updateControls = () => {
+    stopSpeechBtn.hidden = !interviewerSpeaking || paused || discarded;
     startBtn.disabled = recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking || !officeReady;
     stopBtn.disabled = !recording || Boolean(finishPromise);
     retryBtn.disabled = !recordingAttempted || recording || starting || Boolean(finishPromise) || paused || interviewerSpeaking;
@@ -652,35 +656,61 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     monitor.frame = requestAnimationFrame(tick);
   };
   let interrupted = false;
+  const revealQuestion = () => {
+    questionOverlay.classList.remove("is-collapsed");
+    questionOverlay.classList.add("is-open");
+    questionToggle.setAttribute("aria-expanded", "true");
+    questionToggle.setAttribute("aria-label", "Hide interview question");
+    questionToggle.textContent = "−";
+  };
   const playQuestion = async (text = qText.textContent) => {
     if (!text) return;
+    revealQuestion();
+    const generation = ++speechGeneration;
     interviewerSpeaking = true; voicePlaying = false; interrupted = false; updateControls(); setMicState("processing", "Getting ready to ask…");
     if (recording || micStream) await finishRecording(false, false);
-    let lips = 0;
-    const voice = currentUtterance = speak(text, { onStart: () => {
-      if (currentUtterance !== voice) return;
+    if (generation !== speechGeneration || discarded) return;
+    let voice;
+    voice = currentUtterance = speak(text, { onStart: () => {
+      if (generation !== speechGeneration || currentUtterance !== voice) return;
       speechCue = { word: text, startedAt: performance.now(), secondsPerCharacter: 0.095 };
       interviewerSpeaking = true; voicePlaying = true; updateControls();
       setMicState("processing", conversation && micGranted ? "Interviewer speaking · just talk to interrupt" : "Interviewer speaking");
       void startMonitor(voice);
       const follow = () => {
-        if (currentUtterance !== voice) { speechLevel = 0; return; }
+        if (generation !== speechGeneration || currentUtterance !== voice) return;
         speechLevel = voice.level(); speechBands = voice.bands(); updateAvatarPresentation();
-        lips = requestAnimationFrame(follow);
+        speechFrame = requestAnimationFrame(follow);
       };
       follow();
     } });
     await voice.done;
-    cancelAnimationFrame(lips);
-    if (currentUtterance !== voice) return;
-    currentUtterance = null; interviewerSpeaking = false; voicePlaying = false; speechCue = null; speechLevel = 0; updateControls();
+    if (generation !== speechGeneration || currentUtterance !== voice) return;
+    haltInterviewerSpeech();
     setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : interrupted ? "Go ahead" : conversation && micGranted ? "Your turn" : "Ready to answer · microphone off");
     listenAgain();
   };
+  const haltInterviewerSpeech = () => {
+    ++speechGeneration;
+    const voice = currentUtterance;
+    currentUtterance = null;
+    voice?.stop();
+    cancelAnimationFrame(speechFrame); speechFrame = 0;
+    interviewerSpeaking = false; voicePlaying = false; speechCue = null; speechLevel = 0; speechBands = null;
+    updateControls(); updateAvatarPresentation();
+  };
+  function stopInterviewerSpeech() {
+    if (!interviewerSpeaking || discarded) return;
+    haltInterviewerSpeech();
+    revealQuestion();
+    setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : "Your Turn — You Can Answer Now");
+    if (!paused) (view === "type" ? transcript : startBtn).focus({ preventScroll: true });
+    if (conversation && micGranted && !paused) listenAgain(); else stopMonitor();  // talking mode: the microphone opens at once
+  }
   const dispose = () => {
     discarded = true; recording = false; muted = false; pauseDuration();
     try { recognizer?.abort(); } catch { /* already stopped */ }
-    recognitionActive = false; recognitionRequested = false; releaseAudio(); stopMonitor(); currentUtterance?.stop(); currentUtterance = null;
+    recognitionActive = false; recognitionRequested = false; releaseAudio(); stopMonitor(); haltInterviewerSpeech();
     officeDisposer?.(); officeDisposer = null;
     if (!alreadyInInterviewRoom) document.body.classList.remove("interview-takeover-active");
     document.body.style.overflow = previousBodyOverflow;
@@ -697,6 +727,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   };
   const counter = h("span", { class: "interview-counter", role: "status", "aria-live": "polite" }, questionLabel(current));
   const setQuestion = (q, src) => {
+    haltInterviewerSpeech();
     current = q; source = src || source;
     counter.textContent = questionLabel(q);
     qText.textContent = q.text || q.question_text || "";
@@ -709,7 +740,11 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     progress.setAttribute("aria-valuenow", String(step));
     progress.querySelector("i").style.width = `${Math.min(100, step / total * 100)}%`;
     setMicState("off", "Microphone off");
-    if (qText.textContent) { void preloadSpeech(qText.textContent); void officeArrived.then(playQuestion); }
+    if (qText.textContent) {
+      const queuedGeneration = speechGeneration;
+      void preloadSpeech(qText.textContent);
+      void officeArrived.then(() => { if (queuedGeneration === speechGeneration && !discarded) return playQuestion(qText.textContent); });
+    }
   };
   const form = h("form", { class: "interview-answer-form", onsubmit: async (e) => {
     e.preventDefault();
@@ -722,7 +757,10 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       transcript.value = "";
       recordedText = ""; resetDuration();
       if (result.reply) {
-        minaLine.textContent = result.reply; minaLine.hidden = false;
+        // A clarification keeps the same question ID, but it is the only prompt the candidate should see now.
+        // Showing it in minaLine as well as the old question looked like two active questions.
+        minaLine.textContent = ""; minaLine.hidden = true;
+        qText.textContent = result.reply;
         answerBtn.disabled = false; pause.disabled = false; updateControls();
         await playQuestion(result.reply);
         return;
@@ -736,6 +774,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     } catch (e) { setMicState("captured", "Answer captured · review or edit before sending"); toast(e.message, "err"); }
     answerBtn.disabled = false; pause.disabled = false; updateControls();
   } }, h("label", { class: "field interview-type-sheet" }, h("span", { class: "sr-only" }, "Your answer"), transcript),
+    stopSpeechBtn,
     minaLine, livePreview, voicePanel);
   const repeat = dockIcon(h("button", { type: "button", onclick: () => { void playQuestion(); } }), "volume", "Replay question");
   const talkBtn = h("button", { type: "button", "aria-pressed": String(conversation), onclick: () => {
@@ -775,7 +814,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       if (pendingTranscript && !transcript.value.toLocaleLowerCase().includes(pendingTranscript.toLocaleLowerCase())) {
         transcript.value = [transcript.value.trim(), pendingTranscript].filter(Boolean).join(" ").slice(0, 4000);
       }
-      currentUtterance?.stop(); currentUtterance = null; interviewerSpeaking = false; voicePlaying = false; speechCue = null;
+      haltInterviewerSpeech();
       await api(`/api/interviews/${sessionId}/pause`, { method: "POST", body: { draft_answer: transcript.value.slice(0, 4000) } });
       const destination = detail.assessment_source === "questionnaire" ? "#/quiz" : "#/resume";
       dispose(); location.hash = destination;
