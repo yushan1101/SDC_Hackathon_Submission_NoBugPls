@@ -50,7 +50,7 @@ function setup(reduced = false) {
     api: async url => { requests.push(url); return { description: 'Role description', skills: [{ name: 'Judge results' }], url: 'https://esco.ec.europa.eu' }; },
   });
   vm.runInContext(read('ranking-state.js').replace(/export /g, ''), context);
-  vm.runInContext(read('role-ranking.js').replace(/^import .*\n/gm, '').replace(/export /g, ''), context);
+  vm.runInContext(read('role-ranking.js').replace(/^import .*\r?\n/gm, '').replace(/export /g, ''), context);
   const blocks = read('blocks.js');
   vm.runInContext(blocks.slice(blocks.indexOf('const pct = (x)'), blocks.indexOf('export function sdgBlock(')).replace(/export /g, ''), context);
   const render = matches => context.matchesBlock(matches, { scenario: 'assistive',
