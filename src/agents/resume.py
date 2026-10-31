@@ -195,13 +195,32 @@ LLM_SYSTEM = ("You extract job skills from a resume for a skills-matching tool. 
               "ethnicity, religion, health or any other protected characteristic.")
 
 
+# Someone waits on the résumé page, so the whole analysis has to finish in about 20 s: the two model calls get hard
+# limits (no retry) and past them the rule-based skills and advice stand. Typical with the fast model: ~8 s + ~2 s.
+EXTRACT_BUDGET_S, ADVICE_BUDGET_S = 12.0, 6.0
+
+
+def model() -> str:
+    """The model résumé analysis uses: an organisation's own choice for "resume" first, else the fast model (a reasoning
+    model such as RESUME_MODEL=grok takes 20-60 s per call, far over the budget), else whatever RESUME_MODEL resolves to."""
+    from agents import llm
+    from config.settings import get_settings
+    s = get_settings()
+    chosen = (llm.ORG_MODELS.get() or {}).get("resume")
+    if chosen and llm.usable(chosen):
+        return chosen
+    fast = f"gemini:{s.llm_fast_model}" if s.llm_fast_model and llm.providers()["gemini"] else ""
+    return fast or llm.model_for("resume")
+
+
 def _llm_skills(md: str, found: dict, names: list, V) -> tuple[str, dict | None]:
     """LLM proposes (skill, quote); rules decide. -> (extraction_mode, measured usage or None). Mutates `found`."""
     from config.settings import get_settings
     if not get_settings().llm_resume:
         return "rules", None
     from agents import llm
-    text, usage = llm.generate(f"<RESUME>\n{redact(md)[:12000]}\n</RESUME>", LLM_SYSTEM, max_tokens=1500, json=True, agent="resume")
+    text, usage = llm.generate(f"<RESUME>\n{redact(md)[:12000]}\n</RESUME>", LLM_SYSTEM, max_tokens=1500, json=True,
+                               model=model(), timeout=EXTRACT_BUDGET_S)
     try:
         items = [i for i in json.loads(text or "")["skills"][:25] if isinstance(i, dict)]
     except (ValueError, KeyError, TypeError):
@@ -317,7 +336,7 @@ def advise(md: str, skills: list[dict], matches: list[dict], years: int | None) 
             "scenario": matches[0].get("scenario", "assistive") if matches else "assistive",
             "matches": [{"title": m["title"], "fit": round(m["fit"], 2), "gaps": m.get("top_gaps", [])[:4]} for m in matches[:6]]}
     text, usage = llm.generate(f"<RESUME>\n{redact(md)[:12000]}\n</RESUME>\n<DATA>\n{json.dumps(data)}\n</DATA>", ADVICE_SYSTEM,
-                               max_tokens=900, json=True, agent="resume")
+                               max_tokens=900, json=True, model=model(), timeout=ADVICE_BUDGET_S)
     try:
         out = json.loads(text or "")
     except ValueError:

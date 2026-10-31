@@ -3991,7 +3991,7 @@ def readiness():
              "mode": "live_cpu_inference" if all(p.exists() for p in (ck, hist, man)) else "precomputed_asset"}
     from agents.llm import model_for
     llm = {"enabled": cfg.llm_enabled, "resume": cfg.llm_resume,
-           "agents": {a: model_for(a) or None for a in ("router", "coach", "resume")}}  # model names only, never keys
+           "agents": {a: model_for(a) or None for a in ("router", "coach")} | {"resume": resume.model() or None}}  # model names only, never keys
     mcp = mcp_status()
     return {"ok": dbs["ok"] and mcp["ok"], "db": dbs, "mcp": mcp, "model": model, "llm": llm}
 
@@ -4009,6 +4009,9 @@ def _warm():
             role_requirements(soc)
         from agents.matcher import _occ_index, occupation_vectors
         occupation_vectors(), _occ_index()
+        from agents.skillmap import encode, vocabulary
+        vocabulary(), encode(["warm-up"]), resume._tool_labels()  # the résumé matcher: ~25 s cold, else on the first upload
+        log.info("résumé matcher ready")
         from mcp_server.retrieval import ensure_index, warm
         warm()
         log.info("vector index ready: %s passages", ensure_index())  # one-time build on a fresh volume

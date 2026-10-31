@@ -81,20 +81,21 @@ def api_base(url: str) -> str:
     return url + "/v1" if urlparse(url).path in ("", "/") else url
 
 
-def _openai(model: str, prompt: str, system: str, max_tokens: int, json: bool, s):
+def _openai(model: str, prompt: str, system: str, max_tokens: int, json: bool, s, timeout: float | None = None):
     import httpx
     body = {"model": model, "temperature": 0.2, "max_tokens": max_tokens,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
     if json:
         body["response_format"] = {"type": "json_object"}
-    for attempt in (1, 2):  # one retry, only for transient failures (timeout / gateway 5xx)
+    attempts = (1,) if timeout else (1, 2)  # a caller with a time budget gets no retry: it falls back instead
+    for attempt in attempts:  # one retry, only for transient failures (timeout / gateway 5xx)
         try:
-            r = httpx.post(api_base(s.llm_base_url) + "/chat/completions", json=body, timeout=s.llm_timeout_s,
+            r = httpx.post(api_base(s.llm_base_url) + "/chat/completions", json=body, timeout=timeout or s.llm_timeout_s,
                            headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"})
-            if r.status_code < 500 or attempt == 2:
+            if r.status_code < 500 or attempt == attempts[-1]:
                 break
         except httpx.TimeoutException:
-            if attempt == 2:
+            if attempt == attempts[-1]:
                 raise
         time.sleep(1.5)
     r.raise_for_status()
@@ -103,7 +104,7 @@ def _openai(model: str, prompt: str, system: str, max_tokens: int, json: bool, s
     return d["choices"][0]["message"]["content"], u.get("prompt_tokens", 0), u.get("completion_tokens", 0)
 
 
-def _gemini_call(model: str, prompt: str, system: str, max_tokens: int, json: bool, s):
+def _gemini_call(model: str, prompt: str, system: str, max_tokens: int, json: bool, s, timeout: float | None = None):
     global _gemini
     from google import genai
     from google.genai import types
@@ -111,7 +112,9 @@ def _gemini_call(model: str, prompt: str, system: str, max_tokens: int, json: bo
                                       http_options=types.HttpOptions(timeout=int(s.llm_timeout_s * 1000)))  # ms
     r = _gemini.models.generate_content(model=model, contents=prompt, config=types.GenerateContentConfig(
         system_instruction=system, temperature=0.2, max_output_tokens=max_tokens,
-        response_mime_type="application/json" if json else None))
+        response_mime_type="application/json" if json else None,
+        # Gemini refuses deadlines under 10 s; generate() enforces a shorter budget itself by not waiting longer
+        http_options=types.HttpOptions(timeout=int(max(timeout, 10) * 1000)) if timeout else None))
     um = r.usage_metadata
     return r.text, um.prompt_token_count or 0, um.candidates_token_count or 0
 
@@ -132,9 +135,22 @@ def warm():
         log.warning("model client warm-up failed: %s", type(e).__name__)
 
 
+_pool = None
+
+
+def _budget_pool():
+    """Threads for model calls with a time budget, so the caller can stop waiting without killing the request."""
+    global _pool
+    if _pool is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="llm-budget")
+    return _pool
+
+
 def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None = None, json: bool = False,
-             agent: str = "router"):
-    """-> (text | None, usage dict). None means disabled or failed; callers must fall back."""
+             agent: str = "router", timeout: float | None = None):
+    """-> (text | None, usage dict). None means disabled or failed; callers must fall back. timeout: a hard limit in
+    seconds for a caller someone is waiting on (no retry); past it the call fails and the caller's fallback is used."""
     from config.settings import get_settings
     from core.usage import record
     s = get_settings()
@@ -143,8 +159,10 @@ def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None 
         return None, None
     provider, name = spec.split(":", 1) if ":" in spec else ("gemini", spec)
     t = time.perf_counter()
+    call = lambda: (_openai if provider == "openai" else _gemini_call)(name, prompt, system, max_tokens, json, s, timeout)
     try:
-        text, tin, tout = (_openai if provider == "openai" else _gemini_call)(name, prompt, system, max_tokens, json, s)
+        # with a budget, stop waiting when it runs out (the request finishes in the background and is dropped)
+        text, tin, tout = _budget_pool().submit(contextvars.copy_context().run, call).result(timeout) if timeout else call()
         return text, record("llm", 1000 * (time.perf_counter() - t), name, tin, tout, measured=True)
     except Exception as e:
         log.warning("LLM call failed (%s %s): %s", provider, name, type(e).__name__)
