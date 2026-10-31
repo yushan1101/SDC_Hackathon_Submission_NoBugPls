@@ -2846,6 +2846,7 @@ body {
 .interview-takeover .interview-type-sheet { width: 100%; }
 .interview-takeover .interview-type-sheet .interview-answer { min-height: 96px; border-radius: 18px; border-color: #ffffff40; background: #0f1828e0; color: #fff;
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.interview-takeover .interview-type-sheet .interview-answer:focus { color: #fff; -webkit-text-fill-color: #fff; caret-color: #fff; }
 .interview-takeover .interview-type-sheet .interview-answer::placeholder { color: #ffffff99; }
 .interview-takeover .interview-live-preview { width: 100%; margin: 0; padding: 8px 14px; border: 0; border-radius: 14px; color: #fff; background: #0f1828c0; font-size: 15px; text-align: center; }
 .interview-takeover .interview-voice-panel { display: inline-flex; align-items: center; gap: 10px; padding: 6px 14px 6px 8px; border: 0; border-radius: 999px;
