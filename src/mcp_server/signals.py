@@ -382,10 +382,29 @@ def refresh(today: date | None = None, con=None, sources=("hn", "arxiv", "jobs")
     today = today or datetime.now(timezone.utc).date()
     con = con or db()
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    hn = fetch_hn(today) if "hn" in sources else {}
-    arxiv = fetch_arxiv(today) if "arxiv" in sources else {}
-    jobs, job_sources = fetch_jobs() if "jobs" in sources else ([], [])
-    stories = fetch_hn_stories(today) if "hn" in sources else []
+    from concurrent.futures import ThreadPoolExecutor
+
+    def timed(name, fn, *a):
+        t = time.perf_counter()
+        out = fn(*a)
+        log.info("signals: %s took %.0f s", name, time.perf_counter() - t)
+        return out
+    def warm():  # load MiniLM exposure + the STF-KAN checkpoint while arXiv's 3 s spacing keeps us waiting anyway
+        _exposure()
+        try:
+            from forecasting.serving import outlook_for
+            outlook_for({})
+        except Exception as e:
+            log.info("STF-KAN warm-up skipped (%s)", e)
+    with ThreadPoolExecutor(5) as ex:  # different hosts, so each keeps its own rate limit; total = slowest source
+        ex.submit(timed, "model warm-up", warm)
+        f_hn = ex.submit(timed, "hn", fetch_hn, today) if "hn" in sources else None
+        f_ax = ex.submit(timed, "arxiv", fetch_arxiv, today) if "arxiv" in sources else None
+        f_jobs = ex.submit(timed, "jobs", fetch_jobs) if "jobs" in sources else None
+        f_st = ex.submit(timed, "hn stories", fetch_hn_stories, today) if "hn" in sources else None
+        hn, arxiv = f_hn.result() if f_hn else {}, f_ax.result() if f_ax else {}
+        jobs, job_sources = f_jobs.result() if f_jobs else ([], [])
+        stories = f_st.result() if f_st else []
     day = today.isoformat()
     with con:
         for tid, counts in hn.items():
@@ -400,8 +419,8 @@ def refresh(today: date | None = None, con=None, sources=("hn", "arxiv", "jobs")
         rows = con.execute("SELECT value FROM signal_counts WHERE source='jobs' AND topic=? AND day<? ORDER BY day DESC LIMIT 28",
                            (t["id"], day)).fetchall()
         history[t["id"]] = [r[0] for r in rows]
-    board = build_board(today, hn, arxiv, jobs, job_sources, history)
-    board["analysis"] = analyze(board)
+    board = timed("board model", build_board, today, hn, arxiv, jobs, job_sources, history)
+    board["analysis"] = timed("STF-KAN agents", analyze, board)
     with con:
         for tp in board["topics"]:
             if "jobs" in tp["sources"]:
@@ -413,7 +432,7 @@ def refresh(today: date | None = None, con=None, sources=("hn", "arxiv", "jobs")
         no_wait(con)
     try:  # real-time RAG: today's postings and stories replace yesterday's in the live vector collection
         from mcp_server import retrieval
-        board["live_indexed"] = retrieval.index_live(live_passages(day, stories, jobs))
+        board["live_indexed"] = timed("live index", retrieval.index_live, live_passages(day, stories, jobs))
     except Exception as e:
         log.warning("live index not updated (%s)", type(e).__name__)
     return board
