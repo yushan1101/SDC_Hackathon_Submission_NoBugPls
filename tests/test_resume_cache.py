@@ -118,3 +118,13 @@ def test_an_unreadable_ai_reply_gets_one_more_try_before_the_candidate_sees_an_e
     monkeypatch.setattr(service, "evaluate_and_choose", flaky)
     out = service.prepare_answer({"status": "in_progress"}, {}, "answer", [])
     assert len(calls) == 2 and out["next_question"]["text"] == "Next?"
+
+
+def test_transcription_is_english_and_a_filler_only_result_counts_as_nothing(monkeypatch):
+    from agents import llm
+    assert "English" in llm._stt_prompt("en-US") and "English" in llm._stt_prompt("")
+    monkeypatch.setattr(llm, "stt_model", lambda: "openai:mimo")
+    monkeypatch.setattr(llm, "providers", lambda: {"openai": True, "gemini": False})
+    for heard, kept in [("嗯", ""), ("嗯。", ""), ("Um...", ""), ("Um, I led a team.", "Um, I led a team.")]:
+        monkeypatch.setattr(llm, "_transcribe_with", lambda *a, heard=heard: (heard, {}))
+        assert llm.transcribe(b"x", "audio/wav", "en-US")[0] == kept

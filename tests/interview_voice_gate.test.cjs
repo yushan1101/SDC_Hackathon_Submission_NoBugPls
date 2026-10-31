@@ -27,3 +27,16 @@ test('steady noise louder than the old fixed bar stops counting as speech, so th
   assert.equal(frames(gate, 0.03, 60 * 20), false);  // after ~20 s at 60 fps the fan is just the room
   assert.equal(gate(0.12), true);  // and you talking over it still counts
 });
+
+test('a turn is sent as one 16 kHz mono 16-bit WAV, whatever rate the microphone runs at', async () => {
+  const start = source.indexOf('export function speechWav(');
+  const end = start + source.slice(start).search(/\r?\n\}\r?\n/);
+  const ctx = vm.createContext({ Math, Float32Array, ArrayBuffer, DataView, Blob });
+  vm.runInContext(`${source.slice(start, source.indexOf('}', end + 1) + 1).replace('export ', '')}\nglobalThis.speechWav = speechWav;`, ctx);
+  const second = new Float32Array(48000).map((_, i) => 0.5 * Math.sin(i / 10));  // one second at 48 kHz
+  const wav = Buffer.from(await ctx.speechWav(second, 48000).arrayBuffer());
+  assert.equal(wav.toString('ascii', 0, 4), 'RIFF');
+  assert.equal(wav.readUInt32LE(24), 16000);  // sample rate
+  assert.equal(wav.readUInt16LE(22), 1);  // mono
+  assert.equal(wav.length, 44 + 16000 * 2);  // one second of 16-bit samples
+});

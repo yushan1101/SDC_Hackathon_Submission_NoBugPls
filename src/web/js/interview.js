@@ -1,5 +1,5 @@
 import { api, h, icon, toast, fmtTime, ApiError, upload } from "./lib.js";
-import { audioLocked, preloadSpeech, speak, toWav } from "./voice.js";
+import { audioLocked, preloadSpeech, speak } from "./voice.js";
 import { Owl } from "./owl.js";
 
 const LABELS = {
@@ -189,6 +189,28 @@ export function voiceGate() {
   };
 }
 
+/** Speech samples -> a 16 kHz mono 16-bit WAV (HoloHuman's encodeWav): the speech model resamples to 16 kHz anyway,
+ *  so a 48 kHz file would be three times the upload for nothing. Linear interpolation is fine for speech. */
+export function speechWav(samples, rate) {
+  let out = samples;
+  if (rate > 16000) {
+    const ratio = rate / 16000;
+    out = new Float32Array(Math.floor(samples.length / ratio));
+    for (let i = 0; i < out.length; i++) {
+      const p = i * ratio, j = Math.floor(p), f = p - j;
+      out[i] = samples[j] * (1 - f) + (samples[j + 1] ?? samples[j]) * f;
+    }
+    rate = 16000;
+  }
+  const buf = new ArrayBuffer(44 + out.length * 2), v = new DataView(buf);
+  const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+  w(0, "RIFF"); v.setUint32(4, 36 + out.length * 2, true); w(8, "WAVE"); w(12, "fmt "); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, out.length * 2, true);
+  for (let i = 0, o = 44; i < out.length; i++, o += 2) { const x = Math.max(-1, Math.min(1, out[i])); v.setInt16(o, x < 0 ? x * 0x8000 : x * 0x7fff, true); }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
 function renderRoom(main, detail, initial = null, callbacks = {}) {
   const sessionId = detail.interview_id;
   let current = initial?.question || detail.question;
@@ -258,52 +280,49 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   let micGranted = false, heardSpeech = false, lastVoiceAt = 0;
   const ACKS = ["Mm-hm.", "Okay.", "Right.", "Got it."];
   const SILENCE_MS = 1600;  // this long a silence ends your turn (HoloHuman ends a chat line at 280 ms; answers need thinking room)
-  const PIECE_MS = 700;  // a shorter pause: the piece before it goes to be transcribed while you keep talking
-  let pieceVoice = false, turnStartedAt = 0;
+  let turnStartedAt = 0;
   const isTalking = voiceGate();
   const MAX_TURN_MS = 120000;  // a turn that never falls quiet still ends after two minutes
   const minaLine = h("p", { class: "interview-mina-line", "aria-live": "polite", hidden: true });
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
   // Server ASR (the configured speech model, MiMo) whenever the interview offers it: the answer is recorded here and
   // transcribed when you stop. The browser's own recogniser is only the fallback.
-  const asr = Boolean(detail.asr) && typeof MediaRecorder !== "undefined";
+  const asr = Boolean(detail.asr) && Boolean(window.AudioContext || window.webkitAudioContext);
   const speechAvailable = asr || Boolean(Speech);
   const recognizer = Speech && !asr ? new Speech() : null;
-  // Server ASR in pieces, like HoloHuman's VAD: at each short pause the recorder hands over what it has (a complete
-  // file of its own) and keeps going, and that piece is transcribed in the background while you carry on talking. When
-  // your turn ends only the last piece is still to transcribe, so her reply follows quickly; the pieces heard so far
-  // show as a live caption.
-  let recorder = null, pieces = [];
-  const newRecorder = () => {
-    const r = new MediaRecorder(micStream), mine = r.chunks = [];  // each recorder keeps its own audio
-    r.ondataavailable = (e) => { if (e.data.size) mine.push(e.data); };
-    r.start(1000);
-    return r;
+  // Server ASR the HoloHuman way (AutoAsr): the browser keeps the raw audio of your whole turn itself; the voice
+  // detector marks where you start and stop talking; when your turn ends, the speech (from 0.3 s before your first word
+  // to 0.4 s after your last) goes to the speech model once, as a 16 kHz WAV. A turn with no speech sends nothing, so
+  // the model never gets silence to guess at (that came back as "嗯").
+  let capture = null;
+  const startCapture = () => {
+    const proc = audioContext.createScriptProcessor(4096, 1, 1);
+    const c = { proc, rate: audioContext.sampleRate, chunks: [], length: 0, first: null, last: null };
+    proc.onaudioprocess = (e) => {
+      if (muted || !recording) return;
+      const ch = new Float32Array(e.inputBuffer.getChannelData(0));
+      c.chunks.push(ch); c.length += ch.length;
+    };
+    audioSource.connect(proc); proc.connect(audioContext.destination);  // the processor only runs when connected; it outputs silence
+    return c;
   };
-  const stopRecorder = (r = recorder) => new Promise((resolve) => {
-    if (!r || r.state === "inactive") { resolve(null); return; }
-    const mine = r.chunks || [];
-    r.onstop = () => resolve(new Blob(mine, { type: r.mimeType || "audio/webm" }));
-    r.stop();
-  });
-  const transcribeText = async (blob) => {
-    if (!blob || blob.size < 2000) return "";
+  const markVoice = () => { if (capture) { capture.first ??= capture.length; capture.last = capture.length; } };
+  const stopCapture = () => {  // -> a WAV Blob of the speech in this turn, or null when nothing was said
+    const c = capture; capture = null;
+    if (!c) return null;
+    try { c.proc.disconnect(); audioSource?.disconnect(c.proc); } catch { /* already disconnected */ }
+    if (c.first == null) return null;
+    const all = new Float32Array(c.length);
+    let at = 0; for (const ch of c.chunks) { all.set(ch, at); at += ch.length; }
+    const from = Math.max(0, c.first - Math.round(0.3 * c.rate)), to = Math.min(all.length, c.last + Math.round(0.4 * c.rate) + 4096);
+    return speechWav(all.subarray(from, to), c.rate);
+  };
+  const transcribe = async (wav) => {
+    if (!wav || wav.size < 8000) return;  // under ~0.25 s of speech: a cough, not an answer
     const form = new FormData();
-    form.append("file", await toWav(blob), "answer.wav"); form.append("lang", languageSelect.value);
+    form.append("file", wav, "answer.wav"); form.append("lang", languageSelect.value);
     const { text } = await upload(`/api/interviews/${encodeURIComponent(sessionId)}/transcribe`, form);
-    return (text || "").trim();
-  };
-  const heardSoFar = () => Promise.all(pieces.map((p) => p.catch(() => ""))).then((t) => t.filter(Boolean).join(" "));
-  const showHeard = async () => { const t = await heardSoFar(); if (recording && t) { livePreview.textContent = t; livePreview.hidden = false; } };
-  const cutPiece = () => {  // a pause mid-answer: transcribe what came before it, keep recording on the same microphone
-    if (!recorder || recorder.state !== "recording") return;
-    const old = recorder;
-    recorder = newRecorder();
-    pieces.push(stopRecorder(old).then(transcribeText).then((t) => { void showHeard(); return t; }));
-  };
-  const transcribe = async (blob) => {  // the last piece, then every piece in order -> the answer
-    pieces.push(transcribeText(blob));
-    const piece = await heardSoFar(); pieces = [];
+    const piece = (text || "").trim();
     if (!piece) return;
     recordedText = piece;
     const base = transcript.value.trimEnd(); transcript.value = `${base}${base ? " " : ""}${piece}`.slice(0, 4000);
@@ -417,11 +436,11 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
         // slowly, so a fan or traffic raises the bar instead of keeping your turn open for ever.
         const talking = isTalking(volume);
         const now = performance.now(), quiet = now - lastVoiceAt;
-        if (talking) { heardSpeech = true; pieceVoice = true; lastVoiceAt = now; }
+        if (talking) { heardSpeech = true; lastVoiceAt = now; markVoice(); }
         if (conversation && !finishPromise && ((heardSpeech && !talking && quiet > SILENCE_MS) || now - turnStartedAt > MAX_TURN_MS)) {
-          heardSpeech = false; pieceVoice = false;  // your pause (or two minutes) ends the turn: no button needed
+          heardSpeech = false;  // your pause (or two minutes) ends the turn: no button needed
           void finishRecording(false, false).then(() => { if (!transcript.value.trim()) listenAgain(); });
-        } else if (asr && pieceVoice && !talking && quiet > PIECE_MS) { pieceVoice = false; cutPiece(); }
+        }
         const [state, message] = talking ? ["speaking", "Speaking"]
           : ["listening", speechAvailable ? "Listening" : "Listening · no transcription here; type your answer"];
         if (voicePanel.dataset.state !== state || status.textContent !== message) setMicState(state, message, false);
@@ -506,7 +525,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     finishPromise = (async () => {
       if (announce) setMicState("processing", "Transcribing your answer…");
       if (!fromRecognizer) await stopRecognition();
-      const audio = await stopRecorder(); recorder = null;
+      const audio = stopCapture();
       recording = false; muted = false; pauseDuration();
       releaseAudio(); interimText = ""; livePreview.textContent = ""; livePreview.hidden = true;
       if (audio) {
@@ -571,10 +590,8 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
         analyser = audioContext.createAnalyser(); analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.75;
         audioSource = audioContext.createMediaStreamSource(micStream); audioSource.connect(analyser); watchAudio();
       }
-      if (asr) {
-        pieces = []; recorder = newRecorder();
-      }
-      micGranted = true; heardSpeech = false; pieceVoice = false; lastVoiceAt = turnStartedAt = performance.now();
+      if (asr && audioContext) capture = startCapture();
+      micGranted = true; heardSpeech = false; lastVoiceAt = turnStartedAt = performance.now();
       starting = false; recording = true; muted = false; muteBtn.setAttribute("aria-pressed", "false"); muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration(); updateControls();
       if (asr) setMicState("listening", "Listening");
       else if (recognizer) {

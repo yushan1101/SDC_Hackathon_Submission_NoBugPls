@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../src/web/js/interview.js'), 'utf8');
 const renderer = source.slice(source.indexOf('export function voiceGate('), source.indexOf('function showEvaluation('))
-  .replace('export function voiceGate', 'function voiceGate');
+  .replace(/^export /gm, '');
 
 class Element {
   constructor(tag, attrs = {}, children = []) {

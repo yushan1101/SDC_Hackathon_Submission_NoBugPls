@@ -444,8 +444,21 @@ def transcribe(audio: bytes, mime: str, lang: str = ""):
         text, usage = _transcribe_with(spec, audio, mime, lang)
         _speech_status("stt", spec, "" if text is not None else (usage or {}).get("error", "failed"))
         if text is not None:
-            return text, usage
+            return ("" if _FILLER.match(text) else text), usage
     return None, usage
+
+
+LANGS = {"en": "English", "ms": "Malay", "zh": "Chinese"}
+# what a recogniser writes for a breath, a cough or a hesitation when there are no words: not an answer
+_FILLER = re.compile(r"^[\s\W_]*(?:(?:嗯|啊|哦|呃|唔|额|um+|uh+|hm+|mm+|ah+|er+|eh+)[\s\W_]*)*$", re.I)
+
+
+def _stt_prompt(lang: str) -> str:
+    """Name the language: told only "the language spoken", the audio model guesses, and a short or quiet English answer
+    came back as Chinese filler ("嗯"). English unless the interview's language setting says otherwise."""
+    name = LANGS.get((lang or "en")[:2].lower(), "English")
+    return (f"This is a recording of someone speaking {name} in a job interview. Transcribe exactly what they say, in "
+            f"{name} only. Reply with only the words spoken, no notes. If there are no clear words, reply with nothing.")
 
 
 def _transcribe_with(spec: str, audio: bytes, mime: str, lang: str):
@@ -468,7 +481,7 @@ def _transcribe_with(spec: str, audio: bytes, mime: str, lang: str):
                            json={"model": name, "temperature": 0, "max_tokens": 1200,
                                  **({"thinking": {"type": "disabled"}} if "mimo" in name.lower() else {}),
                                  "messages": [{"role": "user", "content": [
-                               {"type": "text", "text": "Transcribe this audio exactly, in the language spoken. Reply with only the transcript."},
+                               {"type": "text", "text": _stt_prompt(lang)},
                                {"type": "input_audio", "input_audio": {"data": base64.b64encode(audio).decode(), "format": fmt}}]}]})
             r.raise_for_status()
             d = r.json()
@@ -479,7 +492,7 @@ def _transcribe_with(spec: str, audio: bytes, mime: str, lang: str):
             import httpx
             r = httpx.post(api_base(s.llm_base_url) + "/audio/transcriptions", timeout=max(s.llm_timeout_s, 60),
                            headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"},
-                           data={"model": name, **({"language": lang[:2]} if lang else {})},
+                           data={"model": name, "language": (lang or "en")[:2]},
                            files={"file": ("speech." + (mime.split("/")[-1].split(";")[0] or "webm"), audio, mime)})
             r.raise_for_status()
             text, tin, tout = r.json().get("text", ""), 0, 0
@@ -491,7 +504,7 @@ def _transcribe_with(spec: str, audio: bytes, mime: str, lang: str):
                                               http_options=types.HttpOptions(timeout=int(s.llm_timeout_s * 1000)))
             r = _gemini.models.generate_content(model=name, contents=[
                 types.Part.from_bytes(data=audio, mime_type=mime.split(";")[0]),
-                "Transcribe this speech exactly, in the language spoken. Return only the words said, no notes."],
+                _stt_prompt(lang)],
                 config=types.GenerateContentConfig(temperature=0, max_output_tokens=1200))
             um = r.usage_metadata
             text, tin, tout = r.text or "", um.prompt_token_count or 0, um.candidates_token_count or 0
