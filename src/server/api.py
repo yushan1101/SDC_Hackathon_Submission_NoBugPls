@@ -1397,7 +1397,7 @@ def _prepared_question(user: dict, recommendation: dict, difficulty: str, take: 
         if job is None:
             def prepare(role_id, profile):
                 prepared = interview_service.prepare_create(role_id, profile, difficulty)
-                _speech(prepared[2]["text"])  # the interviewer's voice is ready when the room opens
+                _speak_ahead(prepared[2]["text"])  # the interviewer's voice is ready when the room opens
                 return prepared
             job = _PREPARE.submit(_in_context(prepare), recommendation["role_id"], recommendation["profile"])
             _prepared[key] = (at, job)
@@ -1540,9 +1540,9 @@ def interview_answer(interview_id: str, body: InterviewAnswer, user: dict = Depe
             raise HTTPException(409, "This answer was already submitted. Refresh the interview.")
         result = interview_service.persist_answer(db, latest, current, answer_text, prepared)
     if (result.get("question") or {}).get("text"):
-        _speech(result["question"]["text"])
+        _speak_ahead(result["question"]["text"])
     if result.get("reply"):
-        _speech(result["reply"])
+        _speak_ahead(result["reply"])
     if result["status"] == "completed":
         report = result["report"]
         for recommendation in report.get("recommendations", [])[:3]:
@@ -3497,7 +3497,7 @@ SPEECH_KEEP = 200  # recent texts kept in memory
 
 def _speech(text: str):
     text = " ".join(text.split())[:4000]
-    key = hashlib.sha256(f"{cfg.tts_model}|{cfg.tts_voice}|{cfg.tts_style}|{text}".encode()).hexdigest()
+    key = hashlib.sha256(f"{cfg.tts_model}|{cfg.tts_voice}|{cfg.pocket_voice}|{cfg.tts_style}|{text}".encode()).hexdigest()
     with _spoken_lock:
         job = _spoken.pop(key, None)
         if job is None or (job.done() and job.result()[0] is None):  # a failed attempt is retried
@@ -3506,6 +3506,17 @@ def _speech(text: str):
         while len(_spoken) > SPEECH_KEEP:
             _spoken.pop(next(iter(_spoken)))
     return job
+
+
+# The page asks for Mina's speech one sentence at a time (voice.js splits the same way), so a question is prepared
+# sentence by sentence, first sentence first: her first words are ready by the time the page asks for them.
+_SENTENCE = re.compile(r"[^.!?。！？]+[.!?。！？]+[\"')\]]*|[^.!?。！？]+$")
+
+
+def _speak_ahead(text: str) -> None:
+    for sentence in _SENTENCE.findall(" ".join(text.split())[:6000]):
+        if sentence.strip():
+            _speech(sentence.strip())
 
 
 class SpeakIn(BaseModel):

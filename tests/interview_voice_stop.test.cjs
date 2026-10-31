@@ -8,7 +8,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../src/web/js/voice.js'), 'utf8');
 const speaking = source.slice(source.indexOf('let serverVoice = true;'), source.indexOf('/** "Read aloud"'))
-  .replace('export function speak', 'function speak').replace('export function preloadSpeech', 'function preloadSpeech');
+  .replace(/^export /gm, '');
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -24,7 +24,7 @@ function setup({ failServer = false, locked = false } = {}) {
     decodeAudioData(buf) { return Promise.resolve({ length: buf.byteLength }); }
     createAnalyser() { return { fftSize: 0, frequencyBinCount: 8, connect() {}, getByteTimeDomainData() {}, getByteFrequencyData() {} }; }
     createBufferSource() {
-      const s = { connect() {}, started: false, start() { this.started = true; }, stop() { this.onended?.(); } };
+      const s = { connect() {}, playbackRate: { value: 1 }, started: false, start() { this.started = true; }, stop() { this.onended?.(); } };
       sources.push(s);
       return s;
     }

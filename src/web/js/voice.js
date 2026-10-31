@@ -119,12 +119,15 @@ export function preloadSpeech(text) {
   return Promise.all(sentences(text).map(fetchClip)).catch(() => null);
 }
 
+const VOICE_RATE = 1.07;  // a touch quicker and about a semitone higher: snappier, younger
 let ctx = null;  // one audio graph for every clip: it measures her loudness for the lips
 const audioCtx = () => {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!ctx && AC) ctx = new AC();
   return ctx;
 };
+/** True while the browser has not yet let the page play sound (it needs a tap or key press first). */
+export const audioLocked = () => Boolean(ctx && ctx.state !== "running");
 /** Resolves once the page may play sound: at once if it already can, else on the next tap or key press. */
 const audioReady = () => new Promise((resolve) => {
   const c = audioCtx();
@@ -147,7 +150,7 @@ export function speak(text, { onStart } = {}) {
   const begin = () => { if (!started && !stopped && current === handle) { started = true; onStart?.(); } };
   const playBuffer = (buffer) => new Promise((resolve) => {
     const c = audioCtx();
-    source = c.createBufferSource(); source.buffer = buffer;
+    source = c.createBufferSource(); source.buffer = buffer; source.playbackRate.value = VOICE_RATE;
     analyser ??= Object.assign(c.createAnalyser(), { fftSize: 1024, smoothingTimeConstant: 0.35 });
     samples ??= new Uint8Array(analyser.fftSize); spectrum ??= new Uint8Array(analyser.frequencyBinCount);
     source.connect(analyser); analyser.connect(c.destination);

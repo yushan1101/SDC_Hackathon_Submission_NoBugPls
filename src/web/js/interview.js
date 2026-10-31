@@ -1,5 +1,5 @@
 import { api, h, icon, toast, fmtTime, ApiError, upload } from "./lib.js";
-import { preloadSpeech, speak, toWav } from "./voice.js";
+import { audioLocked, preloadSpeech, speak, toWav } from "./voice.js";
 import { Owl } from "./owl.js";
 
 const LABELS = {
@@ -245,6 +245,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   let conversation = true;
   try { conversation = localStorage.getItem("ap.interview.conversation") !== "false"; } catch { /* on */ }
   let micGranted = false, heardSpeech = false, lastVoiceAt = 0;
+  const ACKS = ["Mm-hm.", "Okay.", "Right.", "Got it."];
   const SILENCE_MS = 1600;  // this long a silence ends your turn (HoloHuman ends a chat line at 280 ms; answers need thinking room)
   const PIECE_MS = 700;  // a shorter pause: the piece before it goes to be transcribed while you keep talking
   let pieceVoice = false;
@@ -684,7 +685,11 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       };
       follow();
     } });
+    const hint = setTimeout(() => {  // sound not allowed yet (no tap on this page): say so instead of looking stuck
+      if (generation === speechGeneration && !voicePlaying && audioLocked()) setMicState("processing", "Tap anywhere to hear Mina");
+    }, 1500);
     await voice.done;
+    clearTimeout(hint);
     if (generation !== speechGeneration || currentUtterance !== voice) return;
     haltInterviewerSpeech();
     setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : interrupted ? "Go ahead" : conversation && micGranted ? "Your turn" : "Ready to answer · microphone off");
@@ -752,6 +757,8 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     const answer = transcript.value.trim();
     if (!answer) { toast("Add an answer before continuing.", "err"); transcript.focus(); return; }
     answerBtn.disabled = true; pause.disabled = true; setMicState("processing", "Submitting answer for feedback…");
+    // like a person across the desk: a short "mm-hm" the moment you finish, while her real reply is being written
+    if (conversation && micGranted && !paused) speak(ACKS[Math.floor(Math.random() * ACKS.length)]);
     try {
       const result = await api(`/api/interviews/${sessionId}/answer`, { method: "POST", body: { question_id: current.question_id, answer } });
       transcript.value = "";
@@ -828,6 +835,20 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   const onEscape = (event) => { if (event.key === "Escape") { event.preventDefault(); end.click(); } };
   document.addEventListener("keydown", onEscape);
   setQuestion(current, source);
+  ACKS.forEach((a) => void preloadSpeech(a));  // ready before the first answer ends
+  // Hands-free: the room asks for the microphone as it opens, so after each question she simply listens, no tap needed.
+  // (Blocked or dismissed: the microphone button still works.)
+  const primeMic = async () => {
+    if (micGranted || !conversation || discarded || !window.isSecureContext || !navigator.mediaDevices?.getUserMedia) return;
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: micConstraints() });
+      s.getTracks().forEach((t) => t.stop());
+      micGranted = true;
+      if (voicePlaying && currentUtterance) void startMonitor(currentUtterance);  // she's mid-question: you can cut in
+      else if (!interviewerSpeaking && !recording && !paused) listenAgain();
+    } catch { /* not allowed: answer with the microphone button or by typing */ }
+  };
+  void officeArrived.then(primeMic);
   const officeHost = officeEnabled ? h("div", { class: "interview-office-host", role: "group",
     "aria-label": "First-person view of a modern interview office, seated across the desk" },
     h("span", { class: "interview-office-label", "aria-hidden": "true" }, "VIRTUAL INTERVIEW OFFICE"),

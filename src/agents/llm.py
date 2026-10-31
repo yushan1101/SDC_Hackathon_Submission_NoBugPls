@@ -312,7 +312,7 @@ def pocket_warm() -> None:
 
 
 def _pocket_speak(text: str) -> bytes:
-    """WAV of `text` in POCKET_VOICE (default "azelma": a female voice, ~214 Hz), from the in-process CPU model."""
+    """WAV of `text` in POCKET_VOICE (default "cosette": a young woman's voice), from the in-process CPU model."""
     import numpy as np
     from config.settings import get_settings
     pocket_warm()

@@ -31,7 +31,8 @@ def _focus(context, k=2):
 
 
 # How Mina speaks (each question is read aloud): a real interviewer's rhythm, not a form.
-VOICE_RULES = ["Write the way an experienced, warm interviewer speaks aloud: natural spoken English, short sentences, "
+VOICE_RULES = ["Write the way Mina speaks aloud: a confident, quick, slightly sassy young interviewer who is blunt about "
+               "weak spots but fair, never insulting and never about the person. Natural spoken English, short sentences, "
                "no lists, no headings, no quotation marks.",
                "Vary how questions open; do not start every question with 'Can you' or 'Tell me'."]
 
