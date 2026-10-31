@@ -3483,8 +3483,7 @@ class SpeakIn(BaseModel):
 
 @app.post("/api/speech/say")
 def speech_say(body: SpeakIn, user: dict = Depends(current_user)):
-    """The text read aloud in the server voice (WAV). 503 when no speech model is set up: the page then uses the
-    browser's own voice."""
+    """The text read aloud by the configured server voice (WAV)."""
     if not llm.tts_model():
         raise HTTPException(503, "Read-aloud voice is not set up.")
     audio, _ = _speech(body.text).result(timeout=90)  # llm.speak records the model call, once per text
