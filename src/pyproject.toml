@@ -29,7 +29,6 @@ dependencies = [
   "fastmcp>=4.1",
   "sentence-transformers>=6.1",
   "torch>=2.6",  # CVE-2025-32434: torch.load(weights_only=True) RCE below 2.6
-  "pocket-tts>=4.0.1",
 ]
 
 [project.optional-dependencies]

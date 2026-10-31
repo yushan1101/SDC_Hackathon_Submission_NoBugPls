@@ -10,19 +10,12 @@ An HR advisor can choose the model per task for their organisation (from the adm
 ORG_MODELS for each request ({task: spec}); model_for() prefers that choice when its provider is configured.
 """
 import contextvars
-import io
 import logging
 import re
-import threading
 import time
-import wave
 
 log = logging.getLogger(__name__)
 _gemini = None
-_pocket_model = None
-_pocket_voice_state = None
-_pocket_voice_name = None
-_pocket_lock = threading.Lock()
 ORG_MODELS: contextvars.ContextVar = contextvars.ContextVar("org_models", default=None)
 # tasks an HR advisor can choose a model for -> what they cover
 TASKS = {"coach": "Career coach chat and interview feedback", "resume": "Reading and screening resumes",
@@ -37,12 +30,6 @@ def providers() -> dict:
 
 
 def usable(spec: str) -> bool:
-    if spec.startswith("pocket:"):
-        try:
-            import pocket_tts  # noqa: F401
-            return True
-        except ImportError:
-            return False
     return bool(spec) and providers()["openai" if spec.startswith("openai:") else "gemini"]
 
 
@@ -265,35 +252,15 @@ def generate_with_tools(prompt: str, system: str, tools: dict, max_tokens: int =
 
 
 def tts_model() -> str:
-    """Text-to-speech model: Pocket TTS locally, or a configured remote provider."""
+    """Text-to-speech model: TTS_MODEL if its provider is set up, else ''."""
     from config.settings import get_settings
     s = get_settings()
     spec = s.tts_model if ":" in s.tts_model or not s.tts_model else f"gemini:{s.tts_model}"
     return spec if spec and usable(spec) else ""
 
 
-def _pocket_speak(text: str, voice: str) -> bytes:
-    """Generate a WAV with the in-process CPU Pocket TTS model."""
-    global _pocket_model, _pocket_voice_name, _pocket_voice_state
-    import numpy as np
-    from pocket_tts import TTSModel
-    with _pocket_lock:  # the model is small, but its generation state is not shared between requests
-        if _pocket_model is None:
-            _pocket_model = TTSModel.load_model()
-        voice = voice or "alba"
-        if _pocket_voice_state is None or _pocket_voice_name != voice:
-            _pocket_voice_state = _pocket_model.get_state_for_audio_prompt(voice)
-            _pocket_voice_name = voice
-        samples = _pocket_model.generate_audio(_pocket_voice_state, text).detach().cpu().numpy()
-    pcm = (np.clip(samples, -1, 1) * 32767).astype("<i2").tobytes()
-    out = io.BytesIO()
-    with wave.open(out, "wb") as wav:
-        wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(_pocket_model.sample_rate); wav.writeframes(pcm)
-    return out.getvalue()
-
-
 def speak(text: str):
-    """-> (WAV bytes | None, usage), using the configured server TTS provider."""
+    """-> (WAV bytes | None, usage): `text` read in the configured server voice."""
     from config.settings import get_settings
     from core.usage import record
     s, spec = get_settings(), tts_model()
@@ -302,9 +269,7 @@ def speak(text: str):
     provider, name = spec.split(":", 1)
     t = time.perf_counter()
     try:
-        if provider == "pocket":
-            audio = _pocket_speak(text, s.tts_voice)
-        elif provider == "openai":
+        if provider == "openai":
             import httpx
             r = httpx.post(api_base(s.llm_base_url) + "/audio/speech", timeout=max(s.llm_timeout_s, 60),
                            headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"},

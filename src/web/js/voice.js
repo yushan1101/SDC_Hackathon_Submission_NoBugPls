@@ -2,7 +2,7 @@
 // Mic: paid plans record in the browser and the server transcribes (works in every browser); otherwise the browser's
 // own speech recognition where it has one (Chrome, Edge, Safari); with neither, no mic button is shown.
 // Read aloud and the interviewer: one voice from the server (Pocket TTS), so the browser never switches to a system voice.
-import { ApiError, h, icon, postForBlob, toast, upload } from "./lib.js";
+import { h, icon, toast, upload } from "./lib.js";
 
 const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
 const canRecord = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
@@ -93,94 +93,29 @@ export function micButton(target, { onText } = {}) {
   return btn;
 }
 
-// ---------------------------------------------------------------- speaking: the app's own voice
-let serverVoice = true;  // false once the server says Pocket TTS is unavailable: speech stays silent, never system TTS
-const clips = new Map();  // text -> Promise<object URL>, so a question fetched early plays at once
-/** Start fetching `text` in the server voice now (the interviewer asks for each question before it is read). */
-export function preloadSpeech(text) {
-  text = (text || "").trim().slice(0, 6000);
-  if (!text || !serverVoice) return null;
-  if (!clips.has(text)) {
-    const job = postForBlob("/api/speech/say", { text }).then((blob) => URL.createObjectURL(blob));
-    job.catch(() => clips.delete(text));
-    clips.set(text, job);
-    if (clips.size > 20) { const [old, url] = clips.entries().next().value; clips.delete(old); url.then(URL.revokeObjectURL, () => {}); }
-  }
-  return clips.get(text);
-}
+// ---------------------------------------------------------------- speaking: the browser's native voice
+/** Server speech is intentionally disabled; interview questions use the browser's system TTS. */
+export function preloadSpeech() { return null; }
 
 let current = null;
-/** Read `text` aloud; one speaker at a time. -> { done, stop(), pause(), resume(), level(): 0..1 loudness now,
- *  bands(): { low, high } share of the voice in 100-600 Hz (rounded vowels) and 1.8-6 kHz (spread vowels, s/sh) }.
- *  onStart fires when sound begins. */
 export function speak(text, { onStart } = {}) {
   current?.stop();
-  let audio = null, stopped = false, ctx = null, analyser = null, samples = null, spectrum = null;
-  let cancelPlayback = null;
-  const done = (async () => {
-    if (!serverVoice) return;
-    try {
-      const url = await preloadSpeech(text);
-      if (stopped) return;
-      audio = new Audio(url);
-      // loudness for the interviewer's lips. Only through a running audio graph: a suspended one (no click on the
-      // page yet) would play the clip silently, so then the audio element plays on its own
-      try {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        ctx = new AC();
-        await Promise.race([ctx.resume(), new Promise((r) => setTimeout(r, 300))]);
-        if (ctx.state === "running") {
-          analyser = ctx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0.35;
-          samples = new Uint8Array(analyser.fftSize); spectrum = new Uint8Array(analyser.frequencyBinCount);
-          const source = ctx.createMediaElementSource(audio); source.connect(analyser); analyser.connect(ctx.destination);
-        } else { ctx.close().catch(() => {}); ctx = null; }
-      } catch { ctx = null; analyser = null; }
-      await new Promise((resolve, reject) => {
-        let settled = false;
-        const retryEvents = ["pointerdown", "keydown"];
-        const cleanup = () => retryEvents.forEach((event) => window.removeEventListener(event, retry));
-        const finish = () => { if (settled) return; settled = true; cleanup(); cancelPlayback = null; resolve(); };
-        const fail = (error) => { if (settled) return; settled = true; cleanup(); cancelPlayback = null; reject(error); };
-        const retry = () => { cleanup(); void attempt(); };
-        const attempt = async () => {
-          if (stopped) return finish();
-          try { await audio.play(); }
-          catch (error) {
-            if (error?.name !== "NotAllowedError") return fail(error);
-            retryEvents.forEach((event) => window.addEventListener(event, retry, { once: true }));
-          }
-        };
-        cancelPlayback = finish;
-        audio.onplaying = () => onStart?.(); audio.onended = finish; audio.onerror = () => fail(new Error("playback failed"));
-        void attempt();
-      });
-    } catch (e) {
-      if (!stopped && e instanceof ApiError && e.status === 503) serverVoice = false;
-    }
-  })().finally(() => { ctx?.close().catch(() => {}); if (current === handle) current = null; });
+  let utter = null, stopped = false;
+  const done = new Promise((resolve) => {
+    if (!("speechSynthesis" in window)) return resolve();
+    utter = new SpeechSynthesisUtterance(text.slice(0, 6000)); utter.lang = lang();
+    utter.onstart = () => onStart?.(); utter.onend = utter.onerror = () => resolve();
+    speechSynthesis.cancel(); speechSynthesis.speak(utter);
+  }).finally(() => { if (current === handle) current = null; });
   const handle = {
     done,
-    stop() { stopped = true; cancelPlayback?.(); audio?.pause(); },
-    pause() { audio?.pause(); },
-    resume() { audio?.play().catch(() => {}); },
-    level() {
-      const playing = Boolean(audio && !audio.paused);
-      if (!playing) return 0;
-      if (!analyser) return 0.3 + 0.25 * Math.abs(Math.sin(performance.now() / 85));  // no measurement: a speaking rhythm
-      analyser.getByteTimeDomainData(samples);
-      let sum = 0; for (const s of samples) sum += ((s - 128) / 128) ** 2;
-      return Math.min(1, Math.sqrt(sum / samples.length) * 11);  // HoloHuman's lip envelope scale
-    },
+    stop() { stopped = true; if (utter) speechSynthesis.cancel(); },
+    pause() { speechSynthesis.pause(); },
+    resume() { speechSynthesis.resume(); },
+    level() { return !stopped && speechSynthesis.speaking ? 0.3 + 0.25 * Math.abs(Math.sin(performance.now() / 85)) : 0; },
     bands() {
-      if (!analyser || !audio || audio.paused) {  // no measurement: a gentle, plausible drift
-        const t = performance.now() / 1000;
-        return { low: 0.3 + Math.sin(t * 3.1) * 0.15, high: 0.25 - Math.sin(t * 3.1 + 0.7) * 0.12 };
-      }
-      analyser.getByteFrequencyData(spectrum);
-      const hz = ctx.sampleRate / 2 / spectrum.length;
-      const band = (a, b) => { let s = 0; for (let i = Math.floor(a / hz); i < Math.min(spectrum.length, Math.ceil(b / hz)); i++) s += spectrum[i]; return s; };
-      const total = band(100, 6000) + 1;
-      return { low: band(100, 600) / total, high: band(1800, 6000) / total };
+      const t = performance.now() / 1000;
+      return { low: 0.3 + Math.sin(t * 3.1) * 0.15, high: 0.25 - Math.sin(t * 3.1 + 0.7) * 0.12 };
     },
   };
   current = handle;
@@ -189,7 +124,7 @@ export function speak(text, { onStart } = {}) {
 
 /** "Read aloud" for some text (a function, so it reads what is there when pressed). */
 export function readAloudButton(getText) {
-  if (typeof Audio === "undefined") return null;
+  if (!("speechSynthesis" in window)) return null;
   const btn = h("button", { class: "btn ghost sm read-aloud", type: "button", "aria-pressed": "false" }, icon("volume"), "Read aloud");
   let speaking = null;
   const idle = () => { speaking = null; btn.setAttribute("aria-pressed", "false"); btn.lastChild.textContent = "Read aloud"; };
