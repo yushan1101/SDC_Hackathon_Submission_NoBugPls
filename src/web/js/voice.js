@@ -1,7 +1,7 @@
 // Voice input and read-aloud, shared by every page.
 // Mic: paid plans record in the browser and the server transcribes (works in every browser); otherwise the browser's
 // own speech recognition where it has one (Chrome, Edge, Safari); with neither, no mic button is shown.
-// Read aloud and the interviewer: one voice from the server (Pocket TTS), so the browser never switches to a system voice.
+// Read aloud and the interviewer use the browser's native speech synthesis.
 import { h, icon, toast, upload } from "./lib.js";
 
 const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -100,25 +100,32 @@ export function preloadSpeech() { return null; }
 let current = null;
 export function speak(text, { onStart } = {}) {
   current?.stop();
-  let utter = null, stopped = false;
-  const done = new Promise((resolve) => {
-    if (!("speechSynthesis" in window)) return resolve();
-    utter = new SpeechSynthesisUtterance(text.slice(0, 6000)); utter.lang = lang();
-    utter.onstart = () => onStart?.(); utter.onend = utter.onerror = () => resolve();
-    speechSynthesis.cancel(); speechSynthesis.speak(utter);
-  }).finally(() => { if (current === handle) current = null; });
+  let utter = null, stopped = false, finish;
+  const done = new Promise((resolve) => { finish = resolve; }).finally(() => { if (current === handle) current = null; });
   const handle = {
     done,
-    stop() { stopped = true; if (utter) speechSynthesis.cancel(); },
-    pause() { speechSynthesis.pause(); },
-    resume() { speechSynthesis.resume(); },
-    level() { return !stopped && speechSynthesis.speaking ? 0.3 + 0.25 * Math.abs(Math.sin(performance.now() / 85)) : 0; },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      if (utter) { utter.onstart = utter.onend = utter.onerror = null; if (current === handle) speechSynthesis.cancel(); }
+      finish();  // cancel() does not reliably fire onend in every browser
+    },
+    pause() { if (!stopped && current === handle) speechSynthesis.pause(); },
+    resume() { if (!stopped && current === handle) speechSynthesis.resume(); },
+    level() { return !stopped && current === handle && speechSynthesis.speaking ? 0.3 + 0.25 * Math.abs(Math.sin(performance.now() / 85)) : 0; },
     bands() {
       const t = performance.now() / 1000;
       return { low: 0.3 + Math.sin(t * 3.1) * 0.15, high: 0.25 - Math.sin(t * 3.1 + 0.7) * 0.12 };
     },
   };
   current = handle;
+  if (!("speechSynthesis" in window)) { finish(); return handle; }
+  try {
+    utter = new SpeechSynthesisUtterance(text.slice(0, 6000)); utter.lang = lang();
+    utter.onstart = () => { if (!stopped && current === handle) onStart?.(); };
+    utter.onend = utter.onerror = () => finish();
+    speechSynthesis.cancel(); speechSynthesis.resume(); speechSynthesis.speak(utter);
+  } catch { finish(); }
   return handle;
 }
 
