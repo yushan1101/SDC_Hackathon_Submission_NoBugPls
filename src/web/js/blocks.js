@@ -1,5 +1,5 @@
 // Report building blocks shared by the public report and the Enterprise review pane.
-import { api, h, icon, toast, fmtTime, ApiError, reveal, RISE, DROP, GROW } from "./lib.js";
+import { api, h, icon, toast, fmtTime, ApiError, reveal, RISE, DROP, GROW, sleep } from "./lib.js";
 import { jobIcon } from "./jobicons.js";
 import { roleRanking } from "./role-ranking.js";
 import { rankScore } from "./ranking-state.js";
@@ -1109,6 +1109,22 @@ function zLine(values) {
 }
 
 /** The daily AI-trend board. preview: the leading topics only (the landing page links to the full board). */
+/** Rebuild today's board (any signed-in user, 10 times a day) and wait for it. -> true once the new board is saved.
+ * Throws the API error, e.g. 429 when today's refreshes are used up. */
+export async function refreshBoard(status) {
+  const before = (await api("/api/signals/today")).created_utc;
+  const r = await api("/api/signals/refresh", { method: "POST" });
+  status?.set("searching", "Fetching today's signals");
+  toast(`Fetching news, research and job-posting signals, then running the STF-KAN agents. About 2 minutes.${r.left != null ? ` ${r.left} refreshes left today.` : ""}`);
+  for (let i = 0; i < 90; i++) {  // up to 12 min: arXiv alone needs 3 s between requests
+    await sleep(8000);
+    const b = await api("/api/signals/today");
+    if (b.created_utc && b.created_utc !== before) { status?.set("update", `Board ${b.day} ready`); return true; }
+  }
+  status?.set("confused", "Refresh is taking longer than expected");
+  return false;
+}
+
 export function boardView(b, { onRefresh, preview = false } = {}) {
   if (!b?.available) return h("div", { class: "empty" }, h("h2", {}, "No trend board yet"),
     h("p", { class: "muted" }, b?.message || "The board is built once a day from public news, research and job-posting signals."),

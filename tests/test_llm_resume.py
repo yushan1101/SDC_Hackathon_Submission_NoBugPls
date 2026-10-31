@@ -64,6 +64,7 @@ def test_a_call_over_its_time_budget_gives_up_on_time(monkeypatch):
     """The résumé page waits on these calls: a slow model must not hold it past the budget (the rules then stand)."""
     import time
     monkeypatch.setattr(llm, "_gemini_call", lambda *a: (time.sleep(3), ("late", 1, 1))[1])
+    monkeypatch.setattr(llm, "usable", lambda spec: True)  # CI has no Gemini key; the timeout is what's tested
     t = time.perf_counter()
     text, usage = llm.generate("p", "s", model="gemini:any", timeout=0.5)
     assert text is None and usage["error"] == "TimeoutError" and time.perf_counter() - t < 1.5

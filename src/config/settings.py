@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     llm_fallback_model: str = "openai:qwen3.8-flash,openai:grok-4.7-build-fast,openai:deepseek-v4.1-flash"
     # result cache (résumé analyses by file hash): redis://host:6379/0, shared by every app node; empty = this process only
     redis_url: str = ""
+    llm_cache_ttl_s: int = 24 * 3600  # identical model calls answered from the cache above (Redis if set); 0 = off
     llm_usd_per_1m_input: float = 0.0   # set from the provider's current price sheet; 0 = cost not estimated
     llm_usd_per_1m_output: float = 0.0
     llm_timeout_s: float = Field(30.0, gt=0)

@@ -2798,9 +2798,18 @@ def _refresh_signals() -> bool:
     return True
 
 
+SIGNALS_REFRESH_PER_DAY = int(os.environ.get("SIGNALS_REFRESH_PER_DAY", "10"))
+
+
 @app.post("/api/signals/refresh")
-def signals_refresh(user: dict = Depends(need("hr_advisor"))):
-    return {"started": _refresh_signals(), "running": REFRESHING.locked()}
+def signals_refresh(user: dict = Depends(current_user)):  # every signed-in role: employee, HR, personal user
+    if REFRESHING.locked():  # joining a refresh already under way costs nothing
+        return {"started": False, "running": True, "left": None}
+    day = datetime.now(timezone.utc).date().isoformat()
+    n = result_cache.incr(f"signals:refresh:{user['username']}:{day}", 2 * 24 * 3600)
+    if n > SIGNALS_REFRESH_PER_DAY:
+        raise HTTPException(429, f"You can refresh AI trends {SIGNALS_REFRESH_PER_DAY} times a day. It refreshes again tomorrow.")
+    return {"started": _refresh_signals(), "running": REFRESHING.locked(), "left": max(SIGNALS_REFRESH_PER_DAY - n, 0)}
 
 
 def _daily():  # ponytail: in-process hourly check; use cron / a job queue when running more than one worker

@@ -2,7 +2,7 @@
 import { api, upload, stream, h, icon, toast, ApiError, reveal, RISE, DROP } from "./lib.js";
 import { Owl } from "./owl.js";
 import { jobIcon } from "./jobicons.js";
-import { matchesBlock, boardView, integrityBlock } from "./blocks.js";
+import { matchesBlock, boardView, refreshBoard, integrityBlock } from "./blocks.js";
 import { brandMark } from "./brands.js";
 import { createScenarioCache, scenarioName } from "./ranking-state.js";
 
@@ -559,10 +559,15 @@ export function resumeView(main, ctx) {
 }
 
 // ---------------------------------------------------------------- today: daily AI-trend board
-export async function todayView(main, { onRefresh, guest = false } = {}) {
+export async function todayView(main, { onRefresh, guest = false, status } = {}) {
   main.replaceChildren(h("h1", { class: "page-title today-title" }, "AI trends"),
     h("p", { class: "lede today-lede" }, "Which AI topics are moving, and which jobs they pull forward or put under pressure. Rebuilt every day."),
     h("p", { class: "muted" }, "Loading…"));
+  if (!guest && !onRefresh) onRefresh = async () => {  // signed in: employees and personal users can rebuild it too
+    try {
+      if (await refreshBoard(status)) todayView(main, { guest, status });
+    } catch (error) { toast(error.message || "AI trends could not be refreshed", "error"); }
+  };
   const b = await api("/api/signals/today");
   const board = boardView(b, { onRefresh });
   main.lastChild.replaceWith(board);

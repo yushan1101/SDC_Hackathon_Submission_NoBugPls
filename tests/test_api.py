@@ -1004,7 +1004,7 @@ def test_forecasts_endpoint_gated(client):
 
 def test_readiness_reports_db_mcp_model_without_secrets(client):
     r = client.get("/api/health").json()
-    assert r["db"]["ok"] and r["mcp"]["ok"] and r["mcp"]["tools"] == 8
+    assert r["db"]["ok"] and r["mcp"]["ok"] and r["mcp"]["tools"] == 9
     assert r["model"]["mode"] in ("live_cpu_inference", "precomputed_asset")
     assert "key" not in json.dumps(r).lower() and ":\\" not in json.dumps(r) and "/src/" not in json.dumps(r)
 
@@ -2009,3 +2009,16 @@ def test_admin_lock_also_stops_email_code_sign_in_paths(client):
     with pytest.raises(HTTPException) as e:
         api._start_session(user, None, R())
     assert e.value.status_code == 401 and e.value.detail == accounts.LOCKED_LOGIN
+
+
+def test_any_signed_in_user_can_refresh_trends_ten_times_a_day(client, monkeypatch):
+    import server.api as api
+    monkeypatch.setattr(api, "_refresh_signals", lambda: True)  # no network: only the gate and the counter are tested
+    client.cookies.clear()
+    assert client.post("/api/signals/refresh", headers={"X-AP": "1"}).status_code == 401  # guests cannot
+    for user in ("ana", "hr1"):  # employee and HR alike, each with their own 10
+        login(client, user)
+        left = [client.post("/api/signals/refresh", headers={"X-AP": "1"}).json()["left"] for _ in range(api.SIGNALS_REFRESH_PER_DAY)]
+        assert left == list(range(api.SIGNALS_REFRESH_PER_DAY - 1, -1, -1))
+        r = client.post("/api/signals/refresh", headers={"X-AP": "1"})
+        assert r.status_code == 429 and "10 times a day" in r.json()["detail"]

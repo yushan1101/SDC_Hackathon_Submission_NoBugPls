@@ -10,6 +10,7 @@ os.chdir(SRC)
 # hermetic: a developer's .env must not switch on paid LLM calls or change behaviour under test (env beats .env)
 os.environ.update(GEMINI_API_KEY="", LLM_API_KEY="", LLM_RESUME="false", MCP_URL="")
 os.environ["DATABASE_BACKEND"] = "sqlite"
+os.environ["LLM_CACHE_TTL_S"] = "0"  # tests of model calls see every call; the cache test turns it on itself
 # session cookies are always Secure in the app; TestClient talks plain http://testserver, so allow them here only
 os.environ.setdefault("AP_INSECURE_COOKIES", "1")
 # the suite signs in far more than 20 times from one "IP"; tests of the limiter set api.LOGIN_LIMIT themselves
@@ -22,3 +23,14 @@ if os.environ.get("TEST_DATABASE_URL"):
         AIVERSEPULSE_DATABASE_URL=os.environ["TEST_DATABASE_URL"],
         AP_PG_SCHEMA_PER_PATH="1",
     )
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _fresh_result_cache():
+    """The in-process result cache (LLM answers, refresh counters) must not carry one test's answers into the next."""
+    from core import cache
+    cache._local.clear()
+    yield

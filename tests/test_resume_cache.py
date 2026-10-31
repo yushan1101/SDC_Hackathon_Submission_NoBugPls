@@ -79,6 +79,8 @@ def test_speech_falls_back_and_reports_status(monkeypatch):
     monkeypatch.setattr(llm, "stt_model", lambda: "openai:mimo")
     monkeypatch.setattr(llm, "usable", lambda spec: True)
     monkeypatch.setattr(llm, "providers", lambda: {"openai": True, "gemini": True})
+    from config.settings import get_settings
+    monkeypatch.setattr(get_settings(), "llm_fast_model", "gemini-3.1-flash", raising=False)  # CI's empty .env has no fast model
     tried = []
     monkeypatch.setattr(llm, "_speak_with", lambda spec, text: tried.append(spec) or ((b"RIFF", {"model": spec}) if "2.5-flash" in spec  # only the fallback works, as on the server
                         else (None, {"error": "RuntimeError"})))
@@ -168,3 +170,21 @@ def test_lite_models_go_to_the_litellm_gateway_with_gpt5_settings(monkeypatch):
     url, body, headers = sent[0]
     assert url == "https://lite.example/v1/chat/completions" and headers["Authorization"] == "Bearer lite-key"
     assert "temperature" not in body and body["max_completion_tokens"] == 300 and body["reasoning_effort"] == "low"
+
+
+def test_same_model_call_is_answered_from_the_cache(monkeypatch):
+    """The same model + instructions + prompt is one API call; a failure is never cached; cache=False always calls."""
+    from agents import llm
+    from core import cache
+    monkeypatch.setattr(cache, "_local", {})
+    from config.settings import get_settings
+    monkeypatch.setattr(get_settings(), "llm_cache_ttl_s", 3600, raising=False)
+    calls = []
+    monkeypatch.setattr(llm, "_generate", lambda *a: calls.append(a[0]) or ((None, {"error": "x"}) if a[0] == "bad" else ("hi", {"llm_calls": 1})))
+    one = llm.generate("p", "s", model="openai:gpt-x")
+    two = llm.generate("p", "s", model="openai:gpt-x")
+    assert one[0] == two[0] == "hi" and two[1]["cached"] and two[1]["llm_calls"] == 0 and two[1]["est_usd"] == 0
+    llm.generate("p", "s", model="openai:gpt-y")  # another model is another answer
+    llm.generate("bad", "s", model="openai:gpt-x"), llm.generate("bad", "s", model="openai:gpt-x")
+    llm.generate("p", "s", model="openai:gpt-x", cache=False)
+    assert calls == ["p", "p", "bad", "bad", "p"]

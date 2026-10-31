@@ -184,7 +184,30 @@ def _budget_pool():
 
 def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None = None, json: bool = False,
              agent: str = "router", timeout: float | None = None, reasoning: bool | None = None,
-             hedge_s: float | None = None, backups: str | None = None):
+             hedge_s: float | None = None, backups: str | None = None, cache: bool = True):
+    """_generate() behind the result cache (Redis when REDIS_URL is set, so every node shares it): the same model,
+    instructions and prompt get the stored answer for LLM_CACHE_TTL_S, with no API call and no cost. Only answers
+    are stored, never failures. cache=False for a call that must vary (e.g. a fresh suggestion on retry)."""
+    import hashlib
+    from config.settings import get_settings
+    from core import cache as result_cache
+    from core.usage import record
+    ttl, spec = get_settings().llm_cache_ttl_s, model or model_for(agent)
+    if not (cache and ttl and spec):
+        return _generate(prompt, system, max_tokens, model, json, agent, timeout, reasoning, hedge_s, backups)
+    key = "llm:" + hashlib.sha256("".join(map(str, (spec, system, prompt, max_tokens, json, reasoning))).encode()).hexdigest()
+    hit = result_cache.get(key)
+    if hit is not None:
+        return hit, {**record("llm", 0, spec.split(":", 1)[-1]), "llm_calls": 0, "cached": True}
+    text, usage = _generate(prompt, system, max_tokens, model, json, agent, timeout, reasoning, hedge_s, backups)
+    if text is not None:
+        result_cache.set(key, text, ttl_s=ttl)
+    return text, usage
+
+
+def _generate(prompt: str, system: str, max_tokens: int = 400, model: str | None = None, json: bool = False,
+              agent: str = "router", timeout: float | None = None, reasoning: bool | None = None,
+              hedge_s: float | None = None, backups: str | None = None):
     """-> (text | None, usage dict). None means disabled or failed; callers must fall back. timeout: a hard limit in
     seconds for a caller someone is waiting on (no retry); past it the call fails and the caller's fallback is used.
     reasoning=False asks a thinking model to (mostly) skip its thinking; None leaves the model's default.
@@ -217,8 +240,9 @@ def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None 
     usage = None
     while racing:
         done, pending = wait(racing, timeout=left(), return_when=FIRST_COMPLETED)
-        if not done:  # out of time
-            return None, usage
+        if not done:  # out of time: report it as a timeout even when no model has answered yet
+            from core.usage import record
+            return None, usage or record("llm", 1000 * (time.perf_counter() - started), spec.split(":", 1)[-1], error="TimeoutError")
         for f in done:
             text, usage = f.result()
             if text is not None:

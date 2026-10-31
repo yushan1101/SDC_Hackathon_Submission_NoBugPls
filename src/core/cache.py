@@ -50,3 +50,22 @@ def set(key: str, value, ttl_s: int = 7 * 24 * 3600) -> None:  # noqa: A001 - mi
                 _local[key] = (time.time() + ttl_s, raw)
     except Exception as e:  # noqa: BLE001
         log.warning("cache set failed: %s", type(e).__name__)
+
+
+def incr(key: str, ttl_s: int) -> int:
+    """Atomic counter (Redis INCR, shared by every node); the window starts at the first hit. Outage -> 0, never blocks."""
+    try:
+        r = _redis()
+        if r is not None:
+            n = r.incr(key)
+            if n == 1:
+                r.expire(key, ttl_s)
+            return int(n)
+        with _lock:
+            expires, raw = _local.get(key, (0.0, "0"))
+            n = (int(raw) if expires > time.time() else 0) + 1
+            _local[key] = (expires if n > 1 else time.time() + ttl_s, str(n))
+            return n
+    except Exception as e:  # noqa: BLE001
+        log.warning("cache incr failed: %s", type(e).__name__)
+        return 0

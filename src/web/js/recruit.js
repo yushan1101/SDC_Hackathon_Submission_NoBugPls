@@ -3,7 +3,7 @@
 import { jobIcon } from "./jobicons.js";
 import { api, h, icon, toast, fmtTime, reveal, DROP, sleep } from "./lib.js";
 import { Owl } from "./owl.js";
-import { boardView, integrityBlock } from "./blocks.js";
+import { boardView, refreshBoard, integrityBlock } from "./blocks.js";
 import { publishPanel } from "./org.js";
 import { micButton } from "./voice.js";
 
@@ -237,17 +237,9 @@ export async function signalsView(main, status) {
   }
   async function refresh() {
     try {
-      const before = (await api("/api/signals/today")).created_utc;
-      await api("/api/signals/refresh", { method: "POST" });
-      status.set("searching", "Fetching today's signals");
-      toast("Fetching news, research and job-posting signals, then running the STF-KAN agents. This takes a few minutes.");
-      for (let i = 0; i < 90; i++) {  // 12 min: arXiv alone needs 3 s between requests
-        await sleep(8000);
-        const b = await api("/api/signals/today");
-        if (b.created_utc && b.created_utc !== before) { status.set("update", `Board ${b.day} ready`); return draw(); }
-      }
-      status.set("confused", "Refresh is taking longer than expected");
+      if (await refreshBoard(status)) return draw();
     } catch (error) {
+      if (error.status === 429) return toast(error.message, "error");  // daily limit: keep today's board on screen
       status.set("confused", "AI trends refresh failed");
       host.replaceChildren(h("div", { class: "empty error", role: "alert" },
         h("h2", {}, "AI trends could not be refreshed"),
