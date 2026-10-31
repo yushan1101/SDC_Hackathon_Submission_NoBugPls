@@ -1,6 +1,6 @@
 """Shared Pydantic contracts - extend with team approval."""
 from typing import Annotated, Literal
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 Audience = Literal["individual", "hr"]
 
@@ -74,7 +74,7 @@ class LearningQuiz(BaseModel):
 
 
 class LearningNode(BaseModel):
-    id: Annotated[str, StringConstraints(pattern=r"^week-\d{2}(?:-(?:practice|check))?$")]
+    id: Annotated[str, StringConstraints(pattern=r"^week-\d{2}(?:-\d{2})?(?:-(?:practice|check))?$")]
     week_number: int = Field(ge=1, le=13)
     content_source: Literal["ai", "guided_fallback"] = "guided_fallback"
     title: Annotated[str, StringConstraints(min_length=4, max_length=120)]
@@ -82,6 +82,9 @@ class LearningNode(BaseModel):
     skills: list[Annotated[str, StringConstraints(min_length=1, max_length=120)]] = Field(min_length=1, max_length=6)
     activity_keys: list[Annotated[str, StringConstraints(max_length=180)]] = Field(default=[], max_length=12)
     estimated_minutes: int = Field(ge=5, le=6000)
+    learn_minutes: int = Field(default=0, ge=0, le=6000)
+    practice_minutes: int = Field(default=0, ge=0, le=6000)
+    quiz_minutes: int = Field(default=0, ge=0, le=6000)
     learning_objective: Annotated[str, StringConstraints(min_length=12, max_length=500)]
     topics: list[Annotated[str, StringConstraints(min_length=2, max_length=160)]] = Field(min_length=1, max_length=8)
     learn: list[Annotated[str, StringConstraints(max_length=1200)]] = Field(min_length=1, max_length=5)
@@ -92,6 +95,18 @@ class LearningNode(BaseModel):
     quiz: LearningQuiz | None = None
     completion_criteria: list[Annotated[str, StringConstraints(max_length=300)]] = Field(min_length=1, max_length=5)
     expected_outcome: Annotated[str, StringConstraints(min_length=8, max_length=500)]
+
+    @model_validator(mode="after")
+    def consistent_minutes(self):
+        if not (self.learn_minutes or self.practice_minutes or self.quiz_minutes):
+            self.learn_minutes = max(1, round(self.estimated_minutes * 0.35))
+            self.quiz_minutes = max(1, round(self.estimated_minutes * 0.15)) if self.quiz else 0
+            self.practice_minutes = self.estimated_minutes - self.learn_minutes - self.quiz_minutes
+        if self.learn_minutes + self.practice_minutes + self.quiz_minutes != self.estimated_minutes:
+            raise ValueError("learning step section minutes must add up to its total")
+        if not self.quiz and self.quiz_minutes:
+            raise ValueError("quiz minutes require a knowledge check")
+        return self
 
 
 class Pathway(BaseModel):

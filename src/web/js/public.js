@@ -1027,6 +1027,10 @@ async function plansView(main) {
   draw();
 }
 
+function planStartDate(d) {
+  return [d.started_utc, d.created_utc].find((value) => typeof value === "string" && Number.isFinite(Date.parse(value))) || new Date().toISOString();
+}
+
 /** The plan report as a PDF file, built in the browser from the plan's data. Mostly diagrams: key figures, the three
  *  phases, a week-by-week step grid, skill gap bars, trend and goal chips, and the plan's history as a timeline. */
 function planReportPdf(d) {
@@ -1040,7 +1044,7 @@ function planReportPdf(d) {
     .cover(`Become ${/^[aeiou]/i.test(role) ? "an" : "a"} ${role}`, `90-day learning plan · ${d.plan_reference || d.plan_id} · ${d.status}, version ${d.version} · downloaded ${day(new Date())}`)
     .tiles([[r.request?.weekly_learning_hours ? `${r.request.weekly_learning_hours} h` : "–", "a week"], [`${sum(p.activities)} h`, "learning in total"],
       [String(pr.total || (p.learning_nodes || []).length), "learning steps"],
-      [new Date(d.started_utc).toLocaleDateString(undefined, { day: "numeric", month: "short" }), "start date"]])
+      [new Date(planStartDate(d)).toLocaleDateString(undefined, { day: "numeric", month: "short" }), "start date"]])
     .meter("Progress", pr.total ? pr.done / pr.total : 0, `${pr.done} of ${pr.total} steps · ${pr.pct}%`);
 
   const PHASES = [["1-30", "Days 1–30", "Foundation"], ["31-60", "Days 31–60", "Practice"], ["61-90", "Days 61–90", "Portfolio"]];
@@ -1054,10 +1058,10 @@ function planReportPdf(d) {
   if (nodes.length) {
     const KIND = { learn: ["Understand", "#3b5bdb"], practice: ["Practice", "#e09f1f"], check: ["Knowledge check", "#7c5cf6"] };
     const kindOf = (n) => (n.type === "learn" ? "learn" : n.type === "quiz" ? "check" : "practice");
-    doc.h2("Week by week").lede("Each row is a week; each square is one step. Every step has its own lesson, practice task and quiz in the app.")
+    doc.h2("Week by week").lede("Each row is a week. Each learning step contains its own lesson, practice task and knowledge check in the app.")
       .weekGrid([...new Set(nodes.map((n) => n.week_number))].map((week) => {
         const steps = nodes.filter((n) => n.week_number === week);
-        return { label: `Week ${week}`, title: steps[0].topics?.[0] || steps[0].title, steps: steps.map((n) => ({ kind: kindOf(n), done: done.has(`node:${n.id}`) })) };
+        return { label: `Week ${week}`, title: steps[0].topics?.[0] || steps[0].title, steps: steps.map((n) => ({ kind: kindOf(n), done: done.has(`step:${n.id}`) })) };
       }), KIND);
   }
 
@@ -1090,28 +1094,74 @@ function planReportPdf(d) {
 let lastChanges = null;
 let planSection = "plan";  // the plan page's open section, kept while the person moves between plans  // {id, changes}: the summary of the latest hours change, shown above that plan's roadmap
 
-/** Weekly learning time for a saved plan. "Update plan" sends it to the pathway agent, which rebuilds the plan from the
- *  saved analysis; the new version replaces the roadmap and a change summary sits above it. */
+/** Preview edits against the saved assessment, then apply exactly the version the learner inspected. */
 function hoursControl(main, id, d) {
   const hours = d.report?.request?.weekly_learning_hours;
   if (!hours) return null;
   if (d.read_only) return h("span", {}, icon("clock"), `${hours} h/week`);
-  const input = h("input", { class: "input plan-hours", type: "number", min: "0.5", max: "80", step: "0.5", value: hours, "aria-label": "Weekly learning hours",
-    oninput: () => { btn.hidden = Number(input.value) === hours; } });
-  const btn = h("button", { class: "btn sm primary", type: "button", hidden: true, onclick: async () => {
+  const input = h("input", { class: "input plan-hours", type: "number", min: "0.5", max: "80", step: "0.5", value: hours, "aria-label": "Weekly learning hours" });
+  const gaps = (d.report?.gaps || []).filter((gap) => gap.gap > 0);
+  const priority = h("select", { class: "input", "aria-label": "Skill to prioritize" },
+    h("option", { value: "" }, "Use assessed gap order"), gaps.map((gap) => h("option", { value: gap.skill_id }, gap.skill_id)));
+  const priorityMode = h("select", { class: "input", "aria-label": "Learning priority" },
+    h("option", { value: "balanced", selected: d.report?.request?.priority_mode !== "biggest_gaps_first" ? true : null }, "Balanced"),
+    h("option", { value: "biggest_gaps_first", selected: d.report?.request?.priority_mode === "biggest_gaps_first" ? true : null }, "Biggest skill gaps first"));
+  const editor = h("section", { class: "plan-edit-panel", hidden: true, "aria-label": "Edit plan" });
+  let resetPreview = () => {};
+  const toggle = h("button", { class: "btn sm primary", type: "button", "aria-expanded": "false", onclick: () => {
+    if (!editor.hidden && previewToken) return resetPreview();
+    editor.hidden = !editor.hidden; toggle.setAttribute("aria-expanded", String(!editor.hidden));
+    if (!editor.hidden) input.focus();
+  } }, "Edit Plan");
+  let previewToken = null;
+  const result = h("div", { class: "plan-preview-result", "aria-live": "polite" });
+  const btn = h("button", { class: "btn sm primary", type: "button", onclick: async () => {
     const next = Number(input.value);
     if (!(next > 0 && next <= 80)) { toast("Choose between 0.5 and 80 hours a week", "err"); return; }
-    btn.disabled = input.disabled = true; btn.textContent = "Rebuilding your plan…";
+    btn.disabled = true; btn.textContent = "Building preview…";
     try {
-      const res = await api(`/api/plans/${id}/hours`, { method: "POST", body: { weekly_hours: next } });
-      lastChanges = { id, changes: res.changes };
-      toast("Plan rebuilt for your new weekly time");
-      planDetail(main, id, true);
+      const res = await api(`/api/plans/${id}/preview`, { method: "POST", body: { weekly_hours: next, priority_mode: priorityMode.value,
+        priority_skills: priority.value ? [priority.value] : [] } });
+      previewToken = res.token;
+      const oldRoad = main.querySelector(".plan-focus > .plan-block");
+      const previewRoad = planBlock({ planId: null, plan: res.plan, version: d.version + 1, status: "draft",
+        weeklyHours: next, progress: res.progress, evidence: res.evidence, startDate: planStartDate(d),
+        readOnly: true, diagrams: false, title: "Proposed roadmap" });
+      const showRoad = (showPreview) => { oldRoad.hidden = showPreview; previewRoad.hidden = !showPreview;
+        beforeBtn.setAttribute("aria-pressed", String(!showPreview)); afterBtn.setAttribute("aria-pressed", String(showPreview)); };
+      const beforeBtn = h("button", { class: "btn sm", type: "button", onclick: () => showRoad(false) }, "Current plan");
+      const afterBtn = h("button", { class: "btn sm", type: "button", onclick: () => showRoad(true) }, "Proposed plan");
+      const summary = res.summary;
+      const discard = () => { if (previewToken) api(`/api/plans/${id}/discard-preview`, { method: "POST", body: { token: previewToken } }).catch(() => {});
+        previewToken = null; result.replaceChildren(); oldRoad.hidden = false; editor.hidden = true;
+        toggle.setAttribute("aria-expanded", "false"); toggle.focus(); };
+      resetPreview = discard;
+      result.replaceChildren(h("div", { class: "plan-preview-summary" }, h("h4", {}, "Preview changes"),
+        h("p", {}, `${summary.hours_before} → ${summary.hours_after} hours per week · ${summary.steps_before} → ${summary.steps_after} learning steps`),
+        h("p", {}, `Learning priority: ${summary.priority_mode === "biggest_gaps_first" ? "Biggest skill gaps first" : "Balanced"}`),
+        summary.priority_skills?.length ? h("p", {}, `First priority: ${summary.priority_skills.join(", ")}`) : null,
+        summary.added_skills?.length ? h("p", {}, `Newly scheduled: ${summary.added_skills.join(", ")}`) : null,
+        summary.moved_steps?.length ? h("p", {}, `Moved: ${summary.moved_steps.join(", ")}`) : null,
+        summary.modified_steps?.length ? h("p", {}, `Modified: ${summary.modified_steps.join(", ")}`) : null,
+        summary.deferred_skills?.length ? h("p", {}, `Deferred by available time: ${summary.deferred_skills.join(", ")}`) : null,
+        h("p", { class: "muted" }, "Existing completed steps remain recorded. Applying creates a new draft version; an approved plan stays in History.")),
+        h("div", { class: "plan-preview-actions" }, beforeBtn, afterBtn,
+          h("button", { class: "btn primary", type: "button", onclick: async () => {
+            if (!previewToken) return;
+            try { await api(`/api/plans/${id}/apply-preview`, { method: "POST", body: { token: previewToken } });
+              toast("Proposed plan applied as a new draft"); planDetail(main, id, true); }
+            catch (err) { toast(err.message, "err"); }
+          } }, "Apply changes"), h("button", { class: "btn ghost", type: "button", onclick: discard }, "Discard preview")), previewRoad);
+      showRoad(true);
     } catch (err) {
-      toast(err.message, "err"); btn.disabled = input.disabled = false; btn.textContent = "Update plan";
+      toast(err.message, "err");
+    } finally {
+      btn.disabled = false; btn.textContent = "Preview AI-adjusted roadmap";
     }
-  } }, "Update plan");
-  return h("span", { class: "plan-hours-field" }, icon("clock"), input, " h/week", btn);
+  } }, "Preview AI-adjusted roadmap");
+  editor.append(h("div", { class: "plan-edit-fields" }, h("label", {}, "Hours per week", input),
+    h("label", {}, "Learning priority", priorityMode), h("label", {}, "Optional focus skill", priority), btn), result);
+  return h("div", { class: "plan-edit-control" }, h("span", {}, icon("clock"), `${hours} h/week`), toggle, editor);
 }
 
 async function planDetail(main, id, focusPlan = false, section = null, selectedNodeId = null) {
@@ -1122,6 +1172,7 @@ async function planDetail(main, id, focusPlan = false, section = null, selectedN
   const r = d.report;
   const approved = d.status === "approved";
   const totalHours = d.plan.activities.reduce((sum, activity) => sum + Number(activity.estimated_hours || 0), 0);
+  const startDate = planStartDate(d);
   setSources(r?.evidence || []);
   const planFocus = h("section", { class: "plan-focus", tabindex: "-1", "aria-label": approved ? "Approved plan and implementation" : "Proposed plan" },
     h("div", { class: "plan-hero" },
@@ -1129,13 +1180,13 @@ async function planDetail(main, id, focusPlan = false, section = null, selectedN
         h("h2", {}, `Become ${/^[aeiou]/i.test(r?.occupation?.title || d.plan.target_role) ? "an" : "a"} `, h("span", { class: "plan-hero-role" }, r?.occupation?.title || d.plan.target_role))), h("span", { class: `tag ${d.status}` }, d.status)),
       h("p", { class: "plan-hero-copy" }, approved ? "Your personalised 90-day learning journey. Pick up where you left off on the right." : "Your personalised 90-day learning journey, in three 30-day sections."),
       h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days from ",
-        d.read_only ? new Date(d.started_utc).toLocaleDateString() : h("input", { class: "input plan-start", type: "date", "aria-label": "Plan start date",
-          value: d.started_utc.slice(0, 10), onchange: async (e) => {
+        d.read_only ? new Date(startDate).toLocaleDateString() : h("input", { class: "input plan-start", type: "date", "aria-label": "Plan start date",
+          value: startDate.slice(0, 10), onchange: async (e) => {
             try { await api(`/api/plans/${id}/start`, { method: "POST", body: { start_date: e.target.value } }); toast("Start date updated"); planDetail(main, id, true); }
             catch (err) { toast(err.message, "err"); }
           } })), h("span", {}, icon("plans"), `${Math.round(totalHours * 10) / 10} estimated learning hours`), hoursControl(main, id, d))),
     lastChanges?.id === id ? changesBlock(lastChanges.changes) : null,
-    planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence, startDate: d.started_utc,
+    planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: r?.evidence, startDate,
       sectionHref: (p, nodeId) => `#/plans/${id}${p ? `/${p}${nodeId ? `/${nodeId}` : ""}` : ""}`, selectedNodeId, diagrams: false,
       title: null, onChange: () => planDetail(main, id, true) }));
   // The plan page is one report split into sections; the bar shows one section at a time, and "Download report"

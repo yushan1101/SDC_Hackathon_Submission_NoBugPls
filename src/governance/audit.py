@@ -15,6 +15,9 @@ INSERT INTO plan_references(plan_id)
     ORDER BY p.created_utc, p.plan_id;
 CREATE TABLE IF NOT EXISTS plan_starts(plan_id TEXT PRIMARY KEY, start_utc TEXT NOT NULL);  -- the learner's own start date (default: created_utc)
 CREATE TABLE IF NOT EXISTS plan_reports(plan_id TEXT PRIMARY KEY, report TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS plan_edit_previews(token TEXT PRIMARY KEY, plan_id TEXT NOT NULL, base_version INTEGER NOT NULL,
+    actor TEXT NOT NULL, plan_json TEXT NOT NULL, report_json TEXT NOT NULL, changes_json TEXT NOT NULL,
+    created_utc TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS hr_reviews(plan_id TEXT PRIMARY KEY, candidate_name TEXT NOT NULL DEFAULT '',
     candidate_email TEXT NOT NULL DEFAULT '', candidate_phone TEXT NOT NULL DEFAULT '',
     reviewer_notes TEXT NOT NULL DEFAULT '', review_status TEXT,

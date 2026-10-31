@@ -26,6 +26,7 @@ from datetime import date, datetime, timedelta, timezone
 from io import StringIO
 from types import SimpleNamespace
 from pathlib import Path
+from typing import Literal
 
 import httpx
 import pandas as pd
@@ -38,7 +39,7 @@ from pydantic import BaseModel, Field, ValidationError
 from agents.gap_analyst import SCENARIO_NOTES
 from agents.profiler import expand as expand_skill
 from agents import ops
-from agents.pathway import HOURS_PER_LEVEL, backfill_learning_nodes, distinct_steps, expand_learning_nodes
+from agents.pathway import HOURS_PER_LEVEL, backfill_learning_nodes
 from agents.sdg import goal_meta, role_sdgs
 from agents import catalog, criteria, llm, matcher, quiz, resume
 from agents import tools as agent_tools
@@ -1877,38 +1878,74 @@ def sdgs(request: HttpRequest):
 
 
 def _learning_plan_view(plan: dict) -> dict:
-    """Show saved weekly lessons as separate actions without rewriting the approved plan."""
+    """Show one complete lesson per week without rewriting saved plan versions."""
     nodes = plan.get("learning_nodes") or []
     try:
         if not nodes and plan.get("activities"):  # saved before the roadmap existed
             nodes = [node.model_dump() for node in backfill_learning_nodes(plan)]
-        elif nodes and not any(node.get("id", "").endswith(("-practice", "-check")) for node in nodes):
-            nodes = [node.model_dump() for node in expand_learning_nodes([LearningNode(**node) for node in nodes], plan.get("target_role"))]
     except (ValidationError, KeyError, ValueError):
         return plan
-    # each week's understand, practice and check steps get their own part of the lesson (see pathway.distinct_steps)
-    return {**plan, "learning_nodes": distinct_steps(nodes)} if nodes else plan
+    grouped: dict[str, list[dict]] = {}
+    for node in nodes:
+        base = re.sub(r"-(?:practice|check)$", "", node["id"])
+        grouped.setdefault(base, []).append(node)
+    lessons = []
+    for base, parts in grouped.items():
+        source = next((part for part in parts if part["id"] == base), parts[0])
+        practice = next((part for part in parts if part["id"] == base + "-practice"), source)
+        lesson = {**source, "id": base, "component_ids": source.get("component_ids") or [part["id"] for part in parts]}
+        if len(parts) > 1:
+            check = next((part for part in parts if part["id"] == base + "-check"), None)
+            lesson.update(instructions=practice["instructions"], exercise=practice["exercise"],
+                          deliverable=practice["deliverable"], completion_criteria=practice["completion_criteria"],
+                          estimated_minutes=sum(part["estimated_minutes"] for part in parts),
+                          learn_minutes=source["estimated_minutes"],
+                          practice_minutes=practice["estimated_minutes"] if practice is not source else 0,
+                          quiz_minutes=check["estimated_minutes"] if check else 0)
+        if lesson.get("estimated_minutes") and sum(lesson.get(k, 0) for k in ("learn_minutes", "practice_minutes", "quiz_minutes")) != lesson["estimated_minutes"]:
+            total = lesson["estimated_minutes"]
+            learn = max(1, round(total * 0.35))
+            quiz = max(1, round(total * 0.15)) if lesson.get("quiz") else 0
+            lesson.update(learn_minutes=learn, practice_minutes=total - learn - quiz, quiz_minutes=quiz)
+        lessons.append(lesson)
+    return {**plan, "learning_nodes": lessons} if lessons else plan
+
+
+def _matching_learning_steps(old_nodes: list[dict], new_nodes: list[dict]) -> dict[str, str]:
+    """Match lessons one-to-one by assessed skill and topic, preferring unchanged IDs."""
+    identity = lambda node: (tuple(node.get("skills") or []), tuple(node.get("topics") or []))
+    old_by_id = {node["id"]: node for node in old_nodes}
+    matched, used = {}, set()
+    for node in new_nodes:
+        old = old_by_id.get(node["id"])
+        if old and identity(old) == identity(node):
+            matched[node["id"]] = old["id"]
+            used.add(old["id"])
+    for node in new_nodes:
+        if node["id"] in matched:
+            continue
+        candidates = [old for old in old_nodes if old["id"] not in used and identity(old) == identity(node)]
+        if candidates:
+            old = min(candidates, key=lambda item: abs(item["week_number"] - node["week_number"]))
+            matched[node["id"]] = old["id"]
+            used.add(old["id"])
+    return matched
 
 
 def _learning_progress_rows(plan: dict, rows) -> list:
     original = plan.get("learning_nodes") or []
-    expanded = _learning_plan_view(plan).get("learning_nodes") or []
+    lessons = _learning_plan_view(plan).get("learning_nodes") or []
     done = dict(rows)
-    if len(expanded) > len(original):
-        for node in original:
-            key = f"node:{node['id']}"
-            marker = f"expanded:{node['id']}"
-            if key in done and marker not in done:
-                for child in expanded:
-                    if child["id"].startswith(node["id"] + "-"):
-                        done.setdefault(f"node:{child['id']}", done[key])
-                done[marker] = done[key]
     if not original:  # backfilled steps: carry over the old per-activity ticks once (the marker lets the step be unticked later)
-        for node in expanded:
+        for node in lessons:
             keys, marker = node.get("activity_keys") or [], f"backfilled:{node['id']}"
             if keys and marker not in done and all(k in done for k in keys):
                 done.setdefault(f"node:{node['id']}", max(done[k] for k in keys))
                 done[marker] = done[f"node:{node['id']}"]
+    for node in lessons:
+        parts = node.get("component_ids") or [node["id"]]
+        if f"step:{node['id']}" not in done and all(f"node:{part}" in done for part in parts):
+            done[f"step:{node['id']}"] = max(done[f"node:{part}"] for part in parts)
     return list(done.items())
 
 
@@ -1919,13 +1956,13 @@ def _progress_summary(plan: dict, done_rows, created_utc: str) -> dict:
     plan = _learning_plan_view(plan)
     nodes = plan.get("learning_nodes") or []
     acts = plan.get("activities", [])
-    keys = ({f"node:{node.get('id')}" for node in nodes} if nodes else
+    keys = ({f"step:{node.get('id')}" for node in nodes} if nodes else
             {f"{a.get('day_range')}:{a.get('skill_id')}" for a in acts})
     done = {item: at for item, at in done_rows if item in keys}
     total, n = len(keys), len(done)
     if nodes:
         bounds = [("1-30", 1, 4), ("31-60", 5, 8), ("61-90", 9, 13)]
-        phases = [{"days": d, "done": sum(f"node:{node['id']}" in done for node in nodes if lo <= node.get("week_number", 0) <= hi),
+        phases = [{"days": d, "done": sum(f"step:{node['id']}" in done for node in nodes if lo <= node.get("week_number", 0) <= hi),
                    "total": sum(lo <= x.get("week_number", 0) <= hi for x in nodes)} for d, lo, hi in bounds]
         phases = [phase for phase in phases if phase["total"]]
     else:
@@ -2033,6 +2070,12 @@ def plan_progress(pid: str, body: ProgressIn, user: dict = Depends(current_user)
         rows = db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (pid,)).fetchall()
         for item, at in _learning_progress_rows(current_plan, rows):
             db.execute("INSERT INTO plan_progress(plan_id, item, done_utc) VALUES(?,?,?) ON CONFLICT DO NOTHING", (pid, item, at))
+        if body.item.startswith("step:") and not body.done:
+            lesson = next((n for n in _learning_plan_view(current_plan).get("learning_nodes", [])
+                           if n["id"] == body.item.removeprefix("step:")), None)
+            if lesson:
+                for part in lesson.get("component_ids") or [lesson["id"]]:
+                    db.execute("DELETE FROM plan_progress WHERE plan_id=? AND item=?", (pid, f"node:{part}"))
         if body.done:
             db.execute("INSERT INTO plan_progress(plan_id, item, done_utc) VALUES(?,?,?) "
                        "ON CONFLICT(plan_id, item) DO UPDATE SET done_utc=excluded.done_utc", (pid, body.item, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
@@ -2104,6 +2147,167 @@ def plan_hours(pid: str, body: HoursIn, user: dict = Depends(current_user)):
                 db.execute("UPDATE plan_reports SET report=? WHERE plan_id=?", (json.dumps(report), pid))
     RESULTS.pop(pid, None)  # the in-memory run still has the old hours; follow-ups start from the saved plan
     return {"version": v, "status": "draft", "changes": changes}
+
+
+class PlanPreviewIn(BaseModel):
+    weekly_hours: float = Field(gt=0, le=80)
+    priority_mode: Literal["balanced", "biggest_gaps_first"] = "balanced"
+    priority_skills: list[str] = Field(default_factory=list, max_length=8)
+
+
+class ApplyPlanPreviewIn(BaseModel):
+    token: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
+@app.post("/api/plans/{pid}/preview")
+def preview_plan_edit(pid: str, body: PlanPreviewIn, user: dict = Depends(current_user)):
+    """Build and validate a proposed roadmap. No plan version or progress changes until Apply."""
+    from agents import pathway
+    _guard(pid, user)
+    with DB_LOCK:
+        current = approval.latest(db, pid)
+        saved = db.execute("SELECT report FROM plan_reports WHERE plan_id=?", (pid,)).fetchone()
+        progress_rows = db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (pid,)).fetchall()
+    if not saved:
+        raise HTTPException(409, "This plan has no saved analysis. Build a new plan to edit its roadmap.")
+    report = json.loads(saved[0])
+    req = report.get("request") or {}
+    if not report.get("gaps") or not req.get("skills"):
+        raise HTTPException(409, "This plan has no saved skill assessment. Build a new plan to edit its roadmap.")
+    gaps, skills = [Gap(**g) for g in report["gaps"]], [Skill(**s) for s in req["skills"]]
+    open_names = {g.skill_id for g in gaps if g.gap > 0}
+    if len(set(body.priority_skills)) != len(body.priority_skills) or any(name not in open_names for name in body.priority_skills):
+        raise HTTPException(422, "Choose distinct skills from this plan's assessed gaps.")
+    rank = {name: i for i, name in enumerate(body.priority_skills)}
+    gaps.sort(key=lambda g: (-g.gap, -(g.importance or 0), g.skill_id.casefold()))
+    if body.priority_mode == "balanced":
+        midpoint = (len(gaps) + 1) // 2
+        upper, lower = gaps[:midpoint], gaps[midpoint:]
+        gaps = [g for pair in zip(upper, lower) for g in pair] + upper[len(lower):]
+    gaps.sort(key=lambda g: rank.get(g.skill_id, len(rank)))
+    role = (report.get("occupation") or {}).get("title") or req["target_role"]
+    learning = {g.skill_id: learning_resources(g.skill_id, 1) for g in gaps if g.gap > 0}
+    new = pathway.build(gaps, body.weekly_hours, role, req["scenario"], learning, skills)
+    new, _ = pathway.personalise(new, role, skills, gaps, req.get("query") or "", learning)
+    evidence = {e["id"] for e in report.get("evidence", [])} | {e.id for values in learning.values() for e in values}
+    errs = [i.model_dump() for i in validate(new, gaps, evidence, body.weekly_hours) if i.severity == "error"]
+    if errs:
+        return JSONResponse({"detail": "validation failed", "issues": errs}, status_code=422)
+    proposal_report = json.loads(saved[0])
+    proposal_report["request"]["weekly_learning_hours"] = body.weekly_hours
+    proposal_report["request"]["priority_mode"] = body.priority_mode
+    resources = {item["id"]: item for item in proposal_report.get("evidence", [])}
+    for values in learning.values():
+        for item in values:
+            resources[item.id] = item.model_dump()
+    proposal_report["evidence"] = list(resources.values())
+    before = current["plan"]
+    old_nodes = _learning_plan_view(before).get("learning_nodes", [])
+    preview_view = _learning_plan_view(new.model_dump())
+    new_nodes = preview_view.get("learning_nodes", [])
+    old_by_id = {node["id"]: node for node in old_nodes}
+    matches = _matching_learning_steps(old_nodes, new_nodes)
+    moved_steps = [node["title"] for node in new_nodes if node["id"] in matches and
+                   old_by_id[matches[node["id"]]]["week_number"] != node["week_number"]]
+    modified_nodes = [node for node in new_nodes if node["id"] in old_by_id and
+                      (old_by_id[node["id"]].get("title") != node.get("title") or
+                       old_by_id[node["id"]].get("skills") != node.get("skills") or
+                       old_by_id[node["id"]].get("exercise") != node.get("exercise") or
+                       old_by_id[node["id"]].get("estimated_minutes") != node.get("estimated_minutes"))]
+    modified_steps = [node["title"] for node in modified_nodes]
+    modified_ids = {node["id"] for node in modified_nodes}
+    before_skills = [a["skill_id"] for a in before.get("activities", [])]
+    after_skills = [a.skill_id for a in new.activities]
+    summary = {"hours_before": req["weekly_learning_hours"], "hours_after": body.weekly_hours,
+               "steps_before": len(_learning_plan_view(before).get("learning_nodes", [])),
+               "steps_after": len(new.learning_nodes), "priority_skills": body.priority_skills,
+               "priority_mode": body.priority_mode,
+               "added_skills": list(dict.fromkeys(s for s in after_skills if s not in before_skills)),
+               "moved_steps": moved_steps[:12], "modified_steps": modified_steps[:12],
+               "deferred_skills": new.deferred_skills}
+    moved_ids = {node["id"] for node in new_nodes if node["id"] in matches and
+                 old_by_id[matches[node["id"]]]["week_number"] != node["week_number"]}
+    for node in new_nodes:
+        if node["id"] not in old_by_id:
+            node["change_badge"] = "New"
+        elif node["id"] in moved_ids:
+            node["change_badge"] = "Moved"
+        elif node["id"] in modified_ids:
+            node["change_badge"] = "Modified"
+    completed = dict(_learning_progress_rows(before, progress_rows))
+    preview_progress = []
+    for new_id, old_id in matches.items():
+        preview_progress.extend(f"{prefix}:{new_id}" for prefix in ("step", "quiz")
+                                if f"{prefix}:{old_id}" in completed)
+        preview_progress.extend(f"criterion:{new_id}:{item.rsplit(':', 1)[1]}" for item in completed
+                                if item.startswith(f"criterion:{old_id}:"))
+    token = uuid.uuid4().hex
+    with DB_LOCK, db:
+        db.execute("DELETE FROM plan_edit_previews WHERE plan_id=? AND actor=?", (pid, user["username"]))
+        db.execute("INSERT INTO plan_edit_previews VALUES(?,?,?,?,?,?,?,?)",
+                   (token, pid, current["version"], user["username"], json.dumps(new.model_dump()),
+                    json.dumps(proposal_report), json.dumps(summary), time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
+    return {"token": token, "base_version": current["version"], "plan": preview_view,
+            "evidence": proposal_report["evidence"], "progress": preview_progress, "summary": summary}
+
+
+@app.post("/api/plans/{pid}/discard-preview")
+def discard_plan_preview(pid: str, body: ApplyPlanPreviewIn, user: dict = Depends(current_user)):
+    _guard(pid, user)
+    with DB_LOCK, db:
+        db.execute("DELETE FROM plan_edit_previews WHERE token=? AND plan_id=? AND actor=?",
+                   (body.token, pid, user["username"]))
+    return {"discarded": True}
+
+
+@app.post("/api/plans/{pid}/apply-preview")
+def apply_plan_preview(pid: str, body: ApplyPlanPreviewIn, user: dict = Depends(current_user)):
+    _guard(pid, user)
+    with DB_LOCK:
+        row = db.execute("SELECT base_version, actor, plan_json, report_json FROM plan_edit_previews WHERE token=? AND plan_id=?",
+                         (body.token, pid)).fetchone()
+        if not row or row[1] != user["username"]:
+            raise HTTPException(404, "Plan preview not found. Preview the changes again.")
+        if approval.latest(db, pid)["version"] != row[0]:
+            raise HTTPException(409, "This plan changed since the preview. Preview it again before applying.")
+        before = approval.latest(db, pid)["plan"]
+        proposed = Pathway(**json.loads(row[2]))
+        old_nodes = _learning_plan_view(before).get("learning_nodes", [])
+        new_nodes = _learning_plan_view(proposed.model_dump()).get("learning_nodes", [])
+        identity = lambda n: (tuple(n.get("skills") or []), tuple(n.get("topics") or []))
+        old_by_id = {n["id"]: n for n in old_nodes}
+        new_by_id = {n["id"]: n for n in new_nodes}
+        matches = _matching_learning_steps(old_nodes, new_nodes)
+        existing = db.execute("SELECT item, done_utc FROM plan_progress WHERE plan_id=?", (pid,)).fetchall()
+        completed = dict(_learning_progress_rows(before, existing))
+        version = approval.edit(db, pid, proposed.model_dump(), user["username"],
+                                "hr_advisor" if user["role"] == "hr_advisor" else "employee")
+        with db:
+            for old_id, old_node in old_by_id.items():
+                if old_id in new_by_id and identity(old_node) != identity(new_by_id[old_id]):
+                    for part in old_node.get("component_ids") or [old_id]:
+                        db.execute("DELETE FROM plan_progress WHERE plan_id=? AND item=?", (pid, f"node:{part}"))
+                    db.execute("DELETE FROM plan_progress WHERE plan_id=? AND item=?", (pid, f"step:{old_id}"))
+                    db.execute("DELETE FROM plan_progress WHERE plan_id=? AND item=?", (pid, f"quiz:{old_id}"))
+                    db.execute("DELETE FROM plan_progress WHERE plan_id=? AND item LIKE ?", (pid, f"criterion:{old_id}:%"))
+            for new_node in new_nodes:
+                old_id = matches.get(new_node["id"])
+                if not old_id:
+                    continue
+                for prefix in ("step", "quiz"):
+                    if f"{prefix}:{old_id}" in completed:
+                        db.execute("INSERT INTO plan_progress(plan_id,item,done_utc) VALUES(?,?,?) "
+                                   "ON CONFLICT(plan_id,item) DO UPDATE SET done_utc=excluded.done_utc",
+                                   (pid, f"{prefix}:{new_node['id']}", completed[f"{prefix}:{old_id}"]))
+                for item, at in completed.items():
+                    if item.startswith(f"criterion:{old_id}:"):
+                        new_item = f"criterion:{new_node['id']}:{item.rsplit(':', 1)[1]}"
+                        db.execute("INSERT INTO plan_progress(plan_id,item,done_utc) VALUES(?,?,?) "
+                                   "ON CONFLICT(plan_id,item) DO UPDATE SET done_utc=excluded.done_utc", (pid, new_item, at))
+            db.execute("UPDATE plan_reports SET report=? WHERE plan_id=?", (row[3], pid))
+            db.execute("DELETE FROM plan_edit_previews WHERE token=?", (body.token,))
+    RESULTS.pop(pid, None)
+    return {"version": version, "status": "draft"}
 
 
 class ApproveIn(BaseModel):
