@@ -26,9 +26,11 @@ from pathlib import Path
 
 import numpy as np
 
+from core import cache
 from governance.db import no_wait
 
 log = logging.getLogger(__name__)
+CACHE_TTL = 2 * 24 * 3600  # counts for a closed past window; Redis when REDIS_URL is set, else this process
 UA = {"User-Agent": "AiversePulse/0.3 (workforce research; hackathon)"}
 
 # kind: capability (creates demand for people who build/direct it) | automation (pressure on routine work it absorbs)
@@ -122,11 +124,15 @@ def fetch_hn(today: date, weeks: int = 8) -> dict[str, list[int]]:
     def topic(t):
         counts = []
         for w in range(weeks, 0, -1):
-            a, b = end - timedelta(weeks=w), end - timedelta(weeks=w - 1)
-            j = _get("https://hn.algolia.com/api/v1/search", {
-                "query": t["q"], "tags": "story", "hitsPerPage": 0,
-                "numericFilters": f"created_at_i>={int(a.timestamp())},created_at_i<{int(b.timestamp())}"}).json()
-            counts.append(int(j.get("nbHits", 0)))
+            a, b = int((end - timedelta(weeks=w)).timestamp()), int((end - timedelta(weeks=w - 1)).timestamp())
+            key = f"signals:hn:{t['q']}:{a}:{b}"
+            n = cache.get(key)
+            if n is None:
+                n = int(_get("https://hn.algolia.com/api/v1/search", {
+                    "query": t["q"], "tags": "story", "hitsPerPage": 0,
+                    "numericFilters": f"created_at_i>={a},created_at_i<{b}"}).json().get("nbHits", 0))
+                cache.set(key, n, ttl_s=CACHE_TTL)
+            counts.append(n)
         return t["id"], counts
     with ThreadPoolExecutor(4) as ex:  # ponytail: 4 topics at once stays far below Algolia's 10k req/h limit
         return dict(ex.map(topic, TOPICS))
@@ -181,13 +187,18 @@ def fetch_arxiv(today: date) -> dict[str, tuple[int, int]]:
         try:
             vals = []
             for a, b in ((r0, r1), (p0, r0)):
-                x = _get("https://export.arxiv.org/api/query", {
-                    "search_query": f'abs:"{q}" AND submittedDate:[{fmt(a)} TO {fmt(b)}]', "max_results": 1}, timeout=30).text  # arXiv answers 500 to max_results=0
-                m = re.search(r"<opensearch:totalResults[^>]*>(\d+)<", x)
-                if not m:
-                    raise ValueError("no count")
-                vals.append(int(m.group(1)))
-                time.sleep(3.2)  # arXiv asks for >= 3 s between requests
+                key = f"signals:arxiv:{q}:{fmt(a)}:{fmt(b)}"
+                n = cache.get(key)
+                if n is None:
+                    x = _get("https://export.arxiv.org/api/query", {
+                        "search_query": f'abs:"{q}" AND submittedDate:[{fmt(a)} TO {fmt(b)}]', "max_results": 1}, timeout=30).text  # arXiv answers 500 to max_results=0
+                    m = re.search(r"<opensearch:totalResults[^>]*>(\d+)<", x)
+                    if not m:
+                        raise ValueError("no count")
+                    n = int(m.group(1))
+                    cache.set(key, n, ttl_s=CACHE_TTL)
+                    time.sleep(3.2)  # arXiv asks for >= 3 s between requests; a cache hit costs it nothing
+                vals.append(n)
             out[t["id"]] = (vals[0], vals[1])
         except Exception as e:
             log.warning("arXiv unavailable (%s); continuing without it", type(e).__name__)
