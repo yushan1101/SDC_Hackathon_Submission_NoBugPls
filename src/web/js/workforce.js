@@ -24,6 +24,12 @@ export async function workforceView(root) {
   const COMPARE = [["auto", "Compare: automatic"], ["department", "Compare departments"], ["role", "Compare roles"], ["dataset", "Compare data sets"],
     ["group", "Compare groups"], ["source", "Compare sources"]];
   const changed = () => { SELECTED.clear(); drawFilters(); load(); };
+  const mode = () => selected.scenario === "agentic" ? "Agentic" : "Assistive";
+  const shiftText = (change) => {
+    const from = selected.scenario === "agentic" ? change.assistive_target : change.agentic_target;
+    const to = selected.scenario === "agentic" ? change.agentic_target : change.assistive_target;
+    return `${from}/5 → ${to}/5 average target · ${change.employees} assessed`;
+  };
   function drawFilters() {
     const select = (label, key, options, resetOnChange = false) => h("select", { class: "input wf-select-sm", "aria-label": label,
       onchange: (e) => {
@@ -81,12 +87,6 @@ export async function workforceView(root) {
     try {
       const next = await api(`/api/hr/workforce?${params}`);
       if (version !== request || !root.isConnected) return;
-      const hasHeatmap = next.cells?.some((c) => c.status === "ready");
-      // the fictional preview only stands in when the organisation has no data at all, never for a filter that matches nothing
-      const filtered = selected.skill.size || selected.datasets.size || selected.department || selected.role || selected.source || selected.group || selected.category !== "all";
-      if (!selected.samplePreview && !selected.sampleDismissed && !filtered && !hasHeatmap && next.sample_available) {
-        selected.samplePreview = true; await load(); return;
-      }
       const optionsChanged = !data || JSON.stringify(data.options) !== JSON.stringify(next.options);
       data = next;
       previewBanner.hidden = !next.policy.sample_preview && !selected.sampleDismissed;
@@ -110,6 +110,7 @@ export async function workforceView(root) {
 
   function render() {
     const o = data.overview;
+    const impact = data.scenario_impact || {};
     const card = (value, label, note) => h("div", { class: "wf-stat" }, h("span", { class: "muted" }, label), h("strong", {}, value), h("span", { class: "muted" }, note));
     const common = o.common_missing.slice(0, 3);
     const stats = h("div", { class: "wf-stats" },
@@ -119,6 +120,25 @@ export async function workforceView(root) {
       h("div", { class: "wf-stat" }, h("span", { class: "muted" }, "Top shared gaps"),
         common.length ? h("ol", { class: "wf-top-gaps" }, common.map((v) => h("li", {}, h("b", {}, v.skill), h("span", { class: "muted" }, `${v.employees} below`))))
           : h("strong", {}, "—")));
+    const scenarioImpact = h("section", { class: "wf-scenario-impact", "aria-label": `${mode()} AI scenario comparison` },
+      h("div", { class: "wf-scenario-impact-head" }, h("h3", {}, `${mode()} AI · what changes`),
+        h("span", { class: "muted" }, "Compared with the other scenario")),
+      impact.changed_skills ? [
+        h("p", {}, `${impact.employees_with_target_changes} of ${o.employees} employees have different role targets across ${impact.changed_skills} skills. `,
+          impact.new_gaps || impact.closed_gaps
+            ? `${impact.new_gaps} employee-skill gaps appear and ${impact.closed_gaps} close under Agentic AI.`
+            : "No employee crosses a below-target threshold, so the highest gap counts stay the same."),
+        common.length ? h("p", { class: "wf-scenario-focus" }, h("b", {}, "Training focus: "),
+          `${common.slice(0, 2).map((item) => item.skill).join(" and ")} remain the largest shared gaps. `,
+          selected.scenario === "agentic"
+            ? "Emphasize directing and checking automated work while addressing those gaps."
+            : "Emphasize hands-on practice with AI support while addressing those gaps.") : null,
+        h("ul", { class: "wf-scenario-changes" }, impact.skills.slice(0, 5).map((change) =>
+          h("li", {}, h("b", {}, change.skill), h("span", { class: "muted" }, shiftText(change)))))
+      ] : h("p", {}, impact.compared_employees
+        ? "These assessed skill targets are the same in both scenarios."
+        : "These assessments do not contain a saved scenario comparison. Reanalyse the team to compare role targets."),
+      h("p", { class: "muted wf-scenario-method" }, "Targets for both scenarios were calculated during the team analysis. Switching views recalculates the heatmap from those saved targets; it does not run a new AI analysis."));
     // worst skill first; the last column is the skill's average gap across the groups that have assessments
     const avg = (row) => { const xs = row.cells.filter((c) => c.status === "ready").map((c) => c.gap_percent); return xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null; };
     const rows = [...data.rows].sort((a, b) => (avg(b) ?? -1) - (avg(a) ?? -1));
@@ -164,10 +184,14 @@ export async function workforceView(root) {
       !SELECTED.size ? h("span", { id: "wf-team-action-hint", class: "wf-team-action-hint" }, "Select a suggested priority below to enable plan creation.") : null);
     const viewSwitch = h("div", { class: "seg wf-seg", role: "group", "aria-label": "Chart view" }, [["bloom", "Bloom"], ["matrix", "Matrix"]].map(([v, t]) =>
       h("button", { type: "button", "aria-pressed": String(selected.view === v), onclick: () => { if (selected.view !== v) { selected.view = v; render(); } } }, t)));
+    const unchangedRates = impact.changed_skills && !impact.new_gaps && !impact.closed_gaps
+      ? h("p", { class: "wf-unchanged-rates", role: "note" }, h("b", {}, "Why the percentages stay the same: "),
+        `This scenario changes targets for ${impact.changed_skills} other skill${impact.changed_skills === 1 ? "" : "s"}, `,
+        "but no assessed employee moves across a below-target threshold. The chart keeps the measured gap rates.") : null;
     const heatmap = h("section", { class: "panel" }, h("header", { class: "wf-panel-header" }, h("div", {}, h("h2", {}, "Team skill gaps"),
       h("p", { class: "muted" }, selected.view === "bloom" ? "The skills where most people sit below their role's target, largest gap first."
         : "Each cell shows employees below their role’s target proficiency.")), h("div", { class: "wf-head-actions" }, viewSwitch, teamAction)),
-      h("div", { class: "pad wf-matrix" }, ...(selected.view === "bloom" ? [bloom(), suggestions] : [suggestions, matrix]),
+      h("div", { class: "pad wf-matrix" }, unchangedRates, ...(selected.view === "bloom" ? [bloom(), suggestions] : [suggestions, matrix]),
         data.total_skills > data.rows.length && !selected.skill.size ? h("p", { class: "muted wf-policy" },
           `Showing the ${data.rows.length} most-assessed of ${data.total_skills} skills. Use the Skills filter to pick others.`) : null,
         selected.view === "bloom" ? null : legend,
@@ -185,7 +209,7 @@ export async function workforceView(root) {
         h("div", {},
           h("h3", {}, p.name),
           h("p", { class: "muted" }, `${p.cohort.employees} employees · ${p.cohort.department} · ${p.cohort.role}`),
-          h("p", {}, `${gapCount} selected skill group${gapCount === 1 ? "" : "s"} · Draft for HR review${p.sample_preview ? " · Sample preview" : ""}`)),
+          h("p", {}, `${gapCount} selected skill group${gapCount === 1 ? "" : "s"} · Draft for HR review · ${p.scenario ? `${p.scenario === "agentic" ? "Agentic" : "Assistive"} AI` : "Scenario not recorded"}${p.sample_preview ? " · Sample preview" : ""}`)),
         h("details", {},
           h("summary", {}, "Review AI draft"),
           h("p", {}, p.overview || ""), priorityList, sharedSteps, ...roleTracks,
@@ -196,7 +220,7 @@ export async function workforceView(root) {
       h("div", { class: "pad" }, plans.length
         ? plans.map(savedPlan)
         : h("p", { class: "muted" }, "No team plans yet. Select heatmap gaps and create a draft for HR review.")));
-    output.replaceChildren(stats, heatmap, section);
+    output.replaceChildren(stats, scenarioImpact, heatmap, section);
   }
   // Gap bloom: a radial view of the top skills. Petal length = share of assessed people below target (linear radius),
   // colour = the same share on a one-hue owl-blue ramp; the ranked list beside it carries the exact numbers, one dot
@@ -207,6 +231,7 @@ export async function workforceView(root) {
       const employees = ready.reduce((n, c) => n + c.employees, 0), affected = ready.reduce((n, c) => n + c.affected, 0);
       const worst = [...ready].sort((a, b) => (b.gap_percent - a.gap_percent) || (b.affected - a.affected))[0];
       return { skill: row.skill, employees, affected, pct: employees ? Math.round((100 * affected) / employees) : 0, worst,
+        change: row.scenario_change,
         roles: ready.filter((c) => c.affected).map((c) => c.group) };
     }).filter((x) => x.employees).sort((a, b) => (b.affected - a.affected) || (b.pct - a.pct)).slice(0, 10);
     if (!skills.length) return h("div", { class: "empty-state wf-empty" }, h("h3", {}, "No assessed gaps in this view"),
@@ -252,7 +277,8 @@ export async function workforceView(root) {
     const list = h("ol", { class: "wf-rank" }, skills.map((x, i) => h("li", {}, h("button", { type: "button", onclick: () => x.worst && detail(x.worst),
       onmouseenter: () => chart.querySelectorAll(".wf-petal")[i]?.classList.add("is-hot"), onmouseleave: () => chart.querySelectorAll(".wf-petal")[i]?.classList.remove("is-hot") },
       h("span", { class: `wf-rank-n s${step(x.pct)}` }, String(i + 1)),
-      h("span", { class: "wf-rank-main" }, h("b", {}, x.skill), h("small", {}, x.roles.length ? x.roles.join(" · ") : "No one below target")),
+      h("span", { class: "wf-rank-main" }, h("b", {}, x.skill), h("small", {}, x.change
+        ? `${mode()} target: ${shiftText(x.change)}` : x.roles.length ? x.roles.join(" · ") : "No one below target")),
       dots(x), h("span", { class: "wf-rank-pct" }, `${x.pct}%`, h("small", {}, `${x.affected}/${x.employees}`))))));
     const scale = h("div", { class: "wf-bloom-scale", "aria-hidden": "true" }, h("span", {}, "Smaller gap"), [1, 2, 3, 4, 5].map((k) => h("i", { class: `s${k}` })), h("span", {}, "Larger gap"));
     return h("div", { class: "wf-bloom-wrap" },
@@ -299,7 +325,7 @@ export async function workforceView(root) {
     const retry = h("button", { type: "button", class: "btn sm", hidden: true, onclick: generate }, "Retry AI generation");
     let dialog, controller, busy = false, currentDraft;
     const cancel = h("button", { type: "button", class: "btn sm", onclick: () => { controller?.abort(); dialog.close(); } }, "Cancel");
-    const header = h("div", { class: "wf-dialog-head" }, h("div", {}, h("h2", {}, "AI team reskilling plan"),
+    const header = h("div", { class: "wf-dialog-head" }, h("div", {}, h("h2", {}, `${mode()} AI team reskilling plan`),
       h("p", { class: "muted" }, `${data.cohort.department} · ${data.cohort.role} · ${data.cohort.employees} employees`)), cancel);
     dialog = h("dialog", { class: "wf-dialog wf-plan-dialog", onclose: () => { controller?.abort(); dialog.remove(); } },
       header, h("div", { class: "wf-detail-body" }, status,

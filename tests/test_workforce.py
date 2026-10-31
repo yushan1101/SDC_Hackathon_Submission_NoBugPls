@@ -41,6 +41,44 @@ def test_heatmap_uses_team_uploads_and_excludes_individual_analyses():
     assert [g["kind"] for g in data["groups"]] == ["role"]  # no departments recorded, so roles are compared
 
 
+def test_scenario_switch_keeps_uploaded_employees_and_uses_comparison_targets():
+    con = _db()
+    for pid, subject, current in (("a1", "A1", 2), ("a2", "A2", 3)):
+        report = {"gaps": [{"skill_id": "SQL", "current_level": current, "required_level": 3,
+                            "assessed": True}],
+                  "comparison": [{"skill_id": "SQL", "assistive_required": 3, "agentic_required": 4}],
+                  "request": {"scenario": "assistive"}, "occupation": {"title": "Data analyst"},
+                  "workforce": {"owner": "hr1", "dataset": "Analytics"}}
+        con.execute("INSERT INTO plans VALUES(?,?,?,?)", (pid, subject, "hr", pid))
+        con.execute("INSERT INTO plan_reports VALUES(?,?)", (pid, json.dumps(report)))
+        con.execute("INSERT INTO plan_versions VALUES(?,?,?)", (pid, 1, json.dumps({"scenario": "assistive"})))
+    assistive = workforce.aggregate(workforce.load_reports(con, "hr1", "assistive"), datasets=["Analytics"])
+    agentic = workforce.aggregate(workforce.load_reports(con, "hr1", "agentic"), datasets=["Analytics"])
+    assert assistive["overview"]["employees"] == agentic["overview"]["employees"] == 2
+    assert assistive["cells"][0]["affected"] == 1
+    assert agentic["cells"][0]["affected"] == 2
+    assert assistive["cells"][0]["required"] == 3
+    assert agentic["cells"][0]["required"] == 4
+    assert not agentic["policy"]["sample_preview"]
+    assert agentic["scenario_impact"]["changed_skills"] == 1
+    assert agentic["scenario_impact"]["new_gaps"] == 1
+    assert agentic["scenario_impact"]["employees_with_target_changes"] == 2
+
+
+def test_scenario_target_can_change_without_changing_gap_counts():
+    record = {"key": "A1", "role": "Data analyst", "report": {
+        "gaps": [{"skill_id": "Handle data samples", "current_level": 4, "required_level": 3, "assessed": True}],
+        "comparison": [{"skill_id": "Handle data samples", "assistive_required": 3, "agentic_required": 2}]},
+        "scenario": "agentic"}
+    result = workforce.aggregate([record])
+    assert result["overview"]["employees"] == 1
+    assert result["cells"][0]["affected"] == 0
+    assert result["scenario_impact"]["changed_skills"] == 1
+    assert result["scenario_impact"]["lower_targets"] == 1
+    assert result["scenario_impact"]["new_gaps"] == result["scenario_impact"]["closed_gaps"] == 0
+    assert result["rows"][0]["scenario_change"]["agentic_target"] == 2
+
+
 def test_uploads_are_named_data_sets_and_external_groups_compare_side_by_side():
     con = _db()
     gap = lambda cur: {"skill_id": "SQL", "current_level": cur, "required_level": 3}

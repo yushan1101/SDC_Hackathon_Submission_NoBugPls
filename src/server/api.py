@@ -2556,6 +2556,7 @@ def _team_plan_data(body: TeamPlanGenerateIn, owner: str):
                         "current_average": cell["current"], "required_average": cell["required"]}
                        for cell in data["cells"] if cell["status"] == "ready"]
     context = {"cohort": data["cohort"], "scenario": body.scenario, "role_composition": role_counts,
+               "scenario_impact": {**data["scenario_impact"], "skills": data["scenario_impact"]["skills"][:5]},
                "assessed_skills": assessed_skills, "selected_assessed_gaps": selected_data,
                "resource_availability": "No verified learning resource has been selected; suggest general learning activities only."}
     return data, selected, context
@@ -2588,6 +2589,10 @@ def generate_workforce_team_plan(body: TeamPlanGenerateIn, user: dict = Depends(
             "Plan shared activities only for common needs; make distinct role tracks when the role-level targets or gap rates differ. "
             "Plan learning as general suggested activities only. Never make hiring, firing, promotion, or performance decisions. "
             "Use assessed_skills for team-wide comparison and selected_assessed_gaps for the requested plan focus. "
+            "Make the advice specific to the selected AI scenario. With assistive AI, emphasize human execution "
+            "with AI support; with agentic AI, emphasize directing, checking, and interpreting automated work. "
+            "Use scenario_impact to explain real target changes, and say when the selected gap counts are unchanged. "
+            "Do not claim a skill gap changed just because its target changed. "
             "Return JSON with exactly these fields: name (short string), overview (string), priorities (array of "
             "{skill, group, reason}), shared_steps (array of strings), role_tracks (array of {role, steps}), "
             "progress_checks (array of strings). Include only skills/groups in selected_assessed_gaps and roles in role_composition. "
@@ -2622,6 +2627,7 @@ def generate_workforce_team_plan(body: TeamPlanGenerateIn, user: dict = Depends(
                     role_tracks.append({"role": role_name, "steps": steps})
             clean_list = lambda val, limit: [str(x).strip()[:500] for x in val if str(x).strip()][:limit]
             result = {"name": str(draft.get("name", "Team reskilling plan")).strip()[:120] or "Team reskilling plan",
+                      "scenario": body.scenario,
                       "overview": str(draft.get("overview", "")).strip()[:1800], "cohort": data["cohort"],
                       "sample_preview": body.sample_preview,
                       "sample_notice": "Fictional demonstration only; do not assign this plan to a real workforce." if body.sample_preview else None,
@@ -2664,6 +2670,7 @@ def save_workforce_team_plan(body: TeamPlanSaveIn, user: dict = Depends(need("hr
         tracks = [{"role": track.role, "steps": [step.strip()[:500] for step in track.steps if step.strip()][:8]}
                   for track in body.role_tracks if track.role in role_names]
         plan = {"name": body.name.strip(), "overview": body.overview.strip(), "status": "draft",
+                "scenario": body.scenario,
                 "cohort": data["cohort"], "sample_preview": body.sample_preview,
                 "sample_notice": "Fictional demonstration only; do not assign this plan to a real workforce." if body.sample_preview else None,
                 "gaps": [{"skill": cell["skill"], "group": cell["group"], "current": cell["current"], "target": cell["required"],

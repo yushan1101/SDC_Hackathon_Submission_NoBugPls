@@ -22,6 +22,15 @@
 .wf-stat strong { font-size: 30px; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
 .wf-stat:last-child strong { font-size: 18px; }
 .wf-stat > :last-child { margin-top: auto; font-size: 14px; }
+.wf-scenario-impact { display: grid; gap: 10px; padding: 18px 22px; background: var(--surface); border: 1px solid var(--rule); border-radius: 18px; }
+.wf-scenario-impact-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 14px; }
+.wf-scenario-impact h3, .wf-scenario-impact p { margin: 0; }
+.wf-scenario-impact h3 { font-size: 17px; }
+.wf-scenario-focus { padding: 10px 12px; background: color-mix(in srgb, var(--accent) 7%, var(--surface)); border-radius: 10px; }
+.wf-scenario-changes { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 2px 0; list-style: none; }
+.wf-scenario-changes li { display: grid; gap: 2px; padding: 8px 11px; border: 1px solid var(--rule); border-radius: 10px; font-size: 13px; }
+.wf-scenario-method { font-size: 12px; line-height: 1.45; }
+.wf-unchanged-rates { margin: 0; padding: 10px 14px; background: color-mix(in srgb, var(--accent) 7%, var(--surface)); border: 1px solid var(--rule); border-radius: 10px; font-size: 13px; line-height: 1.5; }
 .wf-matrix { display: grid; gap: 18px; min-width: 0; }
 .wf-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .wf-panel-header h2 { margin: 0 0 4px; }

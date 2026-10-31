@@ -71,7 +71,7 @@ def load_reports(con, owner: str, scenario: str, sample_preview: bool = False) -
         except (ValueError, TypeError):
             continue
         meta = report.get("workforce") or {}
-        if meta.get("source") == "sample" or (report.get("request") or {}).get("scenario", plan.get("scenario")) != scenario:
+        if meta.get("source") == "sample":
             continue
         if audience == "hr" and meta.get("owner") not in (owner, None):
             continue
@@ -83,14 +83,16 @@ def load_reports(con, owner: str, scenario: str, sample_preview: bool = False) -
             key = f"{meta['dataset_id']}:{key}"
         latest.setdefault(key, {"key": key, "role": (report.get("occupation") or {}).get("title") or plan.get("target_role", "Assigned role"),
                                "department": meta.get("department") or "Unassigned", "report": report, "plan": plan, "plan_id": pid,
+                               "scenario": scenario,
                                "source": "external" if meta.get("external") else "hr_upload",
                                "dataset": meta.get("dataset") or "Earlier uploads",
                                "group": meta.get("group") or "Ungrouped"})
     return list(latest.values())
 
 
-def _levels(gap, report):
-    current, required = gap.get("current_level"), gap.get("required_level")
+def _levels(gap, report, required_override=None):
+    current = gap.get("current_level")
+    required = gap.get("required_level") if required_override is None else required_override
     if not all(isinstance(n, (int, float)) and not isinstance(n, bool) and math.isfinite(n) and 0 <= n <= 5 for n in (current, required)) or required == 0:
         return None, None
     assessed = gap.get("assessed")
@@ -112,17 +114,68 @@ def _normalize(records):
             continue
         skills = {}
         report = record["report"]
+        scenario = record.get("scenario")
+        comparison = {item.get("skill_id"): item for item in report.get("comparison") or []
+                      if isinstance(item, dict) and item.get("skill_id")}
+        required_key = f"{scenario}_required" if scenario in {"assistive", "agentic"} else None
         seen = set()
         for gap in report.get("gaps") or []:
             name = gap.get("skill_id")
             if not name or name in seen:
                 continue
             seen.add(name)
-            current, required = _levels(gap, report)
+            compared = comparison.get(name, {}).get(required_key) if required_key else None
+            override = float(compared) if isinstance(compared, (int, float)) and not isinstance(compared, bool) \
+                and math.isfinite(compared) and 0 <= compared <= 5 else None
+            current, required = _levels(gap, report, override)
             if required is not None:
                 skills[name] = {"current": current, "required": required, "category": gap.get("kind", "skill")}
         normalized.append({**record, "skills": skills})
     return normalized
+
+
+def _scenario_impact(records, shown):
+    """Compare saved role targets for the filtered cohort without inventing a second assessment."""
+    changes = defaultdict(lambda: {"employees": 0, "higher": 0, "lower": 0, "new_gaps": 0,
+                                   "closed_gaps": 0, "assistive_targets": 0.0, "agentic_targets": 0.0})
+    people, compared_people = set(), set()
+    for record in records:
+        report = record.get("report") or {}
+        comparison = {item.get("skill_id"): item for item in report.get("comparison") or []
+                      if isinstance(item, dict) and item.get("skill_id")}
+        gaps = {item.get("skill_id"): item for item in report.get("gaps") or []
+                if isinstance(item, dict) and item.get("skill_id")}
+        if comparison:
+            compared_people.add(record["key"])
+        for name in shown:
+            pair = comparison.get(name)
+            gap = gaps.get(name)
+            if not pair or not gap:
+                continue
+            assistive, agentic = pair.get("assistive_required"), pair.get("agentic_required")
+            if not all(isinstance(n, (int, float)) and not isinstance(n, bool) and math.isfinite(n)
+                       and 0 <= n <= 5 for n in (assistive, agentic)) or assistive == agentic:
+                continue
+            current, _ = _levels(gap, report, assistive or agentic)
+            if current is None:
+                continue
+            change = changes[name]
+            change["employees"] += 1
+            change["higher" if agentic > assistive else "lower"] += 1
+            change["new_gaps"] += int(assistive <= current < agentic)
+            change["closed_gaps"] += int(agentic <= current < assistive)
+            change["assistive_targets"] += assistive
+            change["agentic_targets"] += agentic
+            people.add(record["key"])
+    items = [{"skill": name, **{k: v for k, v in change.items() if k not in {"assistive_targets", "agentic_targets"}},
+              "assistive_target": round(change["assistive_targets"] / change["employees"], 1),
+              "agentic_target": round(change["agentic_targets"] / change["employees"], 1)}
+             for name, change in changes.items()]
+    items.sort(key=lambda item: (-(item["new_gaps"] + item["closed_gaps"]), -item["employees"], item["skill"]))
+    return {"skills": items, "changed_skills": len(items), "compared_employees": len(compared_people),
+            "employees_with_target_changes": len(people),
+            "higher_targets": sum(item["higher"] for item in items), "lower_targets": sum(item["lower"] for item in items),
+            "new_gaps": sum(item["new_gaps"] for item in items), "closed_gaps": sum(item["closed_gaps"] for item in items)}
 
 
 def aggregate(records, skills=(), category="all", sample_preview: bool = False, department="", role="", source="",
@@ -158,6 +211,8 @@ def aggregate(records, skills=(), category="all", sample_preview: bool = False, 
         for name, item in record["skills"].items():
             available.setdefault(name, item.get("category", "skill"))
     shown = sorted(name for name, kind in available.items() if (not skills or name in skills) and (category == "all" or kind == category))
+    scenario_impact = _scenario_impact(records, shown)
+    changed = {item["skill"]: item for item in scenario_impact["skills"]}
     rows, common = [], Counter()
     for name in shown:
         cells = []
@@ -182,9 +237,11 @@ def aggregate(records, skills=(), category="all", sample_preview: bool = False, 
             if assessed:
                 common[name] += affected
         rows.append({"skill": name, "category": available[name], "cells": cells,
-                     "max_gap": max((c["gap_percent"] or 0 for c in cells), default=0)})
+                     "max_gap": max((c["gap_percent"] or 0 for c in cells), default=0),
+                     "scenario_change": changed.get(name)})
     # most-assessed skills first (real reports list different skills per role), then the biggest gap
-    rows.sort(key=lambda item: (-sum(c["employees"] for c in item["cells"]), -item["max_gap"], item["skill"]))
+    rows.sort(key=lambda item: (-sum(c["employees"] for c in item["cells"]), -item["max_gap"],
+                                -bool(item["scenario_change"]), item["skill"]))
     total_rows = len(rows)
     if not skills:
         rows = rows[:TOP_SKILLS]
@@ -201,6 +258,7 @@ def aggregate(records, skills=(), category="all", sample_preview: bool = False, 
                         "roles": sorted({r.get("role", "Assigned role") for r in records}),
                         "skills": [{"name": n, "category": kind} for n, kind in sorted(available.items())]},
             "groups": groups, "skills": [r["skill"] for r in rows], "rows": rows, "cells": displayed, "priorities": priorities,
+            "scenario_impact": scenario_impact,
             "cohort": {"employees": len(records), "department": department or "All departments", "role": role or "All roles",
                        "datasets": list(datasets) or "All data sets", "group_by": group_by},
             "sources": [{"key": k, "label": label, "employees": counts.get(k, 0)} for k, label in SOURCES.items()],
