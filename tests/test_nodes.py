@@ -166,3 +166,91 @@ def test_old_plans_without_learning_nodes_get_a_roadmap_and_keep_their_ticks():
     # unticking a carried-over step sticks: the marker stops it being re-derived
     rows.pop(f"node:{week1[0]}")
     assert f"node:{week1[0]}" not in dict(_learning_progress_rows(plan, list(rows.items())))
+
+
+def test_plan_view_gives_each_week_several_tasks_each_with_learn_practice_quiz():
+    from server.api import _learning_plan_view
+    from agents import pathway
+    from core.state import Gap, LearningNode
+    plan = pathway.build([Gap(skill_id="SQL", current_level=1, required_level=3, gap=2)], 3, "Data analyst", "assistive")
+    plan.learning_nodes = [LearningNode(**pathway._fallback_node(s, "Data analyst"))
+                           for s in pathway._node_seeds(plan, [Gap(skill_id="SQL", current_level=1, required_level=3, gap=2)], "Data analyst", [], {})]
+    nodes = _learning_plan_view(plan.model_dump())["learning_nodes"]
+    week1 = [n for n in nodes if n["week_number"] == 1]
+    assert len(week1) == 3 and len({n["title"] for n in week1}) == 3
+    assert len({n["quiz"]["question"] for n in week1}) >= 2  # the tasks don't just repeat one quiz
+    for n in nodes:
+        assert _has_learn_practice_quiz(n)
+        assert n["learn_minutes"] + n["practice_minutes"] + n["quiz_minutes"] == n["estimated_minutes"]
+
+
+def _has_learn_practice_quiz(node: dict) -> bool:
+    quiz = node.get("quiz") or {}
+    return bool(node.get("learn") and node.get("exercise") and node.get("deliverable") and len(node.get("instructions") or []) >= 2
+                and quiz.get("question") and len(quiz.get("options") or []) >= 2 and 0 <= quiz.get("answer_index", -1) < len(quiz["options"])
+                and min(node["learn_minutes"], node["practice_minutes"], node["quiz_minutes"]) >= 1
+                and node["learn_minutes"] + node["practice_minutes"] + node["quiz_minutes"] == node["estimated_minutes"])
+
+
+def test_normaliser_backfills_learn_practice_quiz_without_touching_the_saved_step():
+    import copy
+    from agents import pathway
+    from core.state import LearningNode
+    gaps = [__import__("core.state", fromlist=["Gap"]).Gap(skill_id="SQL", current_level=1, required_level=3, gap=2)]
+    plan = pathway.build(gaps, 4, "Data analyst", "assistive")
+    seeds = pathway._node_seeds(plan, gaps, plan.target_role, [], {})
+    full = [pathway._fallback_node(seed, plan.target_role) for seed in seeds[:3]]
+    broken = copy.deepcopy(full)
+    broken[0].update(quiz=None, quiz_minutes=0, learn_minutes=0, practice_minutes=0)       # an old step saved without a quiz
+    broken[1].update(learn=[], exercise="", instructions=["Only one step"])                # parts left out by the model
+    broken[2]["quiz"] = {"question": "Broken?", "options": ["a", "b"], "answer_index": 9, "explanation": "x"}
+    saved = copy.deepcopy(broken)
+    fixed = pathway.ensure_learn_practice_quiz(broken, plan.target_role)
+    assert broken == saved  # never mutates the stored plan
+    assert all(_has_learn_practice_quiz(node) for node in fixed)
+    assert all(LearningNode(**node) for node in fixed)
+    assert fixed[0]["deliverable"] in fixed[0]["quiz"]["options"]  # the backfilled quiz checks the step's own work sample
+    assert fixed[1]["instructions"][0] == "Only one step" and fixed[1]["deliverable"] == full[1]["deliverable"]  # kept as written
+    assert fixed[2]["quiz"]["answer_index"] < len(fixed[2]["quiz"]["options"])
+    untouched = pathway.ensure_learn_practice_quiz(full, plan.target_role)
+    assert [{k: n[k] for k in ("learn", "instructions", "exercise", "deliverable", "quiz")} for n in untouched] == \
+           [{k: n[k] for k in ("learn", "instructions", "exercise", "deliverable", "quiz")} for n in full]
+
+
+def test_every_week_gets_a_learn_practice_quiz_step_even_with_very_little_time(monkeypatch):
+    from agents import llm, pathway
+    from core.state import Gap, Pathway, PathwayActivity
+    monkeypatch.setattr(llm, "generate", lambda *args, **kwargs: (None, None))
+    gaps = [Gap(skill_id="SQL", current_level=1, required_level=3, gap=2)]
+    # 0.3 h per phase: before, short weeks were dropped and only some weeks had a lesson
+    tiny = Pathway(target_role="Data analyst", scenario="assistive", activities=[
+        PathwayActivity(day_range=d, skill_id="SQL", activity="Practise SQL queries", estimated_hours=0.3) for d in ("1-30", "31-60", "61-90")])
+    seeds = pathway._node_seeds(tiny, gaps, "Data analyst", [], {})
+    assert sorted({s["week_number"] for s in seeds}) == list(range(1, 14))
+    assert all(s["estimated_minutes"] >= 5 for s in seeds)
+    for hours in (1, 4, 8, 20):
+        p = pathway.build(gaps, hours, "Data analyst", "assistive")
+        nodes, _ = pathway._learning_nodes(p, "Data analyst", gaps, [], {})
+        assert sorted({n.week_number for n in nodes}) == list(range(1, 14)), hours
+        assert all(_has_learn_practice_quiz(n.model_dump()) for n in nodes), hours
+
+
+def test_ai_steps_missing_a_part_are_backfilled_not_dropped(monkeypatch):
+    import json
+    from agents import llm, pathway
+    from core.state import Gap
+    gaps = [Gap(skill_id="Visual design", current_level=0, required_level=3, gap=3)]
+    plan = pathway.build(gaps, 4, "Graphic designer", "assistive")
+    seeds = pathway._node_seeds(plan, gaps, plan.target_role, [], {})
+    lessons = [pathway._fallback_node(seed, plan.target_role) | {"title": f"Design step {i} for posters"} for i, seed in enumerate(seeds)]
+    lessons[3]["learn"] = []           # the model forgot Learn
+    lessons[4].pop("exercise")         # ... and the practice task
+    lessons[5]["instructions"] = []
+    for lesson in lessons:
+        lesson.update(learn_minutes=1, practice_minutes=1, quiz_minutes=1)  # model-supplied split that doesn't add up
+    monkeypatch.setattr(llm, "generate", lambda *args, **kwargs: (json.dumps({"nodes": lessons}), None))
+    nodes, _ = pathway._learning_nodes(plan, plan.target_role, gaps, [], {})
+    assert len(nodes) == len(seeds) and sorted({n.week_number for n in nodes}) == list(range(1, 14))
+    assert all(n.content_source == "ai" for n in nodes)  # the AI's lessons are kept, the missing parts filled in
+    assert all(_has_learn_practice_quiz(n.model_dump()) for n in nodes)
+    assert nodes[3].learn and nodes[4].exercise and len(nodes[5].instructions) >= 2

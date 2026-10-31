@@ -3163,7 +3163,9 @@ body {
   transition: opacity var(--t-fast), transform var(--t-fast), visibility var(--t-fast); }
 .admin-shell.is-sidebar-collapsed .admin-nav-link:hover .tip,
 .admin-shell.is-sidebar-collapsed .admin-nav-link:focus-visible .tip { opacity: 1; visibility: visible; transform: none; }
-.admin-shell:not(.is-sidebar-collapsed) .admin-nav-link .lbl { display: inline; }
+.admin-shell:not(.is-sidebar-collapsed) :is(.admin-nav-link, .admin-rail-head .logo) .lbl { display: inline; }
+.admin-shell:not(.is-sidebar-collapsed) .admin-nav-link { justify-content: flex-start; padding: 0 14px; }  /* beats the <1100px icon-only rail rule */
+.admin-shell:not(.is-sidebar-collapsed) .admin-rail-head .logo { justify-content: flex-start; padding: 0 8px; }
 .admin-shell .admin-top { gap: 14px; }
 .admin-shell .admin-top .crumb { min-width: 0; }
 .admin-shell .admin-top .who { display: grid; gap: 2px; margin-left: auto; text-align: right; line-height: 1.2; }
@@ -3206,6 +3208,12 @@ body {
   .admin-shell.is-mobile-nav-open .admin-nav-scrim { display: block; }
   .admin-shell .admin-rail-spacer { min-height: 16px; }
   .admin-shell .hr-main { min-width: 0; }
+  /* the drawer always shows labels, even if the desktop rail was left collapsed (those rules are more specific) */
+  .admin-shell.is-sidebar-collapsed .admin-rail { align-items: stretch; padding: 14px 10px; }
+  .admin-shell.is-sidebar-collapsed .admin-rail-head { flex-direction: row; width: auto; }
+  .admin-shell.is-sidebar-collapsed .admin-rail-head .logo { width: auto; height: 56px; justify-content: flex-start; padding: 0 8px; }
+  .admin-shell.is-sidebar-collapsed :is(.admin-rail-head .logo, .admin-nav-link) .lbl { display: inline; }
+  .admin-shell.is-sidebar-collapsed .admin-nav-link { width: auto; height: 48px; justify-content: flex-start; padding: 0 14px; }
 }
 @container admin-usage (max-width: 760px) {
   .admin-shell .admin-usage-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
@@ -3393,12 +3401,12 @@ body {
 
 /* Weekly learning calendar and continuous, selectable 90-day lesson roadmap. */
 .learning-journey { display: grid; gap: 14px; min-width: 0; }
-.learning-journey { --road-accent: #7764df; padding: clamp(12px, 2vw, 20px); border: 1px solid var(--rule); border-radius: 24px; background: var(--surface); }
+.learning-journey { --road-accent: #7764df; }  /* no box of its own: the phase bar above is its header */
 .learning-journey > h4, .learning-road-heading h4 { margin: 0; font-size: 16px; }
 .learning-current { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 .learning-road-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 4px; }
 .learning-road-heading > span { color: var(--ink-2); font-size: 12px; }
-.learning-road-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.learning-road-controls { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 .learning-road-controls .muted { font-size: 12px; }
 .learning-road-scroll { position: relative; overflow-x: auto; overscroll-behavior-inline: contain; padding: 0 0 12px; border: 1px solid var(--rule); border-radius: 20px; scrollbar-gutter: stable; scroll-behavior: smooth; }
 .learning-road { --node-width: 190px; position: relative; display: flex; align-items: stretch; gap: 0; width: max-content; min-width: 100%; padding: 16px 10px 8px; }
@@ -3440,6 +3448,26 @@ body {
 .learning-lesson-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .learning-task { padding: 16px 18px; border-radius: 14px; background: var(--sunken); }
 .learning-deliverable { margin-top: 8px; }
+/* Learn, Practice and Quiz sit together in one lesson card; the tabs above jump to and highlight a part */
+/* Learn, Practice and Quiz are tabs: one part shows at a time, flat under the tab bar */
+.learning-parts { display: grid; min-width: 0; }
+.learning-part { padding: 4px 0 0; border: 0; border-radius: 0; background: none; }
+.learning-part[hidden] { display: none; }
+.learning-part.learning-task { background: none; }
+.learning-lesson-tabs .lt-time { font-size: inherit; font-weight: 500; }
+@media (max-width: 560px) {
+  /* phones: name over time, no icon, so three tabs fit without wrapping mid-label */
+  .learning-lesson-tabs button { flex-direction: column; gap: 0; min-height: 52px; padding: 6px 4px; line-height: 1.2; }
+  .learning-lesson-tabs button svg, .learning-lesson-tabs .lt-dot { display: none; }
+  .learning-lesson-tabs .lt-time { font-size: 12px; opacity: .85; white-space: nowrap; }
+}
+.learning-part-label { justify-self: start; }
+/* every roadmap step shows its three parts */
+.road-node-parts { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.road-part { padding: 2px 7px; border-radius: 99px; font-size: 11px; font-weight: 700; background: var(--accent-soft); color: var(--accent); }
+.road-part.is-practice { background: var(--warn-soft); color: var(--warn); }
+.road-part.is-quiz { background: color-mix(in oklch, var(--road-accent, var(--accent)) 14%, white); color: var(--road-accent, var(--accent)); }
+.road-part.is-done { background: #dff4ec; color: #15834f; }
 .learning-lesson { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; padding: clamp(14px, 2.5vw, 22px); border: 1px solid var(--rule); border-radius: 18px; background: var(--surface); }
 .learning-lesson-empty { min-height: 70px; place-items: center; color: var(--ink-2); }
 .learning-lesson-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
@@ -3471,6 +3499,7 @@ body {
 @media (max-width: 620px) {
   .learning-road-controls { align-items: flex-start; flex-direction: column; }
   .learning-lesson-header { flex-direction: column; }
+  .learning-lesson-header > div { flex: none; }  /* a 200px basis would become 200px of height in a column */
   .learning-week { padding: 10px; }
   .learning-road { --node-width: 168px; }
   .road-node-title { max-width: 158px; }
@@ -3603,18 +3632,28 @@ body {
 .ps-icon svg { width: 20px; height: 20px; }
 .plan-layout { display: grid; gap: 16px; align-items: start; }
 .plan-main { display: grid; gap: 14px; min-width: 0; }
-.plan-quick-actions { display: flex; justify-content: flex-end; margin: 10px 0 14px; }
-.plan-aside { position: fixed; inset: 0 0 0 auto; width: min(420px, 100vw); height: 100dvh; max-height: none; margin: 0; padding: 20px;
-  border: 1px solid var(--rule); background: var(--surface); color: var(--ink); box-shadow: -12px 0 35px oklch(.25 .04 262 / .16); overflow: auto; }
-.plan-aside:popover-open { display: grid; align-content: start; gap: 14px; }
-.plan-aside::backdrop { background: oklch(.15 .02 262 / .32); }
-.plan-next-close { justify-self: end; }
-.plan-phase-group { display: grid; gap: 12px; min-width: 0; }
-.plan-phase-card { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; width: 100%; padding: 18px 20px;
-  border: 1px solid var(--rule); border-radius: 18px; color: var(--ink); background: var(--surface); text-align: left; cursor: pointer; font: inherit; }
-.plan-phase-card:hover, .plan-phase-card[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); }
-.plan-phase-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.plan-phase-card-name { flex: 1 1 230px; font-size: 18px; font-weight: 700; }
+.plan-aside { display: grid; gap: 14px; }
+@container (min-width: 900px) {
+  .plan-layout { grid-template-columns: minmax(0, 1fr) 300px; }
+  .plan-aside { position: sticky; top: 16px; }
+}
+/* phase bar: the three 30-day phases side by side, one open; each segment fills a thin line as its steps get done */
+.phase-bar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 16px; background: var(--accent-soft); }
+.phase-seg { position: relative; display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 0 8px; min-width: 0; padding: 10px 14px 14px;
+  border: 0; border-radius: 12px; background: none; color: var(--accent); text-align: left; font: inherit; cursor: pointer; overflow: hidden; }
+.phase-seg-days { grid-column: 1 / -1; font-size: 12px; opacity: .8; white-space: nowrap; }
+.phase-seg-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.phase-seg-count { font-size: 12px; font-variant-numeric: tabular-nums; }
+.phase-seg-meter { position: absolute; left: 14px; right: 14px; bottom: 6px; height: 3px; border-radius: 3px; background: color-mix(in oklab, currentColor 18%, transparent); }
+.phase-seg-meter i { display: block; height: 100%; width: calc(var(--done, 0) * 100%); border-radius: inherit; background: currentColor; }
+.phase-seg:hover { background: oklch(1 0 0 / .7); }
+.phase-seg[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+.phase-seg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 560px) {
+  .phase-seg { grid-template-columns: 1fr; padding: 8px 8px 12px; }
+  .phase-seg-name { font-size: 13px; text-overflow: clip; }
+  .phase-seg-meter { left: 8px; right: 8px; }
+}
 .road-node-time { color: var(--ink-2); font-size: 12px; }
 .road-change-badge { display: inline-flex; justify-self: center; padding: 2px 7px; border-radius: 99px; background: #fff0ca; color: #715000; font-size: 11px; font-weight: 700; }
 .plan-block[hidden], .plan-edit-panel[hidden], .plan-preview-result .plan-block[hidden] { display: none; }
@@ -3675,7 +3714,7 @@ body {
 .phase-toggle { grid-template-columns: minmax(0, 1fr) auto; cursor: default; }
 .phase-open { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .phase-open svg { width: 15px; height: 15px; transform: rotate(-90deg); }
-.plan-block .phase.phase-detail, [data-product] .plan-block .phase.phase-detail { display: grid; grid-column: auto; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 18px; border: 1px solid var(--rule); border-radius: 18px; background: oklch(.99 .006 262); }
+.plan-block .phase.phase-detail, [data-product] .plan-block .phase.phase-detail { display: grid; grid-column: auto; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
 .plan-block .phase-detail[hidden], [data-product] .plan-block .phase-detail[hidden] { display: none; }
 .phase-detail .phase-content { margin: 0; }
 .phase-back { justify-self: start; display: inline-flex; align-items: center; gap: 6px; }
@@ -4010,7 +4049,7 @@ pre { max-width: 100%; overflow-x: auto; }
 
 /* phones: the plan's nested cards (phase, roadmap, lesson) each padded left too little room, so flatten them */
 @container (max-width: 420px) {
-  .plan-block .phase.phase-detail, [data-product] .plan-block .phase.phase-detail { padding: 12px; }
+  .plan-block .phase.phase-detail, [data-product] .plan-block .phase.phase-detail { padding: 0; }
   .plan-block .learning-journey { padding: 0; border: 0; background: transparent; }
   .plan-block .learning-lesson { padding: 12px; }
   .plan-block .learning-step-nav { flex-wrap: wrap; }
@@ -4110,3 +4149,7 @@ pre { max-width: 100%; overflow-x: auto; }
   .pd-tab { flex: 0 0 auto; min-height: 44px; padding: 0 14px; font-size: 14px; }
 }
 @media (prefers-reduced-motion: reduce) { .pd-tab { transition: none; } }
+.learning-objective { margin: 0; font-size: 16px; line-height: 1.55; color: var(--ink); max-width: 70ch; }
+/* plan page: the roadmap block sits straight on the plan card instead of in a second box */
+html .plan-focus > .plan-block.block { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (max-width: 560px) { .plan-focus { padding-left: 14px; padding-right: 14px; } }
