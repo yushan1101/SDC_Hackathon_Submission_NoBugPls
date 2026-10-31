@@ -69,3 +69,23 @@ def test_thinking_off_asks_the_gateway_model_to_skip_its_reasoning(monkeypatch):
     llm._openai("grok-4.7", "p", "s", 10, True, s)
     assert sent[0]["reasoning"] == {"enabled": False, "effort": "none"} and sent[0]["reasoning_effort"] == "none"
     assert "reasoning" not in sent[1] and "reasoning_effort" not in sent[1]
+
+
+def test_speech_falls_back_and_reports_status(monkeypatch):
+    """Pocket TTS failing -> the fallback cloud voice; the transcription model failing -> the fast Gemini model.
+    Either way /api/health shows the model in use and the last error type."""
+    from agents import llm
+    monkeypatch.setattr(llm, "tts_model", lambda: "pocket:pocket-tts")
+    monkeypatch.setattr(llm, "stt_model", lambda: "openai:mimo")
+    monkeypatch.setattr(llm, "usable", lambda spec: True)
+    monkeypatch.setattr(llm, "providers", lambda: {"openai": True, "gemini": True})
+    tried = []
+    monkeypatch.setattr(llm, "_speak_with", lambda spec, text: tried.append(spec) or ((b"RIFF", {"model": spec}) if spec.startswith("gemini:")
+                        else (None, {"error": "RuntimeError"})))
+    monkeypatch.setattr(llm, "_transcribe_with", lambda spec, *a: ("hello", {}) if spec.startswith("gemini:")
+                        else (None, {"error": "HTTPStatusError"}))
+    audio, usage = llm.speak("Hi.")
+    assert tried[0] == "pocket:pocket-tts"  # Pocket TTS is always tried first; the cloud voice only if it fails
+    assert audio == b"RIFF" and usage["model"].startswith("gemini:") and llm.SPEECH_STATUS["tts"]["ok"] is True
+    text, _ = llm.transcribe(b"x", "audio/wav")
+    assert text == "hello" and llm.SPEECH_STATUS["stt"]["model"].startswith("gemini:")

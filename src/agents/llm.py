@@ -21,6 +21,15 @@ log = logging.getLogger(__name__)
 _gemini = None
 _pocket = None  # (TTSModel, {voice: state}) once loaded: Kyutai Pocket TTS, ~100M params, faster than real time on CPU
 _pocket_lock = threading.Lock()
+# What /api/health shows about speech: the model each direction last used and its last error (type only, no detail).
+SPEECH_STATUS = {"tts": {"model": "", "ok": None, "error": "", "at": ""}, "stt": {"model": "", "ok": None, "error": "", "at": ""}}
+
+
+def _speech_status(kind: str, spec: str, error: str = "") -> None:
+    SPEECH_STATUS[kind] = {"model": spec, "ok": not error, "error": error,
+                           "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+
+
 ORG_MODELS: contextvars.ContextVar = contextvars.ContextVar("org_models", default=None)
 # tasks an HR advisor can choose a model for -> what they cover
 TASKS = {"coach": "Career coach chat and interview feedback", "resume": "Reading and screening resumes",
@@ -326,13 +335,32 @@ def _pocket_speak(text: str) -> bytes:
     return out.getvalue()
 
 
+def has_voice() -> bool:
+    """A server voice is available: Pocket TTS, or the fallback cloud voice."""
+    from config.settings import get_settings
+    fb = get_settings().tts_fallback
+    return bool(tts_model() or (fb and usable(fb)))
+
+
 def speak(text: str):
-    """-> (WAV bytes | None, usage): `text` read in the configured server voice."""
+    """-> (WAV bytes | None, usage): `text` read in the configured server voice (Pocket TTS); if that fails, in the
+    fallback cloud voice (TTS_FALLBACK, a young female Gemini voice). Never the browser's system voice."""
+    from config.settings import get_settings
+    s = get_settings()
+    specs = [x for x in dict.fromkeys([tts_model(), s.tts_fallback if s.tts_fallback and usable(s.tts_fallback) else ""]) if x]
+    usage = None
+    for spec in specs:
+        audio, usage = _speak_with(spec, text)
+        _speech_status("tts", spec, "" if audio else (usage or {}).get("error", "failed"))
+        if audio:
+            return audio, usage
+    return None, usage
+
+
+def _speak_with(spec: str, text: str):
     from config.settings import get_settings
     from core.usage import record
-    s, spec = get_settings(), tts_model()
-    if not spec:
-        return None, None
+    s = get_settings()
     provider, name = spec.split(":", 1)
     t = time.perf_counter()
     try:
@@ -384,12 +412,24 @@ AUDIO_FORMATS = {"audio/wav": "wav", "audio/x-wav": "wav", "audio/mpeg": "mp3", 
 
 
 def transcribe(audio: bytes, mime: str, lang: str = ""):
-    """-> (text | None, usage). Words only, no commentary; None when no model is set up or the call failed."""
+    """-> (text | None, usage). Words only, no commentary; None when no model is set up or every model failed. The
+    configured model first (STT_MODEL), then the fast Gemini model, which hears audio too."""
+    from config.settings import get_settings
+    s = get_settings()
+    fast = f"gemini:{s.llm_fast_model}" if s.llm_fast_model and providers()["gemini"] else ""
+    usage = None
+    for spec in [x for x in dict.fromkeys([stt_model(), fast]) if x]:
+        text, usage = _transcribe_with(spec, audio, mime, lang)
+        _speech_status("stt", spec, "" if text is not None else (usage or {}).get("error", "failed"))
+        if text is not None:
+            return text, usage
+    return None, usage
+
+
+def _transcribe_with(spec: str, audio: bytes, mime: str, lang: str):
     from config.settings import get_settings
     from core.usage import record
-    s, spec = get_settings(), stt_model()
-    if not spec:
-        return None, None
+    s = get_settings()
     provider, name = spec.split(":", 1)
     t = time.perf_counter()
     try:

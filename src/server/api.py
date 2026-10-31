@@ -1233,7 +1233,7 @@ def meta(user: dict = Depends(current_user)):
             "outlook": _outlook_meta(),
             "llm": llm.model_for("coach") or None if cfg.llm_enabled else None,
             "voice": bool(llm.stt_model()) and _plan(user) in VOICE_PLANS,  # server speech-to-text for this account
-            "tts": bool(llm.tts_model())}  # read-aloud and the interviewer use the server voice
+            "tts": llm.has_voice()}  # read-aloud and the interviewer use the server voice
 
 
 # --- serialisation ----------------------------------------------------------------------------------
@@ -3526,7 +3526,7 @@ class SpeakIn(BaseModel):
 @app.post("/api/speech/say")
 def speech_say(body: SpeakIn, user: dict = Depends(current_user)):
     """The text read aloud by the configured server voice (WAV)."""
-    if not llm.tts_model():
+    if not llm.has_voice():
         raise HTTPException(503, "Read-aloud voice is not set up.")
     audio, _ = _speech(body.text).result(timeout=90)  # llm.speak records the model call, once per text
     if audio is None:
@@ -4031,9 +4031,12 @@ def readiness():
     ck, hist, man = paths()
     model = {"ok": all(p.exists() for p in (ck, hist, man)),
              "mode": "live_cpu_inference" if all(p.exists() for p in (ck, hist, man)) else "precomputed_asset"}
+    from agents import llm as models
     from agents.llm import model_for
     llm = {"enabled": cfg.llm_enabled, "resume": cfg.llm_resume,
-           "agents": {a: model_for(a) or None for a in ("router", "coach", "resume")}}  # model names only, never keys
+           "agents": {a: model_for(a) or None for a in ("router", "coach", "resume")},
+            # speech: the voice and transcription model in use, and the last error type (no details, no keys)
+            "speech": {"voice": models.tts_model() or None, "transcription": models.stt_model() or None, "last": models.SPEECH_STATUS}}  # model names only, never keys
     mcp = mcp_status()
     return {"ok": dbs["ok"] and mcp["ok"], "db": dbs, "mcp": mcp, "model": model, "llm": llm}
 

@@ -33,7 +33,8 @@ class Settings(BaseSettings):
     # ex04, ~198 Hz); the other female voices (azelma 214 Hz, jane, fantine, anna) are calm read speech and sound older.
     # alba (139 Hz), jean, george, michael... are male. Other recordings need Kyutai's gated voice-cloning weights.
     pocket_voice: str = "cosette"
-    tts_voice: str = "Leda"   # Gemini's youthful voice
+    tts_fallback: str = "gemini:gemini-2.5-flash-preview-tts"  # if Pocket TTS fails: a cloud voice, never the browser's (3.1-tts hit its quota; 3.8 reads the style aloud)
+    tts_voice: str = "Leda"   # Gemini's youthful voice (for a Gemini TTS_MODEL or the fallback)
     tts_style: str = "a cute, bright, high-pitched anime girl voice, cheerful and friendly"  # empty: plain reading
     stt_model: str = "openai:mimo-v2.6-flash"  # an audio chat model on the gateway; whisper-style ids use /audio/transcriptions
     llm_resume: bool = False  # opt-in: send the REDACTED resume to the LLM to propose extra skills (quotes verified)
