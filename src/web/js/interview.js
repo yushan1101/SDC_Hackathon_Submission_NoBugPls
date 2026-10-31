@@ -178,6 +178,17 @@ function renderConsent(main, recommendation, plans, go) {
       h("a", { class: "btn ghost", href: "#/interview" }, "Back to interview history")));
 }
 
+/** "Is this person talking?" for one microphone, judged against that room's own background: the noise floor follows
+ *  quiet moments down at once and creeps up slowly, so steady noise (a fan, traffic) raises the bar instead of
+ *  counting as speech and keeping a turn open for ever. -> (volume 0..1 RMS) => boolean */
+export function voiceGate() {
+  let floor = 0.01;
+  return (volume) => {
+    floor = volume < floor ? floor * 0.7 + volume * 0.3 : floor * 0.998 + volume * 0.002;
+    return volume > Math.max(0.02, floor * 2.2 + 0.006);
+  };
+}
+
 function renderRoom(main, detail, initial = null, callbacks = {}) {
   const sessionId = detail.interview_id;
   let current = initial?.question || detail.question;
@@ -248,7 +259,9 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   const ACKS = ["Mm-hm.", "Okay.", "Right.", "Got it."];
   const SILENCE_MS = 1600;  // this long a silence ends your turn (HoloHuman ends a chat line at 280 ms; answers need thinking room)
   const PIECE_MS = 700;  // a shorter pause: the piece before it goes to be transcribed while you keep talking
-  let pieceVoice = false;
+  let pieceVoice = false, turnStartedAt = 0;
+  const isTalking = voiceGate();
+  const MAX_TURN_MS = 120000;  // a turn that never falls quiet still ends after two minutes
   const minaLine = h("p", { class: "interview-mina-line", "aria-live": "polite", hidden: true });
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
   // Server ASR (the configured speech model, MiMo) whenever the interview offers it: the answer is recorded here and
@@ -260,17 +273,16 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   // file of its own) and keeps going, and that piece is transcribed in the background while you carry on talking. When
   // your turn ends only the last piece is still to transcribe, so her reply follows quickly; the pieces heard so far
   // show as a live caption.
-  let recorder = null, chunks = [], pieces = [];
+  let recorder = null, pieces = [];
   const newRecorder = () => {
-    chunks = []; const r = new MediaRecorder(micStream);
-    const mine = chunks;
+    const r = new MediaRecorder(micStream), mine = r.chunks = [];  // each recorder keeps its own audio
     r.ondataavailable = (e) => { if (e.data.size) mine.push(e.data); };
     r.start(1000);
     return r;
   };
   const stopRecorder = (r = recorder) => new Promise((resolve) => {
     if (!r || r.state === "inactive") { resolve(null); return; }
-    const mine = chunks;
+    const mine = r.chunks || [];
     r.onstop = () => resolve(new Blob(mine, { type: r.mimeType || "audio/webm" }));
     r.stop();
   });
@@ -401,13 +413,16 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       });
       if (recording && !muted && !interviewerSpeaking && !speechError) {
         // Touch the DOM only on a change; the throttled branch below tells the avatar.
-        const quiet = performance.now() - lastVoiceAt;
-        if (volume > 0.025) { heardSpeech = true; pieceVoice = true; lastVoiceAt = performance.now(); }
-        else if (conversation && heardSpeech && !finishPromise && quiet > SILENCE_MS) {
-          heardSpeech = false; pieceVoice = false;
+        // Voice against this room's own background: the noise floor follows quiet moments down at once and creeps up
+        // slowly, so a fan or traffic raises the bar instead of keeping your turn open for ever.
+        const talking = isTalking(volume);
+        const now = performance.now(), quiet = now - lastVoiceAt;
+        if (talking) { heardSpeech = true; pieceVoice = true; lastVoiceAt = now; }
+        if (conversation && !finishPromise && ((heardSpeech && !talking && quiet > SILENCE_MS) || now - turnStartedAt > MAX_TURN_MS)) {
+          heardSpeech = false; pieceVoice = false;  // your pause (or two minutes) ends the turn: no button needed
           void finishRecording(false, false).then(() => { if (!transcript.value.trim()) listenAgain(); });
-        } else if (asr && pieceVoice && quiet > PIECE_MS) { pieceVoice = false; cutPiece(); }
-        const [state, message] = volume > 0.025 ? ["speaking", "Speaking"]
+        } else if (asr && pieceVoice && !talking && quiet > PIECE_MS) { pieceVoice = false; cutPiece(); }
+        const [state, message] = talking ? ["speaking", "Speaking"]
           : ["listening", speechAvailable ? "Listening" : "Listening · no transcription here; type your answer"];
         if (voicePanel.dataset.state !== state || status.textContent !== message) setMicState(state, message, false);
       }
@@ -559,7 +574,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       if (asr) {
         pieces = []; recorder = newRecorder();
       }
-      micGranted = true; heardSpeech = false; pieceVoice = false; lastVoiceAt = performance.now();
+      micGranted = true; heardSpeech = false; pieceVoice = false; lastVoiceAt = turnStartedAt = performance.now();
       starting = false; recording = true; muted = false; muteBtn.setAttribute("aria-pressed", "false"); muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration(); updateControls();
       if (asr) setMicState("listening", "Listening");
       else if (recognizer) {

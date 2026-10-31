@@ -104,3 +104,17 @@ def test_a_failing_text_model_falls_back_once_within_the_budget(monkeypatch):
     assert tried == ["gemini:gemini-3.1-flash-lite", "openai:deepseek-v4.1-flash"]
     tried.clear()  # no time left in the caller's budget: no second try
     assert llm.generate("p", "s", model="gemini:gemini-3.1-flash-lite", timeout=1.0)[0] is None and len(tried) == 1
+
+
+def test_an_unreadable_ai_reply_gets_one_more_try_before_the_candidate_sees_an_error(monkeypatch):
+    from interview import service
+    calls = []
+
+    def flaky(*a):
+        calls.append(1)
+        if len(calls) == 1:
+            raise service.InterviewError("The AI returned an incomplete evaluation. Please retry.", 502)
+        return {"scores": {}}, {"text": "Next?"}, 1, False
+    monkeypatch.setattr(service, "evaluate_and_choose", flaky)
+    out = service.prepare_answer({"status": "in_progress"}, {}, "answer", [])
+    assert len(calls) == 2 and out["next_question"]["text"] == "Next?"

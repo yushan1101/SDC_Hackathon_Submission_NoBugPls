@@ -167,7 +167,7 @@ def _insert_question(con, interview_id, q, sequence, parent=None):
 def prepare_create(role_id, profile, difficulty):
     context = build_context(role_id, profile)
     context["stage_order"] = [STAGES[0], *random.sample(STAGES[1:], len(STAGES) - 1)]
-    q = _generate_initial(context, difficulty)
+    q = _once_more(_generate_initial, context, difficulty)
     interview_id = uuid.uuid4().hex
     return interview_id, context, q
 
@@ -284,10 +284,20 @@ def _validate_evaluation(raw, answer, targets):
     return {"scores": scores, "rationale": rationale, "evidence": evidence, "demonstrated_skills": skill_items}
 
 
+def _once_more(step, *args):
+    """A model reply that is unreadable or incomplete (502) gets one more try before the candidate sees an error."""
+    try:
+        return step(*args)
+    except InterviewError as e:
+        if e.status != 502:
+            raise
+        return step(*args)
+
+
 def prepare_answer(sess, current, text, transcript):
     if sess["status"] != "in_progress":
         raise InterviewError("This interview is already complete.", 409)
-    evaluation, next_q, stage_index, complete = evaluate_and_choose(sess, current, text, transcript)
+    evaluation, next_q, stage_index, complete = _once_more(evaluate_and_choose, sess, current, text, transcript)
     if evaluation is None:
         return {"reply": next_q["reply"]}
     return {"evaluation": evaluation, "next_question": next_q, "stage_index": stage_index, "complete": complete}
