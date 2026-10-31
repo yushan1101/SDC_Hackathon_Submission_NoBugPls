@@ -675,7 +675,10 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       transcript.value = "";
       recordedText = ""; resetDuration();
       if (result.reply) {
-        minaLine.textContent = result.reply; minaLine.hidden = false;
+        // A clarification keeps the same question ID, but it is the only prompt the candidate should see now.
+        // Showing it in minaLine as well as the old question looked like two active questions.
+        minaLine.textContent = ""; minaLine.hidden = true;
+        qText.textContent = result.reply;
         answerBtn.disabled = false; pause.disabled = false; updateControls();
         await playQuestion(result.reply);
         return;
