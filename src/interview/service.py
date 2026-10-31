@@ -44,8 +44,14 @@ class InterviewError(Exception):
 
 
 def _llm(prompt, system, max_tokens=900):
-    from agents.llm import generate
-    text, usage = generate(prompt, system, max_tokens=max_tokens, json=True, agent="coach")
+    from agents.llm import generate, usable
+    from config.settings import get_settings
+    s = get_settings()
+    # someone is waiting in the interview room: INTERVIEW_MODEL (GPT-5.6 Luna, ~6 s) first, its backups too if it
+    # hasn't answered in 10 s, 45 s at most. Not Gemini (overloaded too often). The coach model only if neither is set up.
+    model = s.interview_model if usable(s.interview_model) else None
+    text, usage = generate(prompt, system, max_tokens=max_tokens, json=True, agent="coach", model=model,
+                           timeout=45, hedge_s=10, backups=s.interview_backups if model else None)
     if not text:
         raise InterviewError("AI interview generation is unavailable. Configure the existing LLM provider and try again.", 503)
     try:

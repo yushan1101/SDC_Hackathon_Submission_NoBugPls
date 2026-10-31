@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     # OpenAI-compatible endpoint shared by every "openai:<model>" agent (e.g. GPT-5.6-Luna and Grok-4.7 on one gateway)
     llm_base_url: str = ""
     llm_api_key: SecretStr | None = None
+    # a second OpenAI-compatible gateway (LiteLLM: GPT-5.x/6 and DeepSeek), used as "lite:<model>"
+    lite_base_url: str = ""
+    lite_api_key: SecretStr | None = None
+    # Mina's interview questions, feedback and replies: this model first, the backups raced if it fails or is slow
+    interview_model: str = "lite:gpt-5.6-luna"
+    interview_backups: str = "lite:deepseek-v4.1-flash,lite:gpt-5.4-nano"
     # per-agent model, "openai:<model>" or "gemini:<model>"; empty = LLM_FAST_MODEL on Gemini, else deterministic
     router_model: str = ""
     coach_model: str = ""
@@ -38,8 +44,8 @@ class Settings(BaseSettings):
     tts_style: str = "a cute, bright, high-pitched anime girl voice, cheerful and friendly"  # empty: plain reading
     stt_model: str = "openai:mimo-v2.6-flash"  # an audio chat model on the gateway; whisper-style ids use /audio/transcriptions
     llm_resume: bool = False  # opt-in: send the REDACTED resume to the LLM to propose extra skills (quotes verified)
-    # when a text model fails (provider 503/429, timeout), the same request once more on this model (fast, JSON-capable)
-    llm_fallback_model: str = "openai:deepseek-v4.1-flash"
+    # backups when a text model fails or (for waits like the interview) is slow: all asked at once, first answer wins
+    llm_fallback_model: str = "openai:qwen3.8-flash,openai:grok-4.7-build-fast,openai:deepseek-v4.1-flash"
     # result cache (résumé analyses by file hash): redis://host:6379/0, shared by every app node; empty = this process only
     redis_url: str = ""
     llm_usd_per_1m_input: float = 0.0   # set from the provider's current price sheet; 0 = cost not estimated
