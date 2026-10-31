@@ -11,6 +11,7 @@ import { setVoice } from "./voice.js";
 import { accountView, pricingView } from "./account.js";
 import { termsView, privacyView } from "./legal.js";
 import { workforceView } from "./workforce.js";
+import { floatingMenu } from "./floating-menu.js";
 
 const app = $("#app");
 const AGENTS = ["supervisor", "profiler", "knowledge_search", "gap_analysis", "market_analyst", "pathway", "coach", "reviewer"];
@@ -540,7 +541,7 @@ async function reviewView(main, id) {
         h("span", { class: "l1" }, h("span", { class: "id" }, name), reviewBadge(p.review)),
         h("span", { class: "l2" }, p.review.candidate_name ? `${p.subject_id} · ${sentence(p.target_role)}` : sentence(p.target_role)),
         progressBar(p.progress))),
-      reviewMenu(main, p.plan_id, p.review, () => editReview(main, p.plan_id, p.review, navigate, p.subject_id, p.plan_reference), navigate)); })
+      reviewMenu(main, p.plan_id, p.review, () => editReview(main, p.plan_id, p.review, navigate, p.subject_id, p.plan_reference), navigate, name)); })
       : h("div", { class: "empty" }, h("p", { class: "muted" }, "Nothing here yet.")));
   const detail = h("section", { class: "detail", "aria-label": "Plan detail" });
   // Each plan opens in a floating panel over the queue; the scrim (or Escape) closes it.
@@ -610,10 +611,14 @@ function confirmPlanStatus(main, plan, next, done) {
   dialog.showModal();
 }
 
-function reviewMenu(main, pid, review, edit, done) {
-  return h("details", { class: "review-menu" }, h("summary", { "aria-label": "Review actions", title: "Review actions" }, "⋯"),
-    h("div", { class: "review-menu-items" }, h("button", { class: "btn sm", onclick: edit }, "Edit review"),
-      ...[review.archived ? "restore" : "archive", "delete"].map((action) => h("button", { class: "btn sm", onclick: () => reviewAction(main, [pid], action, done) }, action[0].toUpperCase() + action.slice(1)))));
+function reviewMenu(main, pid, review, edit, done, name = pid) {
+  const trigger = h("button", { type: "button", class: "review-menu-trigger", "aria-label": `Review actions for ${name}`, title: `Review actions for ${name}` }, "⋯");
+  const panel = h("div", { class: "review-menu-items", role: "menu", "aria-label": `Review actions for ${name}` });
+  const floating = floatingMenu(trigger, panel, { maxHeight: 240 });
+  panel.replaceChildren(h("button", { type: "button", class: "btn sm", role: "menuitem", onclick: () => { floating.close(); edit(); } }, "Edit review"),
+    ...[review.archived ? "restore" : "archive", "delete"].map((action) => h("button", { type: "button", class: "btn sm", role: "menuitem",
+      onclick: () => { floating.close(); reviewAction(main, [pid], action, done); } }, action[0].toUpperCase() + action.slice(1))));
+  return h("div", { class: "review-menu" }, trigger);
 }
 
 function reviewDialog(main, title) {
@@ -741,7 +746,7 @@ async function loadDetail(id, detail, wrap) {
         reviewMenu($("#main"), id, d.review, () => editReview($("#main"), id, d.review, () => reviewView($("#main"), id), d.subject_id, d.plan_reference), () => {
           if (location.hash === "#/review") return reviewView($("#main"));
           location.hash = "#/review";
-        }))),
+        }, name))),
     d.status === "flagged" ? h("div", { class: "banner flag", role: "alert" }, h("strong", {}, "Flagged."), h("span", {}, "Fix the issues and save a new draft before approval.")) : null,
     r?.issues?.filter((i) => i.severity === "error").map((i) => h("div", { class: "issue error" }, i.message)),
     progressCard(d.progress_summary),

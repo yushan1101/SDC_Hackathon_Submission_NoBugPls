@@ -10,6 +10,9 @@
 .wf-filter { position: relative; min-width: 180px; }
 .wf-filter summary { cursor: pointer; padding: 12px 16px; background: var(--surface); border: 1px solid var(--rule-strong); border-radius: 10px; }
 .wf-filter-options { position: absolute; top: calc(100% + 6px); left: 0; z-index: 15; width: min(340px, 80vw); max-height: 320px; overflow: auto; padding: 12px; background: var(--surface); border: 1px solid var(--rule-strong); border-radius: 12px; box-shadow: 0 8px 28px #14213d20; display: grid; gap: 8px; }
+.wf-more-trigger { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; cursor: pointer; color: inherit; font: inherit; background: var(--surface); border: 1px solid var(--rule-strong); border-radius: 10px; white-space: nowrap; }
+.wf-more-popover[popover] { position: fixed; inset: auto; margin: 0; padding: 0; width: min(300px, calc(100vw - 16px)); max-width: calc(100vw - 16px); overflow: auto; color: var(--ink); background: transparent; border: 0; }
+.wf-more-popover .wf-filter-options { position: static; width: 100%; max-height: none; overflow: visible; box-sizing: border-box; }
 .wf-filter-options label { display: flex; gap: 10px; align-items: start; padding: 8px; cursor: pointer; overflow-wrap: anywhere; }
 .wf-filter-options input { margin-top: 4px; accent-color: var(--accent); }
 .wf-select { display: grid; gap: 4px; font-size: 14px; }
