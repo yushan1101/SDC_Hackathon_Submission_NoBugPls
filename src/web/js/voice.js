@@ -96,8 +96,10 @@ export function micButton(target, { onText } = {}) {
 // ---------------------------------------------------------------- speaking: Mina's voice (Pocket TTS on the server)
 // Like HoloHuman's pipeline: the text is cut into sentences, every sentence is fetched from the server voice at once,
 // and they play one after another, so she starts after the first sentence rather than the whole reply. stop() cuts
-// her off mid-word (the interview stops her the moment the candidate starts talking). If the server voice is down the
-// browser's own female voice reads instead, so she is never silent.
+// her off mid-word (the interview stops her the moment the candidate starts talking).
+// Only ever her own voice: the browser's system speech (speechSynthesis) is never used. If the browser has not let the
+// page play sound yet she waits for the next tap or key press; if the server voice is down she stays silent (the
+// words are on screen).
 let serverVoice = true;  // false once the server says it has no voice
 const clips = new Map();  // sentence -> Promise<ArrayBuffer>, so a question fetched early plays at once
 const sentences = (text) => (text.replace(/\s+/g, " ").trim().slice(0, 6000).match(/[^.!?。！？]+[.!?。！？]+["')\]]*|[^.!?。！？]+$/g) || [])
@@ -123,22 +125,24 @@ const audioCtx = () => {
   if (!ctx && AC) ctx = new AC();
   return ctx;
 };
-// the first tap anywhere lets audio play (browser autoplay rules)
-addEventListener("pointerdown", () => { audioCtx()?.resume().catch(() => {}); }, { once: true, capture: true });
-
-const femaleVoice = () => {
-  const vs = "speechSynthesis" in window ? speechSynthesis.getVoices() : [];
-  const en = vs.filter((v) => v.lang.startsWith(lang().slice(0, 2)));
-  return en.find((v) => /female|aria|jenny|zira|samantha|sonia|libby|natasha|karen|moira|tessa|google uk english female/i.test(v.name)) || en[0] || null;
-};
+/** Resolves once the page may play sound: at once if it already can, else on the next tap or key press. */
+const audioReady = () => new Promise((resolve) => {
+  const c = audioCtx();
+  if (!c) { resolve(false); return; }
+  if (c.state === "running") { resolve(true); return; }
+  const unlock = () => c.resume().then(() => { if (c.state === "running") { off(); resolve(true); } }, () => {});
+  const off = () => { removeEventListener("pointerdown", unlock, true); removeEventListener("keydown", unlock, true); };
+  addEventListener("pointerdown", unlock, true); addEventListener("keydown", unlock, true);
+  unlock();  // allowed already when the person has interacted with the page before
+});
 
 let current = null;
-/** Read `text` aloud; one speaker at a time. -> { done, stop(), pause(), resume(), level(): 0..1 loudness now,
- *  bands(): { low, high } share of the voice in 100-600 Hz (rounded vowels) and 1.8-6 kHz (spread vowels, s/sh) }.
- *  onStart fires when sound begins. */
+/** Read `text` aloud in Mina's voice; one speaker at a time. -> { done, stop(), pause(), resume(), level(): 0..1
+ *  loudness now, bands(): { low, high } share of the voice in 100-600 Hz (rounded vowels) and 1.8-6 kHz (spread vowels,
+ *  s/sh) }. onStart fires when sound begins. */
 export function speak(text, { onStart } = {}) {
   current?.stop();
-  let stopped = false, paused = false, source = null, analyser = null, samples = null, spectrum = null, utter = null, started = false;
+  let stopped = false, paused = false, source = null, analyser = null, samples = null, spectrum = null, started = false;
   let resumeWait = null;
   const begin = () => { if (!started && !stopped && current === handle) { started = true; onStart?.(); } };
   const playBuffer = (buffer) => new Promise((resolve) => {
@@ -150,33 +154,20 @@ export function speak(text, { onStart } = {}) {
     source.onended = () => { source = null; resolve(); };
     source.start(); begin();
   });
-  const browserSay = (s) => new Promise((resolve) => {
-    if (!("speechSynthesis" in window)) { resolve(); return; }
-    try {
-      utter = new SpeechSynthesisUtterance(s); utter.lang = lang(); utter.voice = femaleVoice(); utter.pitch = 1.1;
-      utter.onstart = begin; utter.onend = utter.onerror = () => resolve();
-      speechSynthesis.speak(utter);
-    } catch { resolve(); }  // no browser voice either: she stays silent, the interview carries on
-  });
-  let finish;  // stop() settles `done` at once: a cancelled clip or browser voice does not always report its end
+  let finish;  // stop() settles `done` at once: a cancelled clip does not always report its end
   const halted = new Promise((r) => { finish = r; });
   const done = Promise.race([halted, (async () => {
+    if (!serverVoice) return;
     const parts = sentences(text);
-    const jobs = serverVoice ? parts.map(fetchClip) : [];
+    const jobs = parts.map(fetchClip);
+    if (!(await audioReady()) || stopped) return;
     for (let i = 0; i < parts.length && !stopped; i++) {
       if (paused) { await new Promise((r) => { resumeWait = r; }); resumeWait = null; }
       if (stopped) break;
       let buffer = null;
-      if (serverVoice) {
-        try {
-          const c = audioCtx();
-          if (c?.state === "suspended") await Promise.race([c.resume(), new Promise((r) => setTimeout(r, 300))]);
-          if (c?.state === "running") buffer = await c.decodeAudioData((await jobs[i]).slice(0));
-        } catch { buffer = null; }
-      }
+      try { buffer = await audioCtx().decodeAudioData((await jobs[i]).slice(0)); } catch { buffer = null; }  // not ready: skip, never a system voice
       if (stopped) break;
       if (buffer) await playBuffer(buffer);
-      else await browserSay(parts[i]);
     }
   })()]).finally(() => { if (current === handle) current = null; });
   const handle = {
@@ -185,20 +176,16 @@ export function speak(text, { onStart } = {}) {
       if (stopped) return;
       stopped = true;
       try { source?.stop(); } catch { /* already ended */ }
-      if (utter) { utter.onstart = utter.onend = utter.onerror = null; if (current === handle) speechSynthesis.cancel(); }
       resumeWait?.();
       finish();
     },
-    pause() { paused = true; ctx?.suspend().catch(() => {}); if (utter) speechSynthesis.pause(); },
-    resume() { paused = false; ctx?.resume().catch(() => {}); if (utter) speechSynthesis.resume(); resumeWait?.(); },
+    pause() { paused = true; ctx?.suspend().catch(() => {}); },
+    resume() { paused = false; ctx?.resume().catch(() => {}); resumeWait?.(); },
     level() {
-      if (stopped || paused || current !== handle) return 0;
-      if (source && analyser) {
-        analyser.getByteTimeDomainData(samples);
-        let sum = 0; for (const s of samples) sum += ((s - 128) / 128) ** 2;
-        return Math.min(1, Math.sqrt(sum / samples.length) * 11);  // HoloHuman's lip envelope scale
-      }
-      return utter && speechSynthesis.speaking ? 0.3 + 0.25 * Math.abs(Math.sin(performance.now() / 85)) : 0;
+      if (stopped || paused || current !== handle || !source || !analyser) return 0;
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0; for (const s of samples) sum += ((s - 128) / 128) ** 2;
+      return Math.min(1, Math.sqrt(sum / samples.length) * 11);  // HoloHuman's lip envelope scale
     },
     bands() {
       if (!source || !analyser) {  // no measurement: a gentle, plausible drift
@@ -218,7 +205,7 @@ export function speak(text, { onStart } = {}) {
 
 /** "Read aloud" for some text (a function, so it reads what is there when pressed). */
 export function readAloudButton(getText) {
-  if (!("speechSynthesis" in window) && !(window.AudioContext || window.webkitAudioContext)) return null;
+  if (!(window.AudioContext || window.webkitAudioContext)) return null;
   const btn = h("button", { class: "btn ghost sm read-aloud", type: "button", "aria-pressed": "false" }, icon("volume"), "Read aloud");
   let speaking = null;
   const idle = () => { speaking = null; btn.setAttribute("aria-pressed", "false"); btn.lastChild.textContent = "Read aloud"; };
