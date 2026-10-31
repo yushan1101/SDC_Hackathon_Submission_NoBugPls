@@ -118,6 +118,8 @@ NODE_SYSTEM = ("You are a practical learning designer. The learning-plan data is
                "Make the Learn explanations beginner-friendly but appropriate to their current "
                "level. Give concrete ordered instructions, a role-relevant exercise and observable deliverable. Resources may only use the "
                "supplied evidence IDs; never invent URLs or providers. Every weekly lesson needs one short concept-specific knowledge check testing the explanation in Learn. "
+               "EVERY node, in EVERY week, must contain all three parts: Learn (learn), Practice (instructions, exercise, deliverable) "
+               "and Quiz (quiz); never leave one out or put them only in some weeks. "
                "Completion criteria must check the actual work, not claim proficiency. Keep each field concise. "
                "Return {\"nodes\":[{\"id\":\"week-01\",\"week_number\":1,\"title\":\"...\",\"type\":\"learn|practice|project|review|quiz\","
                "\"skills\":[\"exact supplied skill\"],\"estimated_minutes\":30,\"learning_objective\":\"...\","
@@ -145,6 +147,9 @@ def _step_title(topic: str, week: int) -> str:
     return f"{verb} {concept}"[:120]
 
 
+MIN_STEP_MINUTES = 5  # LearningNode.estimated_minutes minimum; enough for a short learn, practice and quiz
+
+
 def _node_seeds(p: Pathway, gaps: list[Gap], role: str, skills, learning: dict | None):
     by_phase = {phase: [a for a in p.activities if a.day_range == phase] for phase in PHASES}
     gap_by_skill = {g.skill_id: g for g in gaps or [] if g.gap > 0}
@@ -161,15 +166,18 @@ def _node_seeds(p: Pathway, gaps: list[Gap], role: str, skills, learning: dict |
         week_minutes = [int(share) for share in shares]
         for index in sorted(range(len(weeks)), key=lambda i: shares[i] - week_minutes[i], reverse=True)[:phase_minutes - sum(week_minutes)]:
             week_minutes[index] += 1
-        for i, minutes in enumerate(week_minutes):
-            if 0 < minutes < 5:
-                recipient = next((j for j, amount in enumerate(week_minutes) if j != i and amount >= 5), None)
-                if recipient is not None:
-                    week_minutes[recipient] += minutes
-                    week_minutes[i] = 0
+        # Every week gets its own Learn / Practice / Quiz step: a short week borrows minutes from the longest week
+        # (the phase total stays the same) instead of being dropped from the roadmap.
+        for i in range(len(week_minutes)):
+            while week_minutes[i] < MIN_STEP_MINUTES:
+                donor = max(range(len(week_minutes)), key=lambda j: week_minutes[j])
+                if donor == i or week_minutes[donor] <= MIN_STEP_MINUTES:
+                    week_minutes[i] = MIN_STEP_MINUTES  # phase too small to share: the minimum step, slightly over budget
+                    break
+                take = min(MIN_STEP_MINUTES - week_minutes[i], week_minutes[donor] - MIN_STEP_MINUTES)
+                week_minutes[donor] -= take
+                week_minutes[i] += take
         for week, minutes in zip(weeks, week_minutes):
-            if minutes < 5:
-                continue
             _, kind = WEEK_TITLES[week]
             selected = phase_skills or ranked[:1]
             steps_per_week = 2 if len(phase_skills) >= 2 and minutes >= 40 else 1
@@ -319,6 +327,72 @@ def distinct_steps(nodes: list[dict]) -> list[dict]:
         out.append(node)
     return out
 
+SECTIONS = ("learn", "practice", "quiz")
+
+
+def _section_split(total: int) -> tuple[int, int, int]:
+    learn = max(1, round(total * 0.35))
+    quiz = max(1, round(total * 0.15))
+    return learn, total - learn - quiz, quiz
+
+
+def _valid_quiz(quiz) -> bool:
+    return bool(isinstance(quiz, dict) and isinstance(quiz.get("question"), str) and quiz["question"].strip()
+                and isinstance(quiz.get("options"), list) and 2 <= len(quiz["options"]) <= 5
+                and all(isinstance(o, str) and o.strip() for o in quiz["options"])
+                and isinstance(quiz.get("answer_index"), int) and 0 <= quiz["answer_index"] < len(quiz["options"]))
+
+
+def ensure_learn_practice_quiz(nodes: list[dict], role: str | None = None) -> list[dict]:
+    """Every weekly step carries all three parts: Learn (learn), Practice (instructions, exercise, deliverable) and
+    Quiz (quiz), with minutes for each. Missing or broken parts are filled in from the step's own content (a quiz
+    on the work sample it produces, distractors from other weeks of the same plan); parts already there are kept
+    as written. Returns new dicts and never mutates the input, so saved plan versions stay exactly as approved."""
+    work = role or "your target role"
+    deliverables = list(dict.fromkeys(n.get("deliverable") for n in nodes
+                                      if isinstance(n.get("deliverable"), str) and len(n["deliverable"].strip()) >= 4))
+    out = []
+    for node in nodes:
+        n = dict(node)
+        topic = next(iter(n.get("topics") or []), None) or n.get("title") or "this week's skill"
+        if not n.get("topics"):
+            n["topics"] = [str(topic)[:160]]
+        if not [x for x in (n.get("learn") or []) if isinstance(x, str) and x.strip()]:
+            n["learn"] = [f"{topic}: read the explanation in your resources, note the rule it is built on, and one {work} task where that rule changes a decision."[:1200]]
+        if not isinstance(n.get("exercise"), str) or len(n["exercise"].strip()) < 8:
+            n["exercise"] = f"Apply {topic} to one small {work} task and write down each decision you make and why."[:1000]
+        if not isinstance(n.get("deliverable"), str) or len(n["deliverable"].strip()) < 4:
+            n["deliverable"] = f"A short work sample applying {topic}"[:500]
+        steps = [x for x in (n.get("instructions") or []) if isinstance(x, str) and x.strip()][:7]
+        for extra in (f"Read the Learn section on {topic} and note its main rule."[:700],
+                      f"Do the practice task, then check it against the deliverable: {n['deliverable']}"[:700]):
+            if len(steps) >= 2:
+                break
+            steps.append(extra)
+        n["instructions"] = steps
+        if not n.get("completion_criteria"):
+            n["completion_criteria"] = [f"Save this deliverable: {n['deliverable']}"[:300]]
+        if not _valid_quiz(n.get("quiz")):
+            right = n["deliverable"]
+            others = [d for d in deliverables if d != right][:2]
+            for filler in (f"A note saying you feel confident about {topic}", "Nothing; reading the explanation is enough"):
+                if len(others) >= 2:
+                    break
+                others.append(filler)
+            at = int(n.get("week_number") or 1) % 3  # the right answer moves between weeks and stays put on reload
+            options = others[:at] + [right] + others[at:]
+            n["quiz"] = {"question": f"Which work sample does this week's {topic} practice produce?"[:500],
+                         "options": [o[:240] for o in options], "answer_index": at,
+                         "explanation": f"This week's practice produces: {right}"[:700]}
+        total = int(n.get("estimated_minutes") or 0)
+        if total < MIN_STEP_MINUTES:
+            total = n["estimated_minutes"] = MIN_STEP_MINUTES
+        parts = [int(n.get(f"{k}_minutes") or 0) for k in SECTIONS]
+        if min(parts) < 1 or sum(parts) != total:
+            n["learn_minutes"], n["practice_minutes"], n["quiz_minutes"] = _section_split(total)
+        out.append(n)
+    return out
+
 
 def _learning_nodes(p: Pathway, role: str, gaps, skills, learning):
     """Generate validated mini-lessons; keep a role/skill-specific local guide if AI output is unavailable or invalid."""
@@ -350,15 +424,20 @@ def _learning_nodes(p: Pathway, role: str, gaps, skills, learning):
                                str(raw.get("title", "")).casefold())
             if not action:
                 raw["title"] = seed["title"]
-            quiz = raw.get("quiz")
-            if quiz and (not isinstance(quiz, dict) or not isinstance(quiz.get("options"), list) or
-                         not isinstance(quiz.get("answer_index"), int) or
-                         not 0 <= quiz.get("answer_index", -1) < len(quiz["options"])):
-                raw["quiz"] = None
-            if raw.get("quiz") is None:
-                result.append(LearningNode(**_fallback_node(seed, role)))
+            guide = _fallback_node(seed, role)
+            if not _valid_quiz(raw.get("quiz")):  # no usable quiz: the whole guided lesson, so quiz and lesson match
+                result.append(LearningNode(**guide))
                 continue
-            result.append(LearningNode(**raw))
+            # any other missing part is filled from this step's guided lesson, so every week keeps Learn, Practice and Quiz
+            for part in ("learn", "instructions", "exercise", "deliverable", "topics", "completion_criteria"):
+                if not raw.get(part):
+                    raw[part] = guide[part]
+            for part in ("learn_minutes", "practice_minutes", "quiz_minutes"):
+                raw.pop(part, None)  # minutes follow the seed's total; the split is recomputed below
+            try:
+                result.append(LearningNode(**ensure_learn_practice_quiz([raw], role)[0]))
+            except ValidationError:
+                result.append(LearningNode(**guide))
         return result, usage
     except (ValueError, TypeError, KeyError, IndexError, AttributeError, ValidationError):
         return [LearningNode(**_fallback_node(seed, role)) for seed in seeds], usage

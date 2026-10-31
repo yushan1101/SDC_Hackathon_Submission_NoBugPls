@@ -355,6 +355,64 @@ def test_plan_edit_preview_does_not_save_until_applied(client):
     assert client.post(f"/api/plans/{pid}/apply-preview", json={"token": proposed["token"]}, headers={"X-AP": "1"}).status_code == 404
 
 
+def _lpq(node: dict) -> bool:
+    quiz = node.get("quiz") or {}
+    return bool(node.get("learn") and node.get("exercise") and node.get("deliverable") and len(node.get("instructions") or []) >= 2
+                and quiz.get("question") and len(quiz.get("options") or []) >= 2
+                and min(node["learn_minutes"], node["practice_minutes"], node["quiz_minutes"]) >= 1
+                and node["learn_minutes"] + node["practice_minutes"] + node["quiz_minutes"] == node["estimated_minutes"])
+
+
+def test_time_adjust_still_works_and_every_week_keeps_learn_practice_quiz(client):
+    """The weekly-hours change (POST /hours, the plan edit preview/apply and the start date) behaves as before, and
+    the rebuilt roadmap has a Learn / Practice / Quiz step in every one of its 13 weeks."""
+    from datetime import datetime, timedelta, timezone
+    login(client, "ana")
+    body = {"target_role": "2221.2", "scenario": "assistive", "weekly_learning_hours": 8, "skills": [{"name": "communication", "level": 3}]}
+    pid = events(client.post("/api/analyze", json=body, headers={"X-AP": "1"}))[-1]["plan_id"]
+    before = client.get(f"/api/plans/{pid}").json()
+    weeks = lambda plan: sorted({n["week_number"] for n in plan["learning_nodes"]})
+    assert weeks(before["plan"]) == list(range(1, 14)) and all(_lpq(n) for n in before["plan"]["learning_nodes"])
+    r = client.post(f"/api/plans/{pid}/hours", json={"weekly_hours": 3}, headers={"X-AP": "1"})
+    assert r.status_code == 200, r.text
+    assert r.json()["changes"]["weekly_hours"] == [8, 3] and r.json()["status"] == "draft"
+    after = client.get(f"/api/plans/{pid}").json()
+    assert after["version"] == before["version"] + 1 and after["report"]["request"]["weekly_learning_hours"] == 3
+    assert len(after["history"]) == len(before["history"]) + 1  # audit trail keeps every version
+    assert weeks(after["plan"]) == list(range(1, 14)) and all(_lpq(n) for n in after["plan"]["learning_nodes"])
+    preview = client.post(f"/api/plans/{pid}/preview", json={"weekly_hours": 1}, headers={"X-AP": "1"})
+    assert preview.status_code == 200, preview.text
+    proposed = preview.json()
+    assert weeks(proposed["plan"]) == list(range(1, 14)) and all(_lpq(n) for n in proposed["plan"]["learning_nodes"])
+    assert client.get(f"/api/plans/{pid}").json()["version"] == after["version"]  # preview alone saves nothing
+    assert client.post(f"/api/plans/{pid}/discard-preview", json={"token": proposed["token"]}, headers={"X-AP": "1"}).status_code in (200, 204)
+    start = (datetime.now(timezone.utc).date() - timedelta(days=3)).isoformat()
+    assert client.post(f"/api/plans/{pid}/start", json={"start_date": start}, headers={"X-AP": "1"}).status_code == 200
+    assert client.get(f"/api/plans/{pid}").json()["started_utc"].startswith(start)
+
+
+def test_saved_step_without_a_quiz_shows_all_three_parts_but_is_not_rewritten(client):
+    import server.api as api
+    from agents import pathway
+    from core.state import Gap, LearningNode
+    from governance import approval
+    gaps = [Gap(skill_id="SQL", current_level=0, required_level=3, gap=3)]
+    original = pathway.build(gaps, 4, "Data analyst", "assistive")
+    seeds = pathway._node_seeds(original, gaps, original.target_role, [], {})
+    nodes = [LearningNode(**pathway._fallback_node(seed, original.target_role)) for seed in seeds]
+    nodes = [n.model_copy(update={"quiz": None, "quiz_minutes": 0, "practice_minutes": n.practice_minutes + n.quiz_minutes}) for n in nodes]
+    original.learning_nodes = nodes
+    with api.DB_LOCK:
+        pid = approval.create(api.db, original.model_dump(), "E-001", "individual")
+    login(client, "ana")
+    detail = client.get(f"/api/plans/{pid}").json()
+    assert sorted({n["week_number"] for n in detail["plan"]["learning_nodes"]}) == list(range(1, 14))
+    assert all(_lpq(n) for n in detail["plan"]["learning_nodes"])
+    assert detail["version"] == 1 and len(detail["history"]) == 1
+    with api.DB_LOCK:
+        stored = approval.latest(api.db, pid)["plan"]
+    assert all(n["quiz"] is None for n in stored["learning_nodes"])  # the approved version itself is unchanged
+
 def test_past_report_followup_still_shows_what_changed(client):
     from server import api
     login(client, "ana")
