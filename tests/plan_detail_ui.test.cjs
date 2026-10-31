@@ -22,6 +22,8 @@ async function render(startedUtc) {
     h, api: async () => response, icon: () => null, toast() {}, setSources() {},
     planBlock: ({ startDate }) => { roadmapStart = startDate; return h('roadmap'); },
     hoursControl: () => null, historyBlock: () => null, lastChanges: null, planSection: 'plan',
+    // the section tabs: collect each section's content where the page puts its panes
+    reportSections: () => { const panes = []; return { bar: h('bar'), panes, add: (key, ...els) => panes.push(...els.flat()), show() {}, has: () => true }; },
   });
   vm.runInContext(detail, context);
   await context.planDetail(main, 'old-plan');

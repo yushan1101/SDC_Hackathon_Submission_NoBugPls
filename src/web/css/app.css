@@ -4153,3 +4153,8 @@ pre { max-width: 100%; overflow-x: auto; }
 /* plan page: the roadmap block sits straight on the plan card instead of in a second box */
 html .plan-focus > .plan-block.block { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 @media (max-width: 560px) { .plan-focus { padding-left: 14px; padding-right: 14px; } }
+/* report section bar (reportSections): tabs appear as their section gets content; no bar until one does */
+.pd-tab[hidden] { display: none; }
+.pd-bar:not(:has(.pd-tab:not([hidden]))) { display: none; }
+.report-sections { display: grid; min-width: 0; }
+.report-sections > .pd-bar { margin: 4px 0 18px; }

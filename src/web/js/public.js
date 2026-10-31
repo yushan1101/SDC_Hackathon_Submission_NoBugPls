@@ -683,20 +683,24 @@ async function openConversation(id) {
     const narrative = t.a ? staticText(t.a, highlight) : null;
     if (narrative) narrative.dataset.assistantReply = "true";
     const body = h("div", { class: "body" }, narrative);
-    if (i === turns.length - 1) {  // the latest turn carries the full analysis and the plan
-      let insights = null;
-      const add = (el, small) => { if (!el) return; if (small) (insights ??= body.appendChild(h("div", { class: "insights" }))).append(el); else body.append(el); };
-      add(r.gaps?.length ? gapsBlock(r.gaps) : null);
-      add(r.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null);
-      add(r.outlook ? outlookBlock(r.outlook) : null, true);
-      add(r.signals ? signalsBlock(r.signals) : null, true);
-      add(r.sdgs?.length ? sdgBlock(r.sdgs) : null, true);
-      add(r.issues?.some((x) => x.severity === "error") ? issuesBlock(r.issues.filter((x) => x.severity === "error")) : null);
-      body.append(planHolder(id, d.plan, r.request?.weekly_learning_hours ?? S.profile.weekly_learning_hours, d.status, d.progress, d.plan_reference));
+    if (i === turns.length - 1) {  // the latest turn carries the full analysis and the plan, in the same tabs as a live report
+      const tabbed = reportSections();
+      tabbed.add("plan", r.issues?.some((x) => x.severity === "error") ? issuesBlock(r.issues.filter((x) => x.severity === "error")) : null,
+        planHolder(id, d.plan, r.request?.weekly_learning_hours ?? S.profile.weekly_learning_hours, d.status, d.progress, d.plan_reference));
+      tabbed.add("gaps", r.gaps?.length ? gapsBlock(r.gaps) : null, r.comparison?.length ? comparisonBlock(r.comparison, d.plan.scenario) : null);
+      tabbed.add("market", r.outlook ? outlookBlock(r.outlook) : null, r.signals ? signalsBlock(r.signals) : null, r.sdgs?.length ? sdgBlock(r.sdgs) : null);
+      tabbed.add("history", d.history?.length ? h("section", { class: "block" }, historyBlock(d.history)) : null);
+      tabbed.show("plan");
+      body.append(tabbed.el);
     }
-    return [h("div", { class: "turn-user" }, h("p", { class: "q" }, t.q || `Plan for ${t.title || title}`)),
+    // each turn's own request when it was saved with one; the latest turn falls back to the report's request
+    const req = t.hours ? { scenario: t.scenario, hours: t.hours, skills: t.skills }
+      : i === turns.length - 1 && r.request ? { scenario: r.request.scenario, hours: r.request.weekly_learning_hours, skills: r.request.skills?.length } : null;
+    return [h("div", { class: "turn-user" }, h("p", { class: "q" }, t.q || `Plan for ${t.title || title}`),
+        req ? reqPills(t.target_role || d.plan.target_role, t.title || title, req.scenario, req.hours, req.skills) : null),
       h("article", { class: "turn-owl" },
-        h("div", { class: "body" }, h("div", { class: "who" }, "AiversePulse", t.at ? h("span", { class: "muted" }, fmtTime(t.at)) : null), body))];
+        h("div", { class: "body" }, h("div", { class: "who" }, "AiversePulse", t.at ? h("span", { class: "muted" }, fmtTime(t.at)) : null,
+          narrative ? readAloudButton(() => narrative.textContent) : null), body))];
   }));
   S.ctx = { gaps: r.gaps, outlook: r.outlook };
   drawSuggestions();
@@ -764,17 +768,22 @@ function setSources(evidence) {
   S.sheetBody.replaceChildren(...list.map((e) => { const el = sourceItem(e); el.removeAttribute("id"); el.dataset.id = e.id; return el; }));
 }
 
+/** The request under a question: job, AI scenario, weekly hours, skills. Live turns and reopened reports share it. */
+function reqPills(role, title, scenario, hours, skills, skillsTitle) {
+  return h("div", { class: "req-pills" },
+    h("span", { class: "meta-pill" }, role ? jobIcon(role, { size: 24 }) : null, title || role),
+    scenario ? h("span", { class: "meta-pill" }, icon("spark"), scenario === "agentic" ? "Agentic AI" : "Assistive AI") : null,
+    hours ? h("span", { class: "meta-pill" }, icon("clock"), `${hours} h/week`) : null,
+    skills ? h("span", { class: "meta-pill", title: skillsTitle || null }, icon("check"), `${skills} skills`) : null);
+}
+
 async function runTurn(params) {
   S.composer.hidden = false;
   const p = params;
   const label = p.query || `Plan for ${p.target_title || p.target_role}`;
   S.thread.push(p);
   const userTurn = h("div", { class: "turn-user" }, h("p", { class: "q" }, label),
-    h("div", { class: "req-pills" },
-      h("span", { class: "meta-pill" }, p.target_role ? jobIcon(p.target_role, { size: 24 }) : null, p.target_title || p.target_role),
-      h("span", { class: "meta-pill" }, icon("spark"), p.scenario === "agentic" ? "Agentic AI" : "Assistive AI"),
-      h("span", { class: "meta-pill" }, icon("clock"), `${p.weekly_learning_hours} h/week`),
-      h("span", { class: "meta-pill", title: p.skills.map((s) => `${s.name}: ${s.level}`).join("\n") }, icon("check"), `${p.skills.length} skills`)));
+    reqPills(p.target_role, p.target_title, p.scenario, p.weekly_learning_hours, p.skills.length, p.skills.map((s) => `${s.name}: ${s.level}`).join("\n")));
   const owl = S.assistant.owl;
   owl.set("thinking");
   const say = h("span", { class: "muted" }, "Reading your request");
@@ -784,7 +793,8 @@ async function runTurn(params) {
   const sumText = h("span", {}, "Analysing…");
   const trace = h("details", { class: "trace", open: true }, h("summary", {}, h("span", { class: "spinner", "aria-hidden": "true" }), sumText), traceList);
   const prose = h("p", { class: "prose", "aria-live": "polite", "data-assistant-reply": "true" });
-  const body = h("div", { class: "body" }, trace, prose);
+  const tabbed = reportSections();  // the same section tabs as a reopened report and the plan page
+  const body = h("div", { class: "body" }, trace, prose, tabbed.el);
   const turn = h("article", { class: "turn-owl", "aria-label": "AiversePulse reply" },
     h("div", { class: "body" }, h("div", { class: "who" }, "AiversePulse", say, readAloudButton(() => prose.textContent)), body));
   S.threadEl.querySelector(".empty, .brief-start")?.remove();
@@ -795,7 +805,7 @@ async function runTurn(params) {
   const st = new StreamText(prose, highlight);
   const ctrl = new AbortController();
   setBusy(ctrl);
-  let steps = 0, reused = 0, t0 = performance.now(), planId = null, meta = null, insights = null, live = null, changes = null;
+  let steps = 0, reused = 0, t0 = performance.now(), planId = null, meta = null, live = null;
   const mood = (state, text) => { owl.set(state); S.status.set(state, text || say.textContent); if (text) { say.textContent = text; S.assistant.setStatus(text); } };
   try {
     await stream("/api/analyze", {
@@ -816,7 +826,7 @@ async function runTurn(params) {
         running.remove(); trace.querySelector(".spinner")?.remove();
         sumText.textContent = `Done in ${(ev.usage.ms / 1000).toFixed(1)} s · ${steps} steps${reused ? `, ${reused} reused` : ""}`;
         setTimeout(() => { trace.open = false; }, 700);
-      } else if (ev.t === "plan_start") { live = planLive(ev.slots); body.append(live.el); }
+      } else if (ev.t === "plan_start") { live = planLive(ev.slots); tabbed.add("plan", live.el); }
       else if (ev.t === "plan_token") live?.token(ev.delta);
       else if (ev.t === "plan_activity") live?.confirm(ev.slot, ev.activity, ev.ai);
       else if (ev.t === "text") st.push(ev.delta);
@@ -827,13 +837,10 @@ async function runTurn(params) {
           : ev.kind === "outlook" ? outlookBlock(d) : ev.kind === "signals" ? signalsBlock(d) : ev.kind === "sdgs" ? sdgBlock(d)
           : ev.kind === "issues" ? issuesBlock(d.filter((i) => i.severity === "error"))
           : ev.kind === "plan" ? planHolder(planId, d, p.weekly_learning_hours, meta?.status || "draft", [], meta?.plan_reference) : null;
-        if (ev.kind === "changes") { changes = el; (live ? live.el.before(el) : body.append(el)); return; }  // the summary sits above the roadmap
-        if (ev.kind === "plan" && live) { live.el.replaceWith(el); live = null; changes && el.before(changes); return; }  // the written plan becomes the full plan
-        if (ev.kind === "plan" && el && changes) { body.append(changes, el); return; }
-        if (el && ["outlook", "signals", "sdgs"].includes(ev.kind)) {  // three small insight cards share one row
-          insights ??= body.appendChild(h("div", { class: "insights" }));
-          insights.append(el);
-        } else if (el) body.append(el);
+        // each part goes into its tab as it arrives: plan (with the change summary above the roadmap), gaps, market
+        if (ev.kind === "changes" && live) { live.el.before(el); return; }
+        if (ev.kind === "plan" && live) { live.el.replaceWith(el); live = null; return; }  // the written plan becomes the full plan
+        tabbed.add({ gaps: "gaps", comparison: "gaps", outlook: "market", signals: "market", sdgs: "market" }[ev.kind] || "plan", el);
       } else if (ev.t === "done") {
         drawSuggestions();
         st.end();
@@ -1092,6 +1099,50 @@ function planReportPdf(d) {
 }
 
 let lastChanges = null;
+/** A report split into sections behind the sticky blue tab bar (plan page, live report, reopened report): one section
+ *  shows at a time. A section's tab appears once it has content, so a streaming report fills its tabs as parts arrive;
+ *  until someone picks a tab, the first section with content shows, and "Your plan" takes over when it arrives. */
+let sectionSeq = 0;
+const REPORT_SECTIONS = [["plan", "Your plan", "plans"], ["gaps", "Skill gaps", "target"], ["market", "Market outlook", "up"],
+  ["briefing", "Briefing", "report"], ["history", "History", "history"]];
+function reportSections({ onShow } = {}) {
+  const n = ++sectionSeq;
+  let current = null, picked = false;
+  const keys = REPORT_SECTIONS.map(([key]) => key);
+  const panes = {}, targets = {}, tabs = {};
+  for (const [key, label, ic] of REPORT_SECTIONS) {
+    panes[key] = h("section", { class: "pd-pane", id: `pd-${n}-${key}`, role: "tabpanel", "aria-labelledby": `pd-tab-${n}-${key}`, hidden: true });
+    targets[key] = key === "market" ? panes[key].appendChild(h("div", { class: "insights" })) : panes[key];  // three small cards share a row
+    tabs[key] = h("button", { class: "pd-tab", type: "button", role: "tab", id: `pd-tab-${n}-${key}`, "aria-controls": `pd-${n}-${key}`, hidden: true,
+      tabIndex: -1, onclick: () => { picked = true; show(key); } }, icon(ic), h("span", {}, label));
+  }
+  const has = (key) => !!tabs[key] && !tabs[key].hidden;
+  function show(key, focus = false) {
+    if (!has(key)) return;
+    current = key;
+    keys.forEach((k) => {
+      const on = k === key;
+      panes[k].hidden = !on;
+      tabs[k].setAttribute("aria-selected", String(on));
+      tabs[k].tabIndex = on ? 0 : -1;
+      if (on) { tabs[k].scrollIntoView({ block: "nearest", inline: "nearest" }); if (focus) tabs[k].focus(); }
+    });
+    onShow?.(key);
+  }
+  function add(key, ...els) {
+    els = els.flat().filter(Boolean);
+    if (!els.length) return;
+    targets[key].append(...els);
+    tabs[key].hidden = false;
+    if (!picked && (current === null || key === "plan")) show(key);
+  }
+  const bar = h("div", { class: "pd-bar no-print", role: "tablist", "aria-label": "Report sections", onkeydown: (e) => {  // arrow keys move along the bar
+    const open = keys.filter(has), i = open.indexOf(current), step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (step && open.length) { e.preventDefault(); picked = true; show(open[(i + step + open.length) % open.length], true); }
+  } }, keys.map((k) => tabs[k]));
+  return { bar, panes: keys.map((k) => panes[k]), add, show, has, el: h("div", { class: "report-sections" }, bar, keys.map((k) => panes[k])) };
+}
+
 let planSection = "plan";  // the plan page's open section, kept while the person moves between plans  // {id, changes}: the summary of the latest hours change, shown above that plan's roadmap
 
 /** Preview edits against the saved assessment, then apply exactly the version the learner inspected. */
@@ -1199,28 +1250,13 @@ async function planDetail(main, id, focusPlan = false, section = null, selectedN
       d.audience === "hr" && d.status === "approved" ? h("div", { class: "approve-bar" }, h("span", {}, "Your HR advisor approved this plan."),
         h("button", { class: "btn primary", onclick: async () => { await api(`/api/plans/${id}/acknowledge`, { method: "POST" }); toast("Acknowledged"); planDetail(main, id); } }, "Acknowledge")) : null]],
     ["gaps", "Skill gaps", "target", gaps],
-    ["market", "Market outlook", "up", market, h("div", { class: "insights" }, market)],
+    ["market", "Market outlook", "up", market],
     ["briefing", "Briefing", "report", briefing],
     ["history", "History", "history", [h("section", { class: "block" }, historyBlock(d.history))]],
-  ].filter(([, , , kids]) => kids.some(Boolean));
-  const panes = sections.map(([key, , , kids, wrap]) => h("section", { class: "pd-pane", id: `pd-${key}`, role: "tabpanel", "aria-labelledby": `pd-tab-${key}` },
-    wrap || kids));
-  const show = (key, focus = false) => {
-    planSection = key;
-    sections.forEach(([k], i) => {
-      const on = k === key;
-      panes[i].hidden = !on;
-      tabs[i].setAttribute("aria-selected", String(on));
-      tabs[i].tabIndex = on ? 0 : -1;
-      if (on) { tabs[i].scrollIntoView({ block: "nearest", inline: "nearest" }); if (focus) tabs[i].focus(); }
-    });
-  };
-  const tabs = sections.map(([key, label, ic]) => h("button", { class: "pd-tab", type: "button", role: "tab", id: `pd-tab-${key}`, "aria-controls": `pd-${key}`,
-    onclick: () => show(key) }, icon(ic), h("span", {}, label)));
-  const bar = h("div", { class: "pd-bar no-print", role: "tablist", "aria-label": "Report sections", onkeydown: (e) => {  // arrow keys move along the bar
-    const i = sections.findIndex(([k]) => k === planSection), step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
-    if (step) { e.preventDefault(); show(sections[(i + step + sections.length) % sections.length][0], true); }
-  } }, tabs);
+  ];
+  const tabbed = reportSections({ onShow: (key) => { planSection = key; } });
+  sections.forEach(([key, , , kids]) => tabbed.add(key, ...kids));
+  const { bar, panes } = tabbed;
   const pdf = h("button", { class: "btn sm no-print", type: "button", onclick: () => {
     try { saveFile(planReportPdf(d), `${(r?.occupation?.title || d.plan.target_role).replace(/[^\w-]+/g, "-")}-${d.plan_reference || id}.pdf`); toast("Report downloaded"); }
     catch (e) { toast(`Could not build the report: ${e.message}`, "err"); }
@@ -1228,7 +1264,7 @@ async function planDetail(main, id, focusPlan = false, section = null, selectedN
   main.replaceChildren(h("div", { class: "plan-top-actions no-print" }, h("a", { href: "#/plans", class: "btn ghost sm" }, icon("back"), "All plans"), pdf),
     h("h1", { class: "page-title plan-detail-title" }, r?.occupation?.title || d.plan.target_role),
     bar, h("div", { class: "body plan-detail-body" }, panes));
-  show(focusPlan || section || !sections.some(([k]) => k === planSection) ? "plan" : planSection);
+  tabbed.show(focusPlan || section || !tabbed.has(planSection) ? "plan" : planSection);
   main.dataset.plan = id;
   if (section) main.querySelector(".plan-block")?.openPane(section, true);
   if (focusPlan) planFocus.focus({ preventScroll: true });

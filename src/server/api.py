@@ -1695,7 +1695,8 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
         # the conversation so far plus this turn; q is None for the default "make my plan" request
         thread = history + [{"q": asked,
                              "a": out["narrative"] or out["answer"] or "", "target_role": req.target_role,
-                             "title": (out["occupation"] or {}).get("title"),
+                             "title": (out["occupation"] or {}).get("title"), "scenario": req.scenario,
+                             "hours": req.profile.weekly_learning_hours, "skills": len(req.profile.skills),
                              "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}]
         pid = None
         if ran is not None and ran <= {"coach", "reviewer"}:
@@ -1728,8 +1729,8 @@ def analyze(body: AnalyzeIn, user: dict = Depends(need("employee"))):
         for kind in ("gaps", "comparison", "outlook", "signals", "sdgs", "issues", "plan"):
             if ran is not None and kind in made_by and made_by[kind] not in ran:
                 continue
-            if out[kind]:
-                yield sse({"t": "section", "kind": kind, "data": out[kind]})
+            if out[kind]:  # the plan goes out as weekly tasks, the same view the plan page and history show
+                yield sse({"t": "section", "kind": kind, "data": _learning_plan_view(out[kind]) if kind == "plan" else out[kind]})
                 time.sleep(0.12)
         flagged = out["status"] == "flagged"
         yield sse({"t": "owl", "state": "confused" if flagged else "matched",
