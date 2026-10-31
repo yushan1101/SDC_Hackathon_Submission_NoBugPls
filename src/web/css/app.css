@@ -2850,6 +2850,9 @@ body {
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 .interview-takeover .interview-type-sheet .interview-answer:focus { color: #fff; -webkit-text-fill-color: #fff; caret-color: #fff; }
 .interview-takeover .interview-type-sheet .interview-answer::placeholder { color: #ffffff99; }
+.interview-answer-form .interview-answer,
+.interview-answer-form .interview-answer:focus { color: #172033 !important; -webkit-text-fill-color: #172033 !important; caret-color: #172033 !important; background: #fff !important; }
+.interview-answer-form .interview-answer::placeholder { color: #526074 !important; opacity: 1; }
 .interview-takeover .interview-live-preview { width: 100%; margin: 0; padding: 8px 14px; border: 0; border-radius: 14px; color: #fff; background: #0f1828c0; font-size: 15px; text-align: center; }
 .interview-takeover .interview-voice-panel { display: inline-flex; align-items: center; gap: 10px; padding: 6px 14px 6px 8px; border: 0; border-radius: 999px;
   color: #fff; background: #0f1828b0; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
