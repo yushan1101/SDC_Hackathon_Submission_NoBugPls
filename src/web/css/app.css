@@ -2843,6 +2843,8 @@ body {
 .interview-takeover .interview-answer-form { display: grid; grid-template-columns: 1fr; justify-items: center; gap: 10px;
   width: min(640px, calc(100% - 24px)); padding: 0; border: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .interview-takeover .interview-answer-form[data-view="voice"] .interview-type-sheet { display: none; }
+.interview-takeover .interview-answer-form[data-view="voice"] .interview-type-sheet:has(.interview-answer:not(:placeholder-shown)),
+.interview-takeover .interview-answer-form[data-view="voice"] .interview-type-sheet:focus-within { display: grid; }
 .interview-takeover .interview-type-sheet { width: 100%; }
 .interview-takeover .interview-type-sheet .interview-answer { min-height: 96px; border-radius: 18px; border-color: #ffffff40; background: #0f1828e0; color: #fff;
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
