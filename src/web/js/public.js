@@ -1175,42 +1175,130 @@ function hoursControl(main, id, d) {
         priority_skills: priority.value ? [priority.value] : [] } });
       previewToken = res.token;
       const oldRoad = main.querySelector(".plan-focus > .plan-block");
+      const oldRoadParent = oldRoad?.parentNode;
+      const oldRoadNext = oldRoad?.nextSibling;
       const previewRoad = planBlock({ planId: null, plan: res.plan, version: d.version + 1, status: "draft",
         weeklyHours: next, progress: res.progress, evidence: res.evidence, startDate: planStartDate(d),
         readOnly: true, diagrams: false, title: "Proposed roadmap" });
-      const showRoad = (showPreview) => { oldRoad.hidden = showPreview; previewRoad.hidden = !showPreview;
-        beforeBtn.setAttribute("aria-pressed", String(!showPreview)); afterBtn.setAttribute("aria-pressed", String(showPreview)); };
-      const beforeBtn = h("button", { class: "btn sm", type: "button", onclick: () => showRoad(false) }, "Current plan");
-      const afterBtn = h("button", { class: "btn sm", type: "button", onclick: () => showRoad(true) }, "Proposed plan");
+      const currentView = h("section", { class: "plan-compare-version", "aria-label": "Current plan" }, h("h5", {}, "Current plan"));
+      const proposedView = h("section", { class: "plan-compare-version", "aria-label": "Proposed plan" }, h("h5", {}, "Proposed plan"));
+      const comparison = h("div", { class: "plan-compare-overview", hidden: true });
+      const compareView = h("div", { class: "plan-compare-grid" }, comparison, currentView, proposedView);
+      currentView.append(oldRoad);
+      proposedView.append(previewRoad);
+      const showRoad = (mode) => {
+        comparison.hidden = mode !== "compare";
+        currentView.hidden = mode !== "current";
+        proposedView.hidden = mode !== "proposed";
+        [beforeBtn, afterBtn, compareBtn].forEach((button, i) => button.setAttribute("aria-pressed", String(["current", "proposed", "compare"][i] === mode)));
+      };
+      const beforeBtn = h("button", { class: "btn sm", type: "button", "aria-pressed": "false", onclick: () => showRoad("current") }, "Current plan");
+      const afterBtn = h("button", { class: "btn sm", type: "button", "aria-pressed": "false", onclick: () => showRoad("proposed") }, "Proposed plan");
+      const compareBtn = h("button", { class: "btn sm", type: "button", "aria-pressed": "true", onclick: () => showRoad("compare") }, "Compare changes");
       const summary = res.summary;
+      const proposedNodes = res.plan.learning_nodes || [];
+      const oldNodes = d.plan.learning_nodes || [];
+      const changes = proposedNodes.filter((node) => ["New", "Moved", "Modified"].includes(node.change_badge));
+      const phaseRanges = [[1, 4, "Days 1–30"], [5, 8, "Days 31–60"], [9, 13, "Days 61–90"]];
+      const hoursFor = (nodes) => nodes.reduce((sum, node) => sum + Number(node.estimated_minutes || 0) / 60, 0);
+      const hourLabel = (value) => `${Math.round(value * 10) / 10} h`;
+      const matchingNode = (node, nodes) => nodes.find((item) => item.id === node.id || item.title === node.title);
+      let comparePhase = 0;
+      const phaseButtons = phaseRanges.map(([, , label], index) => h("button", { type: "button", class: "plan-compare-phase", role: "tab",
+        "aria-selected": String(index === 0), onclick: () => { comparePhase = index; renderComparison(); } }, label));
+      const comparePhases = h("div", { class: "plan-compare-phases", role: "tablist", "aria-label": "Compare plan phases" }, phaseButtons);
+      const compareCards = h("div", { class: "plan-compare-cards" });
+      function renderComparison() {
+        phaseButtons.forEach((button, index) => button.setAttribute("aria-selected", String(index === comparePhase)));
+        const [first, last] = phaseRanges[comparePhase];
+        const card = (label, nodes, hoursPerWeek, otherNodes, proposed) => h("section", { class: `plan-compare-card${proposed ? " is-proposed" : ""}`, "aria-label": label },
+          h("div", { class: "plan-compare-card-head" }, h("strong", {}, label), h("span", {}, `${hoursPerWeek} h/week`)),
+          h("div", { class: "plan-compare-card-stats" }, h("span", {}, `${nodes.length} learning steps`), h("span", {}, `${hourLabel(hoursFor(nodes))} scheduled`)),
+          h("div", { class: "plan-compare-weeks" }, Array.from({ length: last - first + 1 }, (_, offset) => {
+            const week = first + offset;
+            const items = nodes.filter((node) => node.week_number === week);
+            const other = otherNodes.filter((node) => node.week_number === week);
+            const stepDelta = items.length - other.length;
+            const hourDelta = hoursFor(items) - hoursFor(other);
+            const delta = proposed && (stepDelta || Math.abs(hourDelta) >= .05)
+              ? `${stepDelta > 0 ? "+" : ""}${stepDelta} ${Math.abs(stepDelta) === 1 ? "step" : "steps"} · ${hourDelta > 0 ? "+" : ""}${hourLabel(hourDelta)}` : null;
+            return h("div", { class: "plan-compare-week" },
+              h("div", { class: "plan-compare-week-head" }, h("strong", {}, `Week ${week}`),
+                h("span", {}, `${items.length} ${items.length === 1 ? "step" : "steps"} · ${hourLabel(hoursFor(items))}`),
+                delta ? h("small", { class: "plan-compare-delta" }, delta) : null),
+              h("div", { class: "plan-compare-week-steps" }, items.length ? items.map((node) => {
+                const counterpart = matchingNode(node, otherNodes);
+                const badge = proposed ? node.change_badge : !counterpart ? "Deferred" : counterpart.week_number !== week ? "Moved" : null;
+                return h("div", { class: `plan-compare-step${badge ? ` is-${badge.toLowerCase()}` : ""}` },
+                  h("span", {}, node.title), badge ? h("small", {}, badge) : null);
+              }) : h("span", { class: "muted" }, "No scheduled steps")));
+          })));
+        compareCards.replaceChildren(card("Current plan", oldNodes, summary.hours_before, proposedNodes, false),
+          card("Proposed plan", proposedNodes, summary.hours_after, oldNodes, true));
+      }
+      comparison.append(h("div", { class: "plan-compare-intro" }, h("strong", {}, "Week-by-week comparison"),
+        h("span", { class: "muted" }, "Step counts and scheduled time come from each roadmap.")), comparePhases, compareCards);
+      renderComparison();
+      const changeRow = (node) => {
+        const prior = oldNodes.find((item) => item.id === node.id || item.title === node.title);
+        const weekText = node.change_badge === "Moved" && prior
+          ? `Week ${prior.week_number} → Week ${node.week_number}` : `Week ${node.week_number}`;
+        return h("button", { type: "button", class: "plan-change-row", onclick: () => {
+          showRoad("proposed");
+          const phaseIndex = node.week_number <= 4 ? 0 : node.week_number <= 8 ? 1 : 2;
+          previewRoad.querySelectorAll(".phase-seg")[phaseIndex]?.click();
+          requestAnimationFrame(() => previewRoad.querySelector(`[data-node-id="${CSS.escape(node.id)}"]`)?.click());
+        } }, h("span", { class: `plan-change-tag ${node.change_badge.toLowerCase()}` }, node.change_badge),
+          h("span", { class: "plan-change-copy" }, h("strong", {}, node.title), h("small", {}, weekText)));
+      };
+      const metric = (label, value, detail = "") => h("div", { class: "plan-preview-metric" }, h("span", {}, label), h("strong", {}, value), detail ? h("small", {}, detail) : null);
+      const noChanges = !changes.length && !(summary.added_skills || []).length && !(summary.deferred_skills || []).length && summary.hours_before === summary.hours_after;
       const discard = () => { if (previewToken) api(`/api/plans/${id}/discard-preview`, { method: "POST", body: { token: previewToken } }).catch(() => {});
-        previewToken = null; result.replaceChildren(); oldRoad.hidden = false; editor.hidden = true;
+        previewToken = null;
+        if (oldRoadParent?.isConnected && oldRoad) oldRoadParent.insertBefore(oldRoad, oldRoadNext?.parentNode === oldRoadParent ? oldRoadNext : null);
+        previewRoad.remove(); result.replaceChildren(); editor.hidden = true;
+        input.value = String(hours);
+        priorityMode.value = d.report?.request?.priority_mode || "balanced";
+        priority.value = d.report?.request?.priority_skills?.[0] || "";
         toggle.setAttribute("aria-expanded", "false"); toggle.focus(); };
       resetPreview = discard;
-      result.replaceChildren(h("div", { class: "plan-preview-summary" }, h("h4", {}, "Preview changes"),
-        h("p", {}, `${summary.hours_before} → ${summary.hours_after} hours per week · ${summary.steps_before} → ${summary.steps_after} learning steps`),
-        h("p", {}, `Learning priority: ${summary.priority_mode === "biggest_gaps_first" ? "Biggest skill gaps first" : "Balanced"}`),
-        summary.priority_skills?.length ? h("p", {}, `First priority: ${summary.priority_skills.join(", ")}`) : null,
-        summary.added_skills?.length ? h("p", {}, `Newly scheduled: ${summary.added_skills.join(", ")}`) : null,
-        summary.moved_steps?.length ? h("p", {}, `Moved: ${summary.moved_steps.join(", ")}`) : null,
-        summary.modified_steps?.length ? h("p", {}, `Modified: ${summary.modified_steps.join(", ")}`) : null,
-        summary.deferred_skills?.length ? h("p", {}, `Deferred by available time: ${summary.deferred_skills.join(", ")}`) : null,
-        h("p", { class: "muted" }, "Existing completed steps remain recorded. Applying creates a new draft version; an approved plan stays in History.")),
-        h("div", { class: "plan-preview-actions" }, beforeBtn, afterBtn,
+      result.replaceChildren(h("section", { class: "plan-preview-summary", "aria-label": "AI-adjusted plan preview" },
+        h("div", { class: "plan-preview-heading" }, h("div", {}, h("h4", {}, "AI-adjusted plan preview"),
+          h("p", { class: "muted" }, noChanges ? "No significant changes are needed for these preferences." : "Review the proposed schedule and the learning steps that changed.")),
+          h("span", { class: "plan-priority-chip" }, summary.priority_mode === "biggest_gaps_first" ? "Largest gaps first" : "Balanced priority")),
+        h("div", { class: "plan-preview-metrics" },
+          metric("Weekly time", `${summary.hours_before} → ${summary.hours_after} h`),
+          metric("Learning steps", `${summary.steps_before} → ${summary.steps_after}`),
+          changes.some((node) => node.change_badge === "New") ? metric("Added steps", changes.filter((node) => node.change_badge === "New").length) : null,
+          changes.some((node) => node.change_badge === "Moved") ? metric("Moved steps", changes.filter((node) => node.change_badge === "Moved").length) : null,
+          changes.some((node) => node.change_badge === "Modified") ? metric("Modified steps", changes.filter((node) => node.change_badge === "Modified").length) : null,
+          summary.added_skills?.length ? metric("New skills covered", summary.added_skills.length, summary.added_skills.join(", ")) : null),
+        changes.length ? h("div", { class: "plan-preview-changes" }, h("h5", {}, "What changed?"),
+          changes.slice(0, 3).map(changeRow), changes.length > 3 ? h("details", { class: "plan-more-changes" },
+            h("summary", {}, `Show ${changes.length - 3} more changes`), changes.slice(3).map(changeRow)) : null) : null,
+        summary.deferred_skills?.length ? h("details", { class: "plan-deferred-list" },
+          h("summary", {}, `${summary.deferred_skills.length} skills deferred to fit your available time`),
+          h("ul", {}, summary.deferred_skills.map((skill) => h("li", {}, skill)))) : null,
+        h("p", { class: "muted" }, "Completed learning steps remain recorded. Applying saves this proposal as a new version; an approved plan remains active until review.")),
+        h("div", { class: "plan-preview-actions" }, h("div", { class: "plan-preview-modes", role: "group", "aria-label": "Plan comparison view" }, beforeBtn, afterBtn, compareBtn),
           h("button", { class: "btn primary", type: "button", onclick: async () => {
             if (!previewToken) return;
             try { await api(`/api/plans/${id}/apply-preview`, { method: "POST", body: { token: previewToken } });
               toast("Proposed plan applied as a new draft"); planDetail(main, id, true); }
             catch (err) { toast(err.message, "err"); }
-          } }, "Apply changes"), h("button", { class: "btn ghost", type: "button", onclick: discard }, "Discard preview")), previewRoad);
-      showRoad(true);
+          } }, "Apply changes"), h("button", { class: "btn ghost", type: "button", onclick: discard }, "Discard preview")),
+        h("section", { class: "plan-preview-comparison", "aria-label": "Compare current and proposed plan roadmaps" },
+          h("h4", {}, "Compare the learning plans"), compareView));
+      showRoad("compare");
     } catch (err) {
       toast(err.message, "err");
     } finally {
       btn.disabled = false; btn.textContent = "Preview AI-adjusted roadmap";
     }
   } }, "Preview AI-adjusted roadmap");
-  editor.append(h("div", { class: "plan-edit-fields" }, h("label", {}, "Hours per week", input),
+  editor.append(h("div", { class: "plan-edit-heading" }, h("h3", {}, "Adjust Your Learning Plan"),
+      h("p", { class: "muted" }, "Change your availability or learning priorities. Preview the revised roadmap before saving it.")),
+    h("div", { class: "plan-edit-fields" }, h("label", {}, "Hours per week", input),
     h("label", {}, "Learning priority", priorityMode), h("label", {}, "Optional focus skill", priority), btn), result);
   return h("div", { class: "plan-edit-control" }, h("span", {}, icon("clock"), `${hours} h/week`), toggle, editor);
 }

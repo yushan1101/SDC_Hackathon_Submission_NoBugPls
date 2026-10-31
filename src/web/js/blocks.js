@@ -398,6 +398,7 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
       const buttons = weekNodes(week).map((node) => {
           const complete = nodeDone(node), started = nodeStarted(node), active = node.id === selectedNodeByPhase[phase];
           return h("button", { type: "button", class: `road-node${complete ? " is-done" : ""}${started ? " is-started" : ""}${active ? " is-active" : ""}${week === selectedWeek ? " is-week-selected" : ""}`,
+            "data-node-id": node.id,
             "aria-pressed": String(active), "aria-label": `${node.title}, week ${week}, ${complete ? "completed" : started ? "in progress" : "not started"}`,
             onclick: () => { selectNode(node); requestAnimationFrame(() => blockEl?.querySelector(".phase-detail:not([hidden]) .learning-lesson")?.scrollIntoView({ behavior: "smooth", block: "nearest" })); } },
             h("span", { class: "road-node-icon", "aria-hidden": "true" }, icon(complete ? "check" : node.type === "learn" ? "sources" : node.type === "quiz" ? "target" : "edit")),
@@ -520,7 +521,26 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
   const progressEl = h("div", { class: "plan-progress plan-stats" });
   let currentPhase = PHASES[0];
   const nowPhase = () => currentPhase;
-  const asideEl = h("aside", { class: "plan-aside", "aria-label": "Next learning step" });
+  const nextStepPanelId = `next-step-${Math.random().toString(36).slice(2, 10)}`;
+  const asideEl = h("aside", { id: nextStepPanelId, class: "plan-aside aside-popover", "aria-label": "Next learning step", role: "dialog", hidden: true });
+  const asideToggle = h("button", { class: "btn sm plan-next-step-toggle", type: "button", "aria-expanded": "false", "aria-controls": nextStepPanelId,
+    onclick: () => {
+      asideEl.hidden = !asideEl.hidden;
+      asideToggle.setAttribute("aria-expanded", String(!asideEl.hidden));
+      if (!asideEl.hidden) {
+        if (!window.matchMedia("(max-width: 700px)").matches) {
+          const bounds = asideEl.getBoundingClientRect();
+          const anchor = asideToggle.getBoundingClientRect();
+          const wrapper = asideToggle.parentElement.getBoundingClientRect();
+          const top = Math.max(12, Math.min(anchor.bottom + 8, window.innerHeight - bounds.height - 12));
+          asideEl.style.top = `${top - wrapper.top}px`;
+        } else asideEl.style.removeProperty("top");
+        asideEl.querySelector("button")?.focus();
+      }
+    } }, icon("clock"), "Next Learning Step");
+  asideEl.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { asideEl.hidden = true; asideToggle.setAttribute("aria-expanded", "false"); asideToggle.focus(); }
+  });
   const calEl = h("details", { class: "plan-cal-wrap", open: true, hidden: learningNodes.length ? true : null }, h("summary", {}, icon("grid"), "Calendar: what to do each week"));
   const startMs = Date.parse(startDate || "") || Date.now();
   function drawProgress() {
@@ -556,8 +576,11 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
       h("div", { class: "ps-stat" }, h("span", { class: "ps-icon" }, icon("grid")), h("div", {}, h("b", {}, String(daysLeft)), h("span", { class: "muted" }, "Days remaining"))));
     asideEl.replaceChildren(
       next ? h("section", { class: "aside-card" },
-        h("div", { class: "aside-head" }, h("h4", {}, learningNodes.length ? "Your next learning step" : "Your next activity"),
-          h("span", { class: "pt-tag" }, learningNodes.length ? `Week ${next.week_number}` : `Days ${next.day_range}`)),
+        h("div", { class: "aside-head" }, h("div", {}, h("h4", {}, learningNodes.length ? "Your next learning step" : "Your next activity"),
+            h("span", { class: "pt-tag" }, learningNodes.length ? `Week ${next.week_number}` : `Days ${next.day_range}`)),
+          h("button", { class: "btn ghost sm", type: "button", "aria-label": "Close next learning step panel", onclick: () => {
+            asideEl.hidden = true; asideToggle.setAttribute("aria-expanded", "false"); asideToggle.focus();
+          } }, "Close")),
         h("b", { class: "aside-skill" }, learningNodes.length ? next.title : next.skill_id),
         h("p", {}, learningNodes.length ? next.learning_objective : next.activity),
         learningNodes.length ? null : h("p", { class: "muted aside-step" }, planActivitySteps(next)[0]),
@@ -565,9 +588,13 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
         h("button", { class: "btn primary", type: "button", onclick: () => {
           if (!learningNodes.length) return jumpTo(key(next));
           const phase = phaseForWeek(next.week_number); selectedWeekByPhase[phase] = next.week_number; selectedNodeByPhase[phase] = next.id;
+          asideEl.hidden = true; asideToggle.setAttribute("aria-expanded", "false"); asideToggle.focus();
           openPane(phase, false, next.id); renderAllJourneys(); scrollRoadTo(phase, next.week_number);
         } }, "Continue learning"))
-        : h("section", { class: "aside-card" }, h("h4", {}, "All activities done"), h("p", {}, "You've finished every activity in this plan.")));
+        : h("section", { class: "aside-card" }, h("div", { class: "aside-head" }, h("h4", {}, "All activities done"),
+            h("button", { class: "btn ghost sm", type: "button", "aria-label": "Close next learning step panel", onclick: () => {
+              asideEl.hidden = true; asideToggle.setAttribute("aria-expanded", "false"); asideToggle.focus();
+            } }, "Close")), h("p", {}, "You've finished every activity in this plan.")));
   }
   async function mark(a, value, box) {
     value ? done.add(key(a)) : done.delete(key(a));
@@ -634,10 +661,17 @@ export function planBlock({ planId, planReference, plan, version, status, weekly
     plan.deferred_skills?.length ? h("details", { class: "note deferred" },
       h("summary", {}, `${plan.deferred_skills.length} lower-priority skills left out to fit your weekly hours`),
       h("p", {}, plan.deferred_skills.join(", "))) : null,
-    h("div", { class: "plan-layout" }, h("div", { class: "plan-main" }, h("div", { class: "phase-bar", role: "tablist", "aria-label": "Plan phases" }, PHASES.map((p) => phaseCardButtons[p])), PHASES.map((p) => panes[p]),
-      h("div", { class: "plan-overview" }, calEl, planEl, sdgGuide)), asideEl),
+    h("div", { class: "plan-layout" }, h("div", { class: "plan-main" },
+      h("div", { class: "plan-roadmap-tools" }, asideToggle, asideEl),
+      h("div", { class: "phase-bar", role: "tablist", "aria-label": "Plan phases" }, PHASES.map((p) => phaseCardButtons[p])), PHASES.map((p) => panes[p]),
+      h("div", { class: "plan-overview" }, calEl, planEl, sdgGuide))),
     planId && diagrams ? diagramsBlock(planId, version) : null,
     errBox, readOnly ? null : bar);
+  blockEl.addEventListener("click", (event) => {
+    if (!asideEl.hidden && !asideEl.contains(event.target) && !asideToggle.contains(event.target)) {
+      asideEl.hidden = true; asideToggle.setAttribute("aria-expanded", "false");
+    }
+  });
   blockEl.openPane = openPane;
   openPane(null, true);
   return reveal(blockEl, RISE, { duration: 420 });
