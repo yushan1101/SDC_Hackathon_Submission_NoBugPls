@@ -234,6 +234,10 @@ html:is([data-product="hr"], [data-console]) .rail a[aria-current="page"] { back
 html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.input, .wf-filter summary, .wf-more-trigger) { border-color: transparent; background-color: oklch(1 0 0); }
 html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.input):hover { border-color: transparent; background-color: oklch(1 0 0); }
 html:is([data-product="hr"], [data-console]) :is(.input, select.input, textarea.input):focus { border-color: var(--accent); }
+/* Draft plan fields sit on a white dialog, so keep their boundaries visible without focus. */
+html:is([data-product="hr"], [data-console]) .wf-plan-dialog :is(input.input, textarea.input) { border-color: var(--c-line-strong); }
+html:is([data-product="hr"], [data-console]) .wf-plan-dialog :is(input.input, textarea.input):hover { border-color: var(--owl-line-strong); }
+html:is([data-product="hr"], [data-console]) .wf-plan-dialog :is(input.input, textarea.input):focus { border-color: var(--accent); }
 html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost) { border-color: transparent; background: oklch(1 0 0); }
 html:is([data-product="hr"], [data-console]) .btn:not(.primary):not(.ghost):hover { border-color: transparent; background: var(--card-fill-deep); }
 html:is([data-product="hr"], [data-console]) :is(.own-plan-chip, .chip, .wf-suggestion, .ag-starter) { border-color: transparent; background: oklch(1 0 0); box-shadow: none; }
