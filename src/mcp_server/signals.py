@@ -117,9 +117,12 @@ def _get(url: str, params: dict | None = None, timeout: float = 20.0):
 
 # ----------------------------------------------------------------------------------- sources
 def fetch_hn(today: date, weeks: int = 8) -> dict[str, list[int]]:
-    """Weekly HN story counts per topic, oldest -> newest (complete weeks ending today)."""
+    """Weekly HN story counts per topic, oldest -> newest: 7-day windows ending at the current hour (for today), so a
+    refresh later in the day counts the stories posted since; a past `today` ends at its midnight."""
     from concurrent.futures import ThreadPoolExecutor
-    end = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    end = (now.replace(minute=0, second=0, microsecond=0) if today == now.date()
+           else datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc))
 
     def topic(t):
         counts = []
