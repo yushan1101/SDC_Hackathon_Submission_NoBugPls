@@ -4,7 +4,7 @@ import { jobIcon } from "./jobicons.js";
 import { api, apiBlobUrl, stream, h, $, icon, fmtTime, toast, ApiError, reveal, RISE, DROP, SCENARIO_HELP } from "./lib.js";
 import { Owl, OwlStatus } from "./owl.js";
 import { SDG_COLORS, changesBlock, StreamText, gapsBlock, comparisonBlock, outlookBlock, issuesBlock, planBlock, historyBlock,
-  sourceItem, staticText, signalsBlock, sdgBlock } from "./blocks.js";
+  sourceItem, staticText, signalsBlock, sdgBlock, sourceCapsule, plainText } from "./blocks.js";
 import { startView, quizView, resumeView, todayView, sdgsView } from "./explore.js";
 import { interviewView } from "./interview.js";
 import { registerView, pricingView, accountView, planName, verifyLinkView, forgotView, resetLinkView, emailCodeView, inviteView } from "./account.js";
@@ -680,9 +680,10 @@ async function openConversation(id) {
   S.lastPlanId = id;
   setSources(r.evidence || []);
   S.threadEl.replaceChildren(...turns.flatMap((t, i) => {
-    const narrative = t.a ? staticText(t.a, highlight) : null;
+    const cap = sourceCapsule((sid) => S.evidence.get(sid));  // this answer's sources, under it
+    const narrative = t.a ? staticText(t.a, highlight, cap) : null;
     if (narrative) narrative.dataset.assistantReply = "true";
-    const body = h("div", { class: "body" }, narrative);
+    const body = h("div", { class: "body" }, narrative, cap.el);
     if (i === turns.length - 1) {  // the latest turn carries the full analysis and the plan, in the same tabs as a live report
       const tabbed = reportSections();
       tabbed.add("plan", r.issues?.some((x) => x.severity === "error") ? issuesBlock(r.issues.filter((x) => x.severity === "error")) : null,
@@ -700,7 +701,7 @@ async function openConversation(id) {
         req ? reqPills(t.target_role || d.plan.target_role, t.title || title, req.scenario, req.hours, req.skills) : null),
       h("article", { class: "turn-owl" },
         h("div", { class: "body" }, h("div", { class: "who" }, "AiversePulse", t.at ? h("span", { class: "muted" }, fmtTime(t.at)) : null,
-          narrative ? readAloudButton(() => narrative.textContent) : null), body))];
+          narrative ? readAloudButton(() => plainText(narrative)) : null), body))];
   }));
   S.ctx = { gaps: r.gaps, outlook: r.outlook };
   drawSuggestions();
@@ -794,15 +795,16 @@ async function runTurn(params) {
   const trace = h("details", { class: "trace", open: true }, h("summary", {}, h("span", { class: "spinner", "aria-hidden": "true" }), sumText), traceList);
   const prose = h("p", { class: "prose", "aria-live": "polite", "data-assistant-reply": "true" });
   const tabbed = reportSections();  // the same section tabs as a reopened report and the plan page
-  const body = h("div", { class: "body" }, trace, prose, tabbed.el);
+  const cap = sourceCapsule((sid) => S.evidence.get(sid));  // this answer's sources, under it
+  const body = h("div", { class: "body" }, trace, prose, cap.el, tabbed.el);
   const turn = h("article", { class: "turn-owl", "aria-label": "AiversePulse reply" },
-    h("div", { class: "body" }, h("div", { class: "who" }, "AiversePulse", say, readAloudButton(() => prose.textContent)), body));
+    h("div", { class: "body" }, h("div", { class: "who" }, "AiversePulse", say, readAloudButton(() => plainText(prose))), body));
   S.threadEl.querySelector(".empty, .brief-start")?.remove();
   S.threadEl.append(reveal(userTurn, RISE), reveal(turn, RISE, { delay: 120 }));
 
   S.ctx = {};  // what this answer finds (gaps, outlook) shapes the suggested next messages
   S.quick.replaceChildren();
-  const st = new StreamText(prose, highlight);
+  const st = new StreamText(prose, highlight, cap);
   const ctrl = new AbortController();
   setBusy(ctrl);
   let steps = 0, reused = 0, t0 = performance.now(), planId = null, meta = null, live = null;

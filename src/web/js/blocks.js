@@ -25,9 +25,70 @@ export function citeChip(id, onCite) {
     [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0 0 0)" }], { duration: 420 });
 }
 
-/** Append streamed text into `el`, turning complete [citation] tokens into chips as they arrive. */
+// What each kind of source is, in the words a reader uses (not the evidence id's prefix), and its colour family.
+const SOURCE_KINDS = { esco: ["Skill definition", "esco", "E"], stfkan: ["Job market forecast", "forecast", "F"], learn: ["Free course", "course", "C"],
+  signal: ["Market signal", "signal", "S"], sdg: ["UN goal", "sdg", "U"] };
+const sourceKind = (id) => SOURCE_KINDS[id.split(":")[0]] || ["Source", "other", "•"];
+const sourceName = (id) => citeLabel(id).split(" · ").slice(1).join(" · ") || id;
+// "ESCO v1.2: Data analyst — Information structure" reads as "Information structure"; the full title stays on hover
+const sourceTitle = (e) => (e.title || "").split(" — ").pop().trim() || sourceName(e.id);
+
+/** The sources one answer cites, as a capsule under it: the text carries small numbered markers instead of chips, and
+ *  the capsule opens a plain-language list (what kind of source, title, who published it, when, a link). Numbers follow
+ *  first mention. `lookup(id)` returns the evidence record, which can arrive after the text that cites it. */
+export function sourceCapsule(lookup = () => null) {
+  const ids = [], listId = `srccap-${Math.random().toString(36).slice(2, 8)}`;
+  const count = h("span", { class: "srccap-count" });
+  const marks = h("span", { class: "srccap-marks", "aria-hidden": "true" });
+  const list = h("ol", { class: "srccap-list", id: listId, hidden: true });
+  const btn = h("button", { class: "srccap-btn", type: "button", "aria-expanded": "false", "aria-controls": listId, onclick: () => toggle() },
+    icon("sources"), h("span", {}, "Sources"), count, marks, h("span", { class: "srccap-chev", "aria-hidden": "true" }, icon("chevron")));
+  const el = h("div", { class: "srccap", hidden: true }, btn, list);
+  const row = (id, n) => {
+    const e = lookup(id) || {}, [kind, cls] = sourceKind(id), url = e.url ? currentSourceUrl(e.url) : "";
+    return h("li", { class: `srccap-item is-${cls}`, "data-id": id },
+      h("span", { class: "srccap-n" }, String(n)),
+      h("div", { class: "srccap-body" }, h("span", { class: "srccap-kind" }, kind), h("b", { class: "srccap-title", title: e.title || null }, e.title ? sourceTitle(e) : sourceName(id)),
+        e.publisher || e.publication_date ? h("span", { class: "srccap-meta" }, e.publisher || null,
+          e.publication_date ? h("span", {}, `Published ${e.publication_date}`) : null) : null),
+      url && url !== "#" ? h("a", { class: "srccap-open", href: url, target: "_blank", rel: "noopener noreferrer", "aria-label": `Open ${e.title || sourceName(id)}` },
+        "Open", icon("ext")) : null);
+  };
+  const render = () => list.replaceChildren(...ids.map((id, i) => row(id, i + 1)));  // re-read evidence: it may have arrived since
+  function toggle(force) {
+    const open = force ?? list.hidden;
+    if (open) render();
+    list.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+    el.classList.toggle("is-open", open);
+  }
+  function cite(id) {
+    let n = ids.indexOf(id) + 1;
+    if (!n) {
+      n = ids.push(id);
+      count.textContent = String(n);
+      const [, cls, letter] = sourceKind(id);
+      if (![...marks.children].some((m) => m.dataset.kind === cls)) marks.append(h("i", { class: `is-${cls}`, "data-kind": cls }, letter));  // one badge per kind
+      el.hidden = false;
+      if (!list.hidden) render();
+    }
+    return h("a", { class: `cite-n is-${sourceKind(id)[1]}`, href: `#${listId}`, title: `${sourceKind(id)[0]}: ${sourceName(id)}`,
+      "aria-label": `Source ${n}: ${sourceName(id)}`, onclick: (e) => { e.preventDefault(); open(id); } }, String(n));
+  }
+  function open(id) {
+    toggle(true);
+    const r = list.querySelector(`[data-id="${CSS.escape(id)}"]`);
+    if (r) { r.scrollIntoView({ block: "nearest", behavior: "smooth" }); r.classList.remove("flash"); void r.offsetWidth; r.classList.add("flash"); }
+  }
+  return { el, cite, open };
+}
+
+/** Text without its numbered source markers, for reading aloud. */
+export const plainText = (el) => { const c = el.cloneNode(true); c.querySelectorAll(".cite-n").forEach((m) => m.remove()); return c.textContent; };
+
+/** Append streamed text into `el`, turning complete [citation] tokens into chips (or, with a capsule, numbered markers) as they arrive. */
 export class StreamText {
-  constructor(el, onCite) { this.el = el; this.onCite = onCite; this.raw = ""; this.done = 0; this.caret = h("span", { class: "caret", "aria-hidden": "true" }); el.append(this.caret); }
+  constructor(el, onCite, capsule = null) { this.el = el; this.onCite = onCite; this.capsule = capsule; this.raw = ""; this.done = 0; this.caret = h("span", { class: "caret", "aria-hidden": "true" }); el.append(this.caret); }
   push(delta) {
     this.raw += delta;
     // render everything up to the last fully-closed token; keep an open "[" pending
@@ -37,7 +98,7 @@ export class StreamText {
     this.done = safe;
     let last = 0;
     for (const m of chunk.matchAll(CITE)) {
-      this.caret.before(chunk.slice(last, m.index), citeChip(m[1], this.onCite));
+      this.caret.before(chunk.slice(last, m.index), this.capsule ? this.capsule.cite(m[1]) : citeChip(m[1], this.onCite));
       last = m.index + m[0].length;
     }
     this.caret.before(chunk.slice(last));
@@ -45,9 +106,9 @@ export class StreamText {
   end() { this.push(""); this.caret.before(this.raw.slice(this.done)); this.caret.remove(); }
 }
 
-export function staticText(text, onCite) {
+export function staticText(text, onCite, capsule = null) {
   const p = h("p", { class: "prose" });
-  const s = new StreamText(p, onCite);
+  const s = new StreamText(p, onCite, capsule);
   s.push(text || "");
   s.end();
   return p;
@@ -749,10 +810,11 @@ export function historyBlock(hist) {
 }
 
 export function sourceItem(e) {
-  return h("a", { class: "src", id: `src-${e.id}`, href: currentSourceUrl(e.url), target: "_blank", rel: "noopener noreferrer" },
-    h("span", { class: "id" }, citeLabel(e.id)),
-    h("span", { class: "t" }, e.title),
-    h("span", { class: "m" }, [e.publisher, e.publication_date && `published ${e.publication_date}`, e.access_date && `accessed ${e.access_date}`].filter(Boolean).join(" · ")));
+  const [kind, cls] = sourceKind(e.id);
+  return h("a", { class: `src is-${cls}`, id: `src-${e.id}`, href: currentSourceUrl(e.url), target: "_blank", rel: "noopener noreferrer", title: e.title },
+    h("span", { class: "id" }, kind),
+    h("span", { class: "t" }, sourceTitle(e)),
+    h("span", { class: "m" }, e.publisher || null, e.publication_date ? h("span", {}, `Published ${e.publication_date}`) : null));
 }
 
 function safeUrl(raw) {  // only http(s) links from plan/LLM data: no javascript:, data:, etc.
