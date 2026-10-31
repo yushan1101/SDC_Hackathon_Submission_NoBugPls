@@ -2844,9 +2844,10 @@ body {
   width: min(640px, calc(100% - 24px)); padding: 0; border: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .interview-takeover .interview-answer-form[data-view="voice"] .interview-type-sheet { display: none; }
 .interview-takeover .interview-type-sheet { width: 100%; }
-.interview-takeover .interview-type-sheet .interview-answer { min-height: 96px; border-radius: 18px; border-color: #ffffff40; background: #0f1828e0; color: #fff;
+.interview-takeover .interview-type-sheet .interview-answer { min-height: 96px; border-radius: 18px; border-color: #ffffff40; background: #ffffffed; color: #172033; caret-color: #172033; color-scheme: light;
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
-.interview-takeover .interview-type-sheet .interview-answer::placeholder { color: #ffffff99; }
+.interview-takeover .interview-type-sheet .interview-answer::placeholder { color: #596579; opacity: 1; }
+.interview-takeover .interview-type-sheet .interview-answer::selection { color: #172033; background: #b8cdfd; }
 .interview-takeover .interview-live-preview { width: 100%; margin: 0; padding: 8px 14px; border: 0; border-radius: 14px; color: #fff; background: #0f1828c0; font-size: 15px; text-align: center; }
 .interview-takeover .interview-voice-panel { display: inline-flex; align-items: center; gap: 10px; padding: 6px 14px 6px 8px; border: 0; border-radius: 999px;
   color: #fff; background: #0f1828b0; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
