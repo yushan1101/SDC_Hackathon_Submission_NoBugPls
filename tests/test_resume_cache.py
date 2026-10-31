@@ -90,3 +90,17 @@ def test_speech_falls_back_and_reports_status(monkeypatch):
     assert audio == b"RIFF" and usage["model"].startswith("gemini:") and llm.SPEECH_STATUS["tts"]["ok"] is True
     text, _ = llm.transcribe(b"x", "audio/wav")
     assert text == "hello" and llm.SPEECH_STATUS["stt"]["model"].startswith("gemini:")
+
+
+def test_a_failing_text_model_falls_back_once_within_the_budget(monkeypatch):
+    from agents import llm
+    from config.settings import get_settings
+    monkeypatch.setattr(get_settings(), "llm_fallback_model", "openai:deepseek-v4.1-flash", raising=False)
+    monkeypatch.setattr(llm, "usable", lambda spec: True)
+    tried = []
+    monkeypatch.setattr(llm, "_generate_with", lambda spec, *a: tried.append(spec) or
+                        ((None, {"error": "ServerError"}) if spec.startswith("gemini:") else ("{}", {"model": spec})))
+    assert llm.generate("p", "s", model="gemini:gemini-3.1-flash-lite")[0] == "{}"
+    assert tried == ["gemini:gemini-3.1-flash-lite", "openai:deepseek-v4.1-flash"]
+    tried.clear()  # no time left in the caller's budget: no second try
+    assert llm.generate("p", "s", model="gemini:gemini-3.1-flash-lite", timeout=1.0)[0] is None and len(tried) == 1

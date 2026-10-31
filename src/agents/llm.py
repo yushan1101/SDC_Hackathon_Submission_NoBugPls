@@ -187,6 +187,22 @@ def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None 
     spec = model or model_for(agent)
     if not spec:
         return None, None
+    started = time.perf_counter()
+    text, usage = _generate_with(spec, prompt, system, max_tokens, json, timeout, reasoning)
+    # the provider is down or overloaded (e.g. Gemini 503): the same request once more on LLM_FALLBACK_MODEL,
+    # inside whatever is left of the caller's time budget
+    fallback = s.llm_fallback_model
+    left = None if timeout is None else timeout - (time.perf_counter() - started)
+    if text is None and fallback and fallback != spec and usable(fallback) and (left is None or left >= 3):
+        log.info("LLM fallback: %s -> %s", spec, fallback)
+        text, usage = _generate_with(fallback, prompt, system, max_tokens, json, left, False if reasoning is None else reasoning)
+    return text, usage
+
+
+def _generate_with(spec, prompt, system, max_tokens, json, timeout, reasoning):
+    from config.settings import get_settings
+    from core.usage import record
+    s = get_settings()
     provider, name = spec.split(":", 1) if ":" in spec else ("gemini", spec)
     t = time.perf_counter()
     call = lambda: (_openai if provider == "openai" else _gemini_call)(name, prompt, system, max_tokens, json, s, timeout, reasoning)
