@@ -49,8 +49,8 @@ class Element {
   focus() { this.focused = true; }
 }
 
-async function setup() {
-  const voices = [], avatarStates = [];
+async function setup({ answers = [] } = {}) {
+  const voices = [], avatarStates = [], requests = [];
   const body = new Element('body'); body.style.overflow = '';
   const window = { AP_CONFIG: { VIRTUAL_INTERVIEW_3D: false },
     addEventListener() {}, dispatchEvent(event) { avatarStates.push(event.detail); } };
@@ -65,7 +65,10 @@ async function setup() {
         level: () => 0.5, bands: () => ({ low: 0.2, high: 0.2 }) };
       voices.push(voice); return voice;
     },
-    preloadSpeech() {}, toWav() {}, api: async () => ({}), upload: async () => ({}), toast() {},
+    preloadSpeech() {}, toWav() {}, showEvaluation() {}, api: async (url, options) => {
+      requests.push({ url, options });
+      return url.endsWith('/answer') ? answers.shift() : {};
+    }, upload: async () => ({}), toast() {},
     performance: { now: () => 1 }, requestAnimationFrame: () => 1, cancelAnimationFrame() {},
     CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
     location: { hash: '#/interview/session-1' }, setTimeout: () => 1, clearTimeout() {},
@@ -78,7 +81,7 @@ async function setup() {
   context.renderRoom(main, { interview_id: 'session-1', role_title: 'Analyst', stage_index: 0,
     question: { question_id: 'q1', type: 'behavioral', text: question } });
   await Promise.resolve();
-  return { main, question, voices, avatarStates };
+  return { main, question, voices, avatarStates, requests };
 }
 
 test('manual stop keeps the question and immediately enables answering', async () => {
@@ -135,4 +138,37 @@ test('replay after interruption and natural completion restore the ordinary answ
   assert.equal(start.disabled, false);
   assert.equal(avatarStates.at(-1).state, 'listening');
   assert.equal(status.textContent, 'Ready to answer · microphone off');
+});
+
+test('AI clarification replaces the old visible prompt, then the next question replaces it', async () => {
+  const clarification = 'By teamwork, I mean how you coordinated with colleagues. What did you do?';
+  const nextQuestion = 'What would you improve in that process next time?';
+  const { main, voices, requests } = await setup({ answers: [
+    { reply: clarification },
+    { status: 'in_progress', stage_index: 1, question: { question_id: 'q2', type: 'behavioral', text: nextQuestion } },
+  ] });
+  const stop = main.querySelectorAll('button').find((button) => button.textContent.includes('Stop AI Voice & Start Answering'));
+  const form = main.querySelector('form');
+  const text = main.querySelector('textarea');
+  const prompt = main.querySelectorAll('p').find((node) => node.classList.contains('interview-question'));
+  const extraPrompt = main.querySelectorAll('p').find((node) => node.classList.contains('interview-mina-line'));
+  await stop.fire('click');
+
+  text.value = 'Could you clarify?';
+  const firstSubmission = form.fire('submit');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(prompt.textContent, clarification);
+  assert.equal(extraPrompt.hidden, true);
+  assert.equal(voices[1].text, clarification);
+  assert.equal(requests[0].options.body.question_id, 'q1');
+  await stop.fire('click');
+  await firstSubmission;
+
+  text.value = 'I coordinated tasks and checked each result.';
+  await form.fire('submit');
+  await Promise.resolve();
+  assert.equal(prompt.textContent, nextQuestion);
+  assert.equal(extraPrompt.hidden, true);
+  assert.equal(voices[2].text, nextQuestion);
+  assert.equal(requests[1].options.body.question_id, 'q1');
 });
