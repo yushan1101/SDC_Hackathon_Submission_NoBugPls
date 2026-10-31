@@ -473,7 +473,7 @@ def test_learning_node_progress_summary_uses_nodes_and_phases(client):
                                  {"days": "61-90", "done": 1, "total": 5}]
 
 
-def test_saved_week_lessons_expand_and_keep_completion_without_changing_approval(client):
+def test_saved_week_tasks_show_separately_and_keep_completion_without_changing_approval(client):
     import server.api as api
     from agents import pathway
     from core.state import Gap, LearningNode
@@ -489,15 +489,16 @@ def test_saved_week_lessons_expand_and_keep_completion_without_changing_approval
                 api.db.execute("INSERT INTO plan_progress VALUES(?,?,?)", (pid, f"node:{node.id}", "2026-10-01T09:00:00Z"))
     login(client, "ana")
     detail = client.get(f"/api/plans/{pid}").json()
-    assert len(detail["plan"]["learning_nodes"]) == 1
-    assert detail["plan"]["learning_nodes"][0]["component_ids"] == ["week-01", "week-01-practice", "week-01-check"]
-    assert detail["progress_summary"]["done"] == detail["progress_summary"]["total"] == 1
+    # the week shows its three tasks, each with its own Learn, Practice and Quiz, and keeps each task's saved tick
+    assert [n["id"] for n in detail["plan"]["learning_nodes"]] == ["week-01", "week-01-practice", "week-01-check"]
+    assert all(n["quiz"] and n["exercise"] and n["learn"] for n in detail["plan"]["learning_nodes"])
+    assert detail["progress_summary"]["done"] == detail["progress_summary"]["total"] == 3
     assert detail["version"] == 1 and len(detail["history"]) == 1
-    # Reopening a previously complete lesson preserves the parent completion. Undoing it clears the old child ticks.
+    # Undoing one task clears only that task's old tick.
     assert client.post(f"/api/plans/{pid}/progress", json={"item": "step:week-01", "done": False}, headers={"X-AP": "1"}).status_code == 200
     fresh = client.get(f"/api/plans/{pid}").json()
-    assert fresh["progress_summary"]["done"] == 0 and "step:week-01" not in fresh["progress"]
-    assert fresh["progress_summary"]["phases"] == [{"days": "1-30", "done": 0, "total": 1}]
+    assert fresh["progress_summary"]["done"] == 2 and "step:week-01" not in fresh["progress"]
+    assert fresh["progress_summary"]["phases"] == [{"days": "1-30", "done": 2, "total": 3}]
     assert fresh["version"] == 1 and len(fresh["history"]) == 1
     login(client, "hr1")
     assert client.post(f"/api/plans/{pid}/progress", json={"item": "node:week-01-practice", "done": True}, headers={"X-AP": "1"}).status_code == 404

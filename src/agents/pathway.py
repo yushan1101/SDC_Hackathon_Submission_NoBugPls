@@ -307,11 +307,11 @@ def distinct_steps(nodes: list[dict]) -> list[dict]:
         topic, made = base["topics"][0], w["deliverable"]
         thing = re.sub(r"^(?:a|an|the|your)\s+", "", made.strip().rstrip("."), flags=re.I)  # "A summary." -> "summary", to use mid-sentence
         if node["id"].endswith("-practice"):
-            node = {**node, "learn": (base["learn"][1:] or [f"This practice turns {topic} into a work sample: {made}. Plan it in the order below, then build it."])[:5],
+            node = {**node, "title": (f"Build a work sample on {topic}" if node["week_number"] >= 9 else f"Apply {topic}")[:120], "learn": (base["learn"][1:] or [f"This practice turns {topic} into a work sample: {made}. Plan it in the order below, then build it."])[:5],
                     "instructions": w["instructions"], "exercise": w["exercise"], "deliverable": made,
                     "quiz": quiz(k, made, deliverables, f"Which work sample does the {topic} practice produce?", f"This practice produces: {made}")}
         elif node["id"].endswith("-check"):
-            node = {**node, "learn": [f"A good result for {topic} shows: {base['expected_outcome']}"[:1200],
+            node = {**node, "title": f"Check and improve your {topic} work"[:120], "learn": [f"A good result for {topic} shows: {base['expected_outcome']}"[:1200],
                                       *[f"Check: {c}"[:1200] for c in w["completion_criteria"]][:4]],
                     "instructions": [f"Put your {thing} next to the checks in Learn."[:700], "Mark each check as met or not met, then fix the weakest part.",
                                      "Write two sentences on what you changed and why."],

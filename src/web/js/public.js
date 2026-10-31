@@ -1178,7 +1178,6 @@ async function planDetail(main, id, focusPlan = false, section = null, selectedN
     h("div", { class: "plan-hero" },
       h("div", { class: "plan-hero-title" }, h("div", {},
         h("h2", {}, `Become ${/^[aeiou]/i.test(r?.occupation?.title || d.plan.target_role) ? "an" : "a"} `, h("span", { class: "plan-hero-role" }, r?.occupation?.title || d.plan.target_role))), h("span", { class: `tag ${d.status}` }, d.status)),
-      h("p", { class: "plan-hero-copy" }, approved ? "Your personalised 90-day learning journey. Pick up where you left off on the right." : "Your personalised 90-day learning journey, in three 30-day sections."),
       h("div", { class: "plan-hero-metrics" }, h("span", {}, icon("clock"), "90 days from ",
         d.read_only ? new Date(startDate).toLocaleDateString() : h("input", { class: "input plan-start", type: "date", "aria-label": "Plan start date",
           value: startDate.slice(0, 10), onchange: async (e) => {

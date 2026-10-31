@@ -39,7 +39,7 @@ from pydantic import BaseModel, Field, ValidationError
 from agents.gap_analyst import SCENARIO_NOTES
 from agents.profiler import expand as expand_skill
 from agents import ops
-from agents.pathway import HOURS_PER_LEVEL, backfill_learning_nodes, ensure_learn_practice_quiz
+from agents.pathway import HOURS_PER_LEVEL, backfill_learning_nodes, distinct_steps, ensure_learn_practice_quiz, expand_learning_nodes
 from agents.sdg import goal_meta, role_sdgs
 from agents import catalog, criteria, llm, matcher, quiz, resume
 from agents import tools as agent_tools
@@ -1878,43 +1878,23 @@ def sdgs(request: HttpRequest):
 
 
 def _learning_plan_view(plan: dict) -> dict:
-    """Show one complete lesson per week without rewriting saved plan versions."""
+    """Each week as a few tasks (understand, practise, check), each with its own Learn, Practice and Quiz, without
+    rewriting saved plan versions. Plans saved with one lesson per week are split the same way when they are read."""
     nodes = plan.get("learning_nodes") or []
+    role = plan.get("target_role")
     try:
         if not nodes and plan.get("activities"):  # saved before the roadmap existed
             nodes = [node.model_dump() for node in backfill_learning_nodes(plan)]
-    except (ValidationError, KeyError, ValueError):
-        return plan
-    grouped: dict[str, list[dict]] = {}
-    for node in nodes:
-        base = re.sub(r"-(?:practice|check)$", "", node["id"])
-        grouped.setdefault(base, []).append(node)
-    lessons = []
-    for base, parts in grouped.items():
-        source = next((part for part in parts if part["id"] == base), parts[0])
-        practice = next((part for part in parts if part["id"] == base + "-practice"), source)
-        lesson = {**source, "id": base, "component_ids": source.get("component_ids") or [part["id"] for part in parts]}
-        if len(parts) > 1:
-            check = next((part for part in parts if part["id"] == base + "-check"), None)
-            lesson.update(instructions=practice["instructions"], exercise=practice["exercise"],
-                          deliverable=practice["deliverable"], completion_criteria=practice["completion_criteria"],
-                          estimated_minutes=sum(part["estimated_minutes"] for part in parts),
-                          learn_minutes=source["estimated_minutes"],
-                          practice_minutes=practice["estimated_minutes"] if practice is not source else 0,
-                          quiz_minutes=check["estimated_minutes"] if check else 0)
-        if lesson.get("estimated_minutes") and sum(lesson.get(k, 0) for k in ("learn_minutes", "practice_minutes", "quiz_minutes")) != lesson["estimated_minutes"]:
-            total = lesson["estimated_minutes"]
-            learn = max(1, round(total * 0.35))
-            quiz = max(1, round(total * 0.15)) if lesson.get("quiz") else 0
-            lesson.update(learn_minutes=learn, practice_minutes=total - learn - quiz, quiz_minutes=quiz)
-        lessons.append(lesson)
-    # every weekly step shows Learn, Practice and Quiz, also on plans saved before that was guaranteed
-    # (view-only: the stored version is not rewritten, so audit history and approvals stay as they were)
-    try:
-        lessons = ensure_learn_practice_quiz(lessons, plan.get("target_role"))
+        if not nodes:
+            return plan
+        tasks = [n.model_dump() for n in expand_learning_nodes([LearningNode(**n) for n in nodes], role)]
+        tasks = distinct_steps(tasks)
+        for task in tasks:  # the tabs carry the minutes; the split is recomputed per task below
+            task.update(learn_minutes=0, practice_minutes=0, quiz_minutes=0, component_ids=task.get("component_ids") or [task["id"]])
+        # view-only: the stored version is not rewritten, so audit history and approvals stay as they were
+        return {**plan, "learning_nodes": ensure_learn_practice_quiz(tasks, role)}
     except (ValidationError, KeyError, ValueError, TypeError):
-        pass
-    return {**plan, "learning_nodes": lessons} if lessons else plan
+        return plan
 
 
 def _matching_learning_steps(old_nodes: list[dict], new_nodes: list[dict]) -> dict[str, str]:

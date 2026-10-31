@@ -168,6 +168,22 @@ def test_old_plans_without_learning_nodes_get_a_roadmap_and_keep_their_ticks():
     assert f"node:{week1[0]}" not in dict(_learning_progress_rows(plan, list(rows.items())))
 
 
+def test_plan_view_gives_each_week_several_tasks_each_with_learn_practice_quiz():
+    from server.api import _learning_plan_view
+    from agents import pathway
+    from core.state import Gap, LearningNode
+    plan = pathway.build([Gap(skill_id="SQL", current_level=1, required_level=3, gap=2)], 3, "Data analyst", "assistive")
+    plan.learning_nodes = [LearningNode(**pathway._fallback_node(s, "Data analyst"))
+                           for s in pathway._node_seeds(plan, [Gap(skill_id="SQL", current_level=1, required_level=3, gap=2)], "Data analyst", [], {})]
+    nodes = _learning_plan_view(plan.model_dump())["learning_nodes"]
+    week1 = [n for n in nodes if n["week_number"] == 1]
+    assert len(week1) == 3 and len({n["title"] for n in week1}) == 3
+    assert len({n["quiz"]["question"] for n in week1}) >= 2  # the tasks don't just repeat one quiz
+    for n in nodes:
+        assert _has_learn_practice_quiz(n)
+        assert n["learn_minutes"] + n["practice_minutes"] + n["quiz_minutes"] == n["estimated_minutes"]
+
+
 def _has_learn_practice_quiz(node: dict) -> bool:
     quiz = node.get("quiz") or {}
     return bool(node.get("learn") and node.get("exercise") and node.get("deliverable") and len(node.get("instructions") or []) >= 2
