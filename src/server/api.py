@@ -39,7 +39,7 @@ from pydantic import BaseModel, Field, ValidationError
 from agents.gap_analyst import SCENARIO_NOTES
 from agents.profiler import expand as expand_skill
 from agents import ops
-from agents.pathway import HOURS_PER_LEVEL, backfill_learning_nodes
+from agents.pathway import HOURS_PER_LEVEL, backfill_learning_nodes, ensure_learn_practice_quiz
 from agents.sdg import goal_meta, role_sdgs
 from agents import catalog, criteria, llm, matcher, quiz, resume
 from agents import tools as agent_tools
@@ -1908,6 +1908,12 @@ def _learning_plan_view(plan: dict) -> dict:
             quiz = max(1, round(total * 0.15)) if lesson.get("quiz") else 0
             lesson.update(learn_minutes=learn, practice_minutes=total - learn - quiz, quiz_minutes=quiz)
         lessons.append(lesson)
+    # every weekly step shows Learn, Practice and Quiz, also on plans saved before that was guaranteed
+    # (view-only: the stored version is not rewritten, so audit history and approvals stay as they were)
+    try:
+        lessons = ensure_learn_practice_quiz(lessons, plan.get("target_role"))
+    except (ValidationError, KeyError, ValueError, TypeError):
+        pass
     return {**plan, "learning_nodes": lessons} if lessons else plan
 
 
