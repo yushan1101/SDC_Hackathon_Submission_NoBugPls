@@ -40,6 +40,7 @@ def providers() -> dict:
     from config.settings import get_settings
     s = get_settings()
     return {"openai": bool(s.llm_base_url and s.llm_api_key and s.llm_api_key.get_secret_value()),
+            "lite": bool(s.lite_base_url and s.lite_api_key and s.lite_api_key.get_secret_value()),
             "gemini": bool(s.gemini_api_key and s.gemini_api_key.get_secret_value())}
 
 
@@ -47,7 +48,7 @@ def usable(spec: str) -> bool:
     if spec.startswith("pocket:"):  # runs in this process: usable when the package is installed
         import importlib.util
         return importlib.util.find_spec("pocket_tts") is not None
-    return bool(spec) and providers()["openai" if spec.startswith("openai:") else "gemini"]
+    return bool(spec) and providers()[spec.split(":", 1)[0] if spec.split(":", 1)[0] in ("openai", "lite") else "gemini"]
 
 
 def model_for(agent: str, org: bool = True) -> str:
@@ -99,20 +100,25 @@ def api_base(url: str) -> str:
 
 
 def _openai(model: str, prompt: str, system: str, max_tokens: int, json: bool, s, timeout: float | None = None,
-            reasoning: bool | None = None):
+            reasoning: bool | None = None, provider: str = "openai"):
     import httpx
+    base, key = (s.lite_base_url, s.lite_api_key) if provider == "lite" else (s.llm_base_url, s.llm_api_key)
     body = {"model": model, "temperature": 0.2, "max_tokens": max_tokens,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
     if json:
         body["response_format"] = {"type": "json_object"}
-    if reasoning is False:  # "thinking off": on the gateway grok-4.7 then reasons ~300-500 tokens instead of ~1100 (~9 s vs ~17 s);
+    if re.match(r"gpt-[5-9]", model):  # GPT-5/6 reasoning models: fixed temperature, and the token limit covers their thinking too
+        del body["temperature"], body["max_tokens"]
+        body["max_completion_tokens"] = max_tokens * 3
+        body["reasoning_effort"] = "high" if reasoning else "low"
+    elif reasoning is False:  # "thinking off": on the gateway grok-4.7 then reasons ~300-500 tokens instead of ~1100 (~9 s vs ~17 s);
         body["reasoning"] = {"enabled": False, "effort": "none"}  # the two forms together; either alone saves far less
         body["reasoning_effort"] = "none"
     attempts = (1,) if timeout else (1, 2)  # a caller with a time budget gets no retry: it falls back instead
     for attempt in attempts:  # one retry, only for transient failures (timeout / gateway 5xx)
         try:
-            r = httpx.post(api_base(s.llm_base_url) + "/chat/completions", json=body, timeout=timeout or s.llm_timeout_s,
-                           headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"})
+            r = httpx.post(api_base(base) + "/chat/completions", json=body, timeout=timeout or s.llm_timeout_s,
+                           headers={"Authorization": f"Bearer {key.get_secret_value()}"})
             if r.status_code < 500 or attempt == attempts[-1]:
                 break
         except httpx.TimeoutException:
@@ -178,7 +184,7 @@ def _budget_pool():
 
 def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None = None, json: bool = False,
              agent: str = "router", timeout: float | None = None, reasoning: bool | None = None,
-             hedge_s: float | None = None):
+             hedge_s: float | None = None, backups: str | None = None):
     """-> (text | None, usage dict). None means disabled or failed; callers must fall back. timeout: a hard limit in
     seconds for a caller someone is waiting on (no retry); past it the call fails and the caller's fallback is used.
     reasoning=False asks a thinking model to (mostly) skip its thinking; None leaves the model's default.
@@ -193,7 +199,8 @@ def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None 
         return None, None
     started = time.perf_counter()
     left = lambda: None if timeout is None else max(0.0, timeout - (time.perf_counter() - started))
-    backups = [x for x in dict.fromkeys(b.strip() for b in s.llm_fallback_model.split(",")) if x and x != spec and usable(x)]
+    backups = [x for x in dict.fromkeys(b.strip() for b in (s.llm_fallback_model if backups is None else backups).split(","))
+               if x and x != spec and usable(x)]
     run = lambda spec_, r: _budget_pool().submit(contextvars.copy_context().run, _generate_with, spec_, prompt, system, max_tokens,
                                                   json, left(), r)
     first = run(spec, reasoning)
@@ -226,7 +233,7 @@ def _generate_with(spec, prompt, system, max_tokens, json, timeout, reasoning):
     s = get_settings()
     provider, name = spec.split(":", 1) if ":" in spec else ("gemini", spec)
     t = time.perf_counter()
-    call = lambda: (_openai if provider == "openai" else _gemini_call)(name, prompt, system, max_tokens, json, s, timeout, reasoning)
+    call = (lambda: _openai(name, prompt, system, max_tokens, json, s, timeout, reasoning, provider)) if provider in ("openai", "lite")         else (lambda: _gemini_call(name, prompt, system, max_tokens, json, s, timeout, reasoning))
     try:
         # with a budget, stop waiting when it runs out (the request finishes in the background and is dropped)
         text, tin, tout = _budget_pool().submit(contextvars.copy_context().run, call).result(timeout) if timeout else call()

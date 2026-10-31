@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     # OpenAI-compatible endpoint shared by every "openai:<model>" agent (e.g. GPT-5.6-Luna and Grok-4.7 on one gateway)
     llm_base_url: str = ""
     llm_api_key: SecretStr | None = None
+    # a second OpenAI-compatible gateway (LiteLLM: GPT-5.x/6 and DeepSeek), used as "lite:<model>"
+    lite_base_url: str = ""
+    lite_api_key: SecretStr | None = None
+    # Mina's interview questions, feedback and replies: this model first, the backups raced if it fails or is slow
+    interview_model: str = "lite:gpt-5.6-luna"
+    interview_backups: str = "lite:deepseek-v4.1-flash,lite:gpt-5.4-nano"
     # per-agent model, "openai:<model>" or "gemini:<model>"; empty = LLM_FAST_MODEL on Gemini, else deterministic
     router_model: str = ""
     coach_model: str = ""

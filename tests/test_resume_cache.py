@@ -147,3 +147,24 @@ def test_a_slow_or_failing_model_is_raced_by_the_backups_and_the_first_answer_wi
     t = time.perf_counter()
     text, usage = llm.generate("p", "s", model="gemini:flash-lite", timeout=10, hedge_s=0.5)
     assert text == "{}" and usage["model"] == "openai:grok-fast" and time.perf_counter() - t < 2
+
+
+def test_lite_models_go_to_the_litellm_gateway_with_gpt5_settings(monkeypatch):
+    import httpx
+    from pydantic import SecretStr
+    from agents import llm
+    from config.settings import get_settings
+    s = get_settings()
+    monkeypatch.setattr(s, "lite_base_url", "https://lite.example/v1", raising=False)
+    monkeypatch.setattr(s, "lite_api_key", SecretStr("lite-key"), raising=False)
+    sent = []
+
+    class R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"choices": [{"message": {"content": "{}"}}], "usage": {}}
+    monkeypatch.setattr(httpx, "post", lambda url, json, headers, **k: sent.append((url, json, headers)) or R())
+    llm._openai("gpt-5.6-luna", "p", "s", 100, True, s, provider="lite")
+    url, body, headers = sent[0]
+    assert url == "https://lite.example/v1/chat/completions" and headers["Authorization"] == "Bearer lite-key"
+    assert "temperature" not in body and body["max_completion_tokens"] == 300 and body["reasoning_effort"] == "low"
