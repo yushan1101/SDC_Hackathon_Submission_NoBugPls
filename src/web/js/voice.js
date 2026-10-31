@@ -116,6 +116,7 @@ let current = null;
 export function speak(text, { onStart } = {}) {
   current?.stop();
   let audio = null, stopped = false, ctx = null, analyser = null, samples = null, spectrum = null;
+  let cancelPlayback = null;
   const done = (async () => {
     if (!serverVoice) return;
     try {
@@ -135,8 +136,23 @@ export function speak(text, { onStart } = {}) {
         } else { ctx.close().catch(() => {}); ctx = null; }
       } catch { ctx = null; analyser = null; }
       await new Promise((resolve, reject) => {
-        audio.onplaying = () => onStart?.(); audio.onended = resolve; audio.onerror = () => reject(new Error("playback failed"));
-        audio.play().catch(reject);
+        let settled = false;
+        const retryEvents = ["pointerdown", "keydown"];
+        const cleanup = () => retryEvents.forEach((event) => window.removeEventListener(event, retry));
+        const finish = () => { if (settled) return; settled = true; cleanup(); cancelPlayback = null; resolve(); };
+        const fail = (error) => { if (settled) return; settled = true; cleanup(); cancelPlayback = null; reject(error); };
+        const retry = () => { cleanup(); void attempt(); };
+        const attempt = async () => {
+          if (stopped) return finish();
+          try { await audio.play(); }
+          catch (error) {
+            if (error?.name !== "NotAllowedError") return fail(error);
+            retryEvents.forEach((event) => window.addEventListener(event, retry, { once: true }));
+          }
+        };
+        cancelPlayback = finish;
+        audio.onplaying = () => onStart?.(); audio.onended = finish; audio.onerror = () => fail(new Error("playback failed"));
+        void attempt();
       });
     } catch (e) {
       if (!stopped && e instanceof ApiError && e.status === 503) serverVoice = false;
@@ -144,7 +160,7 @@ export function speak(text, { onStart } = {}) {
   })().finally(() => { ctx?.close().catch(() => {}); if (current === handle) current = null; });
   const handle = {
     done,
-    stop() { stopped = true; audio?.pause(); },
+    stop() { stopped = true; cancelPlayback?.(); audio?.pause(); },
     pause() { audio?.pause(); },
     resume() { audio?.play().catch(() => {}); },
     level() {
