@@ -1707,7 +1707,7 @@ def test_read_aloud_speaks_in_the_server_voice_once_per_text(client, monkeypatch
     import server.api as api
     login(client, "ana")
     monkeypatch.setattr(api.llm, "tts_model", lambda: "")
-    assert client.post("/api/speech/say", json={"text": "Hello"}, headers=H).status_code == 503  # browser voice then
+    assert client.post("/api/speech/say", json={"text": "Hello"}, headers=H).status_code == 503  # no server voice
     spoken = []
     monkeypatch.setattr(api.llm, "tts_model", lambda: "gemini:gemini-3.8-flash-lite-tts")
     monkeypatch.setattr(api.llm, "speak", lambda text: (spoken.append(text), (b"RIFF0000WAVE", {"ms": 1}))[1])

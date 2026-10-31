@@ -1,8 +1,7 @@
 // Voice input and read-aloud, shared by every page.
 // Mic: paid plans record in the browser and the server transcribes (works in every browser); otherwise the browser's
 // own speech recognition where it has one (Chrome, Edge, Safari); with neither, no mic button is shown.
-// Read aloud and the interviewer: one voice from the server (TTS_VOICE), so it sounds the same in every browser
-// whatever voices or language the browser has; the browser's own voice only when the server has none.
+// Read aloud and the interviewer: one voice from the server (Pocket TTS), so the browser never switches to a system voice.
 import { ApiError, h, icon, postForBlob, toast, upload } from "./lib.js";
 
 const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -95,7 +94,7 @@ export function micButton(target, { onText } = {}) {
 }
 
 // ---------------------------------------------------------------- speaking: the app's own voice
-let serverVoice = true;  // false once the server says it has no voice: the browser's own is used from then on
+let serverVoice = true;  // false once the server says Pocket TTS is unavailable: speech stays silent, never system TTS
 const clips = new Map();  // text -> Promise<object URL>, so a question fetched early plays at once
 /** Start fetching `text` in the server voice now (the interviewer asks for each question before it is read). */
 export function preloadSpeech(text) {
@@ -116,50 +115,40 @@ let current = null;
  *  onStart fires when sound begins. */
 export function speak(text, { onStart } = {}) {
   current?.stop();
-  let audio = null, utter = null, stopped = false, ctx = null, analyser = null, samples = null, spectrum = null;
-  const browserVoice = () => new Promise((resolve) => {
-    if (!("speechSynthesis" in window)) { resolve(); return; }
-    utter = new SpeechSynthesisUtterance(text.slice(0, 6000)); utter.lang = lang();
-    utter.onstart = () => onStart?.(); utter.onend = utter.onerror = () => resolve();
-    speechSynthesis.cancel(); speechSynthesis.speak(utter);
-  });
+  let audio = null, stopped = false, ctx = null, analyser = null, samples = null, spectrum = null;
   const done = (async () => {
-    if (serverVoice) {
+    if (!serverVoice) return;
+    try {
+      const url = await preloadSpeech(text);
+      if (stopped) return;
+      audio = new Audio(url);
+      // loudness for the interviewer's lips. Only through a running audio graph: a suspended one (no click on the
+      // page yet) would play the clip silently, so then the audio element plays on its own
       try {
-        const url = await preloadSpeech(text);
-        if (stopped) return;
-        audio = new Audio(url);
-        // loudness for the interviewer's lips. Only through a running audio graph: a suspended one (no click on the
-        // page yet) would play the clip silently, so then the audio element plays on its own
-        try {
-          const AC = window.AudioContext || window.webkitAudioContext;
-          ctx = new AC();
-          await Promise.race([ctx.resume(), new Promise((r) => setTimeout(r, 300))]);
-          if (ctx.state === "running") {
-            analyser = ctx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0.35;
-            samples = new Uint8Array(analyser.fftSize); spectrum = new Uint8Array(analyser.frequencyBinCount);
-            const source = ctx.createMediaElementSource(audio); source.connect(analyser); analyser.connect(ctx.destination);
-          } else { ctx.close().catch(() => {}); ctx = null; }
-        } catch { ctx = null; analyser = null; }
-        await new Promise((resolve, reject) => {
-          audio.onplaying = () => onStart?.(); audio.onended = resolve; audio.onerror = () => reject(new Error("playback failed"));
-          audio.play().catch(reject);
-        });
-        return;
-      } catch (e) {
-        if (stopped) return;
-        if (e instanceof ApiError && e.status === 503) serverVoice = false;  // no server voice: don't ask again
-      }
+        const AC = window.AudioContext || window.webkitAudioContext;
+        ctx = new AC();
+        await Promise.race([ctx.resume(), new Promise((r) => setTimeout(r, 300))]);
+        if (ctx.state === "running") {
+          analyser = ctx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0.35;
+          samples = new Uint8Array(analyser.fftSize); spectrum = new Uint8Array(analyser.frequencyBinCount);
+          const source = ctx.createMediaElementSource(audio); source.connect(analyser); analyser.connect(ctx.destination);
+        } else { ctx.close().catch(() => {}); ctx = null; }
+      } catch { ctx = null; analyser = null; }
+      await new Promise((resolve, reject) => {
+        audio.onplaying = () => onStart?.(); audio.onended = resolve; audio.onerror = () => reject(new Error("playback failed"));
+        audio.play().catch(reject);
+      });
+    } catch (e) {
+      if (!stopped && e instanceof ApiError && e.status === 503) serverVoice = false;
     }
-    if (!stopped) await browserVoice();
   })().finally(() => { ctx?.close().catch(() => {}); if (current === handle) current = null; });
   const handle = {
     done,
-    stop() { stopped = true; audio?.pause(); if (utter) speechSynthesis.cancel(); },
-    pause() { audio ? audio.pause() : speechSynthesis.pause(); },
-    resume() { audio ? audio.play().catch(() => {}) : speechSynthesis.resume(); },
+    stop() { stopped = true; audio?.pause(); },
+    pause() { audio?.pause(); },
+    resume() { audio?.play().catch(() => {}); },
     level() {
-      const playing = audio ? !audio.paused : Boolean(utter && speechSynthesis.speaking);
+      const playing = Boolean(audio && !audio.paused);
       if (!playing) return 0;
       if (!analyser) return 0.3 + 0.25 * Math.abs(Math.sin(performance.now() / 85));  // no measurement: a speaking rhythm
       analyser.getByteTimeDomainData(samples);
@@ -184,7 +173,7 @@ export function speak(text, { onStart } = {}) {
 
 /** "Read aloud" for some text (a function, so it reads what is there when pressed). */
 export function readAloudButton(getText) {
-  if (typeof Audio === "undefined" && !("speechSynthesis" in window)) return null;
+  if (typeof Audio === "undefined") return null;
   const btn = h("button", { class: "btn ghost sm read-aloud", type: "button", "aria-pressed": "false" }, icon("volume"), "Read aloud");
   let speaking = null;
   const idle = () => { speaking = null; btn.setAttribute("aria-pressed", "false"); btn.lastChild.textContent = "Read aloud"; };
