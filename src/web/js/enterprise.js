@@ -703,7 +703,7 @@ async function loadDetail(id, detail, wrap) {
   const contact = [[d.review.candidate_email, "mail"], [d.review.candidate_phone, "user"]].filter(([v]) => v);
   // Plan, the analysis behind it, HR's notes, the sources and the audit trail sit on tabs instead of one long page.
   const panes = {
-    plan: () => planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: d.report?.evidence, startDate: d.started_utc,
+    plan: () => planBlock({ planId: id, planReference: d.plan_reference, plan: d.plan, version: d.version, status: d.status, weeklyHours: null, progress: d.progress, evidence: d.report?.evidence, startDate: d.started_utc, diagrams: false,
       approverLabel: "I have reviewed this plan", title: "90-day plan", onChange: async (next) => {
         if (next === "approved") S.status.set("celebrating", `${d.subject_id} approved`);
         await reviewView($("#main"), id);
