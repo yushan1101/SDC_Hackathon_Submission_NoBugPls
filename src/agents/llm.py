@@ -335,21 +335,27 @@ def _pocket_speak(text: str) -> bytes:
     return out.getvalue()
 
 
-def has_voice() -> bool:
-    """A server voice is available: Pocket TTS, or the fallback cloud voice."""
+POCKET = "pocket:pocket-tts"
+
+
+def voices() -> list[str]:
+    """Mina's voices in the order they are tried: Pocket TTS first whenever it is installed (whatever TTS_MODEL a
+    server's .env names), then TTS_MODEL, then TTS_FALLBACK. Never the browser's system voice."""
     from config.settings import get_settings
-    fb = get_settings().tts_fallback
-    return bool(tts_model() or (fb and usable(fb)))
+    s = get_settings()
+    return [x for x in dict.fromkeys([POCKET if usable(POCKET) else "", tts_model(),
+                                      s.tts_fallback if s.tts_fallback and usable(s.tts_fallback) else ""]) if x]
+
+
+def has_voice() -> bool:
+    return bool(voices())
 
 
 def speak(text: str):
     """-> (WAV bytes | None, usage): `text` read in the configured server voice (Pocket TTS); if that fails, in the
     fallback cloud voice (TTS_FALLBACK, a young female Gemini voice). Never the browser's system voice."""
-    from config.settings import get_settings
-    s = get_settings()
-    specs = [x for x in dict.fromkeys([tts_model(), s.tts_fallback if s.tts_fallback and usable(s.tts_fallback) else ""]) if x]
     usage = None
-    for spec in specs:
+    for spec in voices():
         audio, usage = _speak_with(spec, text)
         _speech_status("tts", spec, "" if audio else (usage or {}).get("error", "failed"))
         if audio:

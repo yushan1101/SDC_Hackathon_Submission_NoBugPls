@@ -4036,7 +4036,7 @@ def readiness():
     llm = {"enabled": cfg.llm_enabled, "resume": cfg.llm_resume,
            "agents": {a: model_for(a) or None for a in ("router", "coach", "resume")},
             # speech: the voice and transcription model in use, and the last error type (no details, no keys)
-            "speech": {"voice": models.tts_model() or None, "transcription": models.stt_model() or None, "last": models.SPEECH_STATUS}}  # model names only, never keys
+            "speech": {"voices": models.voices(), "transcription": models.stt_model() or None, "last": models.SPEECH_STATUS}}  # model names only, never keys
     mcp = mcp_status()
     return {"ok": dbs["ok"] and mcp["ok"], "db": dbs, "mcp": mcp, "model": model, "llm": llm}
 
@@ -4049,7 +4049,7 @@ app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
 def _warm():
     """Fast path first (the model client, MCP knowledge tools, role list), then the slow MiniLM load."""
     llm.warm()  # ~5 s of client start-up that would otherwise land on the first interview question
-    if llm.tts_model().startswith("pocket:"):
+    if llm.POCKET in llm.voices():
         try:
             llm.pocket_warm()  # Mina's voice: ~15 s to load, else on her first sentence
             log.info("Pocket TTS ready")
