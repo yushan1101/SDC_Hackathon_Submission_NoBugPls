@@ -23,7 +23,7 @@ def llm_on(monkeypatch):
 
 
 def fake(reply, seen):
-    def gen(prompt, system, max_tokens=400, model=None, json=False, agent="router", timeout=None):
+    def gen(prompt, system, max_tokens=400, model=None, json=False, agent="router", timeout=None, reasoning=None):
         seen.append(prompt)
         return reply, {"node": "llm", "measured": True, "prompt_tokens": 100, "completion_tokens": 20}
     return gen

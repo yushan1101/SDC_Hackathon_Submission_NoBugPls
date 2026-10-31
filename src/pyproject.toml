@@ -29,6 +29,8 @@ dependencies = [
   "fastmcp>=4.1",
   "sentence-transformers>=6.1",
   "torch>=2.6",  # CVE-2025-32434: torch.load(weights_only=True) RCE below 2.6
+  "redis>=5.0",  # result cache when REDIS_URL is set (core/cache.py)
+  "pocket-tts>=4.0",  # Mina's voice: Kyutai Pocket TTS on CPU (agents/llm.py speak)
 ]
 
 [project.optional-dependencies]

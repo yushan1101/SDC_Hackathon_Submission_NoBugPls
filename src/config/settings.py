@@ -27,11 +27,15 @@ class Settings(BaseSettings):
     # speech-to-text for voice input: "openai:<model>" on the gateway or "gemini:<model>"; if its provider has no key, the
     # Gemini fast model is used, else browsers fall back to their own speech recognition
     # text-to-speech: empty keeps read-aloud and Mina on the browser's installed system voice
-    tts_model: str = ""
+    # text-to-speech for read-aloud and Mina: Kyutai Pocket TTS in this process (CPU), or "gemini:<model>" / "openai:<model>"
+    tts_model: str = "pocket:pocket-tts"
+    pocket_voice: str = "alba"  # Pocket TTS voice: alba (female, casual; default), fantine, eponine, azelma, cosette
     tts_voice: str = "Leda"   # Gemini's youthful voice
     tts_style: str = "a cute, bright, high-pitched anime girl voice, cheerful and friendly"  # empty: plain reading
     stt_model: str = "openai:mimo-v2.6-flash"  # an audio chat model on the gateway; whisper-style ids use /audio/transcriptions
     llm_resume: bool = False  # opt-in: send the REDACTED resume to the LLM to propose extra skills (quotes verified)
+    # result cache (résumé analyses by file hash): redis://host:6379/0, shared by every app node; empty = this process only
+    redis_url: str = ""
     llm_usd_per_1m_input: float = 0.0   # set from the provider's current price sheet; 0 = cost not estimated
     llm_usd_per_1m_output: float = 0.0
     llm_timeout_s: float = Field(30.0, gt=0)

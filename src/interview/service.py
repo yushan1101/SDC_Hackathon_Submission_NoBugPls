@@ -135,8 +135,7 @@ def _generate_initial(context, difficulty):
     stage = stage_order(context)[0]
     prompt = {
         "task": "Generate the first question in a five-stage mock interview.",
-        "opening": "Begin with one friendly sentence: greet the candidate, introduce yourself as Mina, and say you'll "
-                   "start with something about them. Then ask the question.",
+        "opening": "No greeting and no introduction: the candidate is already in the interview. Ask the question directly.",
         "suggested_focus": _focus(context),
         "role": {"title": context["title"], "description": context["description"]},
         "difficulty": difficulty, "stage": stage, "question_type": TYPE_LABELS[stage],
@@ -225,8 +224,10 @@ def evaluate_and_choose(sess, current, answer, transcript):
                   "reply as a person would in conversation (rephrase or clarify the current question if asked, without "
                   "giving away a model answer), set every score to null and next_question to null.",
                   "When next_stage is null, use advance and set next_question to null.",
-                  "Start next_question.text with one short spoken reaction to what the candidate actually said "
-                  "(under 15 words, specific to their answer, no gushing praise), then ask the question.", *VOICE_RULES],
+                  "Start next_question.text with spoken feedback on the answer, as a real interviewer would give it: "
+                  "one specific thing that worked and one concrete thing to strengthen, both about what the candidate "
+                  "actually said (under 35 words, plain, no gushing praise, no scores), then ask the question in a "
+                  "way that follows on from their answer.", *VOICE_RULES],
     }
     data, _ = _llm(json.dumps(prompt, ensure_ascii=False),
                    "You are a fair interview coach. Return only valid JSON matching the requested structure.", 1300)

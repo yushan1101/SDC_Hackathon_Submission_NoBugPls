@@ -10,12 +10,17 @@ An HR advisor can choose the model per task for their organisation (from the adm
 ORG_MODELS for each request ({task: spec}); model_for() prefers that choice when its provider is configured.
 """
 import contextvars
+import io
 import logging
 import re
+import threading
 import time
+import wave
 
 log = logging.getLogger(__name__)
 _gemini = None
+_pocket = None  # (TTSModel, {voice: state}) once loaded: Kyutai Pocket TTS, ~100M params, faster than real time on CPU
+_pocket_lock = threading.Lock()
 ORG_MODELS: contextvars.ContextVar = contextvars.ContextVar("org_models", default=None)
 # tasks an HR advisor can choose a model for -> what they cover
 TASKS = {"coach": "Career coach chat and interview feedback", "resume": "Reading and screening resumes",
@@ -30,6 +35,9 @@ def providers() -> dict:
 
 
 def usable(spec: str) -> bool:
+    if spec.startswith("pocket:"):  # runs in this process: usable when the package is installed
+        import importlib.util
+        return importlib.util.find_spec("pocket_tts") is not None
     return bool(spec) and providers()["openai" if spec.startswith("openai:") else "gemini"]
 
 
@@ -81,12 +89,16 @@ def api_base(url: str) -> str:
     return url + "/v1" if urlparse(url).path in ("", "/") else url
 
 
-def _openai(model: str, prompt: str, system: str, max_tokens: int, json: bool, s, timeout: float | None = None):
+def _openai(model: str, prompt: str, system: str, max_tokens: int, json: bool, s, timeout: float | None = None,
+            reasoning: bool | None = None):
     import httpx
     body = {"model": model, "temperature": 0.2, "max_tokens": max_tokens,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
     if json:
         body["response_format"] = {"type": "json_object"}
+    if reasoning is False:  # "thinking off": on the gateway grok-4.7 then reasons ~300-500 tokens instead of ~1100 (~9 s vs ~17 s);
+        body["reasoning"] = {"enabled": False, "effort": "none"}  # the two forms together; either alone saves far less
+        body["reasoning_effort"] = "none"
     attempts = (1,) if timeout else (1, 2)  # a caller with a time budget gets no retry: it falls back instead
     for attempt in attempts:  # one retry, only for transient failures (timeout / gateway 5xx)
         try:
@@ -104,17 +116,25 @@ def _openai(model: str, prompt: str, system: str, max_tokens: int, json: bool, s
     return d["choices"][0]["message"]["content"], u.get("prompt_tokens", 0), u.get("completion_tokens", 0)
 
 
-def _gemini_call(model: str, prompt: str, system: str, max_tokens: int, json: bool, s, timeout: float | None = None):
+def _gemini_call(model: str, prompt: str, system: str, max_tokens: int, json: bool, s, timeout: float | None = None,
+                 reasoning: bool | None = None):  # noqa: ARG001 - the fast Gemini model does not think by default
     global _gemini
     from google import genai
     from google.genai import types
     _gemini = _gemini or genai.Client(api_key=s.gemini_api_key.get_secret_value(),
                                       http_options=types.HttpOptions(timeout=int(s.llm_timeout_s * 1000)))  # ms
-    r = _gemini.models.generate_content(model=model, contents=prompt, config=types.GenerateContentConfig(
+    config = types.GenerateContentConfig(
         system_instruction=system, temperature=0.2, max_output_tokens=max_tokens,
         response_mime_type="application/json" if json else None,
         # Gemini refuses deadlines under 10 s; generate() enforces a shorter budget itself by not waiting longer
-        http_options=types.HttpOptions(timeout=int(max(timeout, 10) * 1000)) if timeout else None))
+        http_options=types.HttpOptions(timeout=int(max(timeout, 10) * 1000)) if timeout else None)
+    try:
+        r = _gemini.models.generate_content(model=model, contents=prompt, config=config)
+    except Exception as e:  # a momentary rate limit (429): one quick retry; a budgeted caller still stops waiting on time
+        if getattr(e, "code", None) != 429:
+            raise
+        time.sleep(0.6)
+        r = _gemini.models.generate_content(model=model, contents=prompt, config=config)
     um = r.usage_metadata
     return r.text, um.prompt_token_count or 0, um.candidates_token_count or 0
 
@@ -148,9 +168,10 @@ def _budget_pool():
 
 
 def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None = None, json: bool = False,
-             agent: str = "router", timeout: float | None = None):
+             agent: str = "router", timeout: float | None = None, reasoning: bool | None = None):
     """-> (text | None, usage dict). None means disabled or failed; callers must fall back. timeout: a hard limit in
-    seconds for a caller someone is waiting on (no retry); past it the call fails and the caller's fallback is used."""
+    seconds for a caller someone is waiting on (no retry); past it the call fails and the caller's fallback is used.
+    reasoning=False asks a thinking model to (mostly) skip its thinking; None leaves the model's default."""
     from config.settings import get_settings
     from core.usage import record
     s = get_settings()
@@ -159,13 +180,13 @@ def generate(prompt: str, system: str, max_tokens: int = 400, model: str | None 
         return None, None
     provider, name = spec.split(":", 1) if ":" in spec else ("gemini", spec)
     t = time.perf_counter()
-    call = lambda: (_openai if provider == "openai" else _gemini_call)(name, prompt, system, max_tokens, json, s, timeout)
+    call = lambda: (_openai if provider == "openai" else _gemini_call)(name, prompt, system, max_tokens, json, s, timeout, reasoning)
     try:
         # with a budget, stop waiting when it runs out (the request finishes in the background and is dropped)
         text, tin, tout = _budget_pool().submit(contextvars.copy_context().run, call).result(timeout) if timeout else call()
         return text, record("llm", 1000 * (time.perf_counter() - t), name, tin, tout, measured=True)
     except Exception as e:
-        log.warning("LLM call failed (%s %s): %s", provider, name, type(e).__name__)
+        log.warning("LLM call failed (%s %s): %s %s", provider, name, type(e).__name__, getattr(e, "code", "") or "")
         return None, record("llm", 1000 * (time.perf_counter() - t), name, error=type(e).__name__)
 
 
@@ -277,6 +298,34 @@ def tts_model() -> str:
     return spec if spec and usable(spec) else ""
 
 
+def pocket_warm() -> None:
+    """Load Pocket TTS and its voice ahead of the first sentence (~15 s cold, once per process)."""
+    global _pocket
+    from config.settings import get_settings
+    voice = get_settings().pocket_voice
+    with _pocket_lock:
+        if _pocket is None:
+            from pocket_tts import TTSModel
+            _pocket = (TTSModel.load_model(), {})
+        if voice not in _pocket[1]:
+            _pocket[1][voice] = _pocket[0].get_state_for_audio_prompt(voice)
+
+
+def _pocket_speak(text: str) -> bytes:
+    """WAV of `text` in POCKET_VOICE (default "alba": a female voice), from the in-process CPU model."""
+    import numpy as np
+    from config.settings import get_settings
+    pocket_warm()
+    with _pocket_lock:  # generation state is not shared between requests
+        model, voices = _pocket
+        samples = model.generate_audio(voices[get_settings().pocket_voice], text).detach().cpu().numpy()
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(model.sample_rate)
+        w.writeframes((np.clip(samples, -1, 1) * 32767).astype("<i2").tobytes())
+    return out.getvalue()
+
+
 def speak(text: str):
     """-> (WAV bytes | None, usage): `text` read in the configured server voice."""
     from config.settings import get_settings
@@ -287,7 +336,9 @@ def speak(text: str):
     provider, name = spec.split(":", 1)
     t = time.perf_counter()
     try:
-        if provider == "openai":
+        if provider == "pocket":
+            audio = _pocket_speak(text)
+        elif provider == "openai":
             import httpx
             r = httpx.post(api_base(s.llm_base_url) + "/audio/speech", timeout=max(s.llm_timeout_s, 60),
                            headers={"Authorization": f"Bearer {s.llm_api_key.get_secret_value()}"},

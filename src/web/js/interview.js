@@ -123,8 +123,27 @@ function renderHistory(main, history) {
   stage.mount();
 }
 
+/** No introduction: once the person has agreed to the transcript notice (remembered on this device), a recommendation
+ *  opens straight into the interview room with the defaults; the first time, one short card asks for that consent. */
 function renderLaunch(main, recommendation, plans) {
-  const skills = recommendation.profile || [];
+  let agreed = false;
+  try { agreed = localStorage.getItem("ap.interview.consent") === "true"; } catch { /* ask */ }
+  const linked = plans.filter((x) => x.audience === "individual" && x.target_role === recommendation.role_id);
+  const go = async (difficulty = "intermediate", planId = linked.length === 1 ? linked[0].plan_id : null) => {
+    main.replaceChildren(h("div", { class: "interview-loading", role: "status" }, `Starting your ${recommendation.role_title} interview…`));
+    const session = await api("/api/interviews", { method: "POST", body: { recommendation_id: recommendation.recommendation_id,
+      difficulty, plan_id: planId, transcript_consent: true } });
+    location.hash = `#/interview/${session.interview_id}`;
+  };
+  if (agreed) {
+    go().catch((e) => main.replaceChildren(h("h1", { class: "page-title" }, "Mock interview"), h("div", { class: "issue error" }, e.message),
+      h("a", { class: "btn", href: "#/interview" }, "Back to interview history")));
+    return;
+  }
+  renderConsent(main, recommendation, plans, go);
+}
+
+function renderConsent(main, recommendation, plans, go) {
   const difficulty = h("select", { class: "input", "aria-label": "Interview difficulty" },
     h("option", { value: "foundational" }, "Foundational"), h("option", { value: "intermediate", selected: true }, "Intermediate"),
     h("option", { value: "advanced" }, "Advanced"));
@@ -142,32 +161,21 @@ function renderLaunch(main, recommendation, plans) {
   const start = h("button", { class: "btn primary", type: "button", onclick: async () => {
     error.textContent = "";
     if (!consent.checked) { error.textContent = "Please agree to the transcript and AI processing notice to continue."; consent.focus(); return; }
-    start.disabled = true; start.textContent = "Building your first question…";
-    const payload = { recommendation_id: recommendation.recommendation_id, difficulty: difficulty.value,
-      plan_id: plan.value || null, transcript_consent: true };
-    try {
-      const session = await api("/api/interviews", { method: "POST", body: payload });
-      location.hash = `#/interview/${session.interview_id}`;
-    } catch (e) { error.textContent = e.message; start.disabled = false; start.textContent = "Start mock interview"; }
-  } }, "Start mock interview");
-  const stage = interviewerStage({
-    eyebrow: `MOCK INTERVIEW · ${recommendation.source === "resume" ? "FROM YOUR RESUME" : "FROM QUICK MATCH"}`,
-    title: recommendation.role_title,
-    text: "Five questions: behavioural, technical, situational, problem-solving and a workplace scenario, with follow-ups on your answers.",
-    greeting: `Hello! Ready to talk about the ${recommendation.role_title} role?` });
+    start.disabled = true; start.textContent = "Starting…";
+    try { localStorage.setItem("ap.interview.consent", "true"); } catch { /* asked again next time */ }
+    try { await go(difficulty.value, plan.value || null); }
+    catch (e) { renderConsent(main, recommendation, plans, go); toast(e.message, "err"); }
+  } }, "Start interview");
   main.replaceChildren(
-    h("div", { class: "interview-page" }, stage,
-      h("section", { class: "interview-card" }, h("h2", {}, "Set up your interview"),
-        h("p", { class: "muted" }, `Recommended role · ESCO ${recommendation.role_id}`),
-        h("div", { class: "interview-skills" }, skills.map((s) => h("span", { class: "chip-static" }, `${s.name} · ${s.level}/5`))),
+    h("div", { class: "interview-page" },
+      h("section", { class: "interview-card" }, h("h2", {}, `${recommendation.role_title} interview`),
         h("label", { class: "field" }, h("span", {}, "Difficulty"), difficulty),
         h("label", { class: "field" }, h("span", {}, "Link a learning plan (optional)"), plan),
         h("div", { class: "interview-consent" }, h("label", {}, consent,
           h("span", {}, "I agree to save my answer transcripts and have them processed by AI for interview feedback. No audio is stored.")),
-        h("p", { class: "fine" }, "Voice input uses your browser’s speech recognition when available. Browser speech services may process audio; text entry is always available.")),
+        h("p", { class: "fine" }, "Spoken answers are transcribed by our speech service and the audio is then discarded. Typing always works.")),
         error, start),
       h("a", { class: "btn ghost", href: "#/interview" }, "Back to interview history")));
-  stage.mount();
 }
 
 function renderRoom(main, detail, initial = null, callbacks = {}) {
@@ -235,7 +243,9 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   let conversation = true;
   try { conversation = localStorage.getItem("ap.interview.conversation") !== "false"; } catch { /* on */ }
   let micGranted = false, heardSpeech = false, lastVoiceAt = 0;
-  const SILENCE_MS = 2200;
+  const SILENCE_MS = 1600;  // this long a silence ends your turn (HoloHuman ends a chat line at 280 ms; answers need thinking room)
+  const PIECE_MS = 700;  // a shorter pause: the piece before it goes to be transcribed while you keep talking
+  let pieceVoice = false;
   const minaLine = h("p", { class: "interview-mina-line", "aria-live": "polite", hidden: true });
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
   // Server ASR (the configured speech model, MiMo) whenever the interview offers it: the answer is recorded here and
@@ -243,18 +253,42 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   const asr = Boolean(detail.asr) && typeof MediaRecorder !== "undefined";
   const speechAvailable = asr || Boolean(Speech);
   const recognizer = Speech && !asr ? new Speech() : null;
-  let recorder = null, chunks = [];
-  const stopRecorder = () => new Promise((resolve) => {
-    if (!recorder || recorder.state === "inactive") { resolve(null); return; }
-    recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
-    recorder.stop();
+  // Server ASR in pieces, like HoloHuman's VAD: at each short pause the recorder hands over what it has (a complete
+  // file of its own) and keeps going, and that piece is transcribed in the background while you carry on talking. When
+  // your turn ends only the last piece is still to transcribe, so her reply follows quickly; the pieces heard so far
+  // show as a live caption.
+  let recorder = null, chunks = [], pieces = [];
+  const newRecorder = () => {
+    chunks = []; const r = new MediaRecorder(micStream);
+    const mine = chunks;
+    r.ondataavailable = (e) => { if (e.data.size) mine.push(e.data); };
+    r.start(1000);
+    return r;
+  };
+  const stopRecorder = (r = recorder) => new Promise((resolve) => {
+    if (!r || r.state === "inactive") { resolve(null); return; }
+    const mine = chunks;
+    r.onstop = () => resolve(new Blob(mine, { type: r.mimeType || "audio/webm" }));
+    r.stop();
   });
-  const transcribe = async (blob) => {
-    if (!blob || blob.size < 2000) return;
+  const transcribeText = async (blob) => {
+    if (!blob || blob.size < 2000) return "";
     const form = new FormData();
     form.append("file", await toWav(blob), "answer.wav"); form.append("lang", languageSelect.value);
     const { text } = await upload(`/api/interviews/${encodeURIComponent(sessionId)}/transcribe`, form);
-    const piece = (text || "").trim();
+    return (text || "").trim();
+  };
+  const heardSoFar = () => Promise.all(pieces.map((p) => p.catch(() => ""))).then((t) => t.filter(Boolean).join(" "));
+  const showHeard = async () => { const t = await heardSoFar(); if (recording && t) { livePreview.textContent = t; livePreview.hidden = false; } };
+  const cutPiece = () => {  // a pause mid-answer: transcribe what came before it, keep recording on the same microphone
+    if (!recorder || recorder.state !== "recording") return;
+    const old = recorder;
+    recorder = newRecorder();
+    pieces.push(stopRecorder(old).then(transcribeText).then((t) => { void showHeard(); return t; }));
+  };
+  const transcribe = async (blob) => {  // the last piece, then every piece in order -> the answer
+    pieces.push(transcribeText(blob));
+    const piece = await heardSoFar(); pieces = [];
     if (!piece) return;
     recordedText = piece;
     const base = transcript.value.trimEnd(); transcript.value = `${base}${base ? " " : ""}${piece}`.slice(0, 4000);
@@ -362,11 +396,12 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
       });
       if (recording && !muted && !interviewerSpeaking && !speechError) {
         // Touch the DOM only on a change; the throttled branch below tells the avatar.
-        if (volume > 0.025) { heardSpeech = true; lastVoiceAt = performance.now(); }
-        else if (conversation && heardSpeech && !finishPromise && performance.now() - lastVoiceAt > SILENCE_MS) {
-          heardSpeech = false;
+        const quiet = performance.now() - lastVoiceAt;
+        if (volume > 0.025) { heardSpeech = true; pieceVoice = true; lastVoiceAt = performance.now(); }
+        else if (conversation && heardSpeech && !finishPromise && quiet > SILENCE_MS) {
+          heardSpeech = false; pieceVoice = false;
           void finishRecording(false, false).then(() => { if (!transcript.value.trim()) listenAgain(); });
-        }
+        } else if (asr && pieceVoice && quiet > PIECE_MS) { pieceVoice = false; cutPiece(); }
         const [state, message] = volume > 0.025 ? ["speaking", "Speaking"]
           : ["listening", speechAvailable ? "Listening" : "Listening · no transcription here; type your answer"];
         if (voicePanel.dataset.state !== state || status.textContent !== message) setMicState(state, message, false);
@@ -483,10 +518,8 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     }
     try {
       const selectedDevice = deviceSelect.value;
-      const capture = navigator.mediaDevices.getUserMedia({ audio: {
-        ...(selectedDevice ? { deviceId: { exact: selectedDevice } } : {}),
-        echoCancellation: true, noiseSuppression: true, autoGainControl: true,
-      } });
+      // the microphone that listened while she spoke carries straight on (no restart, no lost first words)
+      const capture = takeMonitor() || navigator.mediaDevices.getUserMedia({ audio: micConstraints() });
       // Start STT synchronously from the user's click, before waiting for the
       // permission prompt. Some browsers drop user activation after an await.
       if (recognizer) {
@@ -519,11 +552,9 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
         audioSource = audioContext.createMediaStreamSource(micStream); audioSource.connect(analyser); watchAudio();
       }
       if (asr) {
-        chunks = []; recorder = new MediaRecorder(micStream);
-        recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-        recorder.start(1000);
+        pieces = []; recorder = newRecorder();
       }
-      micGranted = true; heardSpeech = false; lastVoiceAt = performance.now();
+      micGranted = true; heardSpeech = false; pieceVoice = false; lastVoiceAt = performance.now();
       starting = false; recording = true; muted = false; muteBtn.setAttribute("aria-pressed", "false"); muteBtn.setAttribute("aria-label", "Mute microphone"); startDuration(); updateControls();
       if (asr) setMicState("listening", "Listening");
       else if (recognizer) {
@@ -572,16 +603,66 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
   });
   // The interviewer reads each question in the app's own voice (the same as Read aloud in chat), whatever voices the
   // browser has. Her lips follow the loudness of that audio.
-  const listenAgain = () => { if (conversation && micGranted && !paused && !discarded) void startRecording(); };
+  const listenAgain = () => { if (conversation && micGranted && !paused && !discarded) void startRecording(); else stopMonitor(); };
+  const micConstraints = () => ({ ...(deviceSelect.value ? { deviceId: { exact: deviceSelect.value } } : {}),
+    echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+  // Barge-in: while she speaks (conversation mode, microphone already allowed) the microphone keeps listening, with
+  // echo cancellation and a higher bar than for an answer so her own voice from the speakers doesn't count. A quarter
+  // second of your voice stops her mid-sentence, and your answer starts recording on that same microphone.
+  const BARGE_LEVEL = 0.05, BARGE_MS = 250;
+  let monitor = null;
+  const stopMonitor = () => {
+    if (!monitor) return;
+    cancelAnimationFrame(monitor.frame); monitor.ctx.close().catch(() => {});
+    monitor.stream.getTracks().forEach((t) => t.stop());
+    monitor = null;
+  };
+  const takeMonitor = () => {  // hand the open microphone to the answer recorder
+    if (!monitor) return null;
+    const stream = monitor.stream;
+    cancelAnimationFrame(monitor.frame); monitor.ctx.close().catch(() => {}); monitor = null;
+    return Promise.resolve(stream);
+  };
+  const startMonitor = async (voice) => {
+    if (monitor || !conversation || !micGranted || paused || discarded || !navigator.mediaDevices?.getUserMedia) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints() }); } catch { return; }
+    if (currentUtterance !== voice || discarded) { stream.getTracks().forEach((t) => t.stop()); return; }
+    const ctx = new AC(), an = ctx.createAnalyser(); an.fftSize = 512;
+    ctx.createMediaStreamSource(stream).connect(an);
+    const wave = new Uint8Array(an.fftSize);
+    let loudSince = 0;
+    monitor = { stream, ctx, frame: 0 };
+    const tick = () => {
+      if (!monitor || monitor.stream !== stream) return;
+      an.getByteTimeDomainData(wave);
+      let sq = 0; for (const v of wave) { const a = (v - 128) / 128; sq += a * a; }
+      const level = Math.sqrt(sq / wave.length), now = performance.now();
+      if (voicePlaying && !paused && level > BARGE_LEVEL) {
+        loudSince ||= now;
+        if (now - loudSince >= BARGE_MS && currentUtterance === voice) {
+          interrupted = true; voice.stop();  // playQuestion's wait ends: your turn starts on this microphone
+          return;
+        }
+      } else loudSince = 0;
+      monitor.frame = requestAnimationFrame(tick);
+    };
+    monitor.frame = requestAnimationFrame(tick);
+  };
+  let interrupted = false;
   const playQuestion = async (text = qText.textContent) => {
     if (!text) return;
-    interviewerSpeaking = true; voicePlaying = false; updateControls(); setMicState("processing", "Getting ready to ask…");
+    interviewerSpeaking = true; voicePlaying = false; interrupted = false; updateControls(); setMicState("processing", "Getting ready to ask…");
     if (recording || micStream) await finishRecording(false, false);
     let lips = 0;
     const voice = currentUtterance = speak(text, { onStart: () => {
       if (currentUtterance !== voice) return;
       speechCue = { word: text, startedAt: performance.now(), secondsPerCharacter: 0.095 };
-      interviewerSpeaking = true; voicePlaying = true; updateControls(); setMicState("processing", "Interviewer speaking");
+      interviewerSpeaking = true; voicePlaying = true; updateControls();
+      setMicState("processing", conversation && micGranted ? "Interviewer speaking · just talk to interrupt" : "Interviewer speaking");
+      void startMonitor(voice);
       const follow = () => {
         if (currentUtterance !== voice) { speechLevel = 0; return; }
         speechLevel = voice.level(); speechBands = voice.bands(); updateAvatarPresentation();
@@ -593,13 +674,13 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     cancelAnimationFrame(lips);
     if (currentUtterance !== voice) return;
     currentUtterance = null; interviewerSpeaking = false; voicePlaying = false; speechCue = null; speechLevel = 0; updateControls();
-    setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : conversation && micGranted ? "Your turn" : "Ready to answer · microphone off");
+    setMicState(paused ? "off" : "ready", paused ? "Paused · microphone off" : interrupted ? "Go ahead" : conversation && micGranted ? "Your turn" : "Ready to answer · microphone off");
     listenAgain();
   };
   const dispose = () => {
     discarded = true; recording = false; muted = false; pauseDuration();
     try { recognizer?.abort(); } catch { /* already stopped */ }
-    recognitionActive = false; recognitionRequested = false; releaseAudio(); currentUtterance?.stop(); currentUtterance = null;
+    recognitionActive = false; recognitionRequested = false; releaseAudio(); stopMonitor(); currentUtterance?.stop(); currentUtterance = null;
     officeDisposer?.(); officeDisposer = null;
     if (!alreadyInInterviewRoom) document.body.classList.remove("interview-takeover-active");
     document.body.style.overflow = previousBodyOverflow;
@@ -670,6 +751,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
     paused = !paused;
     if (paused) {
       if (recording || micStream) void finishRecording();
+      stopMonitor();
       currentUtterance?.pause(); voicePlaying = false; updateAvatarPresentation();  // she pauses with her voice
       if (!interviewerSpeaking) setMicState("off", "Paused · microphone off");
     } else {

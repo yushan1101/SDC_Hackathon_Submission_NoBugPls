@@ -1749,7 +1749,7 @@ def test_interview_order_shuffles_after_the_warm_up_and_next_questions_follow_it
     current = {"question_text": "Q", "stage": "behavioral", "target_skills": [], "criteria": [], "parent_question_id": None}
     _, nq, index, done = service.evaluate_and_choose(sess, current, "My answer.", [])
     assert seen["next_stage"] == "workplace_scenario" and nq["stage"] == "workplace_scenario" and index == 1 and not done
-    assert seen["suggested_focus_for_next_question"] and any("reaction" in r for r in seen["rules"])
+    assert seen["suggested_focus_for_next_question"] and any("spoken feedback" in r for r in seen["rules"])
 
 
 def test_interviewer_replies_to_a_question_back_without_scoring_it(monkeypatch):

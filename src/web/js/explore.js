@@ -348,6 +348,17 @@ export function resumeView(main, ctx) {
     ondrop: (e) => { e.preventDefault(); drop.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) send(f); } },
     input, icon("upload"), h("b", {}, "Drop your resume here, or choose a file"), h("span", { class: "note" }, "PDF, Word (.docx), .txt or .md · up to 2 MB"));
   const out = h("div", { class: "cv-out" });
+  // Thinking: off is the fast read (about 15 s); on lets the résumé model reason it through (about a minute).
+  let thinking = false;
+  try { thinking = localStorage.getItem("ap.resume.thinking") === "true"; } catch { /* off */ }
+  const thinkHint = h("span", { class: "cv-think-hint" });
+  const thinkBox = h("input", { type: "checkbox", role: "switch", checked: thinking ? true : null, onchange: (e) => {
+    thinking = e.target.checked; drawThink();
+    try { localStorage.setItem("ap.resume.thinking", String(thinking)); } catch { /* this visit */ }
+  } });
+  const drawThink = () => { thinkHint.textContent = thinking ? "Slower, about a minute: the AI reasons through your résumé." : "Fast, about 15 seconds."; };
+  drawThink();
+  const thinkRow = h("label", { class: "cv-think" }, thinkBox, h("b", {}, "Deep thinking"), thinkHint);
   main.replaceChildren(
     h("div", { class: "flow-back-row" },
       h("a", {
@@ -363,6 +374,7 @@ export function resumeView(main, ctx) {
       )), owl.el),
 
     drop,
+    thinkRow,
     out
   );
 
@@ -377,12 +389,13 @@ export function resumeView(main, ctx) {
         h("div", { class: "cv-prog-top" }, label, pct),
         h("div", { class: "cv-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100" }, bar), steps));
     drop.replaceWith(panel);
+    thinkRow.hidden = true;
     out.replaceChildren();
     const setPct = (n) => { bar.style.transform = `scaleX(${n / 100})`; pct.textContent = `${n}%`; panel.querySelector(".cv-bar").setAttribute("aria-valuenow", String(n)); };
     let current = null;
-    const restore = () => panel.replaceWith(drop);
+    const restore = () => { panel.replaceWith(drop); thinkRow.hidden = false; };
     owl.set("analyzing"); ctx.status?.set("analyzing", "Reading your resume");
-    const fd = new FormData(); fd.append("file", file);
+    const fd = new FormData(); fd.append("file", file); fd.append("thinking", String(thinking));
     try {
       let result = null;
       await stream("/api/resume/analyze/stream", fd, (ev) => {
@@ -398,7 +411,8 @@ export function resumeView(main, ctx) {
       bigOwl.set(result.skills.length ? "celebrating" : "confused");
       owl.set(result.skills.length ? "matched" : "confused");
       ctx.status?.set("matched", `${result.skills.length} skills found`);
-      label.textContent = `Done · ${result.skills.length} skills found`;
+      label.textContent = result.cached ? `Same file as before · showing your earlier result (${result.skills.length} skills)`
+        : `Done · ${result.skills.length} skills found`;
       setTimeout(() => { panel.classList.add("done"); render(result); }, 600);
     } catch (e) {
       owl.set("confused");

@@ -45,7 +45,7 @@ from agents import catalog, criteria, llm, matcher, quiz, resume
 from agents import tools as agent_tools
 from agents.knowledge import learning_resources, occupation, resolve_occupation, role_requirements, search_occupations
 from config.settings import get_settings
-from core import graph, screening
+from core import cache as result_cache, graph, screening
 from core.state import Gap, LearningNode, Pathway, Profile, Request, Skill
 from core.team_import import normalize_team, parse_team
 from governance import workforce
@@ -2908,7 +2908,7 @@ def _resume_allowed(user: dict):
 
 
 @app.post("/api/resume/analyze/stream")
-async def resume_analyze_stream(file: UploadFile = File(...), user: dict = Depends(current_user)):
+async def resume_analyze_stream(file: UploadFile = File(...), thinking: bool = Form(False), user: dict = Depends(current_user)):
     _resume_allowed(user)
     """Same analysis as /api/resume/analyze, streamed: a progress event as each real stage starts, then the result."""
     data = await _read(file)
@@ -2918,7 +2918,7 @@ async def resume_analyze_stream(file: UploadFile = File(...), user: dict = Depen
     def work():
         stage = lambda s: events.put({"t": "stage", "stage": s, "pct": RESUME_STAGES[s][0], "owl": RESUME_STAGES[s][1], "label": RESUME_STAGES[s][2]})
         try:
-            result = _analyze_resume(name, data, stage)
+            result = _analyze_resume(name, data, stage, thinking)
             if user["role"] == "employee" and result["skills"]:
                 profile = [{"name": s["name"], "level": s["level"]} for s in result["skills"]]
                 with DB_LOCK, db:
@@ -2940,11 +2940,11 @@ async def resume_analyze_stream(file: UploadFile = File(...), user: dict = Depen
 
 
 @app.post("/api/resume/analyze")
-async def resume_analyze(file: UploadFile = File(...), user: dict = Depends(current_user)):
+async def resume_analyze(file: UploadFile = File(...), thinking: bool = Form(False), user: dict = Depends(current_user)):
     _resume_allowed(user)
     """Resume -> Markdown -> evidence-backed skills -> matches; only skill labels and recommendations persist for interview access."""
     data = await _read(file)
-    result = await run_in_threadpool(_analyze_resume, file.filename or "resume.txt", data)
+    result = await run_in_threadpool(_analyze_resume, file.filename or "resume.txt", data, lambda stage: None, thinking)
     if user["role"] == "employee" and result["skills"]:
         profile = [{"name": s["name"], "level": s["level"]} for s in result["skills"]]
         with DB_LOCK, db:
@@ -2961,7 +2961,25 @@ RESUME_STAGES = {  # stage -> (% done when it starts, owl state, label); fixed p
 }
 
 
-def _analyze_resume(filename: str, data: bytes, progress=lambda stage: None) -> dict:
+RESUME_REPLAY_S = 5.0  # a file analysed before: its saved result after a short, steady replay of the stages
+
+
+def _analyze_resume(filename: str, data: bytes, progress=lambda stage: None, thinking: bool = False) -> dict:
+    """Same file (by SHA-256), same model and thinking setting -> the saved result from the cache (Redis when set),
+    shown after RESUME_REPLAY_S: no second AI read. Anything else is analysed and saved."""
+    key = f"resume:v1:{hashlib.sha256(data).hexdigest()}:{llm.model_for('resume') if cfg.llm_resume else 'rules'}:{int(thinking)}"
+    if (hit := result_cache.get(key)) is not None:
+        for stage in RESUME_STAGES:
+            progress(stage)
+            time.sleep(RESUME_REPLAY_S / len(RESUME_STAGES))
+        return {**hit, "cached": True}
+    result = _analyze_resume_fresh(filename, data, progress, thinking)
+    if not (result["llm_usage"] or {}).get("error") and not (result["insight"].get("usage") or {}).get("error"):
+        result_cache.set(key, result)  # a run that fell back to the rules (model timed out) is not kept: next time tries again
+    return {**result, "cached": False}
+
+
+def _analyze_resume_fresh(filename: str, data: bytes, progress, thinking: bool) -> dict:
     progress("read")
     try:
         md, integrity = resume.convert(filename, data)
@@ -2969,7 +2987,16 @@ def _analyze_resume(filename: str, data: bytes, progress=lambda stage: None) -> 
         raise HTTPException(422, str(e))
     progress("guard")
     progress("skills")
-    x = resume.extract(md, progress=progress if cfg.llm_resume else None)
+    advice = []  # the written advice starts from the rule-based skills, alongside the LLM's skill reading
+
+    def start_advice(rule_skills):
+        rule_skills = resume.verify(md, rule_skills)
+        levels = {s["name"]: s["level"] for s in rule_skills}
+        rule_matches = _matches(levels, text=resume.redact(md)) if levels else []
+        years = max((int(m.group(1)) for m in resume.YEARS.finditer(md)), default=None)
+        advice.append(_RESUME_ADVICE.submit(_in_context(resume.advise), md, rule_skills, rule_matches, years, thinking))
+
+    x = resume.extract(md, progress=progress if cfg.llm_resume else None, thinking=thinking, on_rules=start_advice)
     progress("verify")
     x["skills"] = resume.verify(md, x["skills"])
     integrity["findings"] += fraud_signals(md, x["years_experience"], n_skills=len(x["skills"]))
@@ -2978,9 +3005,13 @@ def _analyze_resume(filename: str, data: bytes, progress=lambda stage: None) -> 
     progress("match")
     matches = _matches(levels, text=resume.redact(md)) if levels else []
     progress("advice")
+    insight = advice[0].result() if advice else resume.advise(md, x["skills"], matches, x["years_experience"], thinking)
     return {"markdown": md, "skills": x["skills"], "years_experience": x["years_experience"], "education": x.get("education", []), "experience": x.get("experience", []), "integrity": integrity,
             "extraction_mode": x["extraction_mode"], "llm_usage": x["llm_usage"], "matches": matches,
-            "insight": resume.advise(md, x["skills"], matches, x["years_experience"])}
+            "insight": insight, "thinking": thinking}
+
+
+_RESUME_ADVICE = ThreadPoolExecutor(max_workers=4, thread_name_prefix="resume-advice")
 
 
 # --- HR recruiting: openings with NL thresholds, AI screening agents, human decisions ------------------------
@@ -3991,7 +4022,7 @@ def readiness():
              "mode": "live_cpu_inference" if all(p.exists() for p in (ck, hist, man)) else "precomputed_asset"}
     from agents.llm import model_for
     llm = {"enabled": cfg.llm_enabled, "resume": cfg.llm_resume,
-           "agents": {a: model_for(a) or None for a in ("router", "coach")} | {"resume": resume.model() or None}}  # model names only, never keys
+           "agents": {a: model_for(a) or None for a in ("router", "coach", "resume")}}  # model names only, never keys
     mcp = mcp_status()
     return {"ok": dbs["ok"] and mcp["ok"], "db": dbs, "mcp": mcp, "model": model, "llm": llm}
 
@@ -4004,6 +4035,12 @@ app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
 def _warm():
     """Fast path first (the model client, MCP knowledge tools, role list), then the slow MiniLM load."""
     llm.warm()  # ~5 s of client start-up that would otherwise land on the first interview question
+    if llm.tts_model().startswith("pocket:"):
+        try:
+            llm.pocket_warm()  # Mina's voice: ~15 s to load, else on her first sentence
+            log.info("Pocket TTS ready")
+        except Exception:
+            log.exception("Pocket TTS warm-up failed; speech falls back to the browser")
     try:
         for soc in ("2221.2", "7411.1", "2411.1", "2512.3"):
             role_requirements(soc)
