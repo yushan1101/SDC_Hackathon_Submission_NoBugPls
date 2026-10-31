@@ -2178,9 +2178,9 @@ body.interview-takeover-active #app > .pub-main {
 .review-entry > .queue-item { flex: 1; min-width: 0; border-bottom: 0; }
 .review-entry .l1 { flex-wrap: wrap; }
 .review-menu { position: relative; flex-shrink: 0; margin-right: 8px; }
-.review-menu > summary { cursor: pointer; list-style: none; font-size: 24px; padding: 4px 8px; border-radius: 8px; }
-.review-menu > summary::-webkit-details-marker { display: none; }
-.review-menu-items { position: absolute; right: 0; top: 100%; z-index: 20; display: grid; gap: 6px; padding: 8px; min-width: 150px; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 8px 24px #0002; }
+.review-menu > button { cursor: pointer; color: inherit; font: inherit; font-size: 24px; line-height: 1; padding: 4px 8px; background: transparent; border: 0; border-radius: 8px; }
+.review-menu > button:hover, .review-menu > button[aria-expanded="true"] { background: var(--sunken); }
+.review-menu-items[popover] { position: fixed; inset: auto; margin: 0; display: grid; gap: 6px; padding: 8px; min-width: 150px; max-width: calc(100vw - 16px); overflow: auto; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 8px 24px #0002; }
 .review-dialog { width: min(540px, calc(100vw - 28px)); max-height: 90dvh; overflow: auto; padding: 24px; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 20px; }
 .review-dialog::backdrop { background: #0006; }
 .review-form { display: grid; gap: 16px; }

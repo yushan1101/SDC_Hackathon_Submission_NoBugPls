@@ -1,6 +1,7 @@
 // HR overview: cohort comparisons, sample preview, and separate team plans.
 import { api, h, icon, stream } from "./lib.js";
 import { Owl } from "./owl.js";
+import { floatingMenu } from "./floating-menu.js";
 
 const SEVERITY = { low: ["Low", "0–24%"], moderate: ["Moderate", "25–49%"], high: ["High", "50–74%"], critical: ["Critical", "75–100%"] };
 const SELECTED = new Set();
@@ -43,8 +44,10 @@ export async function workforceView(root) {
     const more = (selected.category !== "all") + selected.skill.size + selected.datasets.size;
     const sets = data.options.datasets || [];
     // skill ticks keep the menu open; the count and Reset catch up when it closes
-    const moreMenu = h("details", { class: "wf-filter wf-more", ontoggle: (e) => { if (!e.target.open) drawFilters(); } },
-      h("summary", {}, icon("sliders"), "More filters", more ? h("span", { class: "wf-count" }, String(more)) : null),
+    const moreTrigger = h("button", { type: "button", class: "wf-more-trigger" },
+      icon("sliders"), "More filters", more ? h("span", { class: "wf-count" }, String(more)) : null);
+    const moreMenu = h("div", { class: "wf-filter wf-more" }, moreTrigger);
+    const morePanel = h("div", { class: "wf-more wf-more-popover", role: "group", "aria-label": "More filters" },
       h("div", { class: "wf-filter-options" },
         h("label", { class: "wf-select" }, h("span", {}, "Category"), select("Category", "category", [["all", "Skills & tools"], ["skill", "Skills"], ["tool", "Tools"]])),
         sets.length > 1 ? [h("div", { class: "wf-more-head" }, h("span", {}, "Data sets"),
@@ -62,6 +65,12 @@ export async function workforceView(root) {
           if (e.target.checked) selected.skill.add(sk.name); else selected.skill.delete(sk.name);
           SELECTED.clear(); load();
         } }), h("span", {}, sk.name)))));
+    floatingMenu(moreTrigger, morePanel, { align: "end", maxHeight: 320,
+      onClose: ({ restoreFocus, event }) => {
+        if (!moreMenu.isConnected || event?.target.closest("button, input, select, a")) return;
+        drawFilters();
+        if (restoreFocus) filters.querySelector(".wf-more-trigger")?.focus();
+      } });
     const active = more || Object.entries(DEFAULTS).some(([k, v]) => k !== "category" && selected[k] !== v);
     filters.replaceChildren(...[scenario,
       select("Department", "department", [["", "All departments"], ...data.options.departments.map((v) => [v, v])], true),
