@@ -240,8 +240,8 @@ export async function signalsView(main, status) {
       const before = (await api("/api/signals/today")).created_utc;
       await api("/api/signals/refresh", { method: "POST" });
       status.set("searching", "Fetching today's signals");
-      toast("Fetching news, research and job-posting signals. This takes about a minute.");
-      for (let i = 0; i < 30; i++) {
+      toast("Fetching news, research and job-posting signals, then running the STF-KAN agents. This takes a few minutes.");
+      for (let i = 0; i < 90; i++) {  // 12 min: arXiv alone needs 3 s between requests
         await sleep(8000);
         const b = await api("/api/signals/today");
         if (b.created_utc && b.created_utc !== before) { status.set("update", `Board ${b.day} ready`); return draw(); }

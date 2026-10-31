@@ -77,12 +77,12 @@ def _mcp_client():
                   auth=s.node_token.get_secret_value() if s.node_token else None)
 
 
-def call_tool(name: str, args: dict) -> dict:
+def call_tool(name: str, args: dict, timeout: float | None = None) -> dict:
     from mcp_server import server
     try:
         async def go():
             async with _mcp_client() as c:
-                return (await c.call_tool(name, args)).data
+                return (await c.call_tool(name, args, timeout=timeout)).data
         return asyncio.run(go())
     except Exception as e:
         log.warning("MCP call %s failed (%s); direct fallback", name, type(e).__name__)

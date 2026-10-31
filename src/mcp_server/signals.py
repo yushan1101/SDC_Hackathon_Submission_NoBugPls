@@ -101,9 +101,14 @@ CREATE TABLE IF NOT EXISTS signal_boards(day TEXT PRIMARY KEY, board TEXT, creat
     return con
 
 
-def _get(url: str, params: dict | None = None, timeout: float = 20.0):
+@lru_cache(maxsize=1)
+def _http():  # one pooled, thread-safe client: a fresh TLS handshake per call made each request ~2 s
     import httpx
-    r = httpx.get(url, params=params, headers=UA, timeout=timeout, follow_redirects=True)
+    return httpx.Client(headers=UA, follow_redirects=True, limits=httpx.Limits(max_connections=8))
+
+
+def _get(url: str, params: dict | None = None, timeout: float = 20.0):
+    r = _http().get(url, params=params, timeout=timeout)
     r.raise_for_status()
     return r
 
@@ -111,9 +116,10 @@ def _get(url: str, params: dict | None = None, timeout: float = 20.0):
 # ----------------------------------------------------------------------------------- sources
 def fetch_hn(today: date, weeks: int = 8) -> dict[str, list[int]]:
     """Weekly HN story counts per topic, oldest -> newest (complete weeks ending today)."""
-    out = {}
+    from concurrent.futures import ThreadPoolExecutor
     end = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
-    for t in TOPICS:
+
+    def topic(t):
         counts = []
         for w in range(weeks, 0, -1):
             a, b = end - timedelta(weeks=w), end - timedelta(weeks=w - 1)
@@ -121,9 +127,9 @@ def fetch_hn(today: date, weeks: int = 8) -> dict[str, list[int]]:
                 "query": t["q"], "tags": "story", "hitsPerPage": 0,
                 "numericFilters": f"created_at_i>={int(a.timestamp())},created_at_i<{int(b.timestamp())}"}).json()
             counts.append(int(j.get("nbHits", 0)))
-            time.sleep(0.15)
-        out[t["id"]] = counts
-    return out
+        return t["id"], counts
+    with ThreadPoolExecutor(4) as ex:  # ponytail: 4 topics at once stays far below Algolia's 10k req/h limit
+        return dict(ex.map(topic, TOPICS))
 
 
 def fetch_hn_stories(today: date, per_topic: int = 5) -> list[dict]:
@@ -176,7 +182,7 @@ def fetch_arxiv(today: date) -> dict[str, tuple[int, int]]:
             vals = []
             for a, b in ((r0, r1), (p0, r0)):
                 x = _get("https://export.arxiv.org/api/query", {
-                    "search_query": f'abs:"{q}" AND submittedDate:[{fmt(a)} TO {fmt(b)}]', "max_results": 0}, timeout=30).text
+                    "search_query": f'abs:"{q}" AND submittedDate:[{fmt(a)} TO {fmt(b)}]', "max_results": 1}, timeout=30).text  # arXiv answers 500 to max_results=0
                 m = re.search(r"<opensearch:totalResults[^>]*>(\d+)<", x)
                 if not m:
                     raise ValueError("no count")
@@ -333,6 +339,45 @@ def build_board(today: date, hn: dict, arxiv: dict, jobs: list[dict], job_source
             "occupations": per_occ, "evidence": ev}
 
 
+def _role_review(r: dict, kind: str) -> dict:
+    """Market Analyst agent (STF-KAN skill_outlook via MCP) + Reviewer agent (does the model agree with the board?)."""
+    from agents.knowledge import call_tool
+    o = call_tool("skill_outlook", {"role_id": r["soc"]})
+    fc = o.get("forecast") or {}
+    if not o.get("available"):
+        return {"mode": fc.get("mode"), "reason": fc.get("reason") or "unavailable", "verdict": "no model evidence"}
+    dirs = {k: f["direction"] for k, f in o["outlook"].items()}
+    up, down = sorted(k for k, d in dirs.items() if d == "rising"), sorted(k for k, d in dirs.items() if d == "falling")
+    want, against = (up, down) if kind == "emerging" else (down, up)
+    verdict = "confirmed" if len(want) > len(against) else "contradicted" if len(against) > len(want) else "neutral"
+    return {"mode": fc.get("mode"), "model_version": fc.get("model_version"), "skills": len(dirs),
+            "rising": up[:5], "falling": down[:5], "verdict": verdict}
+
+
+def analyze(board: dict, top: int = 8) -> dict:
+    """Multi-agent pass over the flagged roles, run in parallel; attaches `stfkan` to each role and a summary."""
+    from concurrent.futures import ThreadPoolExecutor
+    t0 = time.perf_counter()
+    jobs = [(r, "emerging") for r in board["emerging_roles"][:top]] + [(r, "declining") for r in board["declining_roles"][:top]]
+    with ThreadPoolExecutor(8) as ex:
+        reviews = list(ex.map(lambda a: _safe_review(*a), jobs))
+    for (r, _), rv in zip(jobs, reviews):
+        r["stfkan"] = rv
+    count = lambda v: sum(rv["verdict"] == v for rv in reviews)
+    return {"agents": ["market_analyst (STF-KAN skill_outlook via MCP)", "reviewer (board vs model agreement)"],
+            "roles_reviewed": len(jobs), "confirmed": count("confirmed"), "contradicted": count("contradicted"),
+            "neutral": count("neutral"), "no_model": count("no model evidence"),
+            "mode": next((rv["mode"] for rv in reviews if rv.get("mode")), None), "seconds": round(time.perf_counter() - t0, 1)}
+
+
+def _safe_review(r: dict, kind: str) -> dict:
+    try:
+        return _role_review(r, kind)
+    except Exception as e:  # one role failing must not lose the board
+        log.warning("role review %s failed (%s)", r["soc"], type(e).__name__)
+        return {"mode": None, "reason": type(e).__name__, "verdict": "no model evidence"}
+
+
 def refresh(today: date | None = None, con=None, sources=("hn", "arxiv", "jobs")) -> dict:
     today = today or datetime.now(timezone.utc).date()
     con = con or db()
@@ -356,6 +401,7 @@ def refresh(today: date | None = None, con=None, sources=("hn", "arxiv", "jobs")
                            (t["id"], day)).fetchall()
         history[t["id"]] = [r[0] for r in rows]
     board = build_board(today, hn, arxiv, jobs, job_sources, history)
+    board["analysis"] = analyze(board)
     with con:
         for tp in board["topics"]:
             if "jobs" in tp["sources"]:

@@ -180,6 +180,15 @@ def trend_signals(day: str | None = None, role_id: str | None = None) -> dict:
 
 
 @mcp.tool
+def refresh_trend_signals() -> dict:
+    """Fetch today's signals live from the web (HN, arXiv, job boards), rebuild the trend board, and run the
+    STF-KAN multi-agent review of its roles. Slow (minutes); the web server calls it once a day or on HR request."""
+    from mcp_server.signals import refresh
+    b = refresh()
+    return {"day": b["day"], "created_utc": b["created_utc"], "sources": b["sources"], "analysis": b["analysis"]}
+
+
+@mcp.tool
 def sdg_for(role_id: str) -> dict:
     """UN SDG goals/targets an occupation contributes to (MiniLM match to the 169 official targets; not official)."""
     from agents.sdg import role_sdgs

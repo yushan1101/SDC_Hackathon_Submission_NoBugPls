@@ -2748,7 +2748,7 @@ def _board_summary(b: dict | None) -> dict:
     if not b:
         return {"available": False, "message": "No trend board yet. HR can refresh it; it also refreshes daily."}
     return {"available": True, **{k: b[k] for k in ("day", "created_utc", "sources", "method", "topics",
-                                                    "emerging_roles", "declining_roles", "evidence")}}
+                                                    "emerging_roles", "declining_roles", "evidence")}, "analysis": b.get("analysis")}
 
 
 def _board(day: str | None = None):
@@ -2788,7 +2788,8 @@ def _refresh_signals() -> bool:
 
     def run():
         try:
-            signals.refresh(con=signals.db(cfg.database_path))
+            from agents.knowledge import call_tool  # live web fetch + STF-KAN agents run behind the MCP server
+            log.info("signal refresh: %s", call_tool("refresh_trend_signals", {}, timeout=1200))
         except Exception:
             log.exception("signal refresh failed")
         finally:

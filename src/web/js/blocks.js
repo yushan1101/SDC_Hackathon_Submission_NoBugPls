@@ -1123,6 +1123,8 @@ export function boardView(b, { onRefresh, preview = false } = {}) {
     b.sources.hn ? pill("pulse", "Hacker News", "8 weekly story counts per topic") : null,
     b.sources.arxiv ? pill("file", "arXiv", "papers, last 14 vs 42 days") : null,
     b.sources.jobs?.length ? pill("search", `${b.sources.postings.toLocaleString()} job posts`, `live postings from ${b.sources.jobs.join(", ")}`) : null,
+    b.analysis ? pill("pulse", `STF-KAN: ${b.analysis.confirmed}/${b.analysis.roles_reviewed} roles confirmed`,
+      `${b.analysis.agents.join(" + ")}; ${b.analysis.contradicted} contradicted, ${b.analysis.no_model} without a trained model`) : null,
     onRefresh ? h("button", { class: "btn sm", onclick: onRefresh }, icon("history"), "Refresh") : null);
   const dir = (t) => [icon(t.direction === "rising" ? "up" : t.direction === "falling" ? "down" : "flat"), t.direction || "stable"];
   // one card per topic: the trend, its weekly change, its 8-week line, and one place for its sources
@@ -1225,7 +1227,10 @@ export function boardView(b, { onRefresh, preview = false } = {}) {
         ((ids) => h("span", { class: "rl-drivers", title: `Driven by: ${ids.map(label).join(", ")}` },
           h("span", { class: "rl-faces", "aria-hidden": "true" }, ids.map((id) => h("img", { src: `img/topics/${id}-sm.jpg`, alt: "", loading: "lazy",
             decoding: "async", width: 24, height: 24, onerror: (e) => e.currentTarget.remove() }))),
-          h("span", { class: "rl-names" }, ids.map(label).join(" · "))))(r.drivers.filter(label).slice(0, 2))),
+          h("span", { class: "rl-names" }, ids.map(label).join(" · "))))(r.drivers.filter(label).slice(0, 2)),
+        r.stfkan && r.stfkan.verdict !== "no model evidence" ? h("span", { class: "rl-names muted",
+          title: `STF-KAN rising: ${r.stfkan.rising.join(", ") || "none"}; falling: ${r.stfkan.falling.join(", ") || "none"}` },
+          `STF-KAN ${r.stfkan.verdict}`) : null),
       h("div", { class: `rl-meter ${cls}`, title: key === "score" ? "AI-driven growth score" : "Automation pressure score" },
         h("span", { class: "rl-bar" }, h("i", { style: { width: `${Math.round((r[key] / top) * 100)}%` } })),
         h("b", { class: "num" }, r[key].toFixed(1))))));
