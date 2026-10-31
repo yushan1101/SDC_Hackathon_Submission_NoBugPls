@@ -19,7 +19,7 @@ function el(tag, attrs = {}, ...children) {
     tag, attrs, children: children.flat(Infinity).filter((c) => c != null && c !== false), hidden: attrs.hidden, textContent: '',
     get firstChild() { return this.children[0]; },
     replaceChildren(...kids) { this.children = kids.flat(Infinity).filter((c) => c != null && c !== false); },
-    setAttribute(name, value) { this.attrs[name] = value; }, querySelector() { return null; }, closest() { return null; },
+    setAttribute(name, value) { this.attrs[name] = value; }, addEventListener() {}, querySelector() { return null; }, closest() { return null; },
     showPopover() {}, hidePopover() {}, focus() {}, scrollIntoView() {}, classList: { toggle() {} },
   };
   return node;

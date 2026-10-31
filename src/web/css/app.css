@@ -2843,8 +2843,11 @@ body {
 .interview-takeover .interview-answer-form { display: grid; grid-template-columns: 1fr; justify-items: center; gap: 10px;
   width: min(640px, calc(100% - 24px)); padding: 0; border: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .interview-takeover .interview-answer-form[data-view="voice"] .interview-type-sheet { display: none; }
+.interview-takeover .interview-answer-form[data-view="voice"] .interview-type-sheet:has(.interview-answer:not(:placeholder-shown)),
+.interview-takeover .interview-answer-form[data-view="voice"] .interview-type-sheet:focus-within { display: grid; }
 .interview-takeover .interview-type-sheet { width: 100%; }
-.interview-takeover .interview-type-sheet .interview-answer { min-height: 96px; border-radius: 18px; border-color: #ffffff40; background: #ffffffed; color: #172033; caret-color: #172033; color-scheme: light;
+.interview-takeover .interview-type-sheet .interview-answer { min-height: 96px; border-radius: 18px; border-color: #ffffff40;
+  background: #fff; color: #172033; -webkit-text-fill-color: #172033; caret-color: #172033; color-scheme: light;
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 .interview-takeover .interview-type-sheet .interview-answer::placeholder { color: #596579; opacity: 1; }
 .interview-takeover .interview-type-sheet .interview-answer::selection { color: #172033; background: #b8cdfd; }
@@ -4223,3 +4226,60 @@ html .plan-focus > .plan-block.block { padding: 0; border: 0; border-radius: 0; 
 .pd-bar:not(:has(.pd-tab:not([hidden]))) { display: none; }
 .report-sections { display: grid; min-width: 0; }
 .report-sections > .pd-bar { margin: 4px 0 18px; }
+
+/* Sources capsule (blocks.js sourceCapsule): under each report answer. The text carries small numbered markers; the
+   capsule opens a plain-language list of what was cited. One colour family per kind of source, used on the marker,
+   the capsule's badges and the row's number, so a reader can match them at a glance. */
+.srccap, .cite-n { --k: var(--accent); --k-soft: var(--accent-soft); }
+:is(.srccap-item, .cite-n, .srccap-marks i).is-forecast { --k: #6a55d8; --k-soft: color-mix(in oklab, #6a55d8 13%, white); }
+:is(.srccap-item, .cite-n, .srccap-marks i).is-course { --k: var(--ok); --k-soft: color-mix(in oklab, var(--ok) 14%, white); }
+:is(.srccap-item, .cite-n, .srccap-marks i).is-signal { --k: var(--warn); --k-soft: color-mix(in oklab, var(--warn) 16%, white); }
+:is(.srccap-item, .cite-n, .srccap-marks i).is-sdg { --k: oklch(0.55 0.11 195); --k-soft: color-mix(in oklab, oklch(0.55 0.11 195) 14%, white); }
+.cite-n { display: inline-grid; place-items: center; min-width: 19px; height: 19px; margin: 0 1px 0 2px; padding: 0 5px; border-radius: 99px;
+  background: var(--k-soft); color: var(--k); font: 700 11px/1 var(--font-ui); font-variant-numeric: tabular-nums; text-decoration: none;
+  vertical-align: 0.35em; cursor: pointer; }
+.cite-n:hover { background: var(--k); color: #fff; }
+.cite-n:focus-visible { outline: 2px solid var(--k); outline-offset: 2px; }
+
+.srccap { justify-self: start; display: grid; gap: 10px; width: 100%; margin: -4px 0 6px; }
+.srccap[hidden] { display: none; }
+.srccap-btn { justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 8px 0 14px; border: 1px solid var(--rule);
+  border-radius: 99px; background: var(--surface); color: var(--ink); font: 600 14px/1 var(--font-ui); cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast); }
+.srccap-btn > svg { width: 17px; height: 17px; color: var(--accent); }
+.srccap-btn:hover { border-color: var(--accent); }
+.srccap-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.srccap-count { min-width: 22px; padding: 3px 7px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
+.srccap-marks { display: inline-flex; padding-left: 4px; }
+.srccap-marks i { display: grid; place-items: center; width: 22px; height: 22px; margin-left: -6px; border: 2px solid var(--surface); border-radius: 50%;
+  background: var(--k); color: #fff; font: 700 10px/1 var(--font-ui); font-style: normal; }
+.srccap-chev { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: var(--ink-2); }
+.srccap-chev svg { width: 15px; height: 15px; transition: transform var(--t-fast); }
+.srccap.is-open .srccap-chev svg { transform: rotate(180deg); }
+
+.srccap-list { display: grid; gap: 2px; margin: 0; padding: 6px; list-style: none; border: 1px solid var(--rule); border-radius: 18px; background: var(--surface); }
+.srccap-list[hidden] { display: none; }
+.srccap-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 12px; border-radius: 12px; scroll-margin: 90px; }
+.srccap-item + .srccap-item { border-top: 1px solid var(--rule); }
+.srccap-item.flash { animation: flash 1.2s var(--ease-out); }
+.srccap-n { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--k-soft); color: var(--k); font: 700 12px/1 var(--font-ui); }
+.srccap-body { display: grid; gap: 2px; min-width: 0; }
+.srccap-kind { color: var(--k); font-size: 12.5px; font-weight: 600; }
+.srccap-title { font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
+.srccap-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--ink-2); font-size: 13px; }
+.srccap-open { align-self: center; display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 99px; color: var(--accent);
+  font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.srccap-open svg { width: 14px; height: 14px; }
+.srccap-open:hover { background: var(--accent-soft); }
+.srccap-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 560px) {
+  .srccap-item { grid-template-columns: auto minmax(0, 1fr); }
+  .srccap-open { grid-column: 2; justify-self: start; align-self: auto; margin-left: -10px; }
+}
+@media (prefers-reduced-motion: reduce) { .srccap-chev svg, .srccap-btn { transition: none; } .srccap-item.flash { animation: none; } }
+/* the all-sources panel and sheet use the same plain rows: kind in its colour, title, publisher and date */
+.src { --k: var(--accent); }
+.src.is-forecast { --k: #6a55d8; } .src.is-course { --k: var(--ok); } .src.is-signal { --k: var(--warn); } .src.is-sdg { --k: oklch(0.55 0.11 195); }
+.sources .src .id, .sheet .src .id, .src .id { font: 600 12.5px/1.3 var(--font-ui); color: var(--k); }
+.src .m { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.srccap-marks:has(> i:only-child) { display: none; }  /* one kind of source: the badge adds nothing */
