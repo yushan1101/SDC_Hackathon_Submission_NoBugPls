@@ -365,7 +365,7 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
         if (volume > 0.025) { heardSpeech = true; lastVoiceAt = performance.now(); }
         else if (conversation && heardSpeech && !finishPromise && performance.now() - lastVoiceAt > SILENCE_MS) {
           heardSpeech = false;
-          void finishRecording(false, false).then(() => { if (transcript.value.trim()) form.requestSubmit(); else listenAgain(); });
+          void finishRecording(false, false).then(() => { if (!transcript.value.trim()) listenAgain(); });
         }
         const [state, message] = volume > 0.025 ? ["speaking", "Speaking"]
           : ["listening", speechAvailable ? "Listening" : "Listening · no transcription here; type your answer"];
@@ -458,14 +458,16 @@ function renderRoom(main, detail, initial = null, callbacks = {}) {
         setMicState("processing", "Transcribing…");
         try { await transcribe(audio); } catch (e) { speechError = e.message; }
       }
+      const hasAnswer = Boolean(transcript.value.trim());
+      const autoSubmit = hasAnswer && view === "voice";
       if (announce) {
-        const hasAnswer = Boolean(transcript.value.trim());
-        if (hasAnswer) setView("type");
-        setMicState(hasAnswer ? "captured" : "error", hasAnswer
-          ? "Captured · review, then send"
+        if (hasAnswer && !autoSubmit) setView("type");
+        setMicState(autoSubmit ? "processing" : hasAnswer ? "captured" : "error", hasAnswer
+          ? autoSubmit ? "Submitting answer for feedback…" : "Captured · review, then send"
           : speechError || speechAvailable ? speechError || "No speech was transcribed · check the language, retry, or type your answer"
             : "Speech recognition is unavailable in this browser · type your answer instead");
       }
+      if (autoSubmit) queueMicrotask(() => form.requestSubmit());
     })().finally(() => { finishPromise = null; updateControls(); });
     updateControls();
     return finishPromise;
